@@ -12,6 +12,17 @@ const config = () => (G.settings.characterPortrait ||= { visible: true, locked: 
 const clamp = (v, lo, hi) => Math.max(lo, Math.min(hi, v));
 const artKey = (item) => item ? [item.base, item.look, item.rarity, item.appearance, item.setId] : null;
 
+/** Class resources shown in the portrait use the same values and colors as their gameplay meters. */
+export function portraitResource(character, player) {
+  if (!character || !player) return null;
+  if (character.classId === 'barbarian') return { kind: 'rage', label: 'Rage', current: clamp(Number(player.rage) || 0, 0, 100), max: 100 };
+  if (character.classId === 'rogue') {
+    const max = 5 + (player.st?.talents?.deeper_stratagem ? 1 : 0);
+    return { kind: 'combo', label: 'Combo', current: clamp(Number(player.rogue?.cp) || 0, 0, max), max };
+  }
+  return null;
+}
+
 export const CharacterPortrait = {
   root: null,
   artCanvas: null,
@@ -25,7 +36,7 @@ export const CharacterPortrait = {
     root.id = 'character-portrait-hud';
     root.className = 'character-portrait-hud';
     root.setAttribute('aria-label', 'Character portrait and vital bars');
-    root.innerHTML = `<header class="character-portrait-head"><div class="character-portrait-identity"><b data-portrait-name></b><span data-portrait-level></span></div><div class="character-portrait-tools"><button type="button" data-portrait-lock aria-label="Lock portrait position" title="Lock portrait position">⌖</button><button type="button" data-portrait-hide aria-label="Hide character portrait" title="Hide portrait">×</button></div></header><div class="character-portrait-content"><canvas data-portrait-art width="160" height="100" aria-hidden="true"></canvas><div class="character-portrait-vitals"><div class="character-portrait-meter health"><i data-portrait-health-fill></i><b data-portrait-health-text></b></div><div class="character-portrait-meter mana"><i data-portrait-mana-fill></i><b data-portrait-mana-text></b></div></div></div><div class="character-portrait-resize" data-portrait-resize role="button" tabindex="0" aria-label="Resize character portrait" title="Drag to resize"></div>`;
+    root.innerHTML = `<header class="character-portrait-head"><div class="character-portrait-identity"><b data-portrait-name></b><span data-portrait-level></span></div><div class="character-portrait-tools"><button type="button" data-portrait-lock aria-label="Lock portrait position" title="Lock portrait position">⌖</button><button type="button" data-portrait-hide aria-label="Hide character portrait" title="Hide portrait">×</button></div></header><div class="character-portrait-content"><canvas data-portrait-art width="160" height="100" aria-hidden="true"></canvas><div class="character-portrait-vitals"><div class="character-portrait-meter health"><i data-portrait-health-fill></i><b data-portrait-health-text></b></div><div class="character-portrait-meter mana"><i data-portrait-mana-fill></i><b data-portrait-mana-text></b></div><div class="character-portrait-meter hidden" data-portrait-resource><i data-portrait-resource-fill></i><b data-portrait-resource-text></b></div></div></div><div class="character-portrait-resize" data-portrait-resize role="button" tabindex="0" aria-label="Resize character portrait" title="Drag to resize"></div>`;
     host.appendChild(root);
     this.root = root;
     this.artCanvas = root.querySelector('[data-portrait-art]');
@@ -155,7 +166,10 @@ export const CharacterPortrait = {
     const health = `${fmtInt(Math.max(0, p.hp))} / ${fmtInt(Math.max(0, p.maxHp))}`;
     const mana = `${fmtInt(Math.max(0, p.mana))} / ${fmtInt(Math.max(0, p.maxMana))}`;
     const healthPct = `${clamp(p.maxHp ? p.hp / p.maxHp * 100 : 0, 0, 100)}%`, manaPct = `${clamp(p.maxMana ? p.mana / p.maxMana * 100 : 0, 0, 100)}%`;
-    const vitalKey = `${name}|${level}|${health}|${mana}|${healthPct}|${manaPct}`;
+    const extra = portraitResource(c, p);
+    const resourceText = extra ? `${extra.label} ${fmtInt(extra.current)} / ${fmtInt(extra.max)}` : '';
+    const resourcePct = extra ? `${clamp(extra.max ? extra.current / extra.max * 100 : 0, 0, 100)}%` : '0%';
+    const vitalKey = `${name}|${level}|${health}|${mana}|${healthPct}|${manaPct}|${extra?.kind || ''}|${resourceText}|${resourcePct}`;
     if (vitalKey === this.lastVitals) return;
     this.lastVitals = vitalKey;
     this.root.querySelector('[data-portrait-name]').textContent = name;
@@ -164,5 +178,10 @@ export const CharacterPortrait = {
     this.root.querySelector('[data-portrait-health-text]').textContent = health;
     this.root.querySelector('[data-portrait-mana-fill]').style.width = manaPct;
     this.root.querySelector('[data-portrait-mana-text]').textContent = mana;
+    const resource = this.root.querySelector('[data-portrait-resource]');
+    resource.className = `character-portrait-meter${extra ? ` ${extra.kind}` : ''}${extra ? '' : ' hidden'}`;
+    resource.setAttribute('aria-label', extra ? `${extra.label}: ${fmtInt(extra.current)} of ${fmtInt(extra.max)}` : '');
+    this.root.querySelector('[data-portrait-resource-fill]').style.width = resourcePct;
+    this.root.querySelector('[data-portrait-resource-text]').textContent = resourceText;
   },
 };

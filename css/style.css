@@ -66,11 +66,13 @@ button { font-family: var(--font-head); }
 .character-portrait-tools button:hover { border-color: #e0b86e; color: #fff2d2; }
 .character-portrait-content { min-height: 0; flex: 1; display: grid; grid-template-columns: minmax(58px, 41%) minmax(0,1fr); align-items: center; gap: 5px; padding: 4px 6px 6px; }
 .character-portrait-content canvas { width: 100%; height: 100%; min-height: 0; border: 1px solid rgba(166,126,68,.58); border-radius: 3px; background: radial-gradient(ellipse at 50% 18%,rgba(101,73,46,.45),rgba(5,4,4,.9)); object-fit: cover; object-position: center top; image-rendering: pixelated; filter: drop-shadow(0 2px 4px #000); }
-.character-portrait-vitals { min-width: 0; display: flex; flex-direction: column; gap: 5px; }
-.character-portrait-meter { position: relative; height: 19px; overflow: hidden; border: 1px solid rgba(230,204,158,.62); border-radius: 3px; background: rgba(5,4,4,.92); box-shadow: inset 0 1px 3px #000, 0 1px 3px #000; }
+.character-portrait-vitals { min-width: 0; display: flex; flex-direction: column; justify-content: center; gap: 3px; }
+.character-portrait-meter { position: relative; flex: 0 0 19px; width: 100%; height: 19px; overflow: hidden; border: 1px solid rgba(230,204,158,.62); border-radius: 3px; background: rgba(5,4,4,.92); box-shadow: inset 0 1px 3px #000, 0 1px 3px #000; }
 .character-portrait-meter i { position: absolute; inset: 0 auto 0 0; width: 100%; transition: width .12s linear; }
 .character-portrait-meter.health i { background: linear-gradient(180deg,#fa4b3d 0%,#b71920 52%,#6e0d18 100%); }
 .character-portrait-meter.mana i { background: linear-gradient(180deg,#65c9ff 0%,#2476d0 52%,#123c85 100%); }
+.character-portrait-meter.rage i { background: linear-gradient(90deg,#852510 0%,#e06b20 55%,#ffbe48 100%); }
+.character-portrait-meter.combo i { background: linear-gradient(90deg,#650d1b 0%,#c51f39 55%,#ff5268 100%); }
 .character-portrait-meter b { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; color: #fff7e8; font: 700 9px/1 var(--font-head); text-shadow: 0 1px 2px #000,0 0 4px #000; white-space: nowrap; pointer-events: none; }
 .character-portrait-resize { position: absolute; right: 1px; bottom: 1px; width: 13px; height: 13px; cursor: nwse-resize; touch-action: none; pointer-events: auto; }
 .character-portrait-resize::after { content: ''; position: absolute; right: 2px; bottom: 2px; width: 7px; height: 7px; border-right: 2px solid #b8955a; border-bottom: 2px solid #b8955a; }
