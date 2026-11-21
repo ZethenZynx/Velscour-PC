@@ -34,4 +34,11 @@ const hud = await readFile(new URL('../../src/ui/hud.js', import.meta.url), 'utf
 assert.match(hud, /if \(cur\) this\.recordEnemy\(cur\)/, 'encounters are recorded during target updates');
 assert.match(hud, /if \(cur && !this\.enemyHistoryReviewing\) this\.tb = cur/, 'new targets do not interrupt history review');
 assert.match(hud, /tb-history-position/, 'history position is displayed');
+const html = await readFile(new URL('../../index.html', import.meta.url), 'utf8');
+assert.match(html, /id="tb-previous"[^>]*aria-label="Previous enemy"[^>]*>◀<\/button>/, 'previous control uses an accessible arrow-only button');
+assert.match(html, /id="tb-history-position"[^>]*>0 of 0<\/span>/, 'history counter sits between navigation controls');
+assert.match(html, /id="tb-next"[^>]*aria-label="Next enemy"[^>]*>▶<\/button>/, 'next control uses an accessible arrow-only button');
+const css = await readFile(new URL('../../css/style.css', import.meta.url), 'utf8');
+assert.match(css, /#tb-history-controls\s*\{[^}]*justify-content:\s*center/s, 'history footer centers its controls');
+assert.match(css, /#tb-history-controls button\s*\{[^}]*flex:\s*0 0 26px[^}]*width:\s*26px[^}]*height:\s*22px/s, 'arrow buttons share compact fixed dimensions');
 console.log('Enemy history retention, deduplication, persistence, data fidelity, and review checks passed.');

@@ -406,11 +406,11 @@ body.at-sea #levelup { top: 31%; } /* the Pirate Seas: the top band is the scena
 #tb-sub { font: 600 9px var(--font-head); color: #a8876a; letter-spacing: .8px; text-transform: uppercase; line-height: 1.2; margin-top: 2px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 #tb-history-details { width: 100%; margin-top: 4px; color: #c7b08c; font: 600 8px/1.25 var(--font-body); text-align: left; overflow-wrap: anywhere; }
 #tb-stats, #tb-affixes, #tb-resists { margin-top: 2px; }
-#tb-history-controls { width: 100%; display: flex; align-items: center; justify-content: space-between; gap: 3px; margin-top: 5px; padding-top: 4px; border-top: 1px solid rgba(133,93,48,.55); cursor: default; }
-#tb-history-controls button { flex: 0 1 auto; min-width: 0; padding: 3px 5px; border: 1px solid rgba(145,105,54,.75); color: #e8d2a6; background: linear-gradient(#392719,#160e09); font: 700 8px/1.2 var(--font-head); white-space: nowrap; }
+#tb-history-controls { width: 100%; display: flex; align-items: center; justify-content: center; gap: 8px; margin-top: 5px; padding-top: 4px; border-top: 1px solid rgba(133,93,48,.55); cursor: default; }
+#tb-history-controls button { flex: 0 0 26px; width: 26px; height: 22px; display: inline-flex; align-items: center; justify-content: center; padding: 0; border: 1px solid rgba(145,105,54,.75); border-radius: 2px; color: #e8d2a6; background: linear-gradient(#392719,#160e09); font: 700 10px/1 var(--font-head); }
 #tb-history-controls button:hover:not(:disabled) { border-color: var(--gold-bright); color: #fff1cf; }
 #tb-history-controls button:disabled { opacity: .4; cursor: default; }
-#tb-history-position { flex: 0 0 auto; color: #c6a96e; font: 700 8px/1 var(--font-head); white-space: nowrap; }
+#tb-history-position { flex: 0 0 auto; min-width: 38px; color: #c6a96e; font: 700 8px/1 var(--font-head); text-align: center; white-space: nowrap; }
 #target-box.r-champion #tb-name { color: #8ab4ff; } #target-box.r-champion #tb-fill { background: linear-gradient(#5a9aff, #1a3a8a); }
 #target-box.r-unique #tb-name { color: #ffc860; } #target-box.r-unique #tb-fill { background: linear-gradient(#f0b040, #8a5a08); }
 #target-box.r-boss #tb-name { color: #ff7a4a; }
