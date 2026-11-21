@@ -29,6 +29,7 @@ export const CharacterPortrait = {
   lastArtKey: '',
   artRetryAt: 0,
   lastVitals: '',
+  lastVitalsRoot: null,
   resizeListener: null,
   init(host) {
     if (this.root?.isConnected) return;
@@ -40,6 +41,10 @@ export const CharacterPortrait = {
     host.appendChild(root);
     this.root = root;
     this.artCanvas = root.querySelector('[data-portrait-art]');
+    this.lastArtKey = '';
+    this.artRetryAt = 0;
+    this.lastVitals = '';
+    this.lastVitalsRoot = null;
     root.querySelector('[data-portrait-lock]').addEventListener('click', (e) => {
       e.stopPropagation(); const c = config(); c.locked = !c.locked; this.applySettings(); saveSettings();
     });
@@ -91,6 +96,7 @@ export const CharacterPortrait = {
     this.root.classList.toggle('locked', !!c.locked);
     this.root.style.width = `${BASE_W * size / 100}px`;
     this.root.style.height = `${BASE_H * size / 100}px`;
+    this.root.style.setProperty('--portrait-scale', String(size / 100));
     this.root.style.left = `${clamp(x, 0, Math.max(0, innerWidth - BASE_W * size / 100))}px`;
     this.root.style.top = `${clamp(y, 0, Math.max(0, innerHeight - BASE_H * size / 100))}px`;
     const lock = this.root.querySelector('[data-portrait-lock]');
@@ -170,8 +176,9 @@ export const CharacterPortrait = {
     const resourceText = extra ? `${extra.label} ${fmtInt(extra.current)} / ${fmtInt(extra.max)}` : '';
     const resourcePct = extra ? `${clamp(extra.max ? extra.current / extra.max * 100 : 0, 0, 100)}%` : '0%';
     const vitalKey = `${name}|${level}|${health}|${mana}|${healthPct}|${manaPct}|${extra?.kind || ''}|${resourceText}|${resourcePct}`;
-    if (vitalKey === this.lastVitals) return;
+    if (vitalKey === this.lastVitals && this.lastVitalsRoot === this.root) return;
     this.lastVitals = vitalKey;
+    this.lastVitalsRoot = this.root;
     this.root.querySelector('[data-portrait-name]').textContent = name;
     this.root.querySelector('[data-portrait-level]').textContent = level;
     this.root.querySelector('[data-portrait-health-fill]').style.width = healthPct;
@@ -180,6 +187,7 @@ export const CharacterPortrait = {
     this.root.querySelector('[data-portrait-mana-text]').textContent = mana;
     const resource = this.root.querySelector('[data-portrait-resource]');
     resource.className = `character-portrait-meter${extra ? ` ${extra.kind}` : ''}${extra ? '' : ' hidden'}`;
+    resource.setAttribute('aria-hidden', extra ? 'false' : 'true');
     resource.setAttribute('aria-label', extra ? `${extra.label}: ${fmtInt(extra.current)} of ${fmtInt(extra.max)}` : '');
     this.root.querySelector('[data-portrait-resource-fill]').style.width = resourcePct;
     this.root.querySelector('[data-portrait-resource-text]').textContent = resourceText;
