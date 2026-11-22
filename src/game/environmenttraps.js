@@ -1,7 +1,7 @@
 // Environment-specific physical hazards. Their dedicated atlas fixtures are visual-only; gameplay remains in this module.
 import { hit } from './combat.js';
 import { Clutter } from './clutter.js';
-import { isoX, isoY } from '../core/view.js';
+import { isoX, isoY, HW, HH } from '../core/view.js';
 import { sfx } from '../core/audio.js';
 import { sparkle, screenAngle } from '../gfx/vfx.js';
 import { A } from '../core/assets.js';
@@ -78,6 +78,10 @@ export function trapArtFor(kind, variant = '') {
 // inherit their parent environment profile and receive a color/material variation from their variant id.
 const profiles = {};
 const assign = (ids, traps) => ids.forEach((id) => { profiles[id] = Object.freeze([...traps]); });
+// These fixtures lie flat in the walkable plane. Draw them beneath actors so
+// their broad atlas cells cannot paint over feet or sprites in the depth pass.
+export const ENVIRONMENT_TRAP_GROUND_FIXTURES = Object.freeze(['plate', 'cracked', 'vent', 'flame', 'spikes', 'sand', 'fissure', 'rune', 'ice', 'frostVent']);
+const GROUND_TRAP_FIXTURES = new Set(ENVIRONMENT_TRAP_GROUND_FIXTURES);
 assign(['catacombs','sunken','blood','ashen','gilded','shadow','obsidian','flesh','serpent','necropolis','cathedral'], ['pressurePlate','dartTrap','swingingBlade','boneSpikes','cursedAltar']);
 assign(['castle_keep','castle','shattered','library','throne'], ['pressurePlate','dartTrap','swingingBlade','spikeTrap','destructible']);
 assign(['ice_temple','frozen','snowy_summit'], ['fallingIcicles','crackingIce','freezingVent','spikeTrap','destructible']);
@@ -181,6 +185,7 @@ function makeSite(world, kind, x, y, id, rng, variant, mount = null) {
   const fixture = {
     kind: 'environmentTrapFixture', trapKind: type.fixture,
     x: x + (mount?.wallX || 0) * 0.38, y: y + (mount?.wallY || 0) * 0.38, z: 0, tint, material: materialFor(variant),
+    groundTrapLayer: GROUND_TRAP_FIXTURES.has(type.fixture),
     active: false, trapState: 'idle', id, trapSheet: art.sheet, trapRow: art.row,
     trapCellW: image.naturalWidth / columns, trapCellH: image.naturalHeight / rows,
     k: world.tileset?.k || 0.4, flip: mount ? (mount.wallX === 1 || mount.wallY === -1) : rng() < 0.5,
@@ -194,6 +199,7 @@ function makeSite(world, kind, x, y, id, rng, variant, mount = null) {
       const plateRows = plateArt.sheet === 'mechanical' || plateArt.sheet === 'elemental' ? 6 : plateArt.sheet === 'nature' ? 9 : 12;
       site.triggerFixture = {
         kind: 'environmentTrapFixture', trapKind: 'plate', x, y, z: 0, tint, material: materialFor(variant), active: false,
+        groundTrapLayer: true,
         trapState: 'idle', trapSheet: plateArt.sheet, trapRow: plateArt.row,
         trapCellW: plateImage.naturalWidth / 4, trapCellH: plateImage.naturalHeight / plateRows,
         k: world.tileset?.k || 0.4, flip: false,
@@ -368,15 +374,52 @@ export function setupEnvironmentalTraps(world, start) {
       return true;
     },
     draw(ctx) {
-      for (const site of sites) if (site.warning > 0 && !site.disabled) {
-        const x = isoX(site.x, site.y), y = isoY(site.x, site.y), t = 0.2 + 0.12 * Math.sin(world.time * 18);
-        ctx.save(); ctx.globalAlpha = t; ctx.fillStyle = site.tint; ctx.strokeStyle = site.tint; ctx.lineWidth = 2;
-        ctx.beginPath(); ctx.ellipse(x, y, 26, 13, 0, 0, Math.PI * 2); ctx.fill(); ctx.stroke(); ctx.restore();
-      }
       for (const site of sites) if (site.dotLeft > 0 && !site.disabled) {
         const x = isoX(site.x, site.y), y = isoY(site.x, site.y);
         ctx.save(); ctx.globalAlpha = 0.11; ctx.fillStyle = site.tint;
-        ctx.beginPath(); ctx.ellipse(x, y, 25, 13, 0, 0, Math.PI * 2); ctx.fill(); ctx.restore();
+        ctx.beginPath(); ctx.ellipse(x, y, HW * 1.5, HH * 1.5, 0, 0, Math.PI * 2); ctx.fill(); ctx.restore();
+      }
+    },
+    // Draw warnings over spell decals and ground auras, but before the sorted
+    // actor pass. The marker uses the same radius or firing lane as collision.
+    drawAfterEffects(ctx) {
+      for (const site of sites) {
+        if (site.warning <= 0 || site.disabled) continue;
+        ctx.save();
+        const pulse = 0.78 + 0.18 * Math.sin(world.time * 18);
+        ctx.globalAlpha = 0.22;
+        ctx.fillStyle = site.tint;
+        ctx.strokeStyle = site.tint;
+        ctx.lineWidth = 2.5;
+        if (site.kind === 'dartTrap') {
+          const sideX = -site.fireY * 0.8, sideY = site.fireX * 0.8;
+          const endX = site.x + site.fireX * site.fireRange, endY = site.y + site.fireY * site.fireRange;
+          const points = [
+            [site.x + sideX, site.y + sideY], [endX + sideX, endY + sideY],
+            [endX - sideX, endY - sideY], [site.x - sideX, site.y - sideY],
+          ].map(([x, y]) => [isoX(x, y), isoY(x, y)]);
+          ctx.beginPath(); ctx.moveTo(points[0][0], points[0][1]);
+          for (let i = 1; i < points.length; i++) ctx.lineTo(points[i][0], points[i][1]);
+          ctx.closePath(); ctx.fill();
+          ctx.globalAlpha = pulse;
+          ctx.setLineDash([8, 5]);
+          ctx.beginPath(); ctx.moveTo(isoX(site.x, site.y), isoY(site.x, site.y));
+          ctx.lineTo(isoX(endX, endY), isoY(endX, endY)); ctx.stroke();
+          ctx.setLineDash([]);
+          ctx.globalAlpha = pulse;
+          ctx.beginPath(); ctx.moveTo(points[0][0], points[0][1]);
+          for (let i = 1; i < points.length; i++) ctx.lineTo(points[i][0], points[i][1]);
+          ctx.closePath(); ctx.stroke();
+        } else {
+          const radius = site.type.trigger === 'pressure' ? 0.9 : 1.5;
+          const x = isoX(site.x, site.y), y = isoY(site.x, site.y);
+          ctx.beginPath(); ctx.ellipse(x, y, HW * radius, HH * radius, 0, 0, Math.PI * 2); ctx.fill();
+          ctx.globalAlpha = pulse; ctx.beginPath();
+          ctx.ellipse(x, y, HW * radius, HH * radius, 0, 0, Math.PI * 2); ctx.stroke();
+          ctx.globalAlpha = pulse * 0.65; ctx.lineWidth = 1.2;
+          ctx.beginPath(); ctx.ellipse(x, y, HW * radius * 0.92, HH * radius * 0.92, 0, 0, Math.PI * 2); ctx.stroke();
+        }
+        ctx.restore();
       }
     },
   });

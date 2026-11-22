@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 import { hit } from '../../src/game/combat.js';
 import { BIOMES, BETA_BIOMES, BREACH_BIOME, SCORPION_KING_PYRAMID_BIOME, TOWN_BIOME, ACT2_TOWN_BIOME } from '../../src/data/biomes.js';
-import { ENVIRONMENT_TRAP_PROFILES, ENVIRONMENT_TRAP_TYPES, setupEnvironmentalTraps, trapArtFor, trapDamageAmount, trapDamageScale } from '../../src/game/environmenttraps.js';
+import { ENVIRONMENT_TRAP_GROUND_FIXTURES, ENVIRONMENT_TRAP_PROFILES, ENVIRONMENT_TRAP_TYPES, setupEnvironmentalTraps, trapArtFor, trapDamageAmount, trapDamageScale } from '../../src/game/environmenttraps.js';
 import { A } from '../../src/core/assets.js';
 
 const ATLAS_DIMENSIONS = { mechanical: [1024, 1536, 6], elemental: [1024, 1536, 6], nature: [1182, 1330, 9], 'environment-variations': [724, 2172, 12], 'dart-wall': [1312, 1200, 4] };
@@ -24,6 +24,25 @@ test('trap definitions have a physical fixture and bounded damage mode', () => {
     assert.ok(['direct', 'dot'].includes(trap.mode), `${id} has unsupported damage mode`);
     assert.ok(trap.damage > 0 && trap.damage <= 0.075, `${id} damage must be modest and capped`);
   }
+});
+
+test('flat trap fixtures and warnings use the intended ground and depth layers', async () => {
+  const ground = new Set(ENVIRONMENT_TRAP_GROUND_FIXTURES);
+  for (const type of ['pressurePlate', 'collapsingFloor', 'poisonVent', 'flameJet', 'spikeTrap', 'quicksand', 'lavaFissure', 'explosiveRune', 'crackingIce', 'freezingVent']) {
+    assert.ok(ground.has(ENVIRONMENT_TRAP_TYPES[type].fixture), `${type} is drawn on the ground layer`);
+  }
+  for (const type of ['swingingBlade', 'magicalTurret', 'fallingIcicles', 'lightningHazard', 'rollingBoulder', 'poisonousPlant', 'thornTrap', 'cursedAltar', 'boneSpikes', 'unstableCrystal', 'dartTrap']) {
+    assert.ok(!ground.has(ENVIRONMENT_TRAP_TYPES[type].fixture), `${type} remains depth-sorted as an elevated or moving object`);
+  }
+  const source = await readFile(new URL('../../src/game/render.js', import.meta.url), 'utf8');
+  const groundFixtures = source.indexOf('if (!fixture?.groundTrapLayer) continue;');
+  const groundWarnings = source.indexOf('if (h.drawAfterEffects) h.drawAfterEffects(ctx);');
+  const groundEffects = source.indexOf("drawEffects(ctx, 'ground');");
+  const actors = source.indexOf('enqueue(c.x + c.y + (c.fly ? 0.2 : 0), 6, c);');
+  const sortedProps = source.indexOf('if (pr.groundTrapLayer) continue;');
+  assert.ok(groundFixtures >= 0 && groundFixtures < actors, 'flat trap sprites are rendered before actors');
+  assert.ok(groundEffects >= 0 && groundEffects < groundWarnings && groundWarnings < actors, 'warning shapes are above ground effects but below actors');
+  assert.ok(sortedProps >= 0, 'ground fixtures are excluded from the later depth-sorted pass');
 });
 
 test('every trap uses a dedicated physical sprite atlas and environment variants use distinct art rows', () => {

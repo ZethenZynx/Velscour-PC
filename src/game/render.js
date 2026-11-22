@@ -1015,6 +1015,16 @@ export function renderWorld(ctx, world) {
   const fc = world.floorNow;
   drawDecals(ctx, vr, world.tower || world.cave ? () => false : (d, px, py) => decalStamped(fc, d, px, py)); // the tower turns: its blood can't bake
   drawMapEdgeFade(ctx, world, camT, tx0, ty0, tx1, ty1);
+  // Flat trap fixtures sit on the terrain plane. Draw them after floor decals,
+  // but before corpses, actors, and the depth-sorted elevated mechanisms.
+  for (const site of world.environmentTraps || []) {
+    for (const fixture of [site.fixture, site.triggerFixture]) {
+      if (!fixture?.groundTrapLayer) continue;
+      const x = isoX(fixture.x, fixture.y), y = isoY(fixture.x, fixture.y) - (fixture.z || 0);
+      if (x < vr.x0 - 100 || x > vr.x1 + 100 || y < vr.y0 - 100 || y > vr.y1 + 140) continue;
+      drawProp(ctx, fixture, 1);
+    }
+  }
   const tall = map.hgt && map.tallOcclusion;
   for (const c of world.corpses) {
     if (tall && hiddenBehind(map, c.x, c.y)) continue; // behind the Castle's walls
@@ -1048,6 +1058,9 @@ export function renderWorld(ctx, world) {
     else top.push(h);
   }
   drawEffects(ctx, 'ground');
+  // Warning geometry remains readable above ground spell decals while still
+  // sitting under creatures and the player in the normal depth pass.
+  for (const h of world.hazards) if (h.drawAfterEffects) h.drawAfterEffects(ctx);
 
   // depth sorted pass
   const p = world.player;
@@ -1126,6 +1139,7 @@ export function renderWorld(ctx, world) {
     px0 = (xs0 / HW + ys0 / HH) / 2; px1 = (xs1 / HW + ys1 / HH) / 2; py0 = (ys0 / HH - xs1 / HW) / 2; py1 = (ys1 / HH - xs0 / HW) / 2;
   }
   for (const pr of world.props) {
+    if (pr.groundTrapLayer) continue; // already drawn on the ground plane above
     if (pr.x < px0 || pr.x > px1 || pr.y < py0 || pr.y > py1) continue;
     const px = isoX(pr.x, pr.y), py = isoY(pr.x, pr.y);
     // Tall outdoor trees are grounded well below their canopy; cull by the full
