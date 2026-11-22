@@ -1914,8 +1914,10 @@ body.portrait #panels.vendor-trio-uniform {
 
 .seizure-warning-toggle {
   display: flex;
+  flex-direction: column;
   justify-content: center;
   align-items: center;
+  gap: 8px;
   margin: 14px 0 18px;
 }
 

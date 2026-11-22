@@ -8,6 +8,8 @@
 import { A } from '../core/assets.js';
 import { initAudio, audioReady, playMusic, primeMusic, musicClock, seekMusic } from '../core/audio.js';
 import { rand, randi, clamp } from '../core/util.js';
+import { shouldShowSeizureWarning } from './seizurewarning.mjs';
+import { G } from '../state.js';
 
 const FLAME = ['#fffbe8', '#ffe264', '#ffa218', '#ff6408', '#e22e06', '#991404', '#440802'];
 export const INTRO_DELAY = 0, HIT = 6.88, FADE0 = -1.5;   // song-time seconds (FADE0 < 0: before the song starts)
@@ -86,7 +88,7 @@ export function attachTitleFx(screen, logoEl, els = {}) {
   }
   function begin() {   // called inside the tap: show the credits while the title song buffers
     if (phase !== 'gate') return;
-    if (els.onAwaken && !window.VELSCOUR_TEST_MENU) {
+    if (els.onAwaken && shouldShowSeizureWarning(G.settings) && !window.VELSCOUR_TEST_MENU) {
       phase = 'warning';
       screen.classList.remove('title-gated');
       els.onAwaken(() => {

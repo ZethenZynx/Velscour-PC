@@ -27,6 +27,7 @@ export const G = {
     gorePresetVersion: GORE_PRESET_VERSION,
     goreCustomEnabled: false,
     goreCustomLimit: 150,
+    skipSeizureWarning: false, // global acknowledgement preference; false shows the warning on launch
     dmgNumbers: true,
     shake: true,
     reduceFlashing: false, // reduce full-screen flashes, flashbangs, and rapid hit strobing

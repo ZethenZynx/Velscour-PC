@@ -25,6 +25,7 @@ import { MOUSE_CURSOR_DEFAULTS, refreshMouseCursor } from './mousecursor.js';
 import { CharacterPortrait } from './characterportrait.js';
 import { GORE_PERFORMANCE_WARNING_LIMIT, GORE_PRESET_VERSION, GORE_PRESETS, MAX_CUSTOM_GORE_LIMIT, normalizeGorePreset, goreLimit } from '../gfx/goresettings.mjs';
 import { applyGoreSettings } from '../gfx/vfx.js';
+import { setSkipSeizureWarning } from './seizurewarning.mjs';
 
 let current = null;
 let currentCleanup = null;
@@ -252,6 +253,10 @@ export function showSeizureWarningSplash(onContinue) {
         <input type="checkbox" id="seizure-reduce-flashing-checkbox" ${G.settings.reduceFlashing ? 'checked' : ''}>
         <span>Reduce flashing &amp; strobing visual effects</span>
       </label>
+      <label class="seizure-toggle-label">
+        <input type="checkbox" id="seizure-skip-warning-checkbox" ${G.settings.skipSeizureWarning ? 'checked' : ''}>
+        <span>Don't show this warning again</span>
+      </label>
     </div>
     <div class="seizure-warning-prompt">${G.touch ? 'Tap anywhere to continue' : 'Click anywhere to continue'}</div>
   `;
@@ -260,6 +265,7 @@ export function showSeizureWarningSplash(onContinue) {
   document.body.appendChild(splash);
 
   const checkbox = card.querySelector('#seizure-reduce-flashing-checkbox');
+  const skipWarningCheckbox = card.querySelector('#seizure-skip-warning-checkbox');
   if (checkbox) {
     checkbox.onchange = (e) => {
       e.stopPropagation();
@@ -277,6 +283,8 @@ export function showSeizureWarningSplash(onContinue) {
     if (closed || performance.now() < allowDismissAt) return;
     if (e && e.target && (e.target === checkbox || e.target.closest('.seizure-toggle-label'))) return;
     closed = true;
+    setSkipSeizureWarning(G.settings, skipWarningCheckbox?.checked);
+    saveSettings();
     window.removeEventListener('keydown', onKeyDown);
     splash.classList.add('fading');
     setTimeout(() => {
@@ -546,6 +554,7 @@ export function settingsDialog() {
       <label>Pause while menus open</label><input type="checkbox" data-k="pauseMenus" ${st.pauseMenus !== false ? 'checked' : ''}>
       <label title="Keep previously seen cutscenes at normal speed">Don't fast-forward seen cutscenes</label><input type="checkbox" data-k="noSkipCine" ${st.noSkipCine ? 'checked' : ''}>
       <label title="Immediately skip cutscenes and keep the camera tracking you at your chosen zoom">Skip cutscenes and camera transitions</label><input type="checkbox" data-k="skipCutscenes" ${st.skipCutscenes ? 'checked' : ''}>
+      <label title="When enabled, the photosensitive seizure warning is shown the next time the game launches">Don't show the photosensitivity warning again</label><input type="checkbox" data-k="skipSeizureWarning" ${st.skipSeizureWarning ? 'checked' : ''}>
       <label title="Summons, totems and turrets on your skill bar are cast again the moment one is missing (timed ones only with an enemy near)">Auto-cast summons</label><input type="checkbox" data-k="autoSummon" ${st.autoSummon !== false ? 'checked' : ''}>
       <label>Auto-pickup items</label><input type="checkbox" data-k="autoLoot" ${st.autoLoot ? 'checked' : ''}>
       <label title="Automatically equip eligible gear from drops and vendor purchases when its matching equipment slot is empty">Auto-equip gear in empty slots</label><input type="checkbox" data-k="autoEquip" ${st.autoEquip !== false ? 'checked' : ''}>
