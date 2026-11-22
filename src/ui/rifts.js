@@ -57,7 +57,7 @@ export const Rifts = {
       title: `Rift Tier ${R.tier} Closed`, cls: 'rift-dialog rift-results',
       html: `<div class="rr-time"><b>${fmtTime(time)}</b><span>of ${fmtTime(R.limit)} · ${Math.round((time / R.limit) * 100)}% of the clock</span></div>
         <ul class="rr-list"><li>+${jump} tier${jump > 1 ? 's' : ''} opened: <b>Tier ${o.next}</b> next</li><li>+${marks} Infernal Mark${marks === 1 ? '' : 's'}</li>${r.rarity !== undefined ? `<li>The Guardian's hoard: ${/^[AEIOU]/.test(RARITY[r.rarity].name) ? 'an' : 'a'} <b style="color:${RARITY[r.rarity].color}">${RARITY[r.rarity].name}</b> prize${r.first ? ' (first clear of the tier)' : ''}</li>` : ''}${r.best ? '<li><b style="color:#ffd860">A new best</b> for your class on this account' + (board ? `: ${board}` : '') + '</li>' : r.personal ? '<li>A new best time for this tier</li>' : ''}${r.board === 'barred' ? '<li class="dim">This hero took Velscour\'s gift: it is never listed on the Honour Board</li>' : ''}</ul>`,
-      buttons: [{ label: 'Return to Town', fn: o.onTown }, { label: `On to Tier ${o.next}`, cls: 'red', fn: o.onNext }],
+      buttons: [{ label: 'Cancel' }, { label: 'Return to Town', fn: o.onTown }, { label: `On to Tier ${o.next}`, cls: 'red', fn: o.onNext }],
     });
   },
   /** The honour board shows archived online runs and this browser's own best. */

@@ -37,6 +37,7 @@ const breachBuild = gameSource.slice(gameSource.indexOf('  buildBreach('), gameS
 const breachExit = gameSource.slice(gameSource.indexOf('  breachExit(world)'), gameSource.indexOf('  breachDeath(src)'));
 assert.match(breachBuild, /exit\.label = 'Exit'/, 'every Breach tier uses the simple Exit portal label');
 assert.doesNotMatch(breachBuild, /onward or home/i, 'the Breach exit does not advertise unavailable onward travel');
-assert.match(breachExit, /buttons:\s*\[\{ label: 'Return to Town'/, 'the completed Breach floor offers the real return destination');
+assert.match(breachExit, /label: 'Return to Town'/, 'the completed Breach floor offers the real return destination');
+assert.match(breachExit, /label: 'Cancel'/, 'the player can dismiss the completion window without leaving the floor');
 assert.doesNotMatch(breachExit, /Descend|Next Floor|Onward/i, 'the Breach completion dialog has no unavailable onward option');
 console.log('Passed Eternal Breach exit label and available-destination checks.');

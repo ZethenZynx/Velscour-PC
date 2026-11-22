@@ -1729,7 +1729,7 @@ export const game = {
               this.enterTown();
             }
           },
-          { label: 'Stay in Throne Room' }
+          { label: 'Cancel' }
         ],
       });
     } else {
@@ -1745,26 +1745,35 @@ export const game = {
    */
   portalChoice(world) {
     const c = G.char, next = Math.min(MAX_DEPTH, Math.max(1, Math.floor(Number(world.depth) || 1)) + 1);
+    const firstClear = !c?.cleared?.[world.depth];
     if (c) {
       c.cleared[world.depth] = true;
       c.deepest = Math.max(c.deepest || 0, world.depth);
       c.depth = next;
-      this.brokeThrough(world.depth);
+      // Boss/scenario callbacks normally award completion rewards already.
+      // Reopening this choice after Cancel must not pay those rewards again.
+      if (firstClear) this.brokeThrough(world.depth);
       this.autosave();
     }
-    const ids = biomeChoices(c, next, 3);
-    // a Town Commission waiting for a biome: its portal turns up among the three more often (game/commissions.js)
-    const eligible = new Set(biomesForDepth(next));
-    const want = wantedBiomes(c).filter((id) => eligible.has(id) && BIOME_BY_ID[id] && !ids.includes(id) && id !== c.lastBiome);
-    if (want.length && ids.length && next !== FINAL_DEPTH && Math.random() < 0.4) ids[ids.length - 1] = want[Math.floor(Math.random() * want.length)];
-    const cards = ids.map((id) => {
-      const biome = BIOME_BY_ID[id] || BIOME_BY_ID.catacombs;
-      const comm = commState(c).open.find((e) => { const ch = LINE_BY_ID[e.id] && LINE_BY_ID[e.id].chapters[e.ch]; return ch && ch.biome === biome.id; });
-      const sameEnvironment = c.affixBiome === biome.id;
-      const affixes = next <= FINAL_DEPTH ? [] : rollDungeonAffixesForStreak(c.affixStreak || 0, Math.random, sameEnvironment ? c.dungeonAffixes || [] : [], !sameEnvironment);
-      return { id: biome.id, biome, affixes, comm: comm && LINE_BY_ID[comm.id].name };
-    });
-    let sel = 0;
+    // Preserve destinations, affixes and selection after Cancel so reopening
+    // the still-present exit presents the same choices.
+    let choiceState = world.completionPortalChoice;
+    if (!choiceState || choiceState.depth !== world.depth || choiceState.next !== next || choiceState.used) {
+      const ids = biomeChoices(c, next, 3);
+      const eligible = new Set(biomesForDepth(next));
+      const want = wantedBiomes(c).filter((id) => eligible.has(id) && BIOME_BY_ID[id] && !ids.includes(id) && id !== c.lastBiome);
+      if (want.length && ids.length && next !== FINAL_DEPTH && Math.random() < 0.4) ids[ids.length - 1] = want[Math.floor(Math.random() * want.length)];
+      const cards = ids.map((id) => {
+        const biome = BIOME_BY_ID[id] || BIOME_BY_ID.catacombs;
+        const comm = commState(c).open.find((e) => { const ch = LINE_BY_ID[e.id] && LINE_BY_ID[e.id].chapters[e.ch]; return ch && ch.biome === biome.id; });
+        const sameEnvironment = c.affixBiome === biome.id;
+        const affixes = next <= FINAL_DEPTH ? [] : rollDungeonAffixesForStreak(c.affixStreak || 0, Math.random, sameEnvironment ? c.dungeonAffixes || [] : [], !sameEnvironment);
+        return { id: biome.id, biome, affixes, comm: comm && LINE_BY_ID[comm.id].name };
+      });
+      choiceState = world.completionPortalChoice = { depth: world.depth, next, cards, selected: 0, used: false };
+    }
+    const cards = choiceState.cards;
+    let sel = Math.max(0, Math.min(cards.length - 1, choiceState.selected | 0));
     const tag = (cd) => (cd.biome.id === 'throne' ? (next === FINAL_DEPTH ? '<b style="color:#ff4020">Demon Lord Velscour awaits</b>' : 'Guardian') : cd.biome.id === 'skyship' ? 'Sky battle' : cd.biome.sea ? 'Sea battle' : cd.biome.id === 'dark_forest' ? 'Guardian · Optional labyrinths' : cd.biome.id === 'castle' ? 'Castle Guardian' : cd.biome.id === 'overworld' ? 'Forsaken Guardian' : cd.biome.overworld ? 'Overworld trial' : isRaidDepth(next) ? '<b style="color:#ff6030">BOSS ROOM</b>' : 'Dungeon');
     const affixLine = (cd) => `<span class="pc-affixes"><b>Affixes</b>${cd.affixes.length ? cd.affixes.map((id) => {
       const affix = DUNGEON_AFFIX_BY_ID[id];
@@ -1774,8 +1783,10 @@ export const game = {
       <div class="pc-row">${cards.map((cd, i) => `<button type="button" class="pc-card${i === sel ? ' sel' : ''}" data-i="${i}" style="--pc:${cd.biome.torch || '#ff8040'}"><i class="pc-swirl"></i><b class="pc-name">${escapeHtml(cd.biome.name)}</b><span class="pc-tag">${tag(cd)}</span>${cd.comm ? `<span class="pc-commission" style="color:#8fe0ff"><b>Commission</b>${escapeHtml(cd.comm)}</span>` : ''}${affixLine(cd)}</button>`).join('')}</div>
       `;
     const go = (town) => {
+      if (choiceState.used) return;
+      choiceState.used = true;
       const cd = cards[sel];
-      if (!c.cleared[world.depth]) advanceAffixStreak(c, world.depth);
+      if (firstClear) advanceAffixStreak(c, world.depth);
       c.cleared[world.depth] = true;
       c.deepest = Math.max(c.deepest || 0, world.depth);
       c.depth = next; c.nextBiome = cd.id; c.affixBiome = cd.id; takeBiome(c, cd.id, next);
@@ -1786,12 +1797,12 @@ export const game = {
       else this.enterDungeon();
     };
     const d = UI.dialog({
-      title: `Depth ${world.depth} Cleared`, html, closable: false, cls: 'portal-choice',
-      buttons: [{ label: 'Return to Town', fn: () => go(true) }, { label: `Descend to Depth ${next}`, cls: 'red', fn: () => go(false) }],
+      title: `Depth ${world.depth} Cleared`, html, closable: true, cls: 'portal-choice',
+      buttons: [{ label: 'Cancel' }, { label: 'Return to Town', fn: () => go(true) }, { label: `Descend to Depth ${next}`, cls: 'red', fn: () => go(false) }],
     });
     const btns = [...d.box.querySelectorAll('.pc-card')];
     btns.forEach((b) => b.addEventListener('click', () => {
-      sel = +b.dataset.i; sfx('ui');
+      sel = +b.dataset.i; choiceState.selected = sel; sfx('ui');
       btns.forEach((x) => x.classList.toggle('sel', x === b));
     }));
   },
@@ -1953,7 +1964,7 @@ export const game = {
     UI.dialog({
       title: `Breach Floor ${floor} Sealed`,
       html: `<p>The Heart is still. Return to town to continue your campaign at Depth <b>${depth}</b>.</p>`,
-      buttons: [{ label: 'Return to Town', cls: 'red', fn: () => { sfx('portal'); this.enterTown(); } }],
+      buttons: [{ label: 'Cancel' }, { label: 'Return to Town', cls: 'red', fn: () => { sfx('portal'); this.enterTown(); } }],
     });
   },
 
@@ -2252,9 +2263,10 @@ export const game = {
       UI.dialog({
         title: `Unbound Checkpoint: Floor ${floor} Cleared`,
         html: `<p>A resonant checkpoint awakens! Your progress to <b style="color:#20e0ff">Floor ${next}</b> is secured.</p><p class="dim">You may return to town freely or press deeper into the Unbound Depths without spending a key.</p>`,
-        closable: false,
+        closable: true,
         cls: 'portal-choice',
         buttons: [
+          { label: 'Cancel' },
           {
             label: 'Return to Town',
             fn: () => {
