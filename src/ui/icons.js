@@ -8,6 +8,7 @@ import { artIcon } from '../core/classart.js';
 import { itemLook } from '../core/gearart.js';
 import { heldIconKey } from '../gfx/heldart.js';
 import { SUMMONS } from '../data/summons.js';
+import { SKILLS } from '../data/skills.js';
 import { itemIcon } from '../game/loot.js';
 import { enemyImage } from '../core/enemyart.js';
 import { NOTES } from '../data/notation.js';
@@ -359,6 +360,115 @@ export function itemIconURL(item) {
   let u = itemUrlCache.get(key);
   if (!u) { u = itemIcon(item, 48).toDataURL(); itemUrlCache.set(key, u); }
   return u;
+}
+
+const buffIconCache = new Map();
+
+/** Resolve the source artwork for a buff. New buff producers can provide iconSkill, iconItem or iconKey. */
+export function resolveBuffIcon(buff) {
+  const item = buff?.iconItem || buff?.sourceItem || buff?.equipmentItem;
+  if (item?.type) return { type: 'item', item };
+  const id = String(buff?.id || '');
+  const abilityId = buff?.iconSkill || (SKILLS[id] ? id : id.startsWith('aura_') && SKILLS[id.slice(5)] ? id.slice(5) : '');
+  if (abilityId && SKILLS[abilityId]) return { type: 'skill', skill: SKILLS[abilityId] };
+  if (id === 'fury' || buff?.potionKind) return { type: 'item', item: { type: 'potion', kind: buff.potionKind || 'fury' } };
+  const semanticKey = buff?.iconKey || (buff?.worldObjectId ? `world:${buff.worldObjectId}` : id.startsWith('shrine_') ? `shrine:${id.slice(7)}` : id.startsWith('astro_') ? `constellation:${id.slice(6)}` : id.startsWith('sig_') ? `signature:${id.slice(4)}` : '');
+  return { type: 'effect', key: semanticKey || `${id}:${buff?.name || ''}`, element: buff?.el || 'phys', color: buff?.color || '', name: buff?.name || id, curse: !!buff?.curse };
+}
+
+/** Small, cached Velscour-style effect emblems for buffs without a dedicated item or skill icon. */
+function effectBuffIcon(spec, size = 64) {
+  const key = `${spec.key}|${spec.element}|${spec.color}|${spec.curse ? 1 : 0}|${size}`;
+  const old = buffIconCache.get(key);
+  if (old) return old;
+  const c = makeCanvas(size, size), x = c.getContext('2d'), E = elem(spec.element), s = size / 64;
+  const seedText = String(spec.key || spec.name || 'effect');
+  let seed = 2166136261;
+  for (let i = 0; i < seedText.length; i++) seed = Math.imul(seed ^ seedText.charCodeAt(i), 16777619) >>> 0;
+  const motifKey = seedText.toLowerCase();
+  const color = spec.curse ? '#e85a66' : spec.color || E.glow, core = spec.curse ? '#ffb0a8' : E.core;
+  const bg = x.createRadialGradient(size * 0.5, size * 0.42, 2, size * 0.5, size * 0.5, size * 0.72);
+  bg.addColorStop(0, shade(E.dark, 0.1)); bg.addColorStop(0.72, '#171015'); bg.addColorStop(1, '#050405');
+  x.fillStyle = bg; x.fillRect(0, 0, size, size);
+  x.save(); x.translate(size / 2, size / 2); x.scale(s, s); x.lineJoin = 'round'; x.lineCap = 'round';
+  x.strokeStyle = color; x.fillStyle = color; x.lineWidth = 2.5; x.shadowColor = color; x.shadowBlur = 4;
+  const path = (points, close = false, fill = false) => { x.beginPath(); points.forEach(([px, py], i) => i ? x.lineTo(px, py) : x.moveTo(px, py)); if (close) x.closePath(); fill ? x.fill() : x.stroke(); };
+  if (/constellation:crown/.test(motifKey)) {
+    path([[-24,14],[-20,-12],[-8,2],[0,-22],[8,2],[20,-12],[24,14]], false, false);
+    path([[-24,14],[24,14],[21,22],[-21,22]], true, true);
+    x.shadowBlur=0; x.fillStyle='#fff1c5'; for(const px of [-20,0,20]){x.beginPath();x.arc(px,14,2.5,0,TAU);x.fill();}
+  } else if (/constellation:twins/.test(motifKey)) {
+    for (const px of [-12,12]) { x.beginPath(); x.arc(px,0,9,0,TAU); x.fill(); x.shadowBlur=0; x.strokeStyle='#e5fff6'; x.lineWidth=2; x.beginPath(); x.arc(px,0,14,0,TAU); x.stroke(); x.shadowBlur=4; x.strokeStyle=color; }
+    path([[-5,-17],[0,-23],[5,-17]],false,false); path([[-5,17],[0,23],[5,17]],false,false);
+  } else if (/constellation:serpent/.test(motifKey)) {
+    x.beginPath(); x.moveTo(-20,17); x.bezierCurveTo(-24,-14,18,-26,20,-2); x.bezierCurveTo(22,20,-9,22,-10,3); x.bezierCurveTo(-11,-7,4,-12,9,-4); x.stroke();
+    path([[14,-16],[22,-17],[20,-9]],false,false); x.shadowBlur=0; x.fillStyle='#fff1c5'; x.beginPath(); x.arc(5,-5,2,0,TAU); x.fill();
+  } else if (/constellation:swan/.test(motifKey)) {
+    x.beginPath(); x.moveTo(-23,15); x.quadraticCurveTo(-3,-1,0,-22); x.quadraticCurveTo(9,-7,5,4); x.quadraticCurveTo(11,-4,22,-12); x.quadraticCurveTo(16,8,3,15); x.stroke();
+    path([[-12,17],[0,21],[12,17]],false,false);
+  } else if (/constellation:dragon/.test(motifKey)) {
+    path([[-22,12],[-14,1],[-22,-8],[-7,-6],[0,-24],[7,-7],[22,-14],[13,0],[23,10],[8,7],[0,23],[-7,8]],true,false);
+    x.shadowBlur=0;x.fillStyle='#fff1c5';x.beginPath();x.arc(5,-5,2.2,0,TAU);x.fill();
+  } else if (/constellation:bear/.test(motifKey)) {
+    path([[0,-24],[18,-16],[20,1],[12,18],[0,24],[-12,18],[-20,1],[-18,-16]],true,true);
+    x.shadowBlur=0;x.fillStyle='#2b1530';for(const px of [-7,7]){x.beginPath();x.arc(px,-3,2,0,TAU);x.fill();}
+    path([[-7,7],[0,11],[7,7]],false,false);
+  } else if (/constellation:scales/.test(motifKey)) {
+    x.shadowBlur=0;path([[0,-20],[0,18],[-16,21],[16,21]],false,false);path([[-20,-11],[20,-11]],false,false);
+    for(const px of [-18,18]){x.beginPath();x.moveTo(px,-11);x.lineTo(px-7,5);x.quadraticCurveTo(px,13,px+7,5);x.closePath();x.stroke();}
+    path([[-9,-23],[0,-28],[9,-23]],false,false);
+  } else if (/bulwark|fortitude|guardian|aegis|barrier|ward|rallied|armor|defen|colossus|constellation:bear/.test(motifKey)) {
+    path([[0,-25],[20,-17],[17,7],[0,25],[-17,7],[-20,-17]], true, true);
+    x.shadowBlur = 0; x.strokeStyle = '#ead8a5'; x.lineWidth = 2; path([[0,-16],[10,-11],[9,5],[0,15],[-9,5],[-10,-11]], true, false);
+    path([[0,-9],[6,-1],[0,8],[-6,-1]], true, false);
+  } else if (/swift|haste|quick|quickening|frenzy|fleet|wind|speed|highwind/.test(motifKey)) {
+    for (let i=0;i<3;i++) path([[-23, -12+i*12],[0,-12+i*12],[17,-21+i*12]], false, false);
+    path([[12,-25],[23,-21],[16,-12]], false, false);
+  } else if (/fortune|coin|gold|luck|treasure/.test(motifKey)) {
+    x.beginPath(); x.arc(0,0,20,0,TAU); x.fill(); x.shadowBlur=0; x.fillStyle='#24180b'; x.beginPath(); x.arc(0,0,14,0,TAU); x.fill();
+    x.strokeStyle='#ffe19a'; x.lineWidth=2; x.beginPath(); x.arc(0,0,14,0,TAU); x.stroke();
+    x.fillStyle='#ffe19a'; path([[0,-10],[3,-3],[10,0],[3,3],[0,10],[-3,3],[-10,0],[-3,-3]], true, true);
+  } else if (/precision|focus|target|crit|hunter/.test(motifKey)) {
+    x.shadowBlur=0; for (const r of [22,14,5]) { x.beginPath(); x.arc(0,0,r,0,TAU); x.stroke(); }
+    path([[-18,18],[18,-18]], false, false); path([[8,-18],[18,-18],[18,-8]], false, false);
+  } else if (/storm|lightning|temporal|thunder/.test(motifKey)) {
+    path([[5,-27],[-12,-2],[-2,-2],[-8,25],[14,-7],[4,-7]], true, true);
+  } else if (/echo|reson|sound|harvested/.test(motifKey)) {
+    x.shadowBlur=0; for (const r of [8,16,24]) { x.beginPath(); x.arc(-5,0,r,-1.05,1.05); x.stroke(); }
+    path([[-18,-6],[-10,-6],[-1,-15],[-1,15],[-10,6],[-18,6]], true, true);
+  } else if (/phoenix|blood|vital|renew|heal|life|fury|warrior|wrath|might|rage|ember|fire/.test(motifKey)) {
+    path([[0,25],[-16,9],[-10,-2],[-7,-17],[1,-26],[1,-10],[12,-20],[9,-5],[19,5],[14,18]], true, true);
+    x.shadowBlur=0; x.fillStyle='#fff0c0'; path([[1,15],[-6,7],[-2,-1],[2,5],[8,-2],[7,8]], true, true);
+  } else if (/sorcery|arcane|wisdom|insight|mage|spell|element|prism/.test(motifKey)) {
+    path([[0,-25],[7,-7],[24,0],[7,7],[0,25],[-7,7],[-24,0],[-7,-7]], true, false);
+    x.fillStyle=core; path([[0,-15],[11,0],[0,15],[-11,0]], true, true);
+    x.shadowBlur=0; x.strokeStyle='#fff3ce'; x.beginPath(); x.arc(0,0,5,0,TAU); x.stroke();
+  } else if (/curse|hex|torment|decay|chaos|corrupt/.test(motifKey) || spec.curse) {
+    path([[0,-24],[7,-11],[20,-17],[15,-3],[25,4],[10,8],[11,23],[-1,14],[-13,23],[-11,8],[-25,4],[-15,-4],[-20,-17],[-7,-11]], true, false);
+    x.shadowBlur=0; x.fillStyle='#f3d9d8'; for(const px of [-7,7]){x.beginPath();x.arc(px,-2,2.4,0,TAU);x.fill();}
+    path([[-6,9],[0,6],[6,9]], false, false);
+  } else if (/shrine:|blessing|sanctuary|oath|pilgrim|offering|blessed/.test(motifKey)) {
+    path([[0,-24],[6,-8],[22,-8],[10,2],[14,19],[0,9],[-14,19],[-10,2],[-22,-8],[-6,-8]], true, false);
+    x.shadowBlur=0; x.fillStyle='#fff2ce'; path([[-3,-12],[3,-12],[3,-3],[12,-3],[12,3],[3,3],[3,12],[-3,12],[-3,3],[-12,3],[-12,-3],[-3,-3]], true, true);
+  } else {
+    // Named fallback emblem: an elemental core framed by a deterministic rune unique to this buff key.
+    const turn = (seed % 8) * Math.PI / 8;
+    x.rotate(turn); path([[0,-24],[7,-7],[23,0],[7,7],[0,24],[-7,7],[-23,0],[-7,-7]], true, false);
+    x.shadowBlur=0; x.strokeStyle='#f1dfbd'; x.lineWidth=1.5;
+    for (let i=0;i<4;i++) { const a=((seed >>> (i*5)) & 31) / 31 * TAU; path([[Math.cos(a)*8,Math.sin(a)*8],[Math.cos(a+0.25)*18,Math.sin(a+0.25)*18]],false,false); }
+    x.fillStyle=color; x.beginPath(); x.arc(0,0,5+(seed%4),0,TAU); x.fill();
+  }
+  x.restore();
+  x.strokeStyle='rgba(0,0,0,.9)';x.lineWidth=3*s;x.strokeRect(1,1,size-2,size-2);
+  x.strokeStyle=rgba(color,.7);x.lineWidth=1;x.strokeRect(3,3,size-6,size-6);
+  const url=c.toDataURL(); buffIconCache.set(key,url); return url;
+}
+
+export function buffIconURL(buff) {
+  const spec = resolveBuffIcon(buff);
+  if (spec.type === 'skill') return skillIconURL(spec.skill);
+  if (spec.type === 'item') return itemIconURL(spec.item);
+  return effectBuffIcon(spec);
 }
 
 export function smiteIcon(size = 64) {

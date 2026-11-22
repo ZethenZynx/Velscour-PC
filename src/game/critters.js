@@ -527,7 +527,7 @@ export function catchCritter(cr) {
     ];
     const blessing = pick(blessings), blessingScale = 1 + cr.tier * 0.045, duration = 20 + Math.floor(cr.tier / 4);
     const stats = Object.fromEntries(Object.entries(blessing.stats).map(([stat, value]) => [stat, Math.round(value * blessingScale * 10) / 10]));
-    p.addBuff({ id: 'critter_shrine', name: blessing.name, el: blessing.el, color: CRITTER_REWARDS.find((r) => r.id === 'shrine').color, stats, t: duration, max: duration });
+    p.addBuff({ id: 'critter_shrine', name: blessing.name, iconKey: `blessing:${blessing.name}`, el: blessing.el, color: CRITTER_REWARDS.find((r) => r.id === 'shrine').color, stats, t: duration, max: duration });
     floatText(cr.x, cr.y, cr.z + 24, blessing.name, textColor, 14, { life: 1.8 });
     summary = `${blessing.name} (${duration} seconds)`;
   }

@@ -102,7 +102,7 @@ export function rollReliquaryEquipment(world) {
 function level(world) { return depthLevel(world.depth || G.char?.depth || 1); }
 function addBuff(p, o, name, color, stats, duration = 180, extra = {}) {
   const s = rewardScale(o), scaled = Object.fromEntries(Object.entries(stats).map(([k,v]) => [k, v && typeof v === 'object' ? Object.fromEntries(Object.entries(v).map(([a,n]) => [a, Math.round(n*s*10)/10])) : Math.round(v*s*10)/10]));
-  const buff = { id: `world_${o.id}`, name, el: 'arcane', color, stats: scaled, t: duration, max: duration, floorOnly: true, worldObject: true, worldObjectId: o.id, ...extra };
+  const buff = { id: `world_${o.id}`, name, iconKey: `world:${o.id}`, el: 'arcane', color, stats: scaled, t: duration, max: duration, floorOnly: true, worldObject: true, worldObjectId: o.id, ...extra };
   buff.description = shrineBuffDescription(buff, o.id);
   p.addBuff(buff);
   return buff;

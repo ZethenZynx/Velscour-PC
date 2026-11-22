@@ -157,7 +157,7 @@ export function ascend(p, mul = 1, forced = null) {
 function grantBoon(p, key) {
   const Z = ZODIAC[key];
   if (typeof p?.addBuff === 'function') {
-    p.addBuff({ id: 'astro_' + key, name: `${Z.name}: ${Z.desc}`, el: 'astral', fx: 'aura', stats: { ...Z.stats }, t: BOON_T, max: BOON_T, zodiac: key });
+    p.addBuff({ id: 'astro_' + key, name: `${Z.name}: ${Z.desc}`, iconKey: `constellation:${key}`, el: 'astral', fx: 'aura', stats: { ...Z.stats }, t: BOON_T, max: BOON_T, zodiac: key });
   }
   if (key === 'scales' && p?.mana != null) p.mana = Math.min(p.maxMana, p.mana + p.maxMana * 0.25);
 }

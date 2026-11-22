@@ -433,7 +433,7 @@ export class Player extends Creature {
   /** Shared potion/orb effect: a 15-second haste and critical-hit blessing. */
   applyFury() {
     // Crit is stored in quarter-percent units; 40 adds 10 percentage points before the 75% cap.
-    this.addBuff({ id: 'fury', name: 'Elixir of Fury', description: POTION_INFO.fury, el: 'fire', stats: { as: 30, speed: 30, cdr: 30, crit: 40 }, t: 15, max: 15 });
+    this.addBuff({ id: 'fury', name: 'Elixir of Fury', description: POTION_INFO.fury, iconItem: { type: 'potion', kind: 'fury' }, el: 'fire', stats: { as: 30, speed: 30, cdr: 30, crit: 40 }, t: 15, max: 15 });
     burst(this.x, this.y, 20, 'fire', 20, 3);
   }
 

@@ -5,14 +5,13 @@ import { shownDmg, heroDmgLevel } from '../data/depth.js';
 import { sfx } from '../core/audio.js';
 import { A, potionIcon } from '../core/assets.js';
 import { UI, $, droppable } from './ui.js';
-import { skillIconURL, smiteIcon, madnessIcon, ultimateIcon } from './icons.js';
+import { skillIconURL, buffIconURL, smiteIcon, madnessIcon, ultimateIcon } from './icons.js';
 import { CLASSES } from '../data/classes.js';
 import { POTION_INFO } from '../data/items.js';
 import { SKILLS, effLevel, manaCost, rageCost, whirlwindRageCost, cooldown, CLASS_SKILLS } from '../data/skills.js';
 import { xpToNext } from '../game/player.js';
 import { drawMinimap } from '../game/render.js';
 import { assign, SLOT_LABELS } from './skills.js';
-import { elem } from '../gfx/vfx.js';
 import { pickTaunt } from '../data/taunts.js';
 import { isPlayerTargetable } from '../game/targeting.js';
 import { enemyImage } from '../core/enemyart.js';
@@ -713,18 +712,18 @@ export const HUD = {
       const row = $('#buff-row');
       // Defiance stacks and the town's blessing ride on the save (game/defiance.js), shown as the first two
       const extra = [];
-      if (c.defiance) extra.push({ name: `Defiance ${c.defiance.n}: ${defianceText(c.defiance.n)} until you clear Depth ${c.defiance.block + 4}`, color: '#ff5a2a', n: c.defiance.n });
-      if (c.blessing) extra.push({ name: `${c.blessing.name}: ${c.blessing.left} more depth${c.blessing.left > 1 ? 's' : ''}`, color: '#ffe080', n: c.blessing.left });
+      if (c.defiance) extra.push({ id: 'defiance', iconKey: 'defiance', el: 'fire', name: `Defiance ${c.defiance.n}: ${defianceText(c.defiance.n)} until you clear Depth ${c.defiance.block + 4}`, color: '#ff5a2a', n: c.defiance.n });
+      if (c.blessing) extra.push({ id: 'town_blessing', iconKey: `blessing:${c.blessing.id || c.blessing.name}`, el: 'holy', color: '#ffe080', name: `${c.blessing.name}: ${c.blessing.left} more depth${c.blessing.left > 1 ? 's' : ''}`, n: c.blessing.left });
       // minions out, per summoning skill (settings: minionCounts)
       const mins = new Map();
       if (G.settings.minionCounts !== false && w) for (const m of w.creatures) if (m.summon && !m.dead && m.owner === p && m.skillId && SKILLS[m.skillId]) mins.set(m.skillId, (mins.get(m.skillId) || 0) + 1);
-      const key = extra.map((x) => x.name).join('|') + '|' + [...mins].join('|') + '|' + p.buffs.map((b) => b.id + ':' + Math.ceil(b.t)).join('|');
+      const key = extra.map((x) => x.name).join('|') + '|' + [...mins].join('|') + '|' + p.buffs.map((b) => `${b.id}:${b.name || ''}:${b.iconKey || ''}:${b.iconSkill || ''}:${b.iconItem?.type || ''}:${b.iconItem?.kind || ''}:${b.iconItem?.icon || ''}:${b.iconItem?.base || ''}:${Math.ceil(b.t)}`).join('|');
       if (key !== this.last.buffs) {
         this.last.buffs = key;
         row.innerHTML = '';
         for (const x of extra) {
           const d = el('div', 'buff');
-          d.style.background = `radial-gradient(circle, ${x.color}, #200800)`;
+          const im = new Image(); im.src = buffIconURL(x); im.style.width = '100%'; im.style.height = '100%'; d.appendChild(im);
           d.title = x.name;
           d.appendChild(el('span', '', x.n));
           row.appendChild(d);
@@ -739,9 +738,7 @@ export const HUD = {
         for (const b of p.buffs) {
           if (b.hidden) continue;
           const d = el('div', 'buff');
-          const sk = SKILLS[b.id];
-          if (sk) { const im = new Image(); im.src = skillIconURL(sk); im.style.width = '100%'; d.appendChild(im); }
-          else { d.style.background = elem(b.el).glow; }
+          const im = new Image(); im.src = buffIconURL(b); im.style.width = '100%'; im.style.height = '100%'; d.appendChild(im);
           d.title = b.description ? `${b.name}: ${b.description}` : b.name;
           if (!b.aura) d.appendChild(el('span', '', Math.ceil(b.t)));
           row.appendChild(d);
