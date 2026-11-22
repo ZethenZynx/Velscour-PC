@@ -324,28 +324,42 @@ export const Vendor = {
     if (!gems.length) box.appendChild(el('div', 'dim', 'You carry no gems the forge can work.'));
     for (const { b, i, where } of gems) {
       const row = el('div', 'row forge-row');
-      row.appendChild(el('span', 'forge-gem-label', `<span style="color:${GEMS[b.gem].color}">◆</span> ${escapeHtml(gemName(b.gem, b.tier))}${(b.count || 1) > 1 ? ` <span class="dim">x${b.count}</span>` : ''}`));
+      const count = b.count || 1;
+      const icon = itemCell(b);
+      icon.classList.add('forge-gem-icon');
+      icon.setAttribute('aria-hidden', 'true');
+      const details = el('div', 'forge-gem-info');
+      details.appendChild(el('div', 'forge-gem-name', escapeHtml(gemName(b.gem, b.tier))));
+      details.appendChild(el('div', 'dim forge-gem-quantity', `Available: ${fmtInt(count)}`));
       const sig = GEMS[b.gem].sigil, fuse = fuseCost(b), refine = buyPrice(gemRefineCost(b.tier, GEMS[b.gem].special));
-      const f = el('button', 'btn small forge-fuse', `Fuse 3 → ${escapeHtml(gemName(b.gem, b.tier + 1))} (${fmtInt(fuse)}g)`);
-      f.disabled = (b.count || 1) < 3 || c.gold < fuse;
+      const actions = el('div', 'forge-actions');
+      const nextName = escapeHtml(gemName(b.gem, b.tier + 1));
+      const f = el('button', 'btn small forge-action forge-fuse', `<span class="forge-action-label">Fuse 3 → ${nextName}</span><span class="forge-action-cost">${fmtInt(fuse)} gold</span>`);
+      f.title = `Fuse three ${gemName(b.gem, b.tier)} into ${gemName(b.gem, b.tier + 1)} for ${fmtInt(fuse)} gold`;
+      f.disabled = count < 3 || c.gold < fuse;
       f.onclick = () => { if (fuseGem(c, i, where)) { sfx('levelup'); UI.log(`Forged <span style="color:#c8f0ff">${escapeHtml(gemName(b.gem, b.tier + 1))}</span>!`); changed(); } };
-      const u = el('button', 'btn small forge-refine', `Refine 1 (${fmtInt(refine)}g)`);
-      u.disabled = c.gold < refine;
-      u.onclick = () => {
-        c.gold -= refine;
-        if ((b.count || 1) > 1) {
-          b.count--;
-        } else if (where === 'gemBag') {
-          if (c.gemBag) c.gemBag[i] = null;
-        } else {
-          c.bag[i] = null;
-        }
-        addToBag(c, makeGem(b.gem, b.tier + 1));
-        sfx('arcane');
-        UI.log(`Refined into <span style="color:#c8f0ff">${escapeHtml(gemName(b.gem, b.tier + 1))}</span>.`);
-        changed();
-      };
-      row.appendChild(f); if (!sig) row.appendChild(u);
+      actions.appendChild(f);
+      if (!sig) {
+        const u = el('button', 'btn small forge-action forge-refine', `<span class="forge-action-label">Refine 1</span><span class="forge-action-cost">${fmtInt(refine)} gold</span>`);
+        u.title = `Refine one ${gemName(b.gem, b.tier)} into ${gemName(b.gem, b.tier + 1)} for ${fmtInt(refine)} gold`;
+        u.disabled = c.gold < refine;
+        u.onclick = () => {
+          c.gold -= refine;
+          if (count > 1) {
+            b.count--;
+          } else if (where === 'gemBag') {
+            if (c.gemBag) c.gemBag[i] = null;
+          } else {
+            c.bag[i] = null;
+          }
+          addToBag(c, makeGem(b.gem, b.tier + 1));
+          sfx('arcane');
+          UI.log(`Refined into <span style="color:#c8f0ff">${escapeHtml(gemName(b.gem, b.tier + 1))}</span>.`);
+          changed();
+        };
+        actions.appendChild(u);
+      }
+      row.append(icon, details, actions);
       box.appendChild(row);
     }
     body.appendChild(box);

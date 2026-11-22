@@ -62,19 +62,24 @@ const { openGame, report } = require('./harness');
       width: rect.width, right: rect.right, viewport: innerWidth,
       stockFits: grid.scrollWidth <= grid.clientWidth + 1,
       rows: [...panel.querySelectorAll('.forge-row')].map((row) => {
-        const labelEl = row.querySelector('.forge-gem-label'), label = labelEl.getBoundingClientRect();
+        const infoEl = row.querySelector('.forge-gem-info'), info = infoEl.getBoundingClientRect();
+        const nameEl = row.querySelector('.forge-gem-name');
+        const icon = row.querySelector('.forge-gem-icon');
         const buttons = [...row.querySelectorAll('.forge-fuse, .forge-refine')].map((button) => {
           const r = button.getBoundingClientRect();
-          return { x: r.x, y: r.y, right: r.right, disabled: button.disabled, opacity: getComputedStyle(button).opacity };
+          return { x: r.x, y: r.y, right: r.right, disabled: button.disabled, opacity: getComputedStyle(button).opacity, text: button.innerText };
         });
-        return { label: { x: label.x, right: label.right, fits: labelEl.scrollWidth <= labelEl.clientWidth + 1 }, buttons };
+        const body = panel.querySelector('.panel-body').getBoundingClientRect();
+        return { info: { x: info.x, right: info.right, fits: infoEl.scrollWidth <= infoEl.clientWidth + 1, name: nameEl.innerText, wrap: getComputedStyle(nameEl).overflowWrap }, icon: !!icon, buttons, actionsFit: buttons.every((button) => button.right <= body.right + 1) };
       }),
     };
   });
   if (forgeLayout.right > forgeLayout.viewport + 1) throw new Error('Gem Merchant extends beyond the viewport');
   if (!forgeLayout.stockFits) throw new Error('Gem Merchant stock grid overflows its panel');
   for (const row of forgeLayout.rows) {
-    if (!row.label.fits) throw new Error('Gem name or quantity is clipped');
+    if (!row.info.fits || !row.icon) throw new Error('Gem name, quantity or icon is clipped or missing');
+    if (row.info.wrap === 'anywhere') throw new Error('Gem names can break vertically one character at a time');
+    if (!row.actionsFit) throw new Error('Gem Forge buttons extend beyond the panel boundary');
     if (row.buttons.some((button) => button.disabled && Number(button.opacity) >= 1)) throw new Error('Disabled Gem Forge controls do not appear disabled');
     if (row.buttons.length === 2 && (Math.abs(row.buttons[0].y - row.buttons[1].y) > 1 || row.buttons[0].right > row.buttons[1].x + 1)) {
       throw new Error('Fuse and Refine controls do not share a clear horizontal row');

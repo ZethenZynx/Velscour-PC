@@ -1187,8 +1187,6 @@ body.touch .item-detail, body.touch .skill-detail { width: 230px; font-size: 12p
 .mastery .mbar { height: 5px; background: #1a120c; border: 1px solid #3a2a1a; border-radius: 3px; margin-top: 2px; overflow: hidden; }
 .mastery .mbar > div { height: 100%; box-shadow: 0 0 6px currentColor; }
 .snode .mlvl { position: absolute; left: 2px; top: 1px; font-size: 10px; color: #8fe0ff; text-shadow: 0 0 3px #000, 0 0 2px #000; }
-.forge-row { gap: 6px; flex-wrap: wrap; margin: 4px 0; align-items: center; }
-.forge-row > span { min-width: 170px; }
 .vendor-sub { margin: 10px 0 4px; }
 .class-card .card-lv { position: absolute; top: 3px; right: 5px; font: 700 11px var(--font-head); color: var(--gold-bright); text-shadow: 0 1px 2px #000; }
 .class-card:not(.has-hero) canvas { opacity: .55; }
@@ -1757,34 +1755,56 @@ body.touch .shop-price { font-size: 8px; }
 body:not(.touch) #panels:has(.reliquary-panel) .reliquary-panel .rel-grid { grid-template-columns: repeat(10, 44px); }
 .vendor-panel .item-detail { background: #21170f; border-color: #76532c; }
 @media (max-width: 1250px) { body:not(.touch) .vendor-panel .shop-grid { grid-template-columns: repeat(6, 44px); } }
-/* Zafir's forge needs room for a gem label and two aligned action columns. */
+/* Zafir's forge keeps names readable and reflows its actions to fit the actual panel width. */
 body:not(.touch) #panels:has(.gem-vendor-panel) .gem-vendor-panel {
-  width: min(620px, calc(100vw - 24px), max(340px, calc(100vw - 518px)));
+  width: min(620px, calc(100vw - 24px), max(360px, calc(100vw - 518px)));
+  min-width: min(340px, calc(100vw - 24px));
 }
 body:not(.touch) .gem-vendor-panel .shop-grid { grid-template-columns: repeat(10, 44px); }
 .gem-vendor-panel .forge-row {
-  display: grid; grid-template-columns: minmax(0, 1fr) max-content max-content;
-  align-items: center; gap: 8px; flex-wrap: initial; margin: 6px 0;
+  display: grid; grid-template-columns: 36px minmax(0, 1fr) minmax(210px, .95fr);
+  grid-template-areas: 'icon info actions'; align-items: center; gap: 8px; flex-wrap: initial;
+  margin: 3px 0; padding: 3px 0; min-width: 0; border-bottom: 1px solid rgba(128, 91, 51, .35);
 }
-.gem-vendor-panel .forge-gem-label { min-width: 0; overflow-wrap: anywhere; }
-.gem-vendor-panel .forge-row > .btn { margin: 0; white-space: nowrap; }
-@media (max-width: 1050px) {
-  .gem-vendor-panel .forge-gem-label { grid-column: 1 / -1; }
+.gem-vendor-panel .panel-body { min-width: 0; overflow-x: hidden; container-type: inline-size; }
+.gem-vendor-panel .service-box { min-width: 0; max-width: 100%; }
+.gem-vendor-panel .forge-gem-icon {
+  grid-area: icon; position: relative; display: block; width: 34px; height: 34px; box-sizing: border-box;
+  border: 1px solid #72502c; border-radius: 4px; background: linear-gradient(145deg, #302218, #17110d);
+}
+.gem-vendor-panel .forge-gem-info { grid-area: info; min-width: 0; line-height: 1.2; }
+.gem-vendor-panel .forge-gem-name { min-width: 0; overflow-wrap: break-word; word-break: normal; hyphens: none; }
+.gem-vendor-panel .forge-gem-quantity { margin-top: 2px; font-size: 11px; }
+.gem-vendor-panel .forge-actions {
+  grid-area: actions; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 6px; min-width: 0;
+}
+.gem-vendor-panel .forge-action {
+  display: flex; flex-direction: column; justify-content: center; align-items: center; gap: 2px;
+  min-width: 0; min-height: 38px; margin: 0; padding: 4px 6px; text-align: center; white-space: normal;
+  line-height: 1.15; overflow-wrap: normal;
+}
+.gem-vendor-panel .forge-action-label { display: block; max-width: 100%; }
+.gem-vendor-panel .forge-action-cost { display: block; color: #ffe1a4; font-size: 11px; font-weight: 700; white-space: nowrap; }
+@container (max-width: 400px) {
+  .gem-vendor-panel .shop-grid { grid-template-columns: repeat(auto-fit, 44px); justify-content: start; }
+  .gem-vendor-panel .forge-row {
+    grid-template-columns: 36px minmax(0, 1fr); grid-template-areas: 'icon info' '. actions'; row-gap: 4px;
+  }
+  .gem-vendor-panel .forge-actions { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 }
 @media (max-width: 1120px) {
   body:not(.touch) .gem-vendor-panel .shop-grid { grid-template-columns: repeat(8, 44px); }
 }
 @media (max-width: 950px) {
   body:not(.touch) .gem-vendor-panel .shop-grid { grid-template-columns: repeat(7, 44px); }
-  .gem-vendor-panel .forge-row { grid-template-columns: minmax(0, 1fr) max-content max-content; gap: 5px; }
+  .gem-vendor-panel .forge-row { gap: 5px; }
 }
 @media (max-width: 860px) {
   body:not(.touch) .gem-vendor-panel .shop-grid { grid-template-columns: repeat(6, 44px); }
-  .gem-vendor-panel .forge-row { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 5px; }
-  .gem-vendor-panel .forge-gem-label { grid-column: 1 / -1; }
-  .gem-vendor-panel .forge-row > .btn { min-width: 0; white-space: normal; text-align: center; padding-inline: 6px; }
+  .gem-vendor-panel .forge-actions { gap: 5px; }
 }
-body.touch .gem-vendor-panel { max-width: min(60vw, calc(100vw - 16px)); }
+@container (max-width: 360px) { .gem-vendor-panel .forge-actions { grid-template-columns: minmax(0, 1fr); } }
+body.touch .gem-vendor-panel { width: min(620px, calc(100vw - 16px)); max-width: min(620px, calc(100vw - 16px)); min-width: min(300px, calc(100vw - 16px)); }
 body.touch .gem-vendor-panel .shop-grid { grid-template-columns: repeat(auto-fit, 36px); }
 body.touch .inv-section-title { font-size: 11px; }
 body.touch .character-card { min-width: 210px; }
