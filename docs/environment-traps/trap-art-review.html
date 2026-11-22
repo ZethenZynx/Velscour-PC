@@ -1,0 +1,55 @@
+<!doctype html>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Velscour Environmental Trap Artwork Preview</title>
+<style>
+:root{color-scheme:dark;--gold:#d7b46f;--line:#514332;--panel:#201914;--ink:#e6dcc8}*{box-sizing:border-box}body{margin:0;padding:24px;background:#100d0b;color:var(--ink);font:15px/1.45 Georgia,serif}h1,h2,h3{color:var(--gold);margin:0 0 8px}h1{font-size:26px}h2{font-size:20px;margin-top:28px;border-bottom:1px solid var(--line);padding-bottom:6px}p{max-width:900px;color:#c3b9a7}.note{padding:12px 16px;border:1px solid #625036;background:#211a11;margin:12px 0 18px}.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(420px,1fr));gap:12px}.card{border:1px solid var(--line);background:linear-gradient(145deg,#261d16,#15110e);padding:12px;min-width:0}.title{display:flex;justify-content:space-between;gap:12px;align-items:baseline}.title b{font-size:17px;color:#f0d99d}.env{color:#b9a98d;font-size:12px}.states{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:7px;margin-top:8px}.state{text-align:center;font:11px/1.25 system-ui,sans-serif;color:#cfc4ae}.sample{margin:4px auto 6px;width:100%;height:92px;display:grid;place-items:center;overflow:hidden;background:#0e0d0b;border:1px solid #3d3428;position:relative}.sample.tile{background-size:160px 80px;background-blend-mode:soft-light}.sprite{display:block;background-repeat:no-repeat;image-rendering:pixelated;filter:drop-shadow(0 2px 2px #000b)}.samplesizes{display:flex;align-items:end;justify-content:center;gap:8px;height:62px}.samplesizes .sprite:first-child{width:58px!important}.samplesizes .sprite:last-child{width:116px!important}.variants{margin-top:9px;font:11px/1.4 system-ui,sans-serif;color:#d1c4ae}.variants b{color:var(--gold)}.atlas{margin-top:22px}.atlas img{max-width:min(100%,400px);height:auto;image-rendering:pixelated;border:1px solid var(--line);background:#17120e}.atlas-list{display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:10px}.small{font-size:12px;color:#aaa08f}
+</style>
+<h1>Environmental Trap Artwork — Review Preview</h1>
+<p>Four generated transparent atlases drive the in-game fixtures. Each atlas row is one physical trap, and its four columns are <b>Idle → Warning → Active → Destroyed</b>. The preview shows every state at approximately intended game size and at 2× for inspection, over sampled floor tiles from Velscour environment packs. This is a review build; these changes are not deployed.</p>
+<div class="note">Preview scale approximates the in-game trap fixture size. Four distinct lifecycle states are shown side by side; in-game state changes remain synchronized with the existing trap timing and damage.</div>
+<div id="content"></div>
+<h2>Animated trap previews</h2><p class="small">GIFs cycle through the generated lifecycle frames. These are visual review previews; the game uses the individual states in response to its existing timing.</p><div class="atlas-list" id="gifs"></div>
+<h2>Raw generated sprite atlases</h2><p class="small">Transparent PNG sheets retained as source art for the game. Use the labeled rows above to identify each tile.</p><div class="atlas-list" id="atlases"></div>
+<script>
+const rows=[
+ ['Pressure Plate','environment-variations',0,12,'Ancient catacombs, castle keeps, frozen fortresses, desert tombs; shared material-specific variants'],
+ ['Swinging Blade','mechanical',1,6,'Catacombs, castle keeps, Serpentine Tower, Ghost Train, Endless Siege'],
+ ['Collapsing Floor','mechanical',2,6,'Ancient ruins, castles, forests, void, towers, caverns, ship decks'],
+ ['Poison Vent','environment-variations',6,12,'Swamps and plague zones; sewer variant uses corroded iron'],
+ ['Flame Jet','environment-variations',8,12,'Infernal environments; volcanic forge variant uses obsidian'],
+ ['Magical Turret','environment-variations',10,12,'Arcane environments; Storm Crags variant uses charged cyan crystals'],
+ ['Explosive Obstacle','elemental',3,6,'Appropriate destructible encounter environments; timber crate with fuse'],
+ ['Retractable Spikes','mechanical',3,6,'Castle and frozen traps; desert variant uses sandstone and bronze'],
+ ['Falling Icicles','elemental',4,6,'Frozen areas and mountain environments'],
+ ['Storm Conductor','elemental',5,6,'Storm Crags, storm environments, heavenly and arcane regions'],
+ ['Quicksand Sink','mechanical',4,6,'Sea of Sand and desert environments'],
+ ['Unstable Crystal','nature',8,9,'Crystal caverns, void and arcane environments'],
+ ['Lava Fissure','nature',7,9,'Molten and volcanic environments'],
+ ['Unstable Boulder','mechanical',5,6,'Desert, mountain and deep mine environments'],
+ ['Venomous Growth','nature',0,9,'Swamps, fungal areas, plague zones'],
+ ['Thorn Snare','nature',1,9,'Dark Forest and thorn environments'],
+ ['Cursed Cage Trap','nature',2,9,'Necropolis and haunted environments; floor-bound iron/bone trap, distinct from shrines'],
+ ['Bone Spikes','nature',3,9,'Catacombs and undead environments'],
+ ['Explosive Rune','nature',4,9,'Infernal, void, siege and deep mine environments'],
+ ['Cracking Ice','nature',5,9,'Frozen environments'],
+ ['Freezing Vent','nature',6,9,'Frozen environments and icebound fortresses'],
+];
+const variants=[
+ ['Pressure Plate: cold-forged ice','environment-variations',1,12,'snowy_summit'],
+ ['Pressure Plate: desert sandstone','environment-variations',2,12,'sea_of_sand'],
+ ['Spike Trap: desert bronze','environment-variations',5,12,'sea_of_sand'],
+ ['Poison Vent: sewer iron','environment-variations',7,12,'sewers'],
+ ['Flame Jet: volcanic obsidian','environment-variations',9,12,'molten'],
+ ['Storm Turret: charged granite','environment-variations',11,12,'snowy_summit'],
+];
+const atlasInfo={mechanical:{src:'../../assets/sprites/environment-traps/mechanical.png',cols:4,rows:6,w:256,h:256},elemental:{src:'../../assets/sprites/environment-traps/elemental.png',cols:4,rows:6,w:256,h:256},nature:{src:'../../assets/sprites/environment-traps/nature.png',cols:4,rows:9,w:295.5,h:147.78},'environment-variations':{src:'../../assets/sprites/environment-traps/environment-variations.png',cols:4,rows:12,w:181,h:181}};
+function tileFor(env){const e=String(env||'').toLowerCase();if(e.includes('sand')||e.includes('desert'))return 'sea_of_sand';if(e.includes('snow')||e.includes('frozen')||e.includes('storm'))return 'snowy_summit';if(e.includes('forest')||e.includes('root'))return 'dark_forest';if(e.includes('sewer')||e.includes('swamp')||e.includes('poison'))return 'sewers';if(e.includes('castle'))return 'castle_keep';if(e.includes('infernal')||e.includes('volcan')||e.includes('arcane'))return 'eternal_breach';return 'catacombs'}
+function sprite(sheet,row,col,scale){const a=atlasInfo[sheet],d=document.createElement('span');d.className='sprite';d.style.width=(a.w*scale)+'px';d.style.height=(a.h*scale)+'px';d.style.backgroundImage=`url('${a.src}')`;d.style.backgroundSize=`${a.cols*100}% ${a.rows*100}%`;d.style.backgroundPosition=`${col/(a.cols-1)*100}% ${row/(a.rows-1)*100}%`;return d}
+function addSample(el,pack){el.classList.add('tile');const img=new Image();img.onload=()=>{const c=document.createElement('canvas');c.width=320;c.height=160;const x=c.getContext('2d');x.imageSmoothingEnabled=false;const desert=pack==='sea_of_sand';x.drawImage(img,desert?2:0,desert?2:0,160,80,0,0,320,160);el.style.backgroundImage=`url('${c.toDataURL()}')`};img.src=`../../assets/tiles/${pack}/${pack==='sea_of_sand'?'floor':'floors'}.webp`}
+function card(name,sheet,row,rows,env,extra=''){const info=atlasInfo[sheet],box=document.createElement('article');box.className='card';box.innerHTML=`<div class="title"><b>${name}</b><span class="env">${env}</span></div><div class="states"></div><div class="variants">${extra}</div>`;const names=['Idle','Warning','Active','Destroyed'],states=box.querySelector('.states'),pack=tileFor(env);for(let f=0;f<4;f++){const cell=document.createElement('div');cell.className='state';cell.textContent=names[f];const sampleBox=document.createElement('div');sampleBox.className='sample';addSample(sampleBox,pack);const sizes=document.createElement('div');sizes.className='samplesizes';sizes.append(sprite(sheet,row,f,58/info.w),sprite(sheet,row,f,116/info.w));sampleBox.append(sizes);cell.append(sampleBox);states.append(cell)}return box}
+const main=document.getElementById('content');for(const [name,sheet,row,,env] of rows){const h=document.createElement('h2');h.className='atlas';h.textContent=name+' — '+env;main.append(h);main.append(card(name,sheet,row,atlasInfo[sheet].rows,env))}
+const vh=document.createElement('h2');vh.textContent='Environment-specific variations';main.append(vh);const vg=document.createElement('div');vg.className='grid';for(const [name,sheet,row,,pack] of variants)vg.append(card(name,sheet,row,12,pack));main.append(vg);
+const atl=document.getElementById('atlases');for(const [id,a] of Object.entries(atlasInfo)){const d=document.createElement('div');d.className='atlas';d.innerHTML=`<h3>${id}</h3><img src="${a.src}" alt="${id} trap sprite atlas"><p class="small">${a.cols} columns: idle, warning, active, destroyed. ${a.rows} trap rows.</p>`;atl.append(d)}
+const gifData=[['Swinging Blade','gifs/swinging-blade.gif'],['Retractable Spikes','gifs/retractable-spikes.gif'],['Rolling Boulder','gifs/rolling-boulder.gif'],['Falling Icicles','gifs/falling-icicles.gif'],['Arcane Turret','gifs/arcane-turret.gif'],['Volcanic Flame Jet','gifs/volcanic-flame-jet.gif']];const gifs=document.getElementById('gifs');for(const [name,src] of gifData){const d=document.createElement('div');d.className='atlas';d.innerHTML=`<h3>${name}</h3><img src="${src}" alt="Animated ${name} preview"><p class="small">Transparent 160 × 160 GIF preview.</p>`;gifs.append(d)}
+</script>
