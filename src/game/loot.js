@@ -169,14 +169,15 @@ export class GroundItem {
     }
     const p = world.player;
     if (!p || p.dead) return true;
-    const d = Math.hypot(p.x - this.x, p.y - this.y);
+    const dx = p.x - this.x, dy = p.y - this.y, d2 = dx * dx + dy * dy;
     const magnet = Math.max(this.kind === 'gold' ? 2.2 : this.kind.startsWith('orb') || this.kind === 'key' ? 3.2 : 0, p.st?.markPickupRadius || 0);
-    if (magnet && d < magnet && this.t > 0.4) {
+    if (magnet && d2 < magnet * magnet && this.t > 0.4) {
       const k = Math.min(1, dt * 9);
-      this.x += (p.x - this.x) * k; this.y += (p.y - this.y) * k;
+      this.x += dx * k; this.y += dy * k;
     }
     const auto = !this.dropped && (this.kind !== 'item' || ((G.touch || G.settings.autoLoot) && filterPasses(this.item))); // the loot filter (game/lootfilter.js); never what the hero dropped
-    if (this.t > 0.35 && (d < 0.55 + (p.st?.markPickupRadius || 0) || (p.lootTarget === this && d < 1.2 + (p.st?.markPickupRadius || 0))) && (auto || p.lootTarget === this)) {
+    const pickupRadius = 0.55 + (p.st?.markPickupRadius || 0), targetPickupRadius = 1.2 + (p.st?.markPickupRadius || 0);
+    if (this.t > 0.35 && (d2 < pickupRadius * pickupRadius || (p.lootTarget === this && d2 < targetPickupRadius * targetPickupRadius)) && (auto || p.lootTarget === this)) {
       if (p.pickup(this)) {
         if (p.lootTarget === this) p.lootTarget = null;
         return false;
