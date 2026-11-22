@@ -196,7 +196,7 @@ export function newCharData(classId, name) {
     jewelBox: Array(JEWEL_BOX_COLS * JEWEL_BOX_BASE_ROWS).fill(null), // dedicated town vault for gems & runes
     tabs: Array(TAB_SLOTS).fill(null), tabAt: 0, // the Bard's Tabs: locked Music Sheets he plays (data/tabs.js)
     gold: 150, potions: { hp: 6, mp: 4, rejuv: 1, fury: 1 },
-    depth: 1, deepest: 0, nextBiome: 'catacombs', biomeBag: [], cleared: {}, dungeonAffixes: [], nextAffixes: [], greedLevel: 0, greed: 0, greedSystemV1: true, greedAffixPreview: null, overworldMisses: 0, overworldLastVisit: null, seaOfSandRuns: {}, darkForestRuns: {}, wandererBounties: {}, npcEncounterDepths: {}, treasureImpDepths: [], treasureImpGuaranteedAreas: [], treasureImpRandomAreas: [], treasureImpGuaranteedPending: {}, treasureImpRandomCheckedAreas: [], treasureImpRandomPending: {}, treasureImpTutorialShown: false, breach: { best: 0, cleared: {} },
+    depth: 1, deepest: 0, nextBiome: 'catacombs', biomeBag: [], cleared: {}, dungeonAffixes: [], nextAffixes: [], greedLevel: 0, greed: 0, greedSystemV1: true, greedAffixPreview: null, greedAffixPreviews: {}, greedPortalDestinations: {}, overworldMisses: 0, overworldLastVisit: null, seaOfSandRuns: {}, darkForestRuns: {}, wandererBounties: {}, npcEncounterDepths: {}, treasureImpDepths: [], treasureImpGuaranteedAreas: [], treasureImpRandomAreas: [], treasureImpGuaranteedPending: {}, treasureImpRandomCheckedAreas: [], treasureImpRandomPending: {}, treasureImpTutorialShown: false, breach: { best: 0, cleared: {} },
     heresy: { on: [] }, rifts: { open: 1, best: 0, cleared: {}, bestTime: {}, runs: 0, fails: 0, deaths: 0 }, keys: 0, unbound: { wins: 0, best: 0 }, unboundExploration: { depth: 1, deepest: 1, cleared: {} }, // the Endgame (docs/ENDGAME.md)
     kills: 0, deaths: 0, created: Date.now(), lastPlayed: Date.now(), tips: {}, critterTutorialSeen: false, critterArrowEncounters: 0, wdmg: 1,
   };
@@ -388,6 +388,25 @@ export function migrate(c) {
     c.nextAffixes = [...ids];
     c.greedAffixPreview = { level: greedLevel, depth: c.depth, environment: c.nextBiome || 'random', ids: [...ids] };
   }
+  const cleanGreedPreviews = {};
+  const savedGreedPreviews = c.greedAffixPreviews && typeof c.greedAffixPreviews === 'object' && !Array.isArray(c.greedAffixPreviews) ? c.greedAffixPreviews : {};
+  for (const [key, value] of Object.entries(savedGreedPreviews).slice(-72)) {
+    const match = /^(\d+)\|([^|]+)\|([0-5])$/.exec(key);
+    if (!match || Number(match[1]) <= FINAL_DEPTH || !Array.isArray(value)) continue;
+    const level = Number(match[3]);
+    const ids = normalizeDungeonAffixIds(value).slice(0, level);
+    while (ids.length < level) {
+      const next = chooseDungeonAffix(ids);
+      if (!next) break;
+      ids.push(next.id);
+    }
+    if (ids.length === level) cleanGreedPreviews[key] = ids;
+  }
+  c.greedAffixPreviews = cleanGreedPreviews;
+  const savedGreedDestinations = c.greedPortalDestinations && typeof c.greedPortalDestinations === 'object' && !Array.isArray(c.greedPortalDestinations) ? c.greedPortalDestinations : {};
+  c.greedPortalDestinations = Object.fromEntries(Object.entries(savedGreedDestinations)
+    .filter(([depth, environment]) => Number.isInteger(Number(depth)) && Number(depth) > FINAL_DEPTH && typeof environment === 'string' && environment.length > 0 && !environment.includes('|'))
+    .slice(-32));
   c.potions = Object.assign({ hp: 0, mp: 0, rejuv: 0, fury: 0 }, c.potions);
   c.cleared = c.cleared || {};
   c.wandererBounties = c.wandererBounties && typeof c.wandererBounties === 'object' && !Array.isArray(c.wandererBounties) ? c.wandererBounties : {};

@@ -44,17 +44,33 @@ export function rollGreedAffixes(level, random = Math.random) {
 }
 
 /** Reuse a saved plan for the same level/depth/environment so opening the menu never rerolls it. */
-export function getGreedAffixPreview(character, depth, environment = '') {
+export function getGreedAffixPreview(character, depth, environment = '', selectedLevel = greedOf(character)) {
   const n = Math.floor(Number(depth) || 0);
   if (n <= 100) return [];
-  const level = greedOf(character);
-  const current = character?.greedAffixPreview;
-  if (current && current.level === level && current.depth === n && current.environment === environment) {
-    const ids = normalizeDungeonAffixIds(current.ids);
-    if (ids.length === level) return ids;
+  const level = clamp(Math.floor(Number(selectedLevel) || 0), 0, GREED_MAX);
+  environment = String(environment || 'random');
+  const key = `${n}|${environment}|${level}`;
+  if (character) {
+    const previews = character.greedAffixPreviews && typeof character.greedAffixPreviews === 'object' && !Array.isArray(character.greedAffixPreviews)
+      ? character.greedAffixPreviews : (character.greedAffixPreviews = {});
+    const cached = previews[key];
+    if (Array.isArray(cached)) {
+      const ids = normalizeDungeonAffixIds(cached).slice(0, level);
+      if (ids.length === level) return ids;
+    }
   }
-  const ids = rollGreedAffixes(level);
-  if (character) character.greedAffixPreview = { level, depth: n, environment, ids: [...ids] };
+  const current = character?.greedAffixPreview;
+  const saved = current && current.level === level && current.depth === n && current.environment === environment
+    ? normalizeDungeonAffixIds(current.ids).slice(0, level) : [];
+  const ids = saved.length === level ? saved : rollGreedAffixes(level);
+  if (character) {
+    const previews = character.greedAffixPreviews && typeof character.greedAffixPreviews === 'object' && !Array.isArray(character.greedAffixPreviews)
+      ? character.greedAffixPreviews : (character.greedAffixPreviews = {});
+    previews[key] = [...ids];
+    const keys = Object.keys(previews);
+    if (keys.length > 72) for (const old of keys.slice(0, keys.length - 72)) delete previews[old];
+    if (level === greedOf(character)) character.greedAffixPreview = { level, depth: n, environment, ids: [...ids] };
+  }
   return ids;
 }
 

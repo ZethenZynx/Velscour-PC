@@ -1,5 +1,6 @@
 // Isolated regression checks for campaign progression, endgame scaling, gear eligibility, and the one-time save reset.
 import assert from 'node:assert/strict';
+import { readFile } from 'node:fs/promises';
 import { ACTS, FINAL_DEPTH, MAX_DEPTH, MAX_LEVEL, SUPERBOSS_DEPTHS, endgameScaling } from '../../src/data/depth.js';
 import { RAID_BOSSES } from '../../src/game/raid.js';
 import { RARITY, TIER_20_MIN_DEPTH, qualityAtDepth, sigilCap, RARITY_TIER_20 } from '../../src/data/items.js';
@@ -33,6 +34,10 @@ assert.deepEqual(GREED_LEVELS.map(({ level, name, affixes, goldPct, xpPct, lootP
   [0, 'Disabled', 0, 0, 0, 0], [1, 'Temptation', 1, 20, 10, 10], [2, 'Desire', 2, 45, 25, 20],
   [3, 'Avarice', 3, 75, 45, 35], [4, 'Obsession', 4, 110, 70, 50], [5, 'Insatiable', 5, 150, 100, 75],
 ]);
+const gameUiSource = await readFile(new URL('../../src/game/game.js', import.meta.url), 'utf8');
+assert.match(gameUiSource, /class="greed-inline"/, 'Greed settings are embedded in the Portal to the Depths');
+assert.match(gameUiSource, /class="greed-inline-range"/, 'the portal contains the 0-5 Greed selector');
+assert.doesNotMatch(gameUiSource, /openGreedConfig|greed-open-config|greed-config-dialog/, 'the separate Greed popup is removed');
 for (let level = 0; level <= 5; level++) {
   const ids = rollGreedAffixes(level, () => 0.25);
   assert.equal(ids.length, level, `Greed ${level} adds exactly ${level} affixes`);
@@ -50,6 +55,9 @@ assert.equal(greedCharacter.greedLevel, 2);
 const previewCharacter = { greedLevel: 3 };
 const fixedPreview = getGreedAffixPreview(previewCharacter, 101, 'catacombs');
 assert.deepEqual(getGreedAffixPreview(previewCharacter, 101, 'catacombs'), fixedPreview, 'reopening the same preview does not reroll');
+const alternatePreview = getGreedAffixPreview(previewCharacter, 101, 'catacombs', 4);
+assert.deepEqual(getGreedAffixPreview(previewCharacter, 101, 'catacombs', 4), alternatePreview, 'changing Greed and reopening reuses the cached affix preview');
+assert.ok(previewCharacter.greedAffixPreviews['101|catacombs|4'], 'preview cache is saved per depth, environment, and Greed level');
 getGreedAffixPreview(previewCharacter, 101, 'moonwell_deep');
 assert.equal(previewCharacter.greedAffixPreview.environment, 'moonwell_deep', 'a changed environment receives its own preview');
 assert.deepEqual(getGreedAffixPreview(previewCharacter, 100, 'throne'), [], 'campaign depths receive no Greed affixes');
@@ -93,6 +101,8 @@ oldGreedSave.depth = 500;
 oldGreedSave.greed = 3;
 oldGreedSave.dungeonAffixes = rollGreedAffixes(5);
 oldGreedSave.affixStreak = 40;
+oldGreedSave.greedAffixPreviews = { '101|catacombs|3': rollGreedAffixes(3), '100|throne|3': rollGreedAffixes(3) };
+oldGreedSave.greedPortalDestinations = { 101: 'catacombs', 100: 'throne' };
 delete oldGreedSave.greedSystemV1;
 delete oldGreedSave.greedLevel;
 migrate(oldGreedSave);
@@ -100,6 +110,9 @@ assert.equal(oldGreedSave.greedLevel, 3);
 assert.equal(oldGreedSave.dungeonAffixes.length, 3, 'one-time migration converts old affix progression to selected Greed level');
 assert.equal(oldGreedSave.affixStreak, undefined, 'the old automatic progression counter is retired');
 assert.equal(oldGreedSave.greedAffixPreview.ids.length, 3, 'migration preserves the active affix set as a stable saved preview');
+assert.equal(oldGreedSave.greedAffixPreviews['101|catacombs|3'].length, 3, 'migration preserves eligible Greed preview caches');
+assert.equal(oldGreedSave.greedAffixPreviews['100|throne|3'], undefined, 'migration discards campaign Greed previews');
+assert.equal(oldGreedSave.greedPortalDestinations['101'], 'catacombs', 'migration preserves the planned portal environment');
 const migratedAffixes = [...oldGreedSave.dungeonAffixes];
 migrate(oldGreedSave);
 assert.deepEqual(oldGreedSave.dungeonAffixes, migratedAffixes, 'save loading does not reroll migrated active affixes');

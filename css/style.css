@@ -21,15 +21,17 @@
   --font-body: "Alegreya Sans", "Segoe UI", Tahoma, sans-serif;
 }
 
-/* Greed is configured between endgame environments in the depths portal. */
-.greed-portal-row { display:flex; align-items:center; justify-content:space-between; gap:10px; margin-top:10px; padding-top:8px; border-top:1px solid rgba(255,210,130,.18); }
-.greed-config-dialog .greed-config-locked { padding:12px; color:#e7bd78; border:1px solid #745321; background:rgba(65,42,12,.25); }
-.greed-config-content { min-width:min(390px,75vw); }
-.greed-config-summary { display:flex; justify-content:space-between; gap:12px; align-items:center; color:#ffd880; font:700 14px var(--font-head); }
-.greed-config-summary span { color:#d0bd9b; font:12px var(--font-body); }
-.greed-config-range { display:block; width:100%; margin:14px 0 3px; accent-color:#dcae54; }
+/* Greed settings live directly in the Portal to the Depths. */
+.greed-inline { margin-top:12px; padding:10px 12px; border:1px solid rgba(220,174,84,.45); border-radius:5px; background:linear-gradient(135deg,rgba(54,35,20,.72),rgba(11,8,7,.82)); box-shadow:inset 0 0 18px rgba(0,0,0,.35); }
+.greed-inline[hidden] { display:none !important; }
+.greed-inline-heading, .greed-inline-summary { display:flex; align-items:center; justify-content:space-between; gap:10px; }
+.greed-inline-heading h3 { margin:0; color:#e6bf78; font:700 13px var(--font-head); letter-spacing:1px; }
+.greed-inline-environment { color:#9f8b6e; font-size:11px; }
+.greed-inline-summary { margin-top:7px; color:#ffd880; font:700 14px var(--font-head); }
+.greed-inline-count { color:#c1ae8e; font:12px var(--font-body); }
+.greed-inline-range { display:block; width:100%; margin:10px 0 3px; accent-color:#dcae54; }
 .greed-config-levels { display:flex; justify-content:space-between; color:#aa9a80; font-size:11px; }
-.greed-config-rewards { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:6px; margin:14px 0; }
+.greed-config-rewards { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:6px; margin:10px 0; }
 .greed-config-rewards span { padding:8px 5px; text-align:center; border:1px solid rgba(220,174,84,.3); background:rgba(15,10,8,.7); color:#bcae96; font-size:11px; }
 .greed-config-rewards b { display:block; margin-top:3px; color:#ffd880; font-size:14px; }
 .greed-config-affixes { display:grid; gap:5px; list-style:none; padding:0; margin:10px 0 0; }
@@ -37,6 +39,7 @@
 .greed-affix-icon { display:grid; flex:0 0 25px; width:25px; height:25px; place-items:center; color:#ffd880; border:1px solid #806231; background:#21180f; }
 .greed-config-affixes b { color:#f0d59a; }
 .greed-config-affixes small { display:block; margin-top:2px; color:#b7ab98; line-height:1.35; }
+.greed-inline-empty { color:#b7ab98; font-size:12px; text-align:center; }
 * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; scrollbar-width: thin; scrollbar-color: #5c4424 rgba(12, 8, 6, 0.7); }
 /* Universal slim stylistic scrollbars matching gothic fantasy UI */
 *::-webkit-scrollbar { width: 6px; height: 6px; }
@@ -1911,7 +1914,9 @@ body.portrait #panels.vendor-trio-uniform {
 #panels.vendor-trio-uniform .character-panel .vslot { width: 52px !important; height: 52px !important; }
 
 /* ---------------------------------------------------------- town portal: floor picker (game.confirmDungeon) */
-.floor-pick-dialog { min-width: min(440px, 92vw); }
+.floor-pick-dialog { display:flex; flex-direction:column; width:min(620px, 94vw); min-width:min(460px, 94vw); max-width:min(620px, 94vw); max-height:92vh; overflow:hidden; }
+.floor-pick-dialog > .dlg-body { min-height:0; overflow-y:auto; }
+.floor-pick-dialog > .row { flex:0 0 auto; padding-top:4px; }
 .floor-pick { display: flex; flex-direction: column; gap: 10px; text-align: left; }
 .floor-pick-head { display: flex; align-items: center; justify-content: center; gap: 10px; }
 .floor-pick-label, .floor-pick-max { font-family: var(--font-head); color: #c8a060; letter-spacing: 1px; font-size: 15px; }

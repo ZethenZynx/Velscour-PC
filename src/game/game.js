@@ -631,69 +631,6 @@ export const game = {
     return Math.min(MAX_DEPTH, Math.max(1, c?.depth || 1, (c?.deepest || 0) + 1));
   },
 
-  /** Configure the saved Greed preference and stable affix plan for the next eligible depth. */
-  openGreedConfig(depth = G.char?.depth || 1, environment = G.char?.nextBiome || '') {
-    const c = G.char;
-    if (!c) return;
-    depth = Math.floor(Number(depth) || 0);
-    const unlocked = endgameUnlocked(c);
-    const eligible = unlocked && depth > FINAL_DEPTH && resolveDepthDestination(depth, c.breach?.best, environment).kind !== 'breach';
-    const current = greedOf(c);
-    const chosenEnvironment = !environment || environment === 'random'
-      ? (biomeChoices(c, depth, 1)[0] || c.nextBiome || 'random')
-      : environment;
-    const previewFor = (level, cache) => {
-      if (cache.has(level)) return cache.get(level);
-      const saved = c.greedAffixPreview;
-      const ids = level === current && saved?.level === level && saved.depth === depth && saved.environment === chosenEnvironment
-        ? normalizeDungeonAffixIds(saved.ids).slice(0, level)
-        : rollGreedAffixes(level);
-      cache.set(level, ids);
-      return ids;
-    };
-    const initialIds = eligible ? getGreedAffixPreview(c, depth, chosenEnvironment) : [];
-    const render = (level, ids) => {
-      const info = GREED_LEVELS[level];
-      const iconByCategory = { 'Enemy Stat Modifiers': '⚔', 'On-Death Effects': '☠', 'Elemental Hazards': '✹', 'Enemy Attack Modifiers': '➶', 'Enemy Movement & Behavior': '➤', 'Player Debuffs & Curses': '☠', 'Summoning & Reinforcements': '♟', 'Environmental & Dungeon Modifiers': '⌖', 'Elite & Boss Modifiers': '♛', 'Chaotic & Special Mechanics': '✧', 'World Effects': '◉', 'Risk & Reward': '✦' };
-      const affixes = ids.map((id) => {
-        const a = DUNGEON_AFFIX_BY_ID[id];
-        return a ? `<li><span class="greed-affix-icon">${iconByCategory[a.category] || '✧'}</span><span><b>${escapeHtml(a.name)}</b><small>${escapeHtml(a.description || '')}</small></span></li>` : '';
-      }).join('');
-      return `<div class="greed-config-summary"><b>Greed ${level}: ${info.name}</b><span>${ids.length} / ${info.affixes} affixes</span></div>
-        <input class="greed-config-range" type="range" min="0" max="5" step="1" value="${level}" aria-label="Greed level">
-        <div class="greed-config-levels"><span>0</span><span>1</span><span>2</span><span>3</span><span>4</span><span>5</span></div>
-        <div class="greed-config-rewards"><span>Gold <b>+${info.goldPct}%</b></span><span>Experience <b>+${info.xpPct}%</b></span><span>Loot quantity <b>+${info.lootPct}%</b></span></div>
-        <ul class="greed-config-affixes">${affixes || '<li class="dim">No active affixes.</li>'}</ul>`;
-    };
-    const dialog = UI.dialog({
-      title: 'ENDGAME GREED', cls: 'greed-config-dialog',
-      html: `<p class="dim">Choose the danger and rewards for your next Depth 101+ environment. Affixes are saved with this preview and lock when you enter.</p>${eligible ? '<div class="greed-config-content"></div>' : '<p class="greed-config-locked">Greed is available after defeating Velscour, for depths 101 and beyond.</p>'}`,
-      buttons: [{ label: 'Cancel' }, { label: 'Confirm', cls: 'red greed-config-confirm', fn: () => {
-        if (!eligible) return;
-        const level = Number(dialog.box.querySelector('.greed-config-range')?.value ?? current);
-        const ids = previewFor(level, previewCache);
-        setGreed(level, c);
-        c.greedAffixPreview = { level, depth, environment: chosenEnvironment, ids: [...ids] };
-        c.nextAffixes = [...ids];
-        const label = document.querySelector('.greed-portal-row span');
-        if (label) label.textContent = `Greed: ${GREED_LEVELS[level].name}`;
-        this.autosave();
-      } }],
-    });
-    const previewCache = new Map([[current, initialIds]]);
-    const content = dialog.box.querySelector('.greed-config-content');
-    const slider = dialog.box.querySelector('.greed-config-range');
-    const confirm = dialog.box.querySelector('.greed-config-confirm');
-    if (confirm) confirm.disabled = !eligible;
-    const update = () => {
-      if (!content || !slider) return;
-      const level = Number(slider.value);
-      content.innerHTML = render(level, previewFor(level, previewCache));
-    };
-    slider?.addEventListener('input', update);
-    update();
-  },
-
   /** Select an already unlocked campaign act and travel to its existing town hub. */
   openActSelection() {
     const c = G.char;
@@ -831,7 +768,14 @@ export const game = {
             <div class="floor-pick-ticks"><span>1</span><span>Deepest reached: ${maxFloor}</span></div>
             <div class="floor-pick-desc"></div>
             ${roomNote}
-            <div class="greed-portal-row"><span class="dim">Greed: ${GREED_LEVELS[greedOf(c)].name}</span><button type="button" class="btn greed-open-config" ${!canUnbound ? 'disabled title="Defeat Velscour to unlock endgame"' : ''}>Configure Greed</button></div>
+            <section class="greed-inline" hidden aria-label="Greed difficulty and rewards">
+              <div class="greed-inline-heading"><h3>ENDGAME GREED</h3><span class="greed-inline-environment"></span></div>
+              <div class="greed-inline-summary"><b class="greed-inline-name"></b><span class="greed-inline-count"></span></div>
+              <input type="range" class="greed-inline-range" min="0" max="5" step="1" value="${greedOf(c)}" aria-label="Greed difficulty from 0 to 5">
+              <div class="greed-config-levels"><span>0</span><span>1</span><span>2</span><span>3</span><span>4</span><span>5</span></div>
+              <div class="greed-config-rewards"><span>Gold <b class="greed-inline-gold">+0%</b></span><span>Experience <b class="greed-inline-xp">+0%</b></span><span>Loot quantity <b class="greed-inline-loot">+0%</b></span></div>
+              <ul class="greed-config-affixes greed-inline-affixes"></ul>
+            </section>
           </div>
 
           <div class="portal-pane portal-unbound-pane" style="display:none;">
@@ -860,7 +804,16 @@ export const game = {
         { label: 'Cancel' },
         { label: 'Enter', cls: 'red floor-pick-go', fn: () => {
           if (mode === 'unbound') this.enterUnboundExploration(unboundValue);
-          else this.enterDungeonAt(value);
+          else if (greedEligibleAt(value)) {
+            const environment = greedEnvironmentFor(value);
+            const ids = getGreedAffixPreview(c, value, environment, selectedGreed);
+            setGreed(selectedGreed, c);
+            c.greedAffixPreview = { level: selectedGreed, depth: value, environment, ids: [...ids] };
+            c.dungeonAffixes = [...ids];
+            c.nextAffixes = [...ids];
+            this.autosave();
+            this.enterDungeonAt(value, ids);
+          } else this.enterDungeonAt(value);
         } },
       ],
     });
@@ -882,8 +835,54 @@ export const game = {
     const unboundNum = box.querySelector('.unbound-floor-input');
     const unboundDesc = box.querySelector('.unbound-floor-desc');
     const wpPills = box.querySelectorAll('.unbound-wp-pill');
+    const greedPanel = box.querySelector('.greed-inline');
+    const greedRange = box.querySelector('.greed-inline-range');
 
     let value = current;
+    let selectedGreed = greedOf(c);
+
+    const greedEnvironmentFor = (depth) => {
+      c.greedPortalDestinations ||= {};
+      let environment = depth === current && BIOME_BY_ID[c.nextBiome] ? c.nextBiome : c.greedPortalDestinations[depth];
+      if (!environment && c.greedAffixPreview?.depth === depth && BIOME_BY_ID[c.greedAffixPreview.environment]) environment = c.greedAffixPreview.environment;
+      if (!environment || !BIOME_BY_ID[environment]) environment = biomeChoices(c, depth, 1)[0] || c.nextBiome || 'catacombs';
+      c.greedPortalDestinations[depth] = environment;
+      const keys = Object.keys(c.greedPortalDestinations);
+      if (keys.length > 32) for (const old of keys.slice(0, keys.length - 32)) delete c.greedPortalDestinations[old];
+      return environment;
+    };
+    const greedEligibleAt = (depth) => {
+      if (!canUnbound || depth <= FINAL_DEPTH) return false;
+      const environment = greedEnvironmentFor(depth);
+      const destination = resolveDepthDestination(depth, c.breach?.best, environment);
+      return destination.kind !== 'breach' && destination.id !== 'throne';
+    };
+    const greedIconByCategory = { 'Enemy Stat Modifiers': '⚔', 'On-Death Effects': '☠', 'Elemental Hazards': '✹', 'Enemy Attack Modifiers': '➶', 'Enemy Movement & Behavior': '➤', 'Player Debuffs & Curses': '☠', 'Summoning & Reinforcements': '♟', 'Environmental & Dungeon Modifiers': '⌖', 'Elite & Boss Modifiers': '♛', 'Chaotic & Special Mechanics': '✧', 'World Effects': '◉', 'Risk & Reward': '✦' };
+    const renderGreedPanel = (depth) => {
+      const eligible = mode === 'campaign' && greedEligibleAt(depth);
+      if (!greedPanel) return;
+      greedPanel.hidden = !eligible;
+      if (!eligible) return;
+      const environment = greedEnvironmentFor(depth);
+      const level = Math.max(0, Math.min(5, selectedGreed | 0));
+      const info = GREED_LEVELS[level];
+      const ids = getGreedAffixPreview(c, depth, environment, level);
+      greedRange.value = String(level);
+      greedPanel.querySelector('.greed-inline-name').textContent = `Greed ${level}: ${info.name}`;
+      greedPanel.querySelector('.greed-inline-count').textContent = `${ids.length} / ${info.affixes} affixes`;
+      greedPanel.querySelector('.greed-inline-environment').textContent = BIOME_BY_ID[environment]?.name || environment;
+      greedPanel.querySelector('.greed-inline-gold').textContent = `+${info.goldPct}%`;
+      greedPanel.querySelector('.greed-inline-xp').textContent = `+${info.xpPct}%`;
+      greedPanel.querySelector('.greed-inline-loot').textContent = `+${info.lootPct}%`;
+      const affixList = greedPanel.querySelector('.greed-inline-affixes');
+      affixList.innerHTML = ids.map((id) => {
+        const affix = DUNGEON_AFFIX_BY_ID[id];
+        if (!affix) return '';
+        const description = escapeHtml(affix.description || 'Dungeon affix');
+        const icon = greedIconByCategory[affix.category] || '✧';
+        return `<li title="${escapeHtml(`${affix.name}: ${affix.description || 'Dungeon affix'}`)}"><span class="greed-affix-icon" title="${escapeHtml(affix.category)}" aria-hidden="true">${icon}</span><span><b>${escapeHtml(affix.name)}</b><small>${description}</small></span></li>`;
+      }).join('') || '<li class="greed-inline-empty">No affixes at Greed 0.</li>';
+    };
 
     const setMode = (m) => {
       mode = m;
@@ -907,13 +906,6 @@ export const game = {
     };
 
     tabCampaign.addEventListener('click', () => { sfx('ui'); setMode('campaign'); });
-    box.querySelector('.greed-open-config')?.addEventListener('click', (e) => {
-      e.stopPropagation();
-      if (e.currentTarget.disabled) return;
-      sfx('ui');
-      const destination = resolveDepthDestination(value, c.breach?.best, c.nextBiome);
-      this.openGreedConfig(value, value === current ? (destination.id || c.nextBiome || 'random') : 'random');
-    });
     if (canUnbound) tabUnbound.addEventListener('click', () => { sfx('ui'); setMode('unbound'); });
     if (canUnbound) tabRifts.addEventListener('click', () => {
       sfx('ui');
@@ -929,12 +921,7 @@ export const game = {
       if (!fromTyping || String(value) !== num.value) num.value = value;
       range.style.setProperty('--pct', maxFloor > 1 ? `${((value - 1) / (maxFloor - 1)) * 100}%` : '100%');
       desc.innerHTML = describe(value);
-      const greedButton = box.querySelector('.greed-open-config');
-      const selectedDestination = resolveDepthDestination(value, c.breach?.best, c.nextBiome);
-      if (greedButton) {
-        greedButton.disabled = !canUnbound || value <= FINAL_DEPTH || selectedDestination.kind === 'breach';
-        greedButton.title = greedButton.disabled ? (canUnbound ? 'Greed is available for Depth 101+ environments.' : 'Defeat Velscour at Depth 100 to unlock endgame.') : 'Choose Greed and preview the affixes for this environment.';
-      }
+      renderGreedPanel(value);
       if (mode === 'campaign') {
         if (goBtn) {
           goBtn.disabled = false;
@@ -984,10 +971,16 @@ export const game = {
       if (maxFloor >= start) set(Math.min(maxFloor, start));
     }));
     range.addEventListener('input', () => set(range.value));
+    range.addEventListener('change', () => this.autosave());
     num.addEventListener('input', () => { if (num.value !== '') set(num.value, true); });
-    num.addEventListener('change', () => set(num.value === '' ? value : num.value));
+    num.addEventListener('change', () => { set(num.value === '' ? value : num.value); this.autosave(); });
     num.addEventListener('blur', () => set(num.value === '' ? value : num.value));
-    box.querySelectorAll('.floor-pick-step').forEach((b) => b.addEventListener('click', () => { sfx('ui'); set(value + Number(b.dataset.step)); }));
+    box.querySelectorAll('.floor-pick-step').forEach((b) => b.addEventListener('click', () => { sfx('ui'); set(value + Number(b.dataset.step)); this.autosave(); }));
+    greedRange?.addEventListener('input', () => {
+      selectedGreed = Number(greedRange.value);
+      renderGreedPanel(value);
+    });
+    greedRange?.addEventListener('change', () => this.autosave());
 
     wpPills.forEach((p) => p.addEventListener('click', () => {
       sfx('ui');
@@ -1009,12 +1002,15 @@ export const game = {
         if (mode === 'unbound') setUnbound(unboundValue + step);
         else set(value + step);
       }
+      else if (e.target === greedRange && e.key === 'Home') { e.preventDefault(); greedRange.value = '0'; selectedGreed = 0; renderGreedPanel(value); }
+      else if (e.target === greedRange && e.key === 'End') { e.preventDefault(); greedRange.value = '5'; selectedGreed = 5; renderGreedPanel(value); }
       else if (e.key === 'Home') { e.preventDefault(); if (mode === 'unbound') setUnbound(1); else set(1); }
       else if (e.key === 'End') { e.preventDefault(); if (mode === 'unbound') setUnbound(unboundMax); else set(maxFloor); }
       else if (e.key === 'Enter') { e.preventDefault(); goBtn?.click(); }
       else if (e.key === 'Escape') { e.preventDefault(); dialog.close(); }
     });
     setMode(mode);
+    if (mode === 'campaign' && greedPanel && !greedPanel.hidden) this.autosave();
     setTimeout(() => { if (mode === 'unbound') { unboundNum.focus(); unboundNum.select(); } else { num.focus(); num.select(); } }, 30);
   },
 
