@@ -119,6 +119,12 @@ export const UI = {
     this.focusPanel(name);
     this.layoutPanels();
     this.onPanelsChanged();
+    const layoutId = `panel-${name}`;
+    if (G.uiLayoutCustomizer && !G.uiLayoutCustomizer.hasElement?.(layoutId)) {
+      const escaped = typeof CSS !== 'undefined' && CSS.escape ? CSS.escape(name) : String(name).replace(/["\\]/g, '\\$&');
+      G.uiLayoutCustomizer.registerElement({ id: layoutId, label: `${title} window`, selector: `[data-panel="${escaped}"]`, x: .5, y: .5 });
+    }
+    G.uiLayoutCustomizer?.applyElement?.(layoutId, p.root);
     return p;
   },
   closePanel(name) {
@@ -316,6 +322,7 @@ export const UI = {
       document.removeEventListener('pointercancel', end);
       p.head.removeEventListener('lostpointercapture', end);
       window.removeEventListener('blur', end);
+      G.uiLayoutCustomizer?.recordPosition?.(`panel-${name}`, p.root);
     };
     p.head.addEventListener('pointermove', move);
     document.addEventListener('pointerup', end);

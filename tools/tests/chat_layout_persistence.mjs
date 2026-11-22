@@ -29,7 +29,14 @@ globalThis.innerHeight = viewport.height;
 globalThis.document = { visibilityState: 'visible' };
 const { GameChat } = await import('../../src/ui/chat.js');
 
-const style = { left: '', top: '', width: '', height: '', bottom: '', right: '', setProperty() {} };
+const styleValues = new Map();
+const style = {
+  left: '', top: '', width: '', height: '', bottom: '', right: '',
+  setProperty(name, value) { styleValues.set(name, String(value)); },
+  getPropertyValue(name) { return styleValues.get(name) || ''; },
+  getPropertyPriority() { return ''; },
+  removeProperty(name) { styleValues.delete(name); },
+};
 const listeners = new Map();
 let visible = false;
 const dragHandle = {
@@ -40,7 +47,7 @@ const dragHandle = {
 const root = {
   style,
   dataset: {},
-  classList: { contains: (name) => name === 'hidden' && !visible },
+  classList: { contains: (name) => name === 'hidden' && !visible, toggle() {}, remove() {} },
   getClientRects: () => visible ? [{}] : [],
   getBoundingClientRect: () => ({ left: Number.parseFloat(style.left) || 0, top: Number.parseFloat(style.top) || 0,
     width: Number.parseFloat(style.width) || 0, height: Number.parseFloat(style.height) || 0 }),

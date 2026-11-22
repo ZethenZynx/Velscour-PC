@@ -1077,17 +1077,21 @@ function outlinedText(text, font, color, lw) {
 export function drawTexts(ctx) {
   ctx.textAlign = 'center';
   const dpr = G.dpr, mob = G.touch ? 0.8 : 1;
+  const uiText = G.settings.uiFloatingText;
+  const uiScale = uiText ? clamp((Number(uiText.scale) || 100) / 100, 0.5, 2) : 1;
+  const uiOpacity = uiText ? clamp((Number(uiText.opacity) || 100) / 100, 0.1, 1) : 1;
+  if (uiText?.visible === false) { ctx.globalAlpha = 1; ctx.imageSmoothingEnabled = true; return; }
   ctx.imageSmoothingEnabled = false;
   for (let pass = 0; pass < 2; pass++) { // crits over everything else
     for (const t of texts) {
       if (!t.comic || (t.style === 'crit') !== (pass === 1) || !G.settings.dmgNumbers) continue;
       const S = DMG_STYLE[t.style], age = t.max - t.life, k = t.life / t.max;
       const pin = Math.min(1, age / 0.12);
-      let sc = 1 + (S.pop - 1) * Math.pow(1 - pin, 2);
+      let sc = (1 + (S.pop - 1) * Math.pow(1 - pin, 2)) * uiScale;
       if (k < 0.2) sc *= 0.85 + 0.15 * (k / 0.2);
       const spr = numSprite(t.text, t.style, t.color);
       const [sx, sy] = camera.tileToScreen(t.x, t.y, t.z);
-      const alpha = Math.min(1, k / 0.25);
+      const alpha = Math.min(1, k / 0.25) * uiOpacity;
       const f = PIX * dpr * sc * mob, w = spr.width * f, h = spr.height * f, tx = (sx + t.dx) * dpr, ty = sy * dpr;
       if (t.style === 'crit') {
         ctx.save();
@@ -1124,8 +1128,8 @@ export function drawTexts(ctx) {
     const [sx, sy] = camera.tileToScreen(t.x, t.y, t.z);
     const k = t.life / t.max;
     const pop = t.crit ? 1 + Math.max(0, (k - 0.75)) * 3 : 1;
-    ctx.globalAlpha = Math.min(1, k * 2.5);
-    const font = `${t.crit ? 900 : 700} ${Math.round(t.size * pop * G.dpr)}px Cinzel, Georgia, serif`;
+    ctx.globalAlpha = Math.min(1, k * 2.5) * uiOpacity;
+    const font = `${t.crit ? 900 : 700} ${Math.round(t.size * pop * uiScale * G.dpr)}px Cinzel, Georgia, serif`;
     if (pop === 1) {
       const c = outlinedText(t.text, font, t.color, 3 * G.dpr);
       ctx.drawImage(c, Math.round((sx + t.dx) * G.dpr - c._ox), Math.round(sy * G.dpr - c._oy));

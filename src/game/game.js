@@ -12,6 +12,7 @@ import { biomeTileSet, loadBiomeArt, mixedTileSet, keepTileSets } from '../core/
 import { loadArtFor, enemyImage, markArtCaches, trimArtCaches } from '../core/enemyart.js';
 import { loadClassArt } from '../core/classart.js';
 import { preloadSkillSheets } from '../ui/icons.js';
+import { applyUILayoutSettings } from '../ui/layoutcustomizer.js';
 import { loadGearArt } from '../core/gearart.js';
 import { loadHeld } from '../gfx/heldart.js';
 import { preloadBarFx } from '../gfx/artfx.js';
@@ -331,6 +332,7 @@ export const game = {
     hideScreen();
     initializeCharacterLootFilters(c);
     G.char = c;
+    applyUILayoutSettings();
     preloadSkillSheets(c.classId);
     setRingContext(c.classId, c.skills);
     const p = new Player(c);

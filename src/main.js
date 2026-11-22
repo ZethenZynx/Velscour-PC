@@ -9,6 +9,7 @@ import { UI, $ } from './ui/ui.js';
 import { GameChat } from './ui/chat.js';
 import { initMouseCursor } from './ui/mousecursor.js';
 import { HUD } from './ui/hud.js';
+import { applyUILayoutSettings } from './ui/layoutcustomizer.js';
 import { LoadingScreen } from './ui/loading.js';
 import { titleScreen } from './ui/screens.js';
 import { Vendor } from './ui/vendor.js';
@@ -320,6 +321,7 @@ async function boot() {
     return;
   }
   HUD.init();
+  applyUILayoutSettings();
   applyVolumes();
   titleScreen();
   await LoadingScreen.hide();

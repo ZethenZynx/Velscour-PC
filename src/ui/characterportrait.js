@@ -3,6 +3,7 @@
 import { G, saveSettings } from '../state.js';
 import { fmtInt } from '../core/util.js';
 import { heroPortrait } from '../core/gearart.js';
+import { UILayoutCustomizer } from './layoutcustomizer.js';
 
 const BASE_W = 190, BASE_H = 112;
 const HEAD_CROP_H = 100;
@@ -134,12 +135,14 @@ export const CharacterPortrait = {
     lock.title = c.locked ? 'Unlock portrait movement and resizing' : 'Lock portrait movement and resizing';
     lock.setAttribute('aria-label', lock.title);
     if (c.position && (parseFloat(this.root.style.left) !== x || parseFloat(this.root.style.top) !== y)) this.savePosition(parseFloat(this.root.style.left), parseFloat(this.root.style.top));
+    UILayoutCustomizer.applyElement('character-portrait', this.root);
   },
   refreshSettings() { this.applySettings(); this.update(); },
   resetPosition() {
     config().position = null;
     const [x, y] = this.ensurePosition();
     this.savePosition(x, y); saveSettings();
+    UILayoutCustomizer.resetElementPosition('character-portrait');
   },
   beginDrag(e) {
     if (e.button !== 0 || e.target.closest('button') || config().locked || !this.root) return;
@@ -161,6 +164,7 @@ export const CharacterPortrait = {
       handle.removeEventListener('lostpointercapture', end);
       window.removeEventListener('blur', end);
       saveSettings();
+      UILayoutCustomizer.recordPosition('character-portrait', this.root);
     };
     handle.setPointerCapture(e.pointerId);
     handle.addEventListener('pointermove', move);
@@ -178,7 +182,7 @@ export const CharacterPortrait = {
       const ratio = Math.max((BASE_W + ev.clientX - sx) / BASE_W, (BASE_H + ev.clientY - sy) / BASE_H);
       config().size = clamp(Math.round((initial * ratio) / 25) * 25, 75, 150); this.applySettings();
     };
-    const end = () => { e.currentTarget.removeEventListener('pointermove', move); e.currentTarget.removeEventListener('pointerup', end); e.currentTarget.removeEventListener('pointercancel', end); saveSettings(); };
+    const end = () => { e.currentTarget.removeEventListener('pointermove', move); e.currentTarget.removeEventListener('pointerup', end); e.currentTarget.removeEventListener('pointercancel', end); saveSettings(); UILayoutCustomizer.recordPosition('character-portrait', this.root, true); };
     e.currentTarget.addEventListener('pointermove', move); e.currentTarget.addEventListener('pointerup', end); e.currentTarget.addEventListener('pointercancel', end);
   },
   update() {

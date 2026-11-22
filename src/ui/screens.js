@@ -23,6 +23,7 @@ import { changesAfterBundledBuild, showUpdateDialog, checkForGameUpdates } from 
 import { initTitleForkUpdater } from '../game/forkreleaseupdater.js';
 import { MOUSE_CURSOR_DEFAULTS, refreshMouseCursor } from './mousecursor.js';
 import { CharacterPortrait } from './characterportrait.js';
+import { openCustomizeUI } from './layoutcustomizer.js';
 import { GORE_PERFORMANCE_WARNING_LIMIT, GORE_PRESET_VERSION, GORE_PRESETS, MAX_CUSTOM_GORE_LIMIT, normalizeGorePreset, goreLimit } from '../gfx/goresettings.mjs';
 import { applyGoreSettings } from '../gfx/vfx.js';
 import { setSkipSeizureWarning } from './seizurewarning.mjs';
@@ -930,11 +931,13 @@ export function pauseMenu() {
   const d = UI.dialog({
     title: 'Paused',
     html: `<p class="dim">${escapeHtml(G.char.name)} · Level ${G.char.level} · Depth ${G.char.depth}</p>`,
+    cls: 'pause-dialog',
     buttons: [
       { label: 'Resume' },
       { label: 'Settings', fn: settingsDialog },
       { label: 'Macros', fn: () => G.ui.macros.open() },
       { label: 'How to Play', fn: helpDialog },
+      { label: 'Customize UI', keepOpen: true, fn: () => openCustomizeUI() },
       {
         label: 'Save & Quit',
         cls: 'red',
