@@ -26,7 +26,6 @@ import { heroDamage } from '../game/heroDamage.js';
 import { madnessReady, madnessOn, unleashMadness } from '../game/mayhem.js';
 import { smiteReady, smiteArmed, toggleSmite, getUltimate } from '../game/smite.js';
 import { hearthReady, hearthChanneling, hearthOf, hearthSecondsLeft, useHearth } from '../game/hearth.js';
-import { greedOf, hoardOf, hoardCap, greedMods, setGreed, GREED_MAX } from '../game/greed.js';
 import { sealedCount, openNextSeal } from './sealed.js';
 import { defianceText } from '../game/defiance.js';
 import { capXp } from '../game/marks.js';
@@ -121,9 +120,6 @@ export const HUD = {
     const toggleXpDetails = (e) => { e.stopPropagation(); $('#xp-text')?.classList.toggle('show-full'); };
     $('#xp-track')?.addEventListener('pointerdown', toggleXpDetails);
     $('#xp-text')?.addEventListener('pointerdown', toggleXpDetails);
-    for (const b of document.querySelectorAll('#greed .gr-btn')) b.addEventListener('click', (e) => { e.stopPropagation(); sfx('ui'); setGreed(greedOf() + +b.dataset.d); });
-    const pips = $('#greed-pips');
-    for (let i = 0; i < GREED_MAX; i++) pips.appendChild(el('i'));
     // tap / click the target window to blow it up (about 2.25x, capped to the screen); again to shrink it back
     $('#target-box').addEventListener('click', (e) => { e.stopPropagation(); this.tbBig = !this.tbBig; this.last.tbCls = null; this.updateTarget(); });
     this.ensureEnemyHistory();
@@ -639,12 +635,6 @@ export const HUD = {
     // sealed treasures waiting in the bag (ui/sealed.js)
     const nSeal = sealedCount(c);
     set('sealed', nSeal, (v) => { $('#sealed-btn').classList.toggle('hidden', !v); $('#sealed-text').textContent = `${v} SEALED`; });
-    const g = greedOf(c), hd = hoardOf(c);
-    set('greed', `${g}|${hd}|${w ? w.greed || 0 : 0}`, () => {
-      document.querySelectorAll('#greed-pips i').forEach((p, i) => p.classList.toggle('on', i < g));
-      $('#greed').classList.toggle('on', g > 0);
-      $('#hoard').textContent = hd ? `Hoard ${hd}` : '';
-    });
     const mk = capXp(c), need = mk ? mk.need : xpToNext(c.level), xpNow = mk ? mk.xp : c.xp;   // at the cap: towards the next Infernal Mark
     set('xp', Math.round((xpNow / need) * 1000) / 10, (v) => { $('#xp-fill').style.width = v + '%'; });
     set('xpmk', !!mk, (v) => { $('#xp-fill').classList.toggle('mk-xp', v); });

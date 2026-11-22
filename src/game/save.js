@@ -1,6 +1,6 @@
 // LocalStorage persistence for heroes.
 import { CLASSES } from '../data/classes.js';
-import { normalizeDungeonAffixIds } from '../data/dungeonaffixes.js';
+import { chooseDungeonAffix, normalizeDungeonAffixIds } from '../data/dungeonaffixes.js';
 import { MAX_LEVEL, MAX_DEPTH, FINAL_DEPTH } from '../data/depth.js';
 import { rollItem, HOLLOW, WEAPONS, OFFHANDS, ARMORS, AFFIX_BY_STAT, affixValue, powerLevel, tierOf, itemReqStat, charEffectiveStat, augTarget, affixScale, flatDmgValue, LINE_MULT, PERK_MULT } from '../data/items.js';
 import { SCOPE_MUL, augPower, augmentable, AUGMENTS } from '../data/rings.js';
@@ -196,7 +196,7 @@ export function newCharData(classId, name) {
     jewelBox: Array(JEWEL_BOX_COLS * JEWEL_BOX_BASE_ROWS).fill(null), // dedicated town vault for gems & runes
     tabs: Array(TAB_SLOTS).fill(null), tabAt: 0, // the Bard's Tabs: locked Music Sheets he plays (data/tabs.js)
     gold: 150, potions: { hp: 6, mp: 4, rejuv: 1, fury: 1 },
-    depth: 1, deepest: 0, nextBiome: 'catacombs', biomeBag: [], cleared: {}, dungeonAffixes: [], nextAffixes: [], affixStreak: 0, affixBiome: null, overworldMisses: 0, overworldLastVisit: null, seaOfSandRuns: {}, darkForestRuns: {}, wandererBounties: {}, npcEncounterDepths: {}, treasureImpDepths: [], treasureImpGuaranteedAreas: [], treasureImpRandomAreas: [], treasureImpGuaranteedPending: {}, treasureImpRandomCheckedAreas: [], treasureImpRandomPending: {}, treasureImpTutorialShown: false, breach: { best: 0, cleared: {} },
+    depth: 1, deepest: 0, nextBiome: 'catacombs', biomeBag: [], cleared: {}, dungeonAffixes: [], nextAffixes: [], greedLevel: 0, greed: 0, greedSystemV1: true, greedAffixPreview: null, overworldMisses: 0, overworldLastVisit: null, seaOfSandRuns: {}, darkForestRuns: {}, wandererBounties: {}, npcEncounterDepths: {}, treasureImpDepths: [], treasureImpGuaranteedAreas: [], treasureImpRandomAreas: [], treasureImpGuaranteedPending: {}, treasureImpRandomCheckedAreas: [], treasureImpRandomPending: {}, treasureImpTutorialShown: false, breach: { best: 0, cleared: {} },
     heresy: { on: [] }, rifts: { open: 1, best: 0, cleared: {}, bestTime: {}, runs: 0, fails: 0, deaths: 0 }, keys: 0, unbound: { wins: 0, best: 0 }, unboundExploration: { depth: 1, deepest: 1, cleared: {} }, // the Endgame (docs/ENDGAME.md)
     kills: 0, deaths: 0, created: Date.now(), lastPlayed: Date.now(), tips: {}, critterTutorialSeen: false, critterArrowEncounters: 0, wdmg: 1,
   };
@@ -347,9 +347,47 @@ export function migrate(c) {
   migrateToLv100Rebalance(c);
   c.dungeonAffixes = normalizeDungeonAffixIds(c.dungeonAffixes);
   c.nextAffixes = normalizeDungeonAffixIds(c.nextAffixes);
-  c.affixStreak = Math.max(0, Math.floor(Number(c.affixStreak) || 0));
-  if (c.depth <= FINAL_DEPTH) { c.affixStreak = 0; c.dungeonAffixes = []; c.nextAffixes = []; }
-  if (typeof c.affixBiome !== 'string') c.affixBiome = null;
+  const greedLevel = Math.max(0, Math.min(5, Math.floor(Number(c.greedLevel ?? c.greed) || 0)));
+  c.greedLevel = c.greed = greedLevel;
+  if (!c.greedSystemV1) {
+    const existing = c.dungeonAffixes.length ? c.dungeonAffixes : c.nextAffixes;
+    let ids = normalizeDungeonAffixIds(existing).slice(0, greedLevel);
+    while (ids.length < greedLevel) {
+      const next = chooseDungeonAffix(ids);
+      if (!next) break;
+      ids.push(next.id);
+    }
+    c.dungeonAffixes = ids;
+    c.nextAffixes = [...ids];
+    c.greedSystemV1 = true;
+  }
+  delete c.affixStreak;
+  delete c.affixBiome;
+  if (c.depth <= FINAL_DEPTH) { c.dungeonAffixes = []; c.nextAffixes = []; c.greedAffixPreview = null; }
+  if (c.greedAffixPreview && typeof c.greedAffixPreview === 'object') {
+    const preview = c.greedAffixPreview;
+    const level = Math.max(0, Math.min(5, Math.floor(Number(preview.level) || 0)));
+    const depth = Math.floor(Number(preview.depth) || 0);
+    const environment = typeof preview.environment === 'string' ? preview.environment : '';
+    let ids = normalizeDungeonAffixIds(preview.ids).slice(0, level);
+    while (depth > FINAL_DEPTH && ids.length < level) {
+      const next = chooseDungeonAffix(ids);
+      if (!next) break;
+      ids.push(next.id);
+    }
+    c.greedAffixPreview = depth > FINAL_DEPTH && level === greedLevel && environment ? { level, depth, environment, ids } : null;
+  } else c.greedAffixPreview = null;
+  if (c.depth > FINAL_DEPTH && greedLevel > 0 && !c.greedAffixPreview) {
+    let ids = normalizeDungeonAffixIds(c.dungeonAffixes.length ? c.dungeonAffixes : c.nextAffixes).slice(0, greedLevel);
+    while (ids.length < greedLevel) {
+      const next = chooseDungeonAffix(ids);
+      if (!next) break;
+      ids.push(next.id);
+    }
+    c.dungeonAffixes = [...ids];
+    c.nextAffixes = [...ids];
+    c.greedAffixPreview = { level: greedLevel, depth: c.depth, environment: c.nextBiome || 'random', ids: [...ids] };
+  }
   c.potions = Object.assign({ hp: 0, mp: 0, rejuv: 0, fury: 0 }, c.potions);
   c.cleared = c.cleared || {};
   c.wandererBounties = c.wandererBounties && typeof c.wandererBounties === 'object' && !Array.isArray(c.wandererBounties) ? c.wandererBounties : {};

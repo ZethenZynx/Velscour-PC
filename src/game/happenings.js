@@ -24,7 +24,6 @@ import { drawFolkPose } from './render.js';
 import { TOWNSFOLK } from '../data/townsfolk.js';
 import { setupScenario, scenarioTick } from './scenarios.js';
 import { smiteKill } from './smite.js';
-import { greedTick } from './greed.js';
 import { worldHeresies } from './heresies.js';
 import { DUNGEON_AFFIX_BY_ID, DUNGEON_AFFIX_CONFIG } from '../data/dungeonaffixes.js';
 import { setupWorldObjects } from './worldobjects.js';
@@ -343,8 +342,8 @@ export function spawnNemesis(world, [x, y], N) {
 }
 
 // ------------------------------------------------------------------------------------------------ treasure imp
-/** A Treasure Imp's coins: `base` on the old line, kept up with prices (goldScale), gold find and the Greed lever. */
-const impGold = (world, lvl, base) => Math.round(base * goldScale(lvl) * rand(0.7, 1.5) * (1 + (((G.player && G.player.st.goldFind) || 0) + ((G.player && G.player.st.markGold) || 0)) / 100) * (world.goldMul || 1));
+/** Treasure Imp coins respect the same additive Greed gold bonus as other endgame ground rewards. */
+const impGold = (world, lvl, base) => Math.round(base * goldScale(lvl) * rand(0.7, 1.5) * ((1 + (((G.player && G.player.st.goldFind) || 0) + ((G.player && G.player.st.markGold) || 0)) / 100) * (world.goldMul || 1) + (world.greedGoldPct || 0) / 100));
 const IMP_JACKPOT_REWARDS = new Set(['gold', 'relic', 'merchant', 'hoarder', 'jackpot', 'jewel', 'alchemist', 'sigil', 'set', 'enchanted', 'mystic', 'fortune', 'artisan', 'abyssal']);
 function impEncounteredInArea(world) {
   return hasTreasureImpArea(treasureImpAreaKey(world), G.char?.treasureImpRandomAreas);
@@ -799,7 +798,6 @@ export function happeningsTick(world, dt) {
   if (!H || !p || p.dead) return;
   impSpawnTimersTick(world, dt);
   H.t += dt;
-  greedTick(world, dt); // the Greed lever's tougher monsters (game/greed.js)
   if (H.streakT > 0) H.streakT -= dt;
   const affixes = new Set(world.dungeonAffixes || []);
   // Arcane Surge is represented as a finite buff and renewed only while its

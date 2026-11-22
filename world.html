@@ -40,6 +40,7 @@
       <button class="wiki-tab-btn active" type="button" role="tab" data-tab="campaign" aria-selected="true">Campaign</button>
       <button class="wiki-tab-btn" type="button" role="tab" data-tab="environments" aria-selected="false">Environments</button>
       <button class="wiki-tab-btn" type="button" role="tab" data-tab="endgame" aria-selected="false">Endgame</button>
+      <button class="wiki-tab-btn" type="button" role="tab" data-tab="greed" aria-selected="false">Greed</button>
       <button class="wiki-tab-btn" type="button" role="tab" data-tab="affixes" aria-selected="false">Dungeon Affixes</button>
       <button class="wiki-tab-btn" type="button" role="tab" data-tab="hazards" aria-selected="false">Environmental Traps</button>
     </div>
@@ -65,6 +66,11 @@
       <div class="atlas-controls"><input class="atlas-search" id="event-search" type="search" placeholder="Search dungeon events"></div>
       <div class="atlas-grid" id="event-grid"></div>
     </section>
+    <section class="atlas-tab" id="panel-greed" role="tabpanel" hidden>
+      <div class="wiki-section-header"><h2>Greed Difficulty &amp; Rewards</h2><span class="wiki-section-sub">Unlocked only after Velscour falls; applies to Depth 101+ dungeon environments.</span></div>
+      <p class="dim">Choose a level at the Portal to the Depths between environments. Each selected level adds exactly one randomized affix, with no duplicates from the same affix category. The generated affix set stays fixed when reopening the portal and remains locked for the run. Death does not lower Greed or reset the active affixes. Reward bonuses are additive to existing world reward dials; loot eligibility and item tiers are unchanged.</p>
+      <div class="atlas-list" id="greed-level-list"></div>
+    </section>
     <section class="atlas-tab" id="panel-affixes" role="tabpanel" hidden>
       <div class="wiki-section-header"><h2>Dungeon Affixes</h2><span class="atlas-count" id="affix-count"></span></div>
       <div class="atlas-controls"><input class="atlas-search" id="affix-search" type="search" placeholder="Search affix names and descriptions"></div>
@@ -82,7 +88,8 @@
     import { mountWikiShell, escapeHtml } from './src/wiki/wiki-shell.js';
     import { ACTS, FINAL_DEPTH, ENDGAME_START_DEPTH, MAX_DEPTH, SUPERBOSS_DEPTHS, depthLevel, superbossForDepth } from './src/data/depth.js';
     import { BIOME_BY_ID, BIOMES, BETA_BIOMES, TOWN_BIOME, ACT2_TOWN_BIOME, BREACH_BIOME, SCORPION_KING_PYRAMID_BIOME, biomesForDepth } from './src/data/biomes.js';
-    import { DUNGEON_AFFIXES, MAX_AFFIX_SECTIONS, AFFIX_DEPTH_INTERVAL } from './src/data/dungeonaffixes.js';
+    import { DUNGEON_AFFIXES, MAX_AFFIX_SECTIONS } from './src/data/dungeonaffixes.js';
+    import { GREED_LEVELS } from './src/game/greed.js';
     import { DUNGEON_EVENTS } from './src/game/dungeonevents.js';
     import { HERESIES, HERESY_MAX_RANK, HERESY_MILESTONES } from './src/data/heresies.js';
     import { MAX_BREACH_FLOOR, breachObjectiveCount } from './src/data/breach.js';
@@ -144,13 +151,15 @@
 
     const endgame = [
       {title:'Infinite Depth Progression',text:`The fixed campaign ends at depth ${FINAL_DEPTH}. Endless endgame depths begin at ${ENDGAME_START_DEPTH}; the depth system has no designed finite cap (safe integer ceiling ${MAX_DEPTH.toLocaleString()}).`},
-      {title:'Dungeon Affixes',text:`The affix system defines ${DUNGEON_AFFIXES.length} affixes. Campaign/endgame affix selection follows the live depth and completion-streak rules.`},
+      {title:'Dungeon Affixes',text:`The catalog defines ${DUNGEON_AFFIXES.length} active affixes across distinct categories. At Depth 101+, the selected Greed level sets the exact affix count; there is no five-depth automatic escalation.`},
+      {title:'Greed',text:'After defeating Velscour, select Greed 0-5 in the Portal to the Depths. Each level adds that many randomized affixes and the matching gold, XP, and loot bonuses. The selection persists through death.'},
       {title:'Altar of Heresy',text:`${HERESIES.length} heresies are defined, with a maximum combined rank of ${HERESY_MAX_RANK}. Milestones and effects are calculated from the game's heresy data.`},
       {title:'Abyssal Rifts',text:`Rift runs use the game's current quota, timer, instability, and pylon systems (${RIFT_INSTABILITIES.length} instability entries; ${PYLONS.length} pylon types).`},
       {title:'Eternal Breach',text:`The Breach has ${MAX_BREACH_FLOOR} floors. Its objective count scales from ${breachObjectiveCount(1)} at the opening through ${breachObjectiveCount(MAX_BREACH_FLOOR)} at the final floor.`},
       {title:'Unbound Exploration',text:`The Unbound system has a maximum depth of ${MAX_UNBOUND_DEPTH} and retains its own access and key-spending rules.`},
     ];
     $('endgame-grid').innerHTML=endgame.map((x)=>`<article class="atlas-card"><span class="wiki-eyebrow">Endgame System</span><h3>${escapeHtml(x.title)}</h3><p>${escapeHtml(x.text)}</p></article>`).join('');
+    $('greed-level-list').innerHTML=GREED_LEVELS.map((x)=>`<article class="atlas-row"><b>Greed ${x.level}: ${escapeHtml(x.name)}</b><small>${x.affixes} affix${x.affixes===1?'':'es'} � Gold +${x.goldPct}% � Experience +${x.xpPct}% � Loot quantity +${x.lootPct}%</small></article>`).join('');
     function renderEvents(){const query=$('event-search').value.trim().toLowerCase();const routeEvent=new URLSearchParams(location.search).get('event');const rows=DUNGEON_EVENTS.filter(e=>(!query||`${e.name} ${e.id} ${e.category} ${e.rarity}`.toLowerCase().includes(query))&&(!routeEvent||e.id===routeEvent));$('event-grid').innerHTML=rows.map(e=>`<article class="atlas-card"><span class="wiki-badge gold">${escapeHtml(e.category)} · ${escapeHtml(e.rarity)}</span><h3>${escapeHtml(e.name)}</h3><p>Dungeon event · ${escapeHtml(e.mode||e.id)}</p></article>`).join('');}
     const eventQuery=new URLSearchParams(location.search).get('event');if(eventQuery){const event=DUNGEON_EVENTS.find(e=>e.id===eventQuery);if(event)$('event-search').value=event.name;}
     $('event-search').addEventListener('input',renderEvents);renderEvents();

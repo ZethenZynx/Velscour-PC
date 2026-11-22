@@ -88,7 +88,7 @@ export function dropClutterLoot(world, x, y) {
   };
 
   if (chance(CLUTTER_DROP_CHANCES.gold)) {
-    add('gold', { amount: Math.max(1, Math.round(goldPile(level) * rand(0.6, 1.0) * (1 + ((st.goldFind || 0) + (st.markGold || 0)) / 100) * (world.goldMul || 1))) });
+    add('gold', { amount: Math.max(1, Math.round(goldPile(level) * rand(0.6, 1.0) * ((1 + ((st.goldFind || 0) + (st.markGold || 0)) / 100) * (world.goldMul || 1) + (world.greedGoldPct || 0) / 100))) });
   }
 
   if (heresyAllows('orb', p.char || G.char, world)) {
@@ -100,8 +100,12 @@ export function dropClutterLoot(world, x, y) {
   }
 
   if (chance(Math.min(1, CLUTTER_DROP_CHANCES.gem * (world.gemDropMul || 1)))) {
-    const item = rollGroundGem(level);
-    add('item', { item, fades: fadeOf(item) });
+    const bonus = 1 + (world.greedLootPct || 0) / 100;
+    const count = Math.floor(bonus) + (chance(bonus % 1) ? 1 : 0);
+    for (let i = 0; i < count; i++) {
+      const item = rollGroundGem(level);
+      add('item', { item, fades: fadeOf(item) });
+    }
   }
 
   return dropped;
@@ -355,11 +359,12 @@ export function dropLoot(world, m) {
   const rank = m.rank || 'normal';
   const R = { normal: 1, champion: 3, unique: 5, boss: 10 }[rank];
   const add = (kind, data) => world.addLoot(new GroundItem(m.x + rand(-0.2, 0.2), m.y + rand(-0.2, 0.2), kind, data));
-  const q = 1 + (st.drops || 0) / 100, more = (n) => { const x = n * q; return Math.floor(x) + (chance(x % 1) ? 1 : 0); };
+  const q = 1 + ((st.drops || 0) + (world.greedLootPct || 0)) / 100, more = (n) => { const x = n * q; return Math.floor(x) + (chance(x % 1) ? 1 : 0); };
+  const greedMore = (n) => { const x = n * (1 + (world.greedLootPct || 0) / 100); return Math.floor(x) + (chance(x % 1) ? 1 : 0); };
   // gold (suppressed during active rifts)
   if (!isRiftActive && chance(rank === 'normal' ? 0.45 : 1)) {
     const n = rank === 'boss' ? 5 : 1;
-    for (let i = 0; i < n; i++) add('gold', { amount: Math.max(1, Math.round(goldPile(lvl) * rand(0.6, 1.4) * Math.sqrt(R) * (1 + (st.goldFind + (st.markGold || 0)) / 100) * breachScale * (world.goldMul || 1))) });
+    for (let i = 0; i < n; i++) add('gold', { amount: Math.max(1, Math.round(goldPile(lvl) * rand(0.6, 1.4) * Math.sqrt(R) * breachScale * ((1 + (st.goldFind + (st.markGold || 0)) / 100) * (world.goldMul || 1) + (world.greedGoldPct || 0) / 100))) });
   }
   if (!isRiftActive && st.legendary.greed && chance(0.15)) for (let i = 0; i < 4; i++) add('gold', { amount: Math.round((2 + lvl) * goldScale(lvl) * (1 + (st.goldFind + (st.markGold || 0)) / 100) * breachScale) });
   // Orbs (none under the Hunger of the Abyss Heresy).
@@ -403,14 +408,15 @@ export function dropLoot(world, m) {
   }
   // Sigil Stones: rare from the rank and file, common from guardians (Heresies: world.sigilMul)
   const sig = { normal: 0.004, champion: 0.03, unique: 0.08, boss: 0.45 }[rank] * (world.lootMul || 1) * (world.sigilMul || 1) * (1 + (st.markSigilChance || 0) / 100) * breachScale;
-  if (world.depth && chance(sig)) add('item', { item: rollSigil(groundRewardDepth(world, world.depth), rank === 'boss' ? 1 : 0) });
+  const sigils = greedMore(world.depth && chance(sig) ? 1 : 0);
+  for (let i = 0; i < sigils; i++) add('item', { item: rollSigil(groundRewardDepth(world, world.depth), rank === 'boss' ? 1 : 0) });
   // an Abyssal Key (docs/ENDGAME.md): BOSS ROOM bosses past depth 600 under Heresy rank 10, rift guardians from tier 10
   if (m.isRaid && chance(keyChance(world, m))) add('key', {}); // (keyChance rolls once a boss: a raid boss pays out three dropLoots)
   // rings: a guardian usually drops one
   if ((rank === 'boss' && chance(0.6)) || (rank === 'unique' && chance(0.2))) add('item', { item: rollGroundItem(lvl + 2, { slot: 'ring', mf: st.magicFind + (world.mfAdd || 0), bonus }) });
   // gems
   const gemChance = Math.min(1, (rank === 'normal' ? 0.025 : 0.25) * (world.gemDropMul || 1) * (1 + (st.markGemChance || 0) / 100) * breachScale);
-  const gems = rank === 'boss' ? randi(1, 3) : chance(gemChance) ? 1 : 0;
+  const gems = greedMore(rank === 'boss' ? randi(1, 3) : chance(gemChance) ? 1 : 0);
   for (let i = 0; i < gems; i++) { const item = rollGroundGem(lvl + (rank === 'boss' ? 6 : 0)); add('item', { item, fades: fadeOf(item) }); }
 }
 
@@ -418,6 +424,7 @@ export function dropChest(world, chest, depth) {
   const st = G.player ? G.player.st : { magicFind: 0, goldFind: 0 };
   const breachScale = world.breach ? 1 + (st.markBreachRewards || 0) / 100 : 1;
   const breachCount = (n) => Math.floor(n * breachScale) + (chance((n * breachScale) % 1) ? 1 : 0);
+  const greedCount = (n) => { const x = n * (1 + (world.greedLootPct || 0) / 100); return Math.floor(x) + (chance(x % 1) ? 1 : 0); };
   const add = (kind, data) => world.addLoot(new GroundItem(chest.x, chest.y + 0.3, kind, data));
   const rarity = Number.isInteger(chest.chestRarity) ? CHEST_RARITIES[chest.chestRarity] : null;
   const goldOnly = chest.chestType === 'gilded';
@@ -426,7 +433,7 @@ export function dropChest(world, chest, depth) {
   const gearRange = rarity ? rarity.gear : chest.rare ? [2, 3] : [1, 2];
   const goldRange = rarity ? rarity.gold : [2, 4];
   const baseGearCount = goldOnly || gemsOnly ? 0 : randi(gearRange[0], gearRange[1]);
-  const abundantGear = baseGearCount * (1 + (st.markAbundance || 0) / 100);
+  const abundantGear = baseGearCount * (1 + ((st.markAbundance || 0) + (world.greedLootPct || 0)) / 100);
   let gearCount = goldOnly || gemsOnly ? 0 : Math.floor(abundantGear) + (chance(abundantGear % 1) ? 1 : 0);
   gearCount = breachCount(gearCount);
   if (!goldOnly && !gemsOnly && (chest.chestType === 'explosive' || chest.chestType === 'mimic')) gearCount++;
@@ -435,16 +442,17 @@ export function dropChest(world, chest, depth) {
     add('item', { item: maybeRelic(rollGroundItem(depthLevel(depth) + 1, { mf: st.magicFind + (world.mfAdd || 0), bonus: rarityBonus }), (1 + (st.markCollector || 0) / 100) * (world.relicMul || 1)) });
   }
   const sigilChance = rarity ? rarity.sigilChance : chest.rare ? 0.25 : 0.06;
-  if (!goldOnly && !gemsOnly && chance(Math.min(1, sigilChance * (1 + (st.markSigilChance || 0) / 100)))) add('item', { item: rollSigil(groundRewardDepth(world, depth)) });
-  const goldPiles = gemsOnly ? 0 : breachCount(randi(goldRange[0], goldRange[1])) + (goldOnly ? 2 : 0);
-  if (!gemsOnly) for (let i = 0; i < goldPiles; i++) add('gold', { amount: Math.round((10 + depthLevel(depth) * 4) * goldScale(depthLevel(depth)) * rand(0.6, 1.4) * (1 + (st.goldFind + (st.markGold || 0)) / 100)) });
+  const sigils = !goldOnly && !gemsOnly && chance(Math.min(1, sigilChance * (1 + (st.markSigilChance || 0) / 100))) ? greedCount(1) : 0;
+  for (let i = 0; i < sigils; i++) add('item', { item: rollSigil(groundRewardDepth(world, depth)) });
+  const goldPiles = gemsOnly ? 0 : greedCount(breachCount(randi(goldRange[0], goldRange[1])) + (goldOnly ? 2 : 0));
+  if (!gemsOnly) for (let i = 0; i < goldPiles; i++) add('gold', { amount: Math.round((10 + depthLevel(depth) * 4) * goldScale(depthLevel(depth)) * rand(0.6, 1.4) * ((1 + (st.goldFind + (st.markGold || 0)) / 100) * (world.goldMul || 1) + (world.greedGoldPct || 0) / 100)) });
   const gemChance = Math.min(1, (rarity ? rarity.gemChance : chest.rare ? 0.8 : 0.3) * (1 + (st.markGemChance || 0) / 100));
   const guaranteedGems = Math.max(gemsOnly ? 1 : 0, rarity ? rarity.guaranteedGems : 0);
   if (!goldOnly) {
-    for (let i = 0; i < breachCount(guaranteedGems + (chance(rarity?.extraGemChance || 0) ? 1 : 0)); i++) {
+    for (let i = 0; i < greedCount(breachCount(guaranteedGems + (chance(rarity?.extraGemChance || 0) ? 1 : 0))); i++) {
       add('item', { item: rollGroundGem(depthLevel(depth) + 4) });
     }
-    if (guaranteedGems === 0 && chance(gemChance)) add('item', { item: rollGroundGem(depthLevel(depth) + 4) });
+    if (guaranteedGems === 0 && chance(gemChance)) for (let i = 0, count = greedCount(1); i < count; i++) add('item', { item: rollGroundGem(depthLevel(depth) + 4) });
   }
   if (!goldOnly && !gemsOnly) {
     if (chance(0.5)) add('potion', { item: potionItem(pick(['hp', 'mp', 'rejuv'])) });

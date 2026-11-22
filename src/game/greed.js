@@ -1,94 +1,84 @@
-// The Greed lever (0-5): pull it up and the depths fight back harder (more champions, bigger packs, more monster
-// traits, tougher monsters) for richer drops. Every depth cleared with the lever up adds that many stacks to the
-// Hoard, a loot bonus that keeps growing; a death spends it all and drops the lever back to 0.
-// The lever is read when a depth is built: game.buildDungeon -> greedPacks / greedWorld; happenings ticks
-// greedTick (marks every enemy as it appears, ambushes too); game.brokeThrough -> greedCleared;
-// game.onPlayerDeath -> greedDeath. Saves keep c.greed and c.hoard (both optional).
+// Endgame Greed settings and the affixes/reward dials locked to each Depth 101+ environment.
 import { G } from '../state.js';
-import { chance, clamp } from '../core/util.js';
-import { UI } from '../ui/ui.js';
+import { clamp } from '../core/util.js';
+import { chooseDungeonAffix, normalizeDungeonAffixIds } from '../data/dungeonaffixes.js';
 
 export const GREED_MAX = 5;
-export const HOARD_MAX = 50; // stacks that count for drops and magic find
-const HOARD_LOOT = 0.02; // +2% drops and gold per stack (+100% drops at 50)
-/** The Hoard grows past 50 with the hero's deepest depth (one more stack per 2 depths, to 300): stacks over 50 add gold
- *  only, so a deep hero's greed pays for deep prices. */
-export const hoardCap = (c = G.char) => HOARD_MAX + clamp(Math.floor(((c && c.deepest) || 0) / 2), 0, 250);
+export const GREED_LEVELS = Object.freeze([
+  { level: 0, name: 'Disabled', affixes: 0, goldPct: 0, xpPct: 0, lootPct: 0 },
+  { level: 1, name: 'Temptation', affixes: 1, goldPct: 20, xpPct: 10, lootPct: 10 },
+  { level: 2, name: 'Desire', affixes: 2, goldPct: 45, xpPct: 25, lootPct: 20 },
+  { level: 3, name: 'Avarice', affixes: 3, goldPct: 75, xpPct: 45, lootPct: 35 },
+  { level: 4, name: 'Obsession', affixes: 4, goldPct: 110, xpPct: 70, lootPct: 50 },
+  { level: 5, name: 'Insatiable', affixes: 5, goldPct: 150, xpPct: 100, lootPct: 75 },
+]);
 
-export const greedOf = (c = G.char) => clamp((c && c.greed) | 0, 0, GREED_MAX);
-export const hoardOf = (c = G.char) => clamp((c && c.hoard) | 0, 0, hoardCap(c));
+export const greedOf = (c = G.char) => clamp(Math.floor(Number(c?.greedLevel ?? c?.greed) || 0), 0, GREED_MAX);
+export const greedLevelInfo = (level) => GREED_LEVELS[clamp(Math.floor(Number(level) || 0), 0, GREED_MAX)];
 
-/** What lever level g does (also the tooltip's numbers). */
-export function greedMods(g, hoard = 0) {
+/** Reward percentages are additive bonuses to existing reward dials, not stacked as another multiplier. */
+export function greedMods(level) {
+  const row = greedLevelInfo(level);
   return {
-    champ: 0.07 * g, // a pack's leader turns champion
-    extra: 0.12 * g, // extra monsters per pack, as a share
-    trait: 0.08 * g, // a pack without a trait gains one
-    hp: 1 + 0.1 * g, dmg: 1 + 0.06 * g, xp: 1 + 0.1 * g,
-    loot: (1 + 0.25 * g) * (1 + HOARD_LOOT * Math.min(hoard, HOARD_MAX)), gold: (1 + 0.3 * g) * (1 + HOARD_LOOT * hoard), mf: 20 * g + 2 * Math.min(hoard, HOARD_MAX),
+    level: row.level,
+    affixes: row.affixes,
+    gold: row.goldPct / 100,
+    xp: row.xpPct / 100,
+    loot: row.lootPct / 100,
+    goldPct: row.goldPct,
+    xpPct: row.xpPct,
+    lootPct: row.lootPct,
   };
 }
 
-/** Move the lever (the HUD's - / + buttons). It takes hold from the next depth. */
-export function setGreed(v) {
-  const c = G.char;
-  if (!c) return;
-  const g = clamp(v | 0, 0, GREED_MAX);
-  if (g === greedOf(c)) return;
-  c.greed = g;
-  const here = G.world && G.world.kind === 'dungeon' && G.world.greed !== g;
-  UI.log(g ? `<b style="color:#ffc040">Greed ${g}</b>${here ? ' (from the next depth)' : ''}: more champions, bigger packs and tougher monsters for ×${greedMods(g).loot.toFixed(2)} drops.` : `Greed lever down${here ? ' (from the next depth)' : ''}.`, '#ffc040');
-}
-
-/** Pack spawns of a fresh depth (game.buildDungeon): bigger packs, champion leaders. Returns the spawns to use. */
-export function greedPacks(spawns, g) {
-  if (!g) return spawns;
-  const M = greedMods(g);
-  return spawns.map((s) => {
-    if (!s.n || ['raid', 'boss'].includes(s.rank)) return s;
-    const n = s.n + Math.floor(s.n * M.extra + Math.random());
-    return { ...s, n, champ: s.rank === 'normal' && chance(M.champ), trait: chance(M.trait) };
-  });
-}
-
-/** The world's loot dials once the depth is built (after its omen set world.lootMul / goldMul). */
-export function greedWorld(world, c = G.char) {
-  const g = greedOf(c), h = g ? hoardOf(c) : 0;
-  world.greed = g; world.hoard = h;
-  if (!g && !h) return;
-  const M = greedMods(g, h);
-  world.lootMul = (world.lootMul || 1) * M.loot;
-  world.goldMul = (world.goldMul || 1) * M.gold;
-  world.mfAdd = (world.mfAdd || 0) + M.mf;
-}
-
-/** Tougher monsters, as each one appears (packs, ambushes, the horde). */
-export function greedTick(world, dt) {
-  if (!world.greed || (world.greedT = (world.greedT || 0) - dt) > 0) return;
-  world.greedT = 0.4;
-  const M = greedMods(world.greed);
-  for (const m of world.creatures) {
-    if (m.team !== 'enemy' || m._greed || m.dead || m.summon) continue;
-    m._greed = true;
-    m.maxHp *= M.hp; m.hp *= M.hp; m.dmg *= M.dmg; m.xp *= M.xp;
+/** Select exactly one implemented affix from a distinct category per Greed level. */
+export function rollGreedAffixes(level, random = Math.random) {
+  const target = greedLevelInfo(level).affixes;
+  const ids = [];
+  while (ids.length < target) {
+    const next = chooseDungeonAffix(ids, random);
+    if (!next) break;
+    ids.push(next.id);
   }
+  return normalizeDungeonAffixIds(ids);
 }
 
-/** A depth cleared with the lever up: the Hoard grows by the lever's level. */
-export function greedCleared(world, c = G.char) {
-  const g = world && world.greed;
-  if (!c || !g || world.greedPaid) return;
-  world.greedPaid = true;
-  const before = hoardOf(c);
-  c.hoard = Math.min(hoardCap(c), before + g);
-  if (c.hoard > before) UI.log(`<b style="color:#ffc040">The Hoard grows</b> to ${c.hoard} (+${Math.round(HOARD_LOOT * Math.min(c.hoard, HOARD_MAX) * 100)}% drops, +${Math.round(HOARD_LOOT * c.hoard * 100)}% gold while greedy). Die and it's gone.`, '#ffc040');
+/** Reuse a saved plan for the same level/depth/environment so opening the menu never rerolls it. */
+export function getGreedAffixPreview(character, depth, environment = '') {
+  const n = Math.floor(Number(depth) || 0);
+  if (n <= 100) return [];
+  const level = greedOf(character);
+  const current = character?.greedAffixPreview;
+  if (current && current.level === level && current.depth === n && current.environment === environment) {
+    const ids = normalizeDungeonAffixIds(current.ids);
+    if (ids.length === level) return ids;
+  }
+  const ids = rollGreedAffixes(level);
+  if (character) character.greedAffixPreview = { level, depth: n, environment, ids: [...ids] };
+  return ids;
 }
 
-/** Death spends the Hoard and drops the lever. Returns true if there was anything to lose. */
-export function greedDeath(c = G.char) {
-  if (!c || (!greedOf(c) && !hoardOf(c))) return false;
-  const h = hoardOf(c);
-  c.greed = 0; c.hoard = 0;
-  UI.log(`Your greed undoes you: the lever drops to 0${h ? ` and the Hoard of ${h} is lost` : ''}.`, '#ff9040');
+/** Save a preferred difficulty. Its effects are applied only when a Depth 101+ dungeon is built. */
+export function setGreed(level, c = G.char) {
+  if (!c) return 0;
+  const next = clamp(Math.floor(Number(level) || 0), 0, GREED_MAX);
+  c.greedLevel = next;
+  c.greed = next; // retain the legacy field for existing save readers and integrations
+  return next;
+}
+
+/** Apply Greed once to reward dials, and only to infinite campaign depths (101+). */
+export function greedWorld(world, c = G.char) {
+  if (!world || world.kind !== 'dungeon' || Number(world.depth) <= 100 || world.greedApplied) return false;
+  const level = greedOf(c), M = greedMods(level);
+  world.greedApplied = true;
+  world.greed = level;
+  world.greedAffixCount = M.affixes;
+  world.greedGoldPct = M.goldPct;
+  world.greedXpPct = M.xpPct;
+  world.greedLootPct = M.lootPct;
+  if (level) {
+    world.xpBonusPct = (world.xpBonusPct || 0) + M.xpPct;
+  }
   return true;
 }

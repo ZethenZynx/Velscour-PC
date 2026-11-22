@@ -358,7 +358,8 @@ export class Player extends Creature {
     const depth = depthLevel((this.world && this.world.depth) || 1);
     const diff = c.level - depth;
     const pen = !flat && diff > 5 ? Math.max(0.1, 1 - (diff - 5) * 0.1) : 1;
-    const gain = Math.round(n * pen * (1 + this.st.xpPct / 100));
+    // Greed XP is an additive world bonus, including eligible post-level-cap Mark XP.
+    const gain = Math.round(n * pen * (1 + (this.st.xpPct + (this.world?.xpBonusPct || 0)) / 100));
     if (gain > 0 && c.level < MAX_LEVEL) G.ui?.event?.({ category: 'experience.gained', text: `Gained ${gain} experience.`, meta: { data: { amount: gain } } });
     if (c.level >= MAX_LEVEL) {
       if (canEarnInfernalMarks(this.world, c)) {

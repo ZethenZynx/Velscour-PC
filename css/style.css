@@ -20,6 +20,23 @@
   --font-head: "Cinzel", "Trajan Pro", Georgia, serif;
   --font-body: "Alegreya Sans", "Segoe UI", Tahoma, sans-serif;
 }
+
+/* Greed is configured between endgame environments in the depths portal. */
+.greed-portal-row { display:flex; align-items:center; justify-content:space-between; gap:10px; margin-top:10px; padding-top:8px; border-top:1px solid rgba(255,210,130,.18); }
+.greed-config-dialog .greed-config-locked { padding:12px; color:#e7bd78; border:1px solid #745321; background:rgba(65,42,12,.25); }
+.greed-config-content { min-width:min(390px,75vw); }
+.greed-config-summary { display:flex; justify-content:space-between; gap:12px; align-items:center; color:#ffd880; font:700 14px var(--font-head); }
+.greed-config-summary span { color:#d0bd9b; font:12px var(--font-body); }
+.greed-config-range { display:block; width:100%; margin:14px 0 3px; accent-color:#dcae54; }
+.greed-config-levels { display:flex; justify-content:space-between; color:#aa9a80; font-size:11px; }
+.greed-config-rewards { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:6px; margin:14px 0; }
+.greed-config-rewards span { padding:8px 5px; text-align:center; border:1px solid rgba(220,174,84,.3); background:rgba(15,10,8,.7); color:#bcae96; font-size:11px; }
+.greed-config-rewards b { display:block; margin-top:3px; color:#ffd880; font-size:14px; }
+.greed-config-affixes { display:grid; gap:5px; list-style:none; padding:0; margin:10px 0 0; }
+.greed-config-affixes li { display:flex; gap:9px; align-items:flex-start; padding:7px 9px; border:1px solid rgba(255,255,255,.08); background:rgba(0,0,0,.25); }
+.greed-affix-icon { display:grid; flex:0 0 25px; width:25px; height:25px; place-items:center; color:#ffd880; border:1px solid #806231; background:#21180f; }
+.greed-config-affixes b { color:#f0d59a; }
+.greed-config-affixes small { display:block; margin-top:2px; color:#b7ab98; line-height:1.35; }
 * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; scrollbar-width: thin; scrollbar-color: #5c4424 rgba(12, 8, 6, 0.7); }
 /* Universal slim stylistic scrollbars matching gothic fantasy UI */
 *::-webkit-scrollbar { width: 6px; height: 6px; }
@@ -325,21 +342,10 @@ body.touch .portal-choice { padding: 10px 12px !important; }
 body.touch .portal-choice h2 { font-size: 18px; margin-bottom: 2px; }
 body.touch .portal-choice p { margin: 2px 0 6px; }
 
-/* HUD dials: the Greed lever and sealed treasures. */
+/* HUD dials: sealed treasures. */
 #hud-btncol { display: flex; flex-direction: column; align-items: flex-end; gap: 6px; pointer-events: none; }
 #hud-dials { display: flex; flex-direction: column; align-items: flex-end; gap: 5px; text-shadow: 0 0 4px #000; pointer-events: none; }
 #stance button[data-st="cautious"].on { background: #2a6a3a; text-shadow: 0 0 4px #40ff80; }
-#greed { display: inline-flex; align-items: center; gap: 4px; pointer-events: auto; padding: 1px 3px; border: 1px solid #5a4418; border-radius: 4px; background: rgba(24,16,2,.75); }
-#greed.on { border-color: #ffb030; box-shadow: 0 0 8px rgba(255,170,40,.4); }
-.gr-btn { width: 18px; height: 18px; padding: 0; border: 1px solid #8a6a28; border-radius: 3px; background: #2a1c06; color: #ffd060; font: 700 13px/14px var(--font-body); cursor: pointer; }
-.gr-btn:active { transform: scale(.92); }
-.gr-lever { display: inline-flex; flex-direction: column; align-items: center; gap: 1px; }
-.gr-label { font: 700 8px/8px var(--font-head); letter-spacing: 1.5px; color: #c8a050; text-transform: uppercase; }
-#greed-pips { display: inline-flex; gap: 2px; }
-#greed-pips i { width: 8px; height: 6px; border-radius: 1px; background: #3a2a0a; border: 1px solid #6a5020; }
-#greed-pips i.on { background: linear-gradient(#ffe070, #ff9020); border-color: #ffd060; box-shadow: 0 0 4px #ffb030; }
-#hoard { font: 700 10px var(--font-head); color: #ffc040; letter-spacing: .5px; }
-#hoard:empty { display: none; }
 body.touch #hud-btncol { gap: 3px; }
 body.touch #hud-dials { flex-direction: row; flex-wrap: wrap-reverse; justify-content: flex-end; align-items: center; gap: 4px; max-width: 46vw; }
 body.touch #sealed-btn { padding: 2px 8px 2px 3px; font-size: 10px; }

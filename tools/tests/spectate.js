@@ -1,6 +1,6 @@
 // The spectator's features (things to do while the hero plays): gilded critters to tap, the Divine Smite meter,
 // sealed Epic+ treasures and their reveal, auto-play waiting in town while sealed treasures fill the bag, the
-// stance dial, the three-portal choice at a cleared exit (auto-play's countdown) and the Greed lever.
+// stance dial, the three-portal choice at a cleared exit (auto-play's countdown), and Greed settings/rewards.
 // Taps go through the real input (mouse clicks, or touch taps with `mobile`) and must never move the hero or take
 // over from auto-play. Screenshots: spectate_*.png.
 //   node tools/tests/spectate.js            # 1280x720 mouse
@@ -288,58 +288,21 @@ const check = (ok, msg) => { console.log(`${ok ? 'ok  ' : 'FAIL'} ${msg}`); if (
   });
   check(go.kind === 'dungeon', `with one seal broken auto-play trades and goes on (free slots ${go.free})`);
 
-  // ---------------------------------------------------------------- 11. Greed
+  // ---------------------------------------------------------------- 11. Greed configuration and endgame rewards
   const gr = await page.evaluate(async () => {
-    const { G, game } = window.VELSCOUR;
-    const { Auto } = await import('/tools/tests/auto_player.js');
-    const { BIOME_BY_ID } = await import('/src/data/biomes.js');
-    const { setGreed, greedCleared, greedDeath, hoardOf } = await import('/src/game/greed.js');
-    Auto.toggle(false);
-    const tally = (g) => {
-      setGreed(g);
-      let n = 0, champs = 0, traits = 0, hp = 0;
-      for (let k = 0; k < 6; k++) {
-        game.buildDungeon(20, BIOME_BY_ID.catacombs);
-        game.update(1); // greedTick marks every enemy
-        const foes = G.world.creatures.filter((m) => m.team === 'enemy' && m.rank !== 'boss');
-        n += foes.length; champs += foes.filter((m) => m.rank === 'champion').length; traits += foes.filter((m) => m.trait).length;
-        hp += foes.reduce((a, m) => a + m.maxHp, 0) / foes.length;
-      }
-      return { n: n / 6, champs: champs / 6, traits: traits / 6, hp: hp / 6, lootMul: G.world.lootMul, mf: G.world.mfAdd || 0, greed: G.world.greed };
-    };
-    const g0 = tally(0), g5 = tally(5);
-    greedCleared(G.world);
-    const hoard = hoardOf();
-    greedCleared(G.world); // a depth pays once
-    const once = hoardOf();
-    const lost = greedDeath();
-    return { g0, g5, hoard, once, lost, after: { greed: G.char.greed, hoard: G.char.hoard } };
+    const { G } = window.VELSCOUR;
+    const { GREED_LEVELS, greedWorld, rollGreedAffixes } = await import('/src/game/greed.js');
+    const campaign = { kind: 'dungeon', depth: 100, goldMul: 1 };
+    const campaignApplied = greedWorld(campaign, { greedLevel: 5 });
+    const endgame = { kind: 'dungeon', depth: 101, goldMul: 1, lootMul: 1 };
+    greedWorld(endgame, { greedLevel: 5 });
+    return { levels: GREED_LEVELS.length, campaignApplied, campaignGreed: campaign.greed, endgame, affixes: rollGreedAffixes(5), hudGreed: !!document.querySelector('#greed') };
   });
-  console.log('   greed 0:', JSON.stringify(gr.g0), '\n   greed 5:', JSON.stringify(gr.g5));
-  check(gr.g5.n > gr.g0.n * 1.3 && gr.g5.champs > gr.g0.champs + 2 && gr.g5.traits > gr.g0.traits, 'Greed 5 brings bigger packs, more champions and traits');
-  check(gr.g5.hp > gr.g0.hp * 1.2, 'Greed 5 monsters are tougher');
-  check(gr.g5.lootMul >= 2.25 && gr.g5.mf >= 100 && gr.g5.greed === 5, `Greed 5 pays (loot x${gr.g5.lootMul.toFixed(2)}, +${gr.g5.mf}% MF)`);
-  check(gr.hoard === 5 && gr.once === 5, 'a cleared depth adds the lever to the Hoard, once');
-  check(gr.lost && gr.after.greed === 0 && gr.after.hoard === 0, 'a death loses the Hoard and drops the lever');
-  // the HUD dials, raised
-  await page.evaluate(async () => {
-    const { G, game } = window.VELSCOUR;
-    const { Auto } = await import('/tools/tests/auto_player.js');
-    const { BIOME_BY_ID } = await import('/src/data/biomes.js');
-    G.char.greed = 3; G.char.hoard = 12; G.char.smite = 0.6; G.char.madness = 0.4; G.char.stance = 'cautious';
-    game.buildDungeon(5, BIOME_BY_ID.catacombs);
-    Auto.toggle(true);
-    for (let i = 0; i < 20; i++) game.update(1 / 30);
-  });
-  await page.waitForTimeout(300);
-  await shot('spectate_hud' + tag);
-  const hud = await page.evaluate(() => ({ pips: document.querySelectorAll('#greed-pips i.on').length, hoard: document.querySelector('#hoard').textContent, stance: document.querySelector('#stance button.on')?.dataset.st, visible: !document.querySelector('#stance').classList.contains('hidden') }));
-  check(hud.pips === 3 && hud.hoard === 'Hoard 12' && hud.stance === 'cautious' && hud.visible, `the HUD shows the lever, the Hoard and the stance (${JSON.stringify(hud)})`);
-  const plus = await page.$('#greed .gr-btn[data-d="1"]');
-  const bb = await plus.boundingBox();
-  await tap(bb.x + bb.width / 2, bb.y + bb.height / 2);
-  const g4 = await page.evaluate(() => window.VELSCOUR.G.char.greed);
-  check(g4 === 4, 'the + button raises the lever');
+  check(gr.levels === 6, 'Greed exposes six settings, 0 through 5');
+  check(!gr.campaignApplied && gr.campaignGreed === undefined, 'Greed has no effect through campaign depth 100');
+  check(gr.endgame.greed === 5 && gr.endgame.greedGoldPct === 150 && gr.endgame.greedXpPct === 100 && gr.endgame.greedLootPct === 75, 'Greed 5 applies the documented endgame reward bonuses');
+  check(gr.affixes.length === 5, 'Greed 5 rolls five affixes');
+  check(!gr.hudGreed, 'the Greed meter is absent from the gameplay HUD');
 
   console.log(fails ? `${fails} FAILED` : 'ALL PASSED');
   report(errors);

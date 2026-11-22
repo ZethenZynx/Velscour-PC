@@ -3,7 +3,8 @@ import assert from 'node:assert/strict';
 import { ACTS, FINAL_DEPTH, MAX_DEPTH, MAX_LEVEL, SUPERBOSS_DEPTHS, endgameScaling } from '../../src/data/depth.js';
 import { RAID_BOSSES } from '../../src/game/raid.js';
 import { RARITY, TIER_20_MIN_DEPTH, qualityAtDepth, sigilCap, RARITY_TIER_20 } from '../../src/data/items.js';
-import { affixCountForStreak, rollDungeonAffixesForStreak } from '../../src/data/dungeonaffixes.js';
+import { DUNGEON_AFFIX_BY_ID } from '../../src/data/dungeonaffixes.js';
+import { GREED_LEVELS, greedMods, greedWorld, rollGreedAffixes, getGreedAffixPreview, setGreed } from '../../src/game/greed.js';
 import { makeCovenant } from '../../src/data/relics.js';
 
 assert.equal(FINAL_DEPTH, 100);
@@ -28,10 +29,44 @@ assert.equal(makeCovenant(100, { depth: 100 }), null);
 const setPiece = makeCovenant(476, { depth: 476 });
 assert.equal(setPiece?.rarity, RARITY_TIER_20);
 assert.ok(setPiece?.cset, 'endgame Set gear keeps its distinct set identity');
-for (const [streak, count] of [[0, 0], [4, 0], [5, 1], [9, 1], [10, 2], [15, 3], [20, 4], [25, 5], [500, 5]]) {
-  assert.equal(affixCountForStreak(streak), count);
-  assert.equal(rollDungeonAffixesForStreak(streak, () => 0.25, [], true).length, count);
+assert.deepEqual(GREED_LEVELS.map(({ level, name, affixes, goldPct, xpPct, lootPct }) => [level, name, affixes, goldPct, xpPct, lootPct]), [
+  [0, 'Disabled', 0, 0, 0, 0], [1, 'Temptation', 1, 20, 10, 10], [2, 'Desire', 2, 45, 25, 20],
+  [3, 'Avarice', 3, 75, 45, 35], [4, 'Obsession', 4, 110, 70, 50], [5, 'Insatiable', 5, 150, 100, 75],
+]);
+for (let level = 0; level <= 5; level++) {
+  const ids = rollGreedAffixes(level, () => 0.25);
+  assert.equal(ids.length, level, `Greed ${level} adds exactly ${level} affixes`);
+  assert.equal(new Set(ids).size, ids.length, 'affixes cannot duplicate');
+  assert.equal(new Set(ids.map((id) => DUNGEON_AFFIX_BY_ID[id].category)).size, ids.length, 'affixes use distinct compatible categories');
+  assert.deepEqual(greedMods(level), {
+    level, affixes: level, gold: GREED_LEVELS[level].goldPct / 100, xp: GREED_LEVELS[level].xpPct / 100, loot: GREED_LEVELS[level].lootPct / 100,
+    goldPct: GREED_LEVELS[level].goldPct, xpPct: GREED_LEVELS[level].xpPct, lootPct: GREED_LEVELS[level].lootPct,
+  });
 }
+const greedCharacter = { greedLevel: 5, greed: 0 };
+assert.deepEqual(rollGreedAffixes(0), []);
+assert.equal(setGreed(2, greedCharacter), 2);
+assert.equal(greedCharacter.greedLevel, 2);
+const previewCharacter = { greedLevel: 3 };
+const fixedPreview = getGreedAffixPreview(previewCharacter, 101, 'catacombs');
+assert.deepEqual(getGreedAffixPreview(previewCharacter, 101, 'catacombs'), fixedPreview, 'reopening the same preview does not reroll');
+getGreedAffixPreview(previewCharacter, 101, 'moonwell_deep');
+assert.equal(previewCharacter.greedAffixPreview.environment, 'moonwell_deep', 'a changed environment receives its own preview');
+assert.deepEqual(getGreedAffixPreview(previewCharacter, 100, 'throne'), [], 'campaign depths receive no Greed affixes');
+for (let level = 0; level <= 5; level++) {
+  const world = { kind: 'dungeon', depth: 101, goldMul: 1, lootMul: 1 };
+  greedWorld(world, { greedLevel: level });
+  assert.equal(world.greedGoldPct, GREED_LEVELS[level].goldPct);
+  assert.equal(world.greedXpPct, GREED_LEVELS[level].xpPct);
+  assert.equal(world.greedLootPct, GREED_LEVELS[level].lootPct);
+  assert.equal(world.goldMul, 1, 'Greed does not multiply existing gold reward modifiers');
+  const snapshot = { ...world };
+  greedWorld(world, { greedLevel: level });
+  assert.deepEqual(world, snapshot, 'applying Greed twice does not stack rewards');
+}
+const campaignWorld = { kind: 'dungeon', depth: 100, goldMul: 1 };
+assert.equal(greedWorld(campaignWorld, { greedLevel: 5 }), false, 'Greed has no campaign effect');
+assert.equal(campaignWorld.greed, undefined);
 for (const d of [101, 125, 500, 10000, MAX_DEPTH]) {
   const s = endgameScaling(d);
   assert.ok(Number.isFinite(s.health) && s.health >= 1 && s.health <= 1e100);
@@ -51,8 +86,32 @@ class MemoryStorage {
 }
 globalThis.localStorage = new MemoryStorage();
 globalThis.dispatchEvent = () => true;
-const { applyCampaignOverhaulReset, campaignOverhaulBackup, listSaves } = await import('../../src/game/save.js?campaign-overhaul-test');
+const { applyCampaignOverhaulReset, campaignOverhaulBackup, listSaves, newCharData, migrate } = await import('../../src/game/save.js?campaign-overhaul-test');
 const storage = globalThis.localStorage;
+const oldGreedSave = newCharData('paladin', 'Greed Migration');
+oldGreedSave.depth = 500;
+oldGreedSave.greed = 3;
+oldGreedSave.dungeonAffixes = rollGreedAffixes(5);
+oldGreedSave.affixStreak = 40;
+delete oldGreedSave.greedSystemV1;
+delete oldGreedSave.greedLevel;
+migrate(oldGreedSave);
+assert.equal(oldGreedSave.greedLevel, 3);
+assert.equal(oldGreedSave.dungeonAffixes.length, 3, 'one-time migration converts old affix progression to selected Greed level');
+assert.equal(oldGreedSave.affixStreak, undefined, 'the old automatic progression counter is retired');
+assert.equal(oldGreedSave.greedAffixPreview.ids.length, 3, 'migration preserves the active affix set as a stable saved preview');
+const migratedAffixes = [...oldGreedSave.dungeonAffixes];
+migrate(oldGreedSave);
+assert.deepEqual(oldGreedSave.dungeonAffixes, migratedAffixes, 'save loading does not reroll migrated active affixes');
+const campaignGreedSave = newCharData('paladin', 'Campaign Greed Migration');
+campaignGreedSave.depth = 100;
+campaignGreedSave.greed = 5;
+campaignGreedSave.dungeonAffixes = rollGreedAffixes(5);
+delete campaignGreedSave.greedSystemV1;
+delete campaignGreedSave.greedLevel;
+migrate(campaignGreedSave);
+assert.equal(campaignGreedSave.greedLevel, 5, 'preferred Greed setting remains saved during campaign');
+assert.deepEqual(campaignGreedSave.dungeonAffixes, [], 'campaign saves cannot retain active Greed affixes');
 storage.setItem('velscour_saves_v1', '[{"id":"old"}]');
 storage.setItem('velscour_endgame_v1', '{"unlocked":1}');
 storage.setItem('velscour_reliquary_v1', '{"items":[1]}');
@@ -81,4 +140,4 @@ assert.equal(resetModule.applyCampaignOverhaulReset(), false);
 assert.equal(rollbackStore.getItem('velscour_saves_v1'), '[{"id":"keep"}]');
 assert.equal(rollbackStore.getItem('velscour_campaign_overhaul_reset_v1'), null);
 
-console.log('100-depth progression, 20-tier eligibility, affix streaks, safe scaling, and isolated one-time reset checks OK');
+console.log('Campaign progression, tier eligibility, Greed levels/rewards/migrations, safe scaling, and isolated reset checks OK');

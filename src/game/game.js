@@ -1,7 +1,7 @@
 // Game flow: characters, town, dungeon depths, death, victory.
 import { G } from '../state.js';
 import { setupEnvironmentalTraps } from './environmenttraps.js';
-import { DUNGEON_AFFIX_BY_ID, DUNGEON_AFFIX_CONFIG, rollDungeonAffixesForStreak, chooseDungeonAffix, normalizeDungeonAffixIds, applyDungeonAffix } from '../data/dungeonaffixes.js';
+import { DUNGEON_AFFIX_BY_ID, DUNGEON_AFFIX_CONFIG, normalizeDungeonAffixIds, applyDungeonAffix } from '../data/dungeonaffixes.js';
 import { rollTreasureChest } from '../data/treasurechests.js';
 import { addMarkBonusChest } from './markchests.js';
 import { input } from '../core/input.js';
@@ -29,7 +29,7 @@ import { addDefiance, clearDefiance, defianceText, tickBlessing } from './defian
 import { setupHappenings, announceDungeonAffixes, happeningsTick, eventImpsTick, spawnGuaranteedImp, townHappening, townTick, recordDepth, markNemesis } from './happenings.js';
 import { setupWorldObjects, worldObjectsTick, clearWorldObjectBuffs } from './worldobjects.js';
 import { setupDungeonEvent, dungeonEventTick } from './dungeonevents.js';
-import { greedOf, greedPacks, greedWorld, greedCleared, greedDeath } from './greed.js';
+import { GREED_LEVELS, greedOf, greedWorld, setGreed, rollGreedAffixes, getGreedAffixPreview } from './greed.js';
 import { assignPackLeader } from './packleaders.js';
 import { pickMonsterArchetype } from './monsterroster.js';
 import { spectateTick } from './spectate.js';
@@ -76,20 +76,6 @@ import { loadFleet, sea3dReady } from '../gfx/seabattle3d.js';
 import { SEA_VARIANTS } from '../data/seabattle.js';
 import { TOWNSFOLK } from '../data/townsfolk.js';
 const TOWNSFOLK_KNIGHTS = TOWNSFOLK.filter((q) => q.knight).map((q) => q.spriteId);
-function advanceAffixStreak(char, depth) {
-  if (!char || depth <= FINAL_DEPTH) return false;
-  char.affixStreak = Math.max(0, Math.floor(Number(char.affixStreak) || 0)) + 1;
-  char.affixStreak = Math.min(Number.MAX_SAFE_INTEGER, char.affixStreak);
-  if (char.affixStreak % 5 === 0 && (char.dungeonAffixes || []).length < 5) {
-    const next = chooseDungeonAffix(char.dungeonAffixes || []);
-    if (next) {
-      char.dungeonAffixes = normalizeDungeonAffixIds([...(char.dungeonAffixes || []), next.id]);
-      UI.log(`<b style="color:#d8a8ff">Survival milestone:</b> ${escapeHtml(next.name)} is awakened for the next dungeon. (${char.dungeonAffixes.length}/5)`, '#d8a8ff');
-    }
-  }
-  char.nextAffixes = [...(char.dungeonAffixes || [])];
-  return true;
-}
 const DUNGEON_ELEMENTAL_HAZARDS = {
       wildfire: { el: 'fire', radius: 1.6, damage: 0.07, interval: [11, 17], fx: 'fire' },
       blizzard: { el: 'cold', radius: 2.3, damage: 0.045, interval: [12, 18], fx: 'frost', o: { slow: true } },
@@ -645,6 +631,69 @@ export const game = {
     return Math.min(MAX_DEPTH, Math.max(1, c?.depth || 1, (c?.deepest || 0) + 1));
   },
 
+  /** Configure the saved Greed preference and stable affix plan for the next eligible depth. */
+  openGreedConfig(depth = G.char?.depth || 1, environment = G.char?.nextBiome || '') {
+    const c = G.char;
+    if (!c) return;
+    depth = Math.floor(Number(depth) || 0);
+    const unlocked = endgameUnlocked(c);
+    const eligible = unlocked && depth > FINAL_DEPTH && resolveDepthDestination(depth, c.breach?.best, environment).kind !== 'breach';
+    const current = greedOf(c);
+    const chosenEnvironment = !environment || environment === 'random'
+      ? (biomeChoices(c, depth, 1)[0] || c.nextBiome || 'random')
+      : environment;
+    const previewFor = (level, cache) => {
+      if (cache.has(level)) return cache.get(level);
+      const saved = c.greedAffixPreview;
+      const ids = level === current && saved?.level === level && saved.depth === depth && saved.environment === chosenEnvironment
+        ? normalizeDungeonAffixIds(saved.ids).slice(0, level)
+        : rollGreedAffixes(level);
+      cache.set(level, ids);
+      return ids;
+    };
+    const initialIds = eligible ? getGreedAffixPreview(c, depth, chosenEnvironment) : [];
+    const render = (level, ids) => {
+      const info = GREED_LEVELS[level];
+      const iconByCategory = { 'Enemy Stat Modifiers': '⚔', 'On-Death Effects': '☠', 'Elemental Hazards': '✹', 'Enemy Attack Modifiers': '➶', 'Enemy Movement & Behavior': '➤', 'Player Debuffs & Curses': '☠', 'Summoning & Reinforcements': '♟', 'Environmental & Dungeon Modifiers': '⌖', 'Elite & Boss Modifiers': '♛', 'Chaotic & Special Mechanics': '✧', 'World Effects': '◉', 'Risk & Reward': '✦' };
+      const affixes = ids.map((id) => {
+        const a = DUNGEON_AFFIX_BY_ID[id];
+        return a ? `<li><span class="greed-affix-icon">${iconByCategory[a.category] || '✧'}</span><span><b>${escapeHtml(a.name)}</b><small>${escapeHtml(a.description || '')}</small></span></li>` : '';
+      }).join('');
+      return `<div class="greed-config-summary"><b>Greed ${level}: ${info.name}</b><span>${ids.length} / ${info.affixes} affixes</span></div>
+        <input class="greed-config-range" type="range" min="0" max="5" step="1" value="${level}" aria-label="Greed level">
+        <div class="greed-config-levels"><span>0</span><span>1</span><span>2</span><span>3</span><span>4</span><span>5</span></div>
+        <div class="greed-config-rewards"><span>Gold <b>+${info.goldPct}%</b></span><span>Experience <b>+${info.xpPct}%</b></span><span>Loot quantity <b>+${info.lootPct}%</b></span></div>
+        <ul class="greed-config-affixes">${affixes || '<li class="dim">No active affixes.</li>'}</ul>`;
+    };
+    const dialog = UI.dialog({
+      title: 'ENDGAME GREED', cls: 'greed-config-dialog',
+      html: `<p class="dim">Choose the danger and rewards for your next Depth 101+ environment. Affixes are saved with this preview and lock when you enter.</p>${eligible ? '<div class="greed-config-content"></div>' : '<p class="greed-config-locked">Greed is available after defeating Velscour, for depths 101 and beyond.</p>'}`,
+      buttons: [{ label: 'Cancel' }, { label: 'Confirm', cls: 'red greed-config-confirm', fn: () => {
+        if (!eligible) return;
+        const level = Number(dialog.box.querySelector('.greed-config-range')?.value ?? current);
+        const ids = previewFor(level, previewCache);
+        setGreed(level, c);
+        c.greedAffixPreview = { level, depth, environment: chosenEnvironment, ids: [...ids] };
+        c.nextAffixes = [...ids];
+        const label = document.querySelector('.greed-portal-row span');
+        if (label) label.textContent = `Greed: ${GREED_LEVELS[level].name}`;
+        this.autosave();
+      } }],
+    });
+    const previewCache = new Map([[current, initialIds]]);
+    const content = dialog.box.querySelector('.greed-config-content');
+    const slider = dialog.box.querySelector('.greed-config-range');
+    const confirm = dialog.box.querySelector('.greed-config-confirm');
+    if (confirm) confirm.disabled = !eligible;
+    const update = () => {
+      if (!content || !slider) return;
+      const level = Number(slider.value);
+      content.innerHTML = render(level, previewFor(level, previewCache));
+    };
+    slider?.addEventListener('input', update);
+    update();
+  },
+
   /** Select an already unlocked campaign act and travel to its existing town hub. */
   openActSelection() {
     const c = G.char;
@@ -698,30 +747,6 @@ export const game = {
     const unboundMax = Math.min(MAX_UNBOUND_DEPTH, Math.max(1, c.unboundExploration?.deepest || 1));
     const waypoints = unboundWaypoints(c);
     let unboundValue = Math.min(unboundMax, c.unboundExploration?.currentFloor || unboundMax);
-    let affixPreviewDepth = null;
-    let affixPreviewIds = [];
-    const affixesForCampaignDepth = (depth) => {
-      if (depth <= FINAL_DEPTH) return [];
-      if (affixPreviewDepth !== depth) {
-        affixPreviewDepth = depth;
-        const env = depth === current ? currentBiome.id : c.nextBiome;
-        const sameEnvironment = env && env === c.affixBiome;
-        affixPreviewIds = rollDungeonAffixesForStreak(c.affixStreak || 0, Math.random, c.dungeonAffixes || [], !sameEnvironment);
-      }
-      return affixPreviewIds;
-    };
-    const affixPreviewHtml = (depth) => {
-      const affixes = affixesForCampaignDepth(depth).map((id) => DUNGEON_AFFIX_BY_ID[id]).filter(Boolean);
-      if (!affixes.length) return '';
-      return '<div class="floor-pick-affixes" style="margin:7px 0 2px;padding:6px 8px;background:rgba(255,176,112,0.08);border-left:2px solid #ffb070;border-radius:3px;font-size:11px;line-height:1.25;">' +
-        '<b style="color:#ffd880;">Affixes for Depth ' + depth + '</b>' +
-        affixes.map((affix) => {
-          const summary = String(affix.description || '').trim();
-          return '<div style="margin-top:2px;"><b>' + escapeHtml(affix.name) + '</b><span style="opacity:.82"> — ' + escapeHtml(summary) + '</span></div>';
-        }).join('') +
-        '</div>';
-    };
-
     const describe = (d) => {
       const act = getActForDepth(d);
       const isSuper = isSuperbossDepth(d);
@@ -748,9 +773,9 @@ export const game = {
       }
       if (d === current) {
         const actualBiome = BIOME_BY_ID[destination.id] || currentBiome;
-        return `${actHeader}<p>The portal hums. Beyond lies <b style="color:#ffb070">${escapeHtml(actualBiome.name)}</b>.</p><p class="dim">${this.biomeBlurb(actualBiome)}${tail}</p>${affixPreviewHtml(d)}`;
+        return `${actHeader}<p>The portal hums. Beyond lies <b style="color:#ffb070">${escapeHtml(actualBiome.name)}</b>.</p><p class="dim">${this.biomeBlurb(actualBiome)}${tail}</p>`;
       }
-      return `${actHeader}<p>The portal's glow shifts. A fresh path will be drawn into <b style="color:#ffb070">Depth ${d}</b>.</p><p class="dim">Monsters, loot and the biome are rolled for this depth when you step through.${tail}</p>${affixPreviewHtml(d)}`;
+      return `${actHeader}<p>The portal's glow shifts. A fresh path will be drawn into <b style="color:#ffb070">Depth ${d}</b>.</p><p class="dim">Monsters, loot and the biome are rolled for this depth when you step through.${tail}</p>`;
     };
 
     const describeUnbound = (f) => {
@@ -806,6 +831,7 @@ export const game = {
             <div class="floor-pick-ticks"><span>1</span><span>Deepest reached: ${maxFloor}</span></div>
             <div class="floor-pick-desc"></div>
             ${roomNote}
+            <div class="greed-portal-row"><span class="dim">Greed: ${GREED_LEVELS[greedOf(c)].name}</span><button type="button" class="btn greed-open-config" ${!canUnbound ? 'disabled title="Defeat Velscour to unlock endgame"' : ''}>Configure Greed</button></div>
           </div>
 
           <div class="portal-pane portal-unbound-pane" style="display:none;">
@@ -834,7 +860,7 @@ export const game = {
         { label: 'Cancel' },
         { label: 'Enter', cls: 'red floor-pick-go', fn: () => {
           if (mode === 'unbound') this.enterUnboundExploration(unboundValue);
-          else this.enterDungeonAt(value, resolveDepthDestination(value, c.breach?.best, c.nextBiome).kind === 'breach' ? [] : [...affixesForCampaignDepth(value)]);
+          else this.enterDungeonAt(value);
         } },
       ],
     });
@@ -881,6 +907,13 @@ export const game = {
     };
 
     tabCampaign.addEventListener('click', () => { sfx('ui'); setMode('campaign'); });
+    box.querySelector('.greed-open-config')?.addEventListener('click', (e) => {
+      e.stopPropagation();
+      if (e.currentTarget.disabled) return;
+      sfx('ui');
+      const destination = resolveDepthDestination(value, c.breach?.best, c.nextBiome);
+      this.openGreedConfig(value, value === current ? (destination.id || c.nextBiome || 'random') : 'random');
+    });
     if (canUnbound) tabUnbound.addEventListener('click', () => { sfx('ui'); setMode('unbound'); });
     if (canUnbound) tabRifts.addEventListener('click', () => {
       sfx('ui');
@@ -896,6 +929,12 @@ export const game = {
       if (!fromTyping || String(value) !== num.value) num.value = value;
       range.style.setProperty('--pct', maxFloor > 1 ? `${((value - 1) / (maxFloor - 1)) * 100}%` : '100%');
       desc.innerHTML = describe(value);
+      const greedButton = box.querySelector('.greed-open-config');
+      const selectedDestination = resolveDepthDestination(value, c.breach?.best, c.nextBiome);
+      if (greedButton) {
+        greedButton.disabled = !canUnbound || value <= FINAL_DEPTH || selectedDestination.kind === 'breach';
+        greedButton.title = greedButton.disabled ? (canUnbound ? 'Greed is available for Depth 101+ environments.' : 'Defeat Velscour at Depth 100 to unlock endgame.') : 'Choose Greed and preview the affixes for this environment.';
+      }
       if (mode === 'campaign') {
         if (goBtn) {
           goBtn.disabled = false;
@@ -991,13 +1030,21 @@ export const game = {
     }
     if (depth !== current) {
       c.depth = depth;
-        delete c.nextAffixes;
-      c.nextBiome = depth === FINAL_DEPTH ? 'throne' : drawBiome(c, depth);
+      delete c.nextAffixes;
+      const planned = c.greedAffixPreview;
+      c.nextBiome = depth === FINAL_DEPTH ? 'throne'
+        : planned?.depth === depth && planned.level === greedOf(c) && BIOME_BY_ID[planned.environment] ? planned.environment
+          : drawBiome(c, depth);
     }
-    if (Array.isArray(affixes)) {
-      c.dungeonAffixes = normalizeDungeonAffixIds(affixes);
-      c.nextAffixes = [...c.dungeonAffixes];
-    }
+    const destination = resolveDepthDestination(depth, c.breach?.best, c.nextBiome);
+    const eligible = depth > FINAL_DEPTH && destination.kind !== 'breach' && destination.id !== 'throne' && endgameUnlocked(c);
+    const environment = destination.id || c.nextBiome || 'random';
+    const ids = eligible
+      ? (Array.isArray(affixes) ? normalizeDungeonAffixIds(affixes).slice(0, greedOf(c)) : getGreedAffixPreview(c, depth, environment))
+      : [];
+    if (eligible) c.greedAffixPreview = { level: greedOf(c), depth, environment, ids: [...ids] };
+    c.dungeonAffixes = [...ids];
+    c.nextAffixes = [...ids];
     this.enterDungeon();
   },
 
@@ -1259,8 +1306,6 @@ export const game = {
     if (depth <= FINAL_DEPTH) {
       c.dungeonAffixes = [];
       c.nextAffixes = [];
-      c.affixStreak = 0;
-      c.affixBiome = null;
     }
     if (depth !== FINAL_DEPTH && (!c.nextBiome || !biomesForDepth(depth).includes(c.nextBiome) || (depth > FINAL_DEPTH && regionNeeds(BIOME_BY_ID[c.nextBiome], c.level)))) {
       c.nextBiome = drawBiome(c, depth);
@@ -1364,7 +1409,6 @@ export const game = {
     world.chestEnvironmentVariant = gen.variant?.id || '';
     world.chestSeed = seed;
     world.dungeonAffixes = depth <= FINAL_DEPTH ? [] : normalizeDungeonAffixIds(c.nextAffixes ?? c.dungeonAffixes);
-    if (depth > FINAL_DEPTH) c.affixBiome = biome.id;
     if (world.dungeonAffixes.includes('bloodmoon')) {
       world.lootMul = (world.lootMul || 1) * DUNGEON_AFFIX_CONFIG.bloodmoon.lootMultiplier;
       world.darkK = Math.max(world.darkK || 0, DUNGEON_AFFIX_CONFIG.bloodmoon.darkness);
@@ -1463,7 +1507,7 @@ export const game = {
     world.unbound = biome.id === 'throne' && !!G.unboundNext; G.unboundNext = false; // Velscour Unbound (game/unbound.js)
     world.practice = biome.id === 'throne' && depth !== FINAL_DEPTH && practiceFinalBoss && !world.unbound; // Skull-only Velscour practice; ordinary Throne depths use a regular guardian
     const heresies = heresyBegin(world, c); // the Heresies (game/heresies.js): twinned packs now, BOSS ROOM phases, the rest as monsters appear
-    for (const s of heresySpawns(greedPacks(gen.spawns, greedOf(c)), heresies)) { // the Greed lever: bigger packs, champion leaders (game/greed.js)
+    for (const s of heresySpawns(gen.spawns, heresies)) {
       if (s.rank === 'raid') {
         const superbossId = superbossForDepth(depth);
         const tpl = superbossId ? RAID_BOSSES.find((b) => b.id === superbossId) : undefined;
@@ -1516,7 +1560,7 @@ export const game = {
       setupDungeonEvent(world, gen.eventRoom, { start: gen.start });
     }
     setupCommissions(world, gen.start); // this depth's Town Commission objectives (game/commissions.js)
-    greedWorld(world, c); // the Greed lever and its Hoard multiply the omen's loot dials
+    greedWorld(world, c); // Greed adds its selected endgame rewards to existing world dials.
     heresyWorld(world, c); // the Heresies' rank pays on top (none in Unbound)
     tickBlessing(c);
     world.onBossAwake = (m) => {
@@ -1536,7 +1580,6 @@ export const game = {
         return;
       }
       const first = !c.cleared[depth];
-      if (first) advanceAffixStreak(c, depth);
       c.cleared[depth] = true;
       c.deepest = Math.max(c.deepest || 0, depth);
       this.brokeThrough(depth);
@@ -1556,7 +1599,7 @@ export const game = {
         c.depth = FINAL_DEPTH + 1;
         c.deepest = Math.max(c.deepest || 0, FINAL_DEPTH);
         c.nextBiome = drawBiome(c, c.depth);
-        c.dungeonAffixes = []; c.nextAffixes = []; c.affixStreak = 0; c.affixBiome = null;
+        c.dungeonAffixes = []; c.nextAffixes = [];
         this.autosave();
         setTimeout(() => victoryScreen(() => this.enterTown()), 3200);
       }
@@ -1565,7 +1608,6 @@ export const game = {
       world.overworldScenario = createSkyBattle(world, gen, biome, depth, { variant: c.skyVariant, last: c.lastSkyVariant, seen: c.skySeen || {} }, () => {
         exit.active = true; exit.color = '#40a0ff'; exit.label = 'Exit — continue';
         const first = !c.cleared[depth];
-        if (first) advanceAffixStreak(c, depth);
         c.cleared[depth] = true;
         c.deepest = Math.max(c.deepest || 0, depth);
         this.brokeThrough(depth);
@@ -1577,7 +1619,6 @@ export const game = {
       createSeaBattle(world, gen, biome, depth, { variant: G.seaNext || c.seaVariant, last: c.lastSeaVariant, seen: c.seaSeen || {} }, () => {
         exit.active = true; exit.color = '#40a0ff'; exit.label = 'Exit — continue';
         const first = !c.cleared[depth];
-        if (first) advanceAffixStreak(c, depth);
         c.cleared[depth] = true;
         c.deepest = Math.max(c.deepest || 0, depth);
         this.brokeThrough(depth);
@@ -1591,7 +1632,6 @@ export const game = {
       world.overworldScenario = reg.createRun(world, gen, biome, depth, () => {
         exit.active = true; exit.color = '#40a0ff'; exit.label = 'Exit — continue';
         const first = !c.cleared[depth];
-        if (first) advanceAffixStreak(c, depth);
         c.cleared[depth] = true;
         c.deepest = Math.max(c.deepest || 0, depth);
         this.brokeThrough(depth);
@@ -1602,7 +1642,6 @@ export const game = {
     } else if (gen.dunes) createDuneRun(world, gen, biome, () => {
       exit.active = true; exit.color = '#40a0ff'; exit.label = 'Exit — continue';
       const first = !c.cleared[depth];
-      if (first) advanceAffixStreak(c, depth);
       c.cleared[depth] = true;
       c.deepest = Math.max(c.deepest || 0, depth);
       this.brokeThrough(depth);
@@ -1613,7 +1652,6 @@ export const game = {
     else if (biome.id === 'sea_of_sand') world.overworldScenario = createSeaOfSandScenario(world, gen, biome, () => {
       exit.active = true; exit.color = '#40a0ff'; exit.label = 'Exit — continue';
       const first = !c.cleared[depth];
-      if (first) advanceAffixStreak(c, depth);
       c.cleared[depth] = true;
       c.deepest = Math.max(c.deepest || 0, depth);
       this.brokeThrough(depth);
@@ -1626,7 +1664,6 @@ export const game = {
     else if (biome.tower) createTowerRun(world, gen, biome, () => {
       exit.active = true; exit.color = '#40a0ff'; exit.label = 'Exit — continue';
       const first = !c.cleared[depth];
-      if (first) advanceAffixStreak(c, depth);
       c.cleared[depth] = true;
       c.deepest = Math.max(c.deepest || 0, depth);
       this.brokeThrough(depth);
@@ -1637,7 +1674,6 @@ export const game = {
     else if (biome.cave) createCaveRun(world, gen, biome, () => {
       exit.active = true; exit.color = '#40a0ff'; exit.label = 'Exit — continue';
       const first = !c.cleared[depth];
-      if (first) advanceAffixStreak(c, depth);
       c.cleared[depth] = true;
       c.deepest = Math.max(c.deepest || 0, depth);
       this.brokeThrough(depth);
@@ -1648,7 +1684,6 @@ export const game = {
     else if (biome.overworld && !forsakenWilds) world.overworldScenario = createOverworldScenario(world, gen, biome, () => {
       exit.active = true; exit.color = '#40a0ff'; exit.label = 'Exit — continue';
       const first = !c.cleared[depth];
-      if (first) advanceAffixStreak(c, depth);
       c.cleared[depth] = true;
       c.deepest = Math.max(c.deepest || 0, depth);
       this.brokeThrough(depth);
@@ -1792,8 +1827,7 @@ export const game = {
       const cards = ids.map((id) => {
         const biome = id === 'eternal_breach' ? BREACH_BIOME : BIOME_BY_ID[id] || BIOME_BY_ID.catacombs;
         const comm = commState(c).open.find((e) => { const ch = LINE_BY_ID[e.id] && LINE_BY_ID[e.id].chapters[e.ch]; return ch && ch.biome === biome.id; });
-        const sameEnvironment = c.affixBiome === biome.id;
-        const affixes = next <= FINAL_DEPTH || destination.kind === 'breach' ? [] : rollDungeonAffixesForStreak(c.affixStreak || 0, Math.random, sameEnvironment ? c.dungeonAffixes || [] : [], !sameEnvironment);
+        const affixes = next <= FINAL_DEPTH || destination.kind === 'breach' || biome.id === 'throne' || !endgameUnlocked(c) ? [] : rollGreedAffixes(greedOf(c));
         return { id: biome.id, biome, affixes, comm: comm && LINE_BY_ID[comm.id].name, floor: destination.kind === 'breach' ? destination.floor : 0 };
       });
       choiceState = world.completionPortalChoice = { depth: world.depth, next, destinationKey, cards, selected: 0, used: false };
@@ -1801,23 +1835,20 @@ export const game = {
     const cards = choiceState.cards;
     let sel = Math.max(0, Math.min(cards.length - 1, choiceState.selected | 0));
     const tag = (cd) => cd.biome.id === 'eternal_breach' ? `<b style="color:#d8b0ff">Breach interlude · Floor ${cd.floor}</b>` : (cd.biome.id === 'throne' ? (next === FINAL_DEPTH ? '<b style="color:#ff4020">Demon Lord Velscour awaits</b>' : 'Guardian') : cd.biome.id === 'skyship' ? 'Sky battle' : cd.biome.sea ? 'Sea battle' : cd.biome.id === 'dark_forest' ? 'Guardian · Optional labyrinths' : cd.biome.id === 'castle' ? 'Castle Guardian' : cd.biome.id === 'overworld' ? 'Forsaken Guardian' : cd.biome.overworld ? 'Overworld trial' : isRaidDepth(next) ? '<b style="color:#ff6030">BOSS ROOM</b>' : 'Dungeon');
-    const affixLine = (cd) => `<span class="pc-affixes"><b>Affixes</b>${cd.affixes.length ? cd.affixes.map((id) => {
-      const affix = DUNGEON_AFFIX_BY_ID[id];
-      return affix ? `<span title="${escapeHtml(affix.description)}"><b>${escapeHtml(affix.name)}</b><small class="pc-affix-description">${escapeHtml(String(affix.description || '').trim())}</small></span>` : '';
-    }).join('') : '<i>No affixes</i>'}</span>`;
     const html = `<p class="dim">${destination.kind === 'breach' ? `Depth ${next} leads to ${escapeHtml(destination.name)} · Floor ${destination.floor}. Clear the interlude, then return to town to continue.` : cards.length > 1 ? `Depth ${next} lies beyond ${['', 'one', 'two', 'three'][cards.length]} portals. Choose your way down.` : `The way down opens onto ${escapeHtml(cards[0]?.biome.name || `Depth ${next}`)}.`}</p>
-      <div class="pc-row">${cards.map((cd, i) => `<button type="button" class="pc-card${i === sel ? ' sel' : ''}" data-i="${i}" style="--pc:${cd.biome.torch || '#ff8040'}"><i class="pc-swirl"></i><b class="pc-name">${escapeHtml(cd.biome.name)}</b><span class="pc-tag">${tag(cd)}</span>${cd.comm ? `<span class="pc-commission" style="color:#8fe0ff"><b>Commission</b>${escapeHtml(cd.comm)}</span>` : ''}${affixLine(cd)}</button>`).join('')}</div>
+      <div class="pc-row">${cards.map((cd, i) => `<button type="button" class="pc-card${i === sel ? ' sel' : ''}" data-i="${i}" style="--pc:${cd.biome.torch || '#ff8040'}"><i class="pc-swirl"></i><b class="pc-name">${escapeHtml(cd.biome.name)}</b><span class="pc-tag">${tag(cd)}</span>${cd.comm ? `<span class="pc-commission" style="color:#8fe0ff"><b>Commission</b>${escapeHtml(cd.comm)}</span>` : ''}</button>`).join('')}</div>
       `;
     const go = (town) => {
       if (choiceState.used) return;
       choiceState.used = true;
       const cd = cards[sel];
-      if (firstClear) advanceAffixStreak(c, world.depth);
       c.cleared[world.depth] = true;
       c.deepest = Math.max(c.deepest || 0, world.depth);
-      c.depth = next; c.nextBiome = cd.id; c.affixBiome = cd.id; takeBiome(c, cd.id, next);
+      c.depth = next; c.nextBiome = cd.id; takeBiome(c, cd.id, next);
       c.dungeonAffixes = normalizeDungeonAffixIds(cd.affixes);
       c.nextAffixes = [...c.dungeonAffixes];
+      if (next > FINAL_DEPTH && cd.id !== 'throne' && cd.id !== 'eternal_breach') c.greedAffixPreview = { level: greedOf(c), depth: next, environment: cd.id, ids: [...c.dungeonAffixes] };
+      else if (next <= FINAL_DEPTH) c.greedAffixPreview = null;
       this.autosave();
       if (town) { sfx('portal'); this.enterTown(); }
       else this.enterDungeon();
@@ -1845,7 +1876,6 @@ export const game = {
   brokeThrough(depth) {
     const c = G.char, had = c.defiance && c.defiance.n;
     commissionClear(G.world);
-    greedCleared(G.world, c); // the Greed lever pays into the Hoard (game/greed.js)
     if (worldRank(G.world) >= MARKS_RANK && !G.world.markPaid && canEarnInfernalMarks(G.world, c)) {
       G.world.markPaid = true;
       grantMarksWithBonus(1, `for a depth cleared at Heresy rank ${worldRank(G.world)}`, G.world, G.player?.st?.markHeretic || 0);
@@ -1863,14 +1893,9 @@ export const game = {
     if (w && (w.unbound || w.unboundExploration)) return this.unboundDeath(src);
     c.deaths = (c.deaths || 0) + 1;
     const depth = w && w.kind === 'dungeon' ? w.depth : c.depth;
-    c.dungeonAffixes = [];
-    c.nextAffixes = [];
-    c.affixStreak = 0;
-    c.affixBiome = null;
-    c.affixStartDepth = blockStart(depth);
+    // Greed selection and the active endgame affix set persist across death.
     const n = addDefiance(c, depth);
     markNemesis(c, src, depth); // the killer comes back as a unique (game/happenings.js)
-    greedDeath(c); // the Hoard is lost and the Greed lever drops (game/greed.js)
     G.smiteArmed = false;
     delete c.nextOmen;
     delete c.nextAffixes;
@@ -1879,13 +1904,8 @@ export const game = {
     this.autosave();
     setTimeout(() => {
       deathScreen(depth, killer, () => {
-        // Each death starts a fresh affix climb at the same campaign depth.
+        // Keep the selected Greed level. A changed environment receives a fresh saved affix preview on entry.
         c.depth = Math.max(1, depth || c.depth || 1);
-        c.dungeonAffixes = [];
-        delete c.nextAffixes;
-        c.affixStreak = 0;
-        c.affixBiome = null;
-        c.affixStartDepth = c.depth;
         c.nextBiome = drawBiome(c, c.depth);
         delete c.mountainRuns; delete c.summitRuns;   // the mountains' checkpoints don't outlive a death
         const p = G.player;

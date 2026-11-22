@@ -1,6 +1,6 @@
 // Heresies (docs/ENDGAME.md, data/heresies.js): the difficulty modifiers a hero switches on at the Altar of Heresy
 // from the beginning. They are read when a level is built (game.buildDungeon / buildBreach: heresySpawns and
-// heresyWorld, after the Greed lever) and never in Abyssal Rifts or Velscour Unbound; heresyTick (from happeningsTick)
+// heresyWorld, alongside endgame Greed rewards) and never in Abyssal Rifts or Velscour Unbound; heresyTick (from happeningsTick)
 // marks every enemy as it appears. The hero's own ones (Glass Cannon, Dry Throat, Hunger) read the level he is in, so
 // a rift is played clean. Saves keep c.heresy.on; the rank's rewards are heresyMods in data/heresies.js.
 import { G } from '../state.js';
@@ -52,7 +52,7 @@ export function heresyBegin(world, c = G.char) {
   world.heresy = { ids, rank: heresyRank(ids) };
   return ids;
 }
-/** The level's dials once built (after the omen and the Greed lever): rewards by rank, the Legion's clock, ambush pace. */
+/** The level's dials once built (after the omen and Greed): rewards by rank, the Legion's clock, ambush pace. */
 export function heresyWorld(world, c = G.char) {
   if (!world || !world.heresy) heresyBegin(world, c);
   if (!world || !world.heresy) return;
