@@ -48,6 +48,13 @@ export function hit(src, tgt, amount, el = 'phys', o = {}) {
     kill(tgt, src, { ...o, crit: false, overkill: 0 });
     return 1;
   }
+  // Only health-bearing entities can receive combat damage. This also prevents
+  // retaliation against lightweight environmental source records from entering
+  // the creature-only modifier path below.
+  if (!Number.isFinite(tgt.hp) || !Number.isFinite(tgt.maxHp) || tgt.maxHp <= 0) return 0;
+  // Older or purpose-built combatants may omit optional effect containers.
+  tgt.curses ||= {};
+  tgt.status ||= {};
   const world = tgt.world || G.world;
   const worldAffixes = new Set(Array.isArray(world && world.dungeonAffixes) ? world.dungeonAffixes : []);
   let dmg = amount;

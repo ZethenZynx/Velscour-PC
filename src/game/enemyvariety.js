@@ -428,10 +428,28 @@ export function enemyDamageReduction(m, src, damage, el) {
 export function enemyDamaged(m, src, dealt) {
   if (!m.enemyBehaviors?.length || !src || src.team === m.team) return;
   if (m.enemyBehaviors.includes('counterattack') && m.enemyBlockedHit && (m.enemyCounterCd || 0) <= 0) {
-    m.enemyCounterCd = 2.5; const ang = angleTo(m.x, m.y, src.x, src.y); warnLine(m, ang, 2.2, 0.25, '#d9d0b9');
-    if (dist(m.x, m.y, src.x, src.y) <= 2.3) {
-      const target = src, x = m.x, y = m.y, world = C(m);
-      world.addHazard({ t: 0, update(dt) { this.t += dt; if (this.t >= 0.25) { this.dead = true; if (!target.dead && dist(x, y, target.x, target.y) <= 2.4) { m.deal(target, m.dmg * 0.8, 'phys', { melee: true, stun: true, knock: 0.45 }); addEffect(new Slash(x, y, ang, 2, 1.2, 0.18, '#e0d3ba', { width: 8 })); } return false; } return true; }, draw() {} });
+    // Environmental hazards can damage enemies, but their lightweight source records are not
+    // combatants and must not become retaliation targets (they have no hp/curses/status state).
+    const combatantSource = !src.isEnvironmentHazard && src.targetable !== false &&
+      Number.isFinite(src.hp) && Number.isFinite(src.maxHp) && src.maxHp > 0;
+    if (combatantSource) {
+      m.enemyCounterCd = 2.5; const ang = angleTo(m.x, m.y, src.x, src.y); warnLine(m, ang, 2.2, 0.25, '#d9d0b9');
+      if (dist(m.x, m.y, src.x, src.y) <= 2.3) {
+        const target = src, x = m.x, y = m.y, world = C(m);
+        world.addHazard({ t: 0, update(dt) {
+          this.t += dt;
+          if (this.t >= 0.25) {
+            this.dead = true;
+            const present = (unit) => unit && !unit.dead && (unit === world.player || world.creatures?.includes(unit));
+            if (present(m) && present(target) && dist(x, y, target.x, target.y) <= 2.4) {
+              m.deal(target, m.dmg * 0.8, 'phys', { melee: true, stun: true, knock: 0.45 });
+              addEffect(new Slash(x, y, ang, 2, 1.2, 0.18, '#e0d3ba', { width: 8 }));
+            }
+            return false;
+          }
+          return true;
+        }, draw() {} });
+      }
     }
     m.enemyBlockedHit = false;
   }
