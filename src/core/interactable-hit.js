@@ -9,13 +9,22 @@ export function chestSpriteHit(c, sx, sy, zoom, tileToScreen) {
 
 export function portalSpriteHit(p, sx, sy, zoom, tileToScreen) {
   const [px, py] = tileToScreen(p.x, p.y);
-  return sx >= px - 34 * zoom && sx <= px + 34 * zoom &&
-    sy >= py - 105 * zoom && sy <= py + 14 * zoom;
+  // drawPortal renders a 1.3x floor ring (44.2 px radius) and a raised
+  // portal whose glow reaches about 94 px above its ground anchor. Include a
+  // small margin so the visible outer ring and foot are not dead click zones.
+  const scale = Math.max(0.1, Number(zoom) || 1);
+  return sx >= px - 47 * scale && sx <= px + 47 * scale &&
+    sy >= py - 98 * scale && sy <= py + 24 * scale;
+}
+
+export function exitPortalIsOpen(p, run = p?.riftRun) {
+  const isLinkedCompletedRift = run?.done && !run?.failed && (!run.exitPortal || run.exitPortal === p);
+  return !!(p && !p.hidden && (p.active || isLinkedCompletedRift));
 }
 
 /** Completed exit artwork wins over overlapping ground-loot labels when clicked. */
-export function activeExitSpriteAt(portals, sx, sy, zoom, tileToScreen) {
-  return (portals || []).find((p) => p?.type === 'exit' && p.active && !p.hidden &&
+export function activeExitSpriteAt(portals, sx, sy, zoom, tileToScreen, riftRun = undefined) {
+  return (portals || []).find((p) => p?.type === 'exit' && exitPortalIsOpen(p, riftRun) &&
     portalSpriteHit(p, sx, sy, zoom, tileToScreen)) || null;
 }
 

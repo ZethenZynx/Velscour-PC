@@ -174,7 +174,7 @@ import { LoadingScreen } from '../ui/loading.js';
 // the Endgame (docs/ENDGAME.md): Heresies, Abyssal Rifts, Velscour Unbound, Infernal Marks
 import { endgameUnlocked, campaignVictoryRecorded, unlockEndgame, endgame, canEarnInfernalMarks } from './endgame.js';
 import { heresySpawns, heresyWorld, heresyBegin, heresyTick, heresiesOf, heresyRank, worldRank, MARKS_RANK } from './heresies.js';
-import { createRiftRun, riftTick, riftOpen, riftDepth, riftLevel, fmtTime, riftLeave, activatePylon, riftDeathPenalty, RIFT_QUOTA, RIFT_DENSITY } from './rifts.js';
+import { createRiftRun, riftTick, riftOpen, riftDepth, riftLevel, fmtTime, riftLeave, activatePylon, activateRiftExit, riftDeathPenalty, RIFT_QUOTA, RIFT_DENSITY } from './rifts.js';
 import { PYLONS } from '../data/rifts.js';
 import { unboundReady, spendKeys, keysOf, canEnterUnbound, spendUnboundKey, unboundWaypoints, MAX_UNBOUND_DEPTH, isUnboundCheckpointFloor, unboundDepth } from './unbound.js';
 import { grantMarks, grantMarksWithBonus, saveMarkXp } from './marks.js';
@@ -1712,6 +1712,8 @@ export const game = {
 
   useExit(world, exit) {
     const c = G.char;
+    // Repair the portal state from its completed Rift run before checking it.
+    if (world.rift) activateRiftExit(world);
     if (!exit.active) { floatText(exit.x, exit.y, 70, world.breach ? 'Sealed - the Breach Heart still beats!' : world.rift ? 'Sealed - the Guardian still stands!' : world.biome?.id === 'dark_forest' ? 'Sealed - defeat the Forest Guardian!' : world.biome?.id === 'castle' ? 'Sealed - defeat the Castle Guardian!' : world.biome?.id === 'overworld' ? 'Sealed - defeat the Forsaken Guardian!' : world.overworldScenario ? 'Sealed - complete the shrine trial!' : 'Sealed - slay the guardian!', '#ff6040', 13, { life: 1.6 }); sfx('error'); return; }
     if (world.breach) this.breachExit(world);
     else if (world.rift) this.riftExit(world);
@@ -2096,10 +2098,12 @@ export const game = {
     }
     world.roster = [...new Set(gen.spawns.filter((s) => s.arch && !['raid', 'boss'].includes(s.rank)).map((s) => s.arch))];
     world.rift = createRiftRun(world, gen, tier, {
-      onWin: () => { exit.active = true; exit.color = '#20e0ff'; exit.label = 'Exit'; addEffect(new Ring(exit.x, exit.y, 0.2, 3, 1, '#20e0ff', 5)); sfx('gate'); UI.refresh(); this.autosave(); },
+      onWin: () => { addEffect(new Ring(exit.x, exit.y, 0.2, 3, 1, '#20e0ff', 5)); sfx('gate'); UI.refresh(); this.autosave(); },
       onFail: () => this.autosave(),
       onBack: () => { if (G.world === world) { stopMusic(); this.enterTown(); UI.log(`The Rift threw you back into Herrington Hollow. Tier ${tier} waits at the gate.`, '#a0f0ff'); } },
     });
+    world.rift.exitPortal = exit;
+    exit.riftRun = world.rift;
     c.rifts.runs = (c.rifts.runs || 0) + 1;
     setupWorldObjects(world, gen.start, { special: true });
     setupDungeonEvent(world, null, { start: gen.start });

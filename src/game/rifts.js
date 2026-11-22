@@ -34,6 +34,19 @@ export function createRiftRun(world, gen, tier, hooks = {}) {
   return run;
 }
 
+/** Keep the portal's usable state derived from the actual completed Rift run. */
+export function activateRiftExit(world) {
+  const run = world?.rift;
+  const exit = run?.exitPortal || world?.portals?.find((portal) => portal?.type === 'exit');
+  if (!run?.done || run.failed || !exit || exit.type !== 'exit') return false;
+  run.exitPortal = exit;
+  exit.riftRun = run;
+  exit.active = true;
+  exit.color = '#20e0ff';
+  exit.label = 'Exit';
+  return true;
+}
+
 /** A kill in a rift: progress toward the Guardian. */
 export function riftKill(world, m) {
   const R = world.rift;
@@ -142,6 +155,7 @@ export function riftWin(world, m) {
   const R = world.rift, c = G.char, p = world.player;
   if (!R || R.done || R.failed) return;
   R.done = true;
+  activateRiftExit(world);
   const time = R.t, k = time / R.limit, jump = riftJump(k), tier = R.tier;
   c.rifts ||= { open: 1, best: 0, cleared: {}, bestTime: {}, runs: 0, fails: 0, deaths: 0 };
   const first = !c.rifts.cleared[tier];

@@ -111,7 +111,7 @@ export const controls = {
       const [tx, ty] = camera.screenToTile(mouse.x, mouse.y);
       if (mouse.leftPressed) {
         this.holdLeft = 0;
-        const exit = activeExitSpriteAt(G.world?.portals, mouse.x, mouse.y, camera.zoom, (x, y, z) => camera.tileToScreen(x, y, z));
+        const exit = activeExitSpriteAt(G.world?.portals, mouse.x, mouse.y, camera.zoom, (x, y, z) => camera.tileToScreen(x, y, z), G.world?.rift);
         const loot = lootAt(mouse.x, mouse.y);
         const it = exit || interactableAt(tx, ty, mouse.x, mouse.y);
         const shift = input.down('ShiftLeft') || input.down('ShiftRight');
