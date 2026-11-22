@@ -12,6 +12,7 @@ import { chance, pick, clamp } from '../core/util.js';
 import { rollItem, affixValue, AFFIX_BY_STAT, GEMS, SIGILS, RELIC_HOOK, powerLevel, legendaryScale, LEGENDARY, RARITY_LEGENDARY, RARITY_MYTHIC, RARITY_TIER_20, TIER_20_MIN_DEPTH, tierOf } from './items.js';
 import { MAX_LEVEL } from './depth.js';
 import { G } from '../state.js';
+import { riftLootDepth } from './rifts.js';
 
 // ---------------------------------------------------------------- line values
 const MYTHIC = RARITY_MYTHIC;
@@ -252,7 +253,8 @@ export function makeHeirloom(ilvl, opts = {}) {
 }
 /** A Covenant piece (pieceId, or a random piece of setId / of any set). */
 export function makeCovenant(ilvl, opts = {}) {
-  const depth = Number.isFinite(opts.depth) ? opts.depth : Math.max(G.world?.depth || 0, G.char?.depth || 0, 1);
+  const worldDepth = G.world?.rift ? riftLootDepth(G.world.rift.tier) : G.world?.depth || 0;
+  const depth = Number.isFinite(opts.depth) ? opts.depth : Math.max(worldDepth, G.char?.depth || 0, 1);
   if (!opts.preview && depth < TIER_20_MIN_DEPTH) return null;
   const pool = Object.values(PIECE_BY_ID).filter((p) => (opts.pieceId ? p.id === opts.pieceId : !opts.setId || p.set === opts.setId) && (!opts.slot || p.slot === opts.slot));
   if (!pool.length) return null;

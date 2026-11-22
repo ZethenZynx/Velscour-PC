@@ -20,9 +20,15 @@ import { maybeRelic } from '../data/relics.js';
 import { heresyAllows } from './heresies.js';
 import { keyChance } from './unbound.js';
 import { CHEST_RARITIES } from '../data/treasurechests.js';
+import { riftLootDepth } from '../data/rifts.js';
 
 /** Highest quality unlocked for ground drops at this campaign depth. */
 export function groundDropRarityCap(depth) { return qualityAtDepth(Math.max(1, depth || 1)); }
+
+/** Progression depth for a ground reward; Rift items scale by Rift tier while combat level stays capped at 100. */
+export function groundRewardDepth(world = G.world, fallbackDepth = 1) {
+  return world?.rift ? riftLootDepth(world.rift.tier) : fallbackDepth;
+}
 
 const ORB_COLOR = { orb_hp: '#ff2a2a', orb_mp: '#3a6aff', orb_rejuv: '#c040ff', orb_fury: '#ffa020' };
 const ORB_ICON = {
@@ -40,14 +46,20 @@ export function rollOrbKind(rejuvenationChance = 0.05, furyChance = 0.02, health
 export function rollGroundItem(ilvl, opts = {}) {
   const level = G.char?.level;
   const depth = G.world?.depth > 0 ? G.world.depth : G.char?.depth ?? 1;
-  const rarityCap = opts.maxRarity ?? groundDropRarityCap(depth);
+  const progressionDepth = groundRewardDepth(G.world, depth);
+  const depthCap = groundDropRarityCap(progressionDepth);
+  const requestedCap = Number.isFinite(opts.maxRarity) ? opts.maxRarity : depthCap;
+  // A reward source may request a high rarity, but it cannot bypass the active
+  // campaign/endgame progression cap (notably Rift completion rewards).
+  const rarityCap = Math.min(depthCap, requestedCap);
   return rollItem(level == null ? ilvl : Math.min(ilvl, level), { ...opts, maxRarity: rarityCap });
 }
 
 /** Roll ground gems at a tier available to the character's current level. */
 export function rollGroundGem(ilvl) {
   const level = G.char?.level;
-  return rollGem(level == null ? ilvl : Math.min(ilvl, level), G.player?.st?.markGemTier || 0);
+  const progressionLevel = G.world?.rift ? depthLevel(groundRewardDepth(G.world)) + 4 : ilvl;
+  return rollGem(level == null ? progressionLevel : Math.min(progressionLevel, level), G.player?.st?.markGemTier || 0);
 }
 
 // Breakable dungeon clutter can pay out only small, non-equipment rewards. Keep the gem
@@ -391,7 +403,7 @@ export function dropLoot(world, m) {
   }
   // Sigil Stones: rare from the rank and file, common from guardians (Heresies: world.sigilMul)
   const sig = { normal: 0.004, champion: 0.03, unique: 0.08, boss: 0.45 }[rank] * (world.lootMul || 1) * (world.sigilMul || 1) * (1 + (st.markSigilChance || 0) / 100) * breachScale;
-  if (world.depth && chance(sig)) add('item', { item: rollSigil(world.depth, rank === 'boss' ? 1 : 0) });
+  if (world.depth && chance(sig)) add('item', { item: rollSigil(groundRewardDepth(world, world.depth), rank === 'boss' ? 1 : 0) });
   // an Abyssal Key (docs/ENDGAME.md): BOSS ROOM bosses past depth 600 under Heresy rank 10, rift guardians from tier 10
   if (m.isRaid && chance(keyChance(world, m))) add('key', {}); // (keyChance rolls once a boss: a raid boss pays out three dropLoots)
   // rings: a guardian usually drops one
@@ -423,7 +435,7 @@ export function dropChest(world, chest, depth) {
     add('item', { item: maybeRelic(rollGroundItem(depthLevel(depth) + 1, { mf: st.magicFind + (world.mfAdd || 0), bonus: rarityBonus }), (1 + (st.markCollector || 0) / 100) * (world.relicMul || 1)) });
   }
   const sigilChance = rarity ? rarity.sigilChance : chest.rare ? 0.25 : 0.06;
-  if (!goldOnly && !gemsOnly && chance(Math.min(1, sigilChance * (1 + (st.markSigilChance || 0) / 100)))) add('item', { item: rollSigil(depth) });
+  if (!goldOnly && !gemsOnly && chance(Math.min(1, sigilChance * (1 + (st.markSigilChance || 0) / 100)))) add('item', { item: rollSigil(groundRewardDepth(world, depth)) });
   const goldPiles = gemsOnly ? 0 : breachCount(randi(goldRange[0], goldRange[1])) + (goldOnly ? 2 : 0);
   if (!gemsOnly) for (let i = 0; i < goldPiles; i++) add('gold', { amount: Math.round((10 + depthLevel(depth) * 4) * goldScale(depthLevel(depth)) * rand(0.6, 1.4) * (1 + (st.goldFind + (st.markGold || 0)) / 100)) });
   const gemChance = Math.min(1, (rarity ? rarity.gemChance : chest.rare ? 0.8 : 0.3) * (1 + (st.markGemChance || 0) / 100));

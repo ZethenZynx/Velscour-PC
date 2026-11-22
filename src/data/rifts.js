@@ -1,5 +1,5 @@
 // Abyssal Rifts (docs/ENDGAME.md, docs/ENDGAME_OVERHAUL.md): the true endgame dungeon experience.
-import { FINAL_DEPTH, depthLevel } from './depth.js';
+import { FINAL_DEPTH } from './depth.js';
 import { clamp } from '../core/util.js';
 
 export const RIFT_TIME = 420;  // 7 minutes base clock
@@ -10,6 +10,8 @@ export const RIFT_GUARDIAN_HP = 1.0; // Guardian health scaling
 /** Baseline monster level for Rifts is level 100 */
 export const riftLevel = (_tier) => 100;
 export const riftDepth = (_tier) => FINAL_DEPTH;
+/** Reward progression for Rifts follows the game's 25-depth quality unlock cadence. */
+export const riftLootDepth = (tier) => FINAL_DEPTH + 1 + (Math.max(1, Math.floor(Number(tier) || 1)) - 1) * 25;
 
 /** Predictable +10% monster health scaling per tier above Tier 1 */
 export const riftHpMul = (tier) => Math.pow(1.10, Math.max(0, (tier | 0) - 1));
@@ -53,8 +55,8 @@ export function riftReward(tier, first) {
     sigils: Math.min(5, 2 + Math.floor(t / 20)),
     sigilBonus: 1 + Math.floor(t / 10),
     // Abyssal Keys for Unbound Exploration:
-    // T10+ has key chance; T15+ guarantees 1 key; T40+ guarantees 2 keys!
-    keys: t >= 40 ? 2 : t >= 15 ? 1 : t >= 10 ? (Math.random() < 0.5 ? 1 : 0) : 0,
+    // Every completed Rift grants a key; high tiers retain the established bonus payout.
+    keys: t >= 40 ? 2 : 1,
     marks: Math.max(1, Math.ceil(t / 10)),
   };
 }

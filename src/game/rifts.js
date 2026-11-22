@@ -6,16 +6,16 @@ import { addEffect, Ring, Column, Bolt, sparkle, floatText } from '../gfx/vfx.js
 import { explosionFx } from '../gfx/shapes.js';
 import { UI } from '../ui/ui.js';
 import { makeRaidBoss, RAID_BOSSES } from './raid.js';
-import { GroundItem, rollGroundItem, rollGroundGem } from './loot.js';
+import { GroundItem, rollGroundItem, rollGroundGem, groundDropRarityCap } from './loot.js';
 import { rollItem, rollSigil, rollGem, rarityAt, ABYSSAL, RARITY_MYTHIC, goldPile, RARITY } from '../data/items.js';
 import { hit } from './combat.js';
-import { RIFT_TIME, RIFT_QUOTA, RIFT_DENSITY, RIFT_GUARDIAN_HP, PYLONS, riftDepth, riftLevel, riftJump, riftWeight, riftReward, fmtTime, instabilitiesForTier } from '../data/rifts.js';
+import { RIFT_TIME, RIFT_QUOTA, RIFT_DENSITY, RIFT_GUARDIAN_HP, PYLONS, riftDepth, riftLevel, riftLootDepth, riftJump, riftWeight, riftReward, fmtTime, instabilitiesForTier } from '../data/rifts.js';
 import { markBonuses, grantMarksWithBonus, riftMarks } from './marks.js';
 import { heroDamage } from './heroDamage.js';
 import { noteRiftBest, endgame } from './endgame.js';
 import { barred } from './leaderboard.js';
 
-export { RIFT_TIME, RIFT_QUOTA, RIFT_DENSITY, riftDepth, riftLevel, riftJump, riftReward, fmtTime };
+export { RIFT_TIME, RIFT_QUOTA, RIFT_DENSITY, riftDepth, riftLevel, riftLootDepth, riftJump, riftReward, fmtTime };
 /** The clock a rift gives: the base plus Haste Marks. */
 export const riftTime = () => RIFT_TIME + markBonuses().rift;
 /** May the hero enter tier T: 1 .. the tier his wins opened. */
@@ -154,7 +154,7 @@ export function riftWin(world, m) {
   const marks = grantMarksWithBonus(riftMarks(tier), `for Tier ${tier}`, world, p?.st?.markRiftRewards || 0);
 
   // The Grand Piñata Reward Hoard:
-  const RW = riftReward(tier, first), lvl = 100;
+  const RW = riftReward(tier, first), lvl = 100, lootDepth = riftLootDepth(tier);
   const drop = (kind, data) => world.addLoot(new GroundItem(m.x + rand(-2.0, 2.0), m.y + rand(-2.0, 2.0), kind, data));
 
   // Equipment drops
@@ -172,13 +172,13 @@ export function riftWin(world, m) {
   }
 
   // Sigils, Gems & Gold
-  for (let i = 0; i < scaledCount(RW.sigils); i++) drop('item', { item: rollSigil(world.depth, RW.sigilBonus) });
+  for (let i = 0; i < scaledCount(RW.sigils); i++) drop('item', { item: rollSigil(lootDepth, RW.sigilBonus) });
   for (let i = 0; i < scaledCount(3); i++) drop('item', { item: rollGroundGem(lvl + 4) });
   for (let i = 0; i < 6; i++) drop('gold', { amount: Math.round(goldPile(lvl) * rand(3, 6) * (1 + (((p && p.st.goldFind) || 0) + (p?.st?.markGold || 0)) / 100) * rewardScale) });
 
   // Records
   const cheat = barred(c), best = !cheat && noteRiftBest(c.classId, tier, time);
-  R.result = { tier, time, jump, next: tier + jump, marks, first, rarity: chance(RW.abyssal) ? ABYSSAL : 5, best, personal: c.rifts.bestTime[tier] === Math.round(time * 10) / 10 };
+  R.result = { tier, time, jump, next: tier + jump, marks, first, rarity: groundDropRarityCap(lootDepth), best, personal: c.rifts.bestTime[tier] === Math.round(time * 10) / 10 };
   UI.centerMsg('THE RIFT IS CLOSED', `Tier ${tier} in ${fmtTime(time)} · Tier${jump > 1 ? 's' : ''} ${tier + 1}${jump > 1 ? `-${tier + jump}` : ''} open`, 4);
   UI.log(`<b style="color:#20e0ff">Abyssal Rift Tier ${tier}</b> closed in ${fmtTime(time)} (${Math.round(k * 100)}% of the clock): +${jump} tier${jump > 1 ? 's' : ''}${best ? ', <b>a new best</b> for your ' + c.classId.replace('_', ' ') : ''}.`, '#a0f0ff');
   addEffect(new Column(m.x, m.y, '#20e0ff', 1.4, 60, 420)); G.flash = 0.5; sfx('levelup');

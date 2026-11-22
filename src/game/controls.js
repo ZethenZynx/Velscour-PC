@@ -7,7 +7,7 @@ import { SKILLS, isMovementSkill } from '../data/skills.js';
 import { SLOT_KEYS, RMB } from '../data/bar.js';
 import { Macros } from './macros.js';
 import { isPlayerHostile, isPlayerTargetable, pickPlayerTarget } from './targeting.js';
-import { chestSpriteHit, portalSpriteHit } from '../core/interactable-hit.js';
+import { activeExitSpriteAt, chestSpriteHit, portalSpriteHit } from '../core/interactable-hit.js';
 
 function creatureAt(sx, sy) {
   const w = G.world;
@@ -111,10 +111,14 @@ export const controls = {
       const [tx, ty] = camera.screenToTile(mouse.x, mouse.y);
       if (mouse.leftPressed) {
         this.holdLeft = 0;
+        const exit = activeExitSpriteAt(G.world?.portals, mouse.x, mouse.y, camera.zoom, (x, y, z) => camera.tileToScreen(x, y, z));
         const loot = lootAt(mouse.x, mouse.y);
-        const it = interactableAt(tx, ty, mouse.x, mouse.y);
+        const it = exit || interactableAt(tx, ty, mouse.x, mouse.y);
         const shift = input.down('ShiftLeft') || input.down('ShiftRight');
-        if (loot) { p.lootTarget = loot; p.interact = null; p.attackTarget = null; p.setMoveTarget(loot.x, loot.y); this.mode = 'loot'; }
+        // A completed exit's visible artwork takes priority over overlapping
+        // loot-label hitboxes, so portal clicks do not silently pick loot only.
+        if (exit && !shift) { this.mode = 'interact'; p.attackTarget = null; p.lootTarget = null; p.interact = exit; }
+        else if (loot) { p.lootTarget = loot; p.interact = null; p.attackTarget = null; p.setMoveTarget(loot.x, loot.y); this.mode = 'loot'; }
         // A visible hostile body owns its click even when a chest, portal, trap,
         // or decoration overlaps it. Interactables remain clickable elsewhere.
         else if (isPlayerTargetable(G.hover)) { this.mode = 'attack'; this.attack(G.hover, tx, ty); }

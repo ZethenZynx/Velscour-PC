@@ -23,6 +23,7 @@ import { BIOMES, BETA_BIOMES, BIOME_BY_ID, TOWN_BIOME, ACT2_TOWN_BIOME, drawBiom
 import { resolveLevelCheatName } from './velscourcheats.js';
 import { CLASSES } from '../data/classes.js';
 import { generateDungeon, isRaidDepth } from '../world/dungeon.js';
+import { findReachableInteractableSpot } from '../core/interactable-hit.js';
 import { FINAL_DEPTH, MAX_DEPTH, depthLevel, blockStart, isSuperbossDepth, superbossForDepth, getActForDepth, isActFinaleDepth, ACTS } from '../data/depth.js';
 import { addDefiance, clearDefiance, defianceText, tickBlessing } from './defiance.js';
 import { setupHappenings, announceDungeonAffixes, happeningsTick, eventImpsTick, spawnGuaranteedImp, townHappening, townTick, recordDepth, markNemesis } from './happenings.js';
@@ -2072,7 +2073,12 @@ export const game = {
     const [sx, sy] = gen.start;
     let tp = gen.townPortal || [sx + 1.6, sy - 0.6];
     if (!gen.map.walkable(tp[0], tp[1])) tp = gen.map.randomNear(sx, sy, 2);
-    const exit = { x: gen.exit[0], y: gen.exit[1], type: 'exit', active: false, color: '#5a5a60', reach: 1.6, label: 'Sealed Exit', use: () => this.useExit(world, exit) };
+    const exitPos = findReachableInteractableSpot(gen.map, gen.start, ...gen.exit) ||
+      [gen.raid?.cx ?? gen.exit[0], gen.raid?.cy ?? gen.exit[1]];
+    if (!gen.map.walkable(...exitPos) || !gen.map.circleFree(...exitPos, 0.42) || !gen.map.findPath(sx, sy, ...exitPos, 9000, 0.38)) {
+      throw new Error(`Abyssal Rift ${tier} generated without a reachable exit portal location`);
+    }
+    const exit = { x: exitPos[0], y: exitPos[1], type: 'exit', active: false, color: '#5a5a60', reach: 1.6, label: 'Sealed Exit', use: () => this.useExit(world, exit) };
     world.portals = [{ x: tp[0], y: tp[1], type: 'town', active: true, color: '#3a8aff', reach: 1.6, label: 'Town Portal', use: () => this.useTownPortal() }, exit];
     for (const s of gen.spawns) {
       if (s.rank === 'raid' || s.rank === 'boss') continue; // the Guardian stirs at the quota (game/rifts.js)
@@ -2090,7 +2096,7 @@ export const game = {
     }
     world.roster = [...new Set(gen.spawns.filter((s) => s.arch && !['raid', 'boss'].includes(s.rank)).map((s) => s.arch))];
     world.rift = createRiftRun(world, gen, tier, {
-      onWin: () => { exit.active = true; exit.color = '#20e0ff'; exit.label = 'Exit — onward or home'; addEffect(new Ring(exit.x, exit.y, 0.2, 3, 1, '#20e0ff', 5)); sfx('gate'); UI.refresh(); this.autosave(); },
+      onWin: () => { exit.active = true; exit.color = '#20e0ff'; exit.label = 'Exit'; addEffect(new Ring(exit.x, exit.y, 0.2, 3, 1, '#20e0ff', 5)); sfx('gate'); UI.refresh(); this.autosave(); },
       onFail: () => this.autosave(),
       onBack: () => { if (G.world === world) { stopMusic(); this.enterTown(); UI.log(`The Rift threw you back into Herrington Hollow. Tier ${tier} waits at the gate.`, '#a0f0ff'); } },
     });

@@ -1,5 +1,5 @@
 // Velscour Unbound (docs/ENDGAME.md): the rematch three Abyssal Keys open. The keys (c.keys) drop from BOSS ROOM bosses
-// past depth 600 under Heresy rank 10 and from Abyssal Rift Guardians from tier 10 (keyChance, read by loot.dropLoot).
+// past depth 600 under Heresy rank 10 and from completed Abyssal Rift Guardians (game/rifts.js reward table).
 // The fight itself is Velscour's five phases (game/velscour.js) with the Court of the Abyss, the Pact, the Abyssal Crown
 // and the Unbound Chains on top (setupUnbound, called by setupVelscour when world.unbound). game.enterUnbound builds it.
 //   The Court: two signature raid bosses (never the same two, nor last fight's pair; not the Pipe Organ), 0.8x a BOSS
