@@ -71,7 +71,7 @@ function fileName(name) { return String(name || 'velscour-ui-layout').toLowerCas
 
 export const UILayoutCustomizer = {
   dialog: null, stage: null, toolbox: null, working: null, original: null, selected: 'character-portrait', visibilityObserver: null,
-  undoStack: [], redoStack: [], overlayNodes: new Map(), guides: null, pointer: null,
+  undoStack: [], redoStack: [], overlayNodes: new Map(), guides: null, pointer: null, toolboxDrag: null, pauseScreen: null,
   get state() { return this.working || layoutState(); },
   get map() { return activeLayoutMap(this.state, characterLayoutId(G.char)); },
 
@@ -148,12 +148,14 @@ export const UILayoutCustomizer = {
     if (this.dialog) return;
     this.original = clone(layoutState()); this.working = clone(this.original); this.undoStack = []; this.redoStack = [];
     this.selected = 'character-portrait';
+    this.pauseScreen = UI.screensEl?.querySelector('.pause-dialog')?.closest('.screen') || null;
+    this.pauseScreen?.classList.add('ui-layout-pause-hidden');
     const d = UI.dialog({ title: '', html: '<div class="ui-layout-stage" aria-label="UI layout preview"></div><aside class="ui-layout-toolbox"></aside>', cls: 'ui-layout-dialog', closable: false, buttons: [
-      { label: 'Save Layout', cls: 'blue', fn: () => this.save() },
+      { label: 'Save & Apply', cls: 'blue ui-layout-save', fn: () => this.save() },
       { label: 'Undo', fn: () => this.undo() }, { label: 'Redo', fn: () => this.redo() },
       { label: 'Reset Selected Element', fn: () => this.resetSelected() },
       { label: 'Reset All', cls: 'red', fn: () => this.confirmResetAll() },
-      { label: 'Cancel', fn: () => this.cancel() },
+      { label: 'Cancel', cls: 'ui-layout-cancel', fn: () => this.cancel() },
     ] });
     this.dialog = d; d.wrap.classList.add('ui-layout-screen');
     d.box.setAttribute('role', 'application'); d.box.setAttribute('aria-label', 'Customize UI');
@@ -162,8 +164,14 @@ export const UILayoutCustomizer = {
     this.bind(); this.renderAll(); this.applyAll(); this.renderSelection();
     const escape = (e) => { if (e.key !== 'Escape') return; e.preventDefault(); e.stopImmediatePropagation(); this.cancel(); };
     d.wrap.addEventListener('keydown', escape, true); d.box.tabIndex = -1; d.box.focus(); this.escapeHandler = escape;
-    this.resizeHandler = () => { this.renderAll(); this.applyAll(); };
+    this.resizeHandler = () => { this.renderAll(); this.applyAll(); this.clampToolbox(); };
     window.addEventListener('resize', this.resizeHandler);
+    this.toolboxPointerMove = (event) => this.moveToolbox(event);
+    this.toolboxPointerEnd = (event) => this.endToolboxDrag(event);
+    window.addEventListener('pointermove', this.toolboxPointerMove);
+    window.addEventListener('pointerup', this.toolboxPointerEnd);
+    window.addEventListener('pointercancel', this.toolboxPointerEnd);
+    window.addEventListener('blur', this.toolboxPointerEnd);
     return d;
   },
 
@@ -176,10 +184,19 @@ export const UILayoutCustomizer = {
       window.removeEventListener('pointermove', this.pointerMove);
       window.removeEventListener('pointerup', this.pointerUp);
       window.removeEventListener('pointercancel', this.pointerUp);
+      window.removeEventListener('blur', this.pointerUp);
+      window.removeEventListener('pointermove', this.toolboxPointerMove);
+      window.removeEventListener('pointerup', this.toolboxPointerEnd);
+      window.removeEventListener('pointercancel', this.toolboxPointerEnd);
+      window.removeEventListener('blur', this.toolboxPointerEnd);
       this.applyAll();
     }
     this.dialog.close(); this.dialog = this.stage = this.toolbox = this.guides = null;
-    this.working = this.original = null; this.pointer = null; this.overlayNodes.clear();
+    this.pauseScreen?.classList.remove('ui-layout-pause-hidden');
+    this.pauseScreen = null;
+    this.working = this.original = null; this.pointer = this.toolboxDrag = null;
+    for (const node of this.overlayNodes.values()) node.remove();
+    this.overlayNodes.clear();
   },
 
   bind() {
@@ -187,19 +204,22 @@ export const UILayoutCustomizer = {
       const item = event.target.closest('[data-layout-id]'); if (!item || !this.stage.contains(item)) return;
       event.preventDefault(); event.stopPropagation();
       const id = item.dataset.layoutId; this.selected = id; this.renderSelection();
+      for (const [otherId, box] of this.overlayNodes) box.classList.toggle('selected', otherId === id);
       if (DEFAULTS.get(id)?.mode === 'canvas') return;
       if (this.effective(id).locked) { this.renderAll(); this.renderSelection(); return; }
       if (event.target.closest('.ui-layout-resize')) {
         const r = item.getBoundingClientRect(), entry = this.entry(id), scale = entry.scale / 100;
-        this.pushUndo(); this.pointer = { id, mode: 'resize', pointerId: event.pointerId, x: event.clientX, y: event.clientY, width: r.width / scale, height: r.height / scale };
+        this.pointer = { id, mode: 'resize', pointerId: event.pointerId, x: event.clientX, y: event.clientY, width: r.width / scale, height: r.height / scale, before: clone(this.state), changed: false };
       } else {
-        const r = item.getBoundingClientRect(); this.pushUndo();
-        this.pointer = { id, mode: 'move', pointerId: event.pointerId, x: event.clientX, y: event.clientY, left: r.left, top: r.top };
+        const r = item.getBoundingClientRect();
+        this.pointer = { id, mode: 'move', pointerId: event.pointerId, x: event.clientX, y: event.clientY, left: r.left, top: r.top, before: clone(this.state), changed: false };
       }
       item.setPointerCapture?.(event.pointerId);
     };
     this.pointerMove = (event) => {
       const p = this.pointer; if (!p || p.pointerId !== event.pointerId) return;
+      if (event.buttons !== undefined && (event.buttons & 1) === 0) { this.finishPointer(event); return; }
+      if (!p.changed && (event.clientX !== p.x || event.clientY !== p.y)) { this.pushUndo(p.before); p.changed = true; }
       const entry = this.entry(p.id), def = DEFAULTS.get(p.id), node = this.node(p.id), rect = node && this.baseRect(node);
       if (p.mode === 'move') {
         const width = this.overlayNodes.get(p.id)?.offsetWidth || (rect?.width || 180) * entry.scale / 100;
@@ -212,11 +232,45 @@ export const UILayoutCustomizer = {
         entry.width = clamp(p.width + event.clientX - p.x, 80, innerWidth / (entry.scale / 100));
         entry.height = clamp(p.height + event.clientY - p.y, 28, innerHeight / (entry.scale / 100));
       }
-      this.applyElement(p.id); this.renderAll(false); this.renderSelection();
+      this.applyElement(p.id); this.updateOverlay(p.id, false); this.renderGuides();
     };
-    this.pointerUp = (event) => { if (this.pointer && this.pointer.pointerId === event.pointerId) { this.pointer = null; this.renderAll(); this.renderSelection(); } };
+    this.pointerUp = (event) => this.finishPointer(event);
     this.stage.addEventListener('pointerdown', this.stageDown);
     window.addEventListener('pointermove', this.pointerMove); window.addEventListener('pointerup', this.pointerUp); window.addEventListener('pointercancel', this.pointerUp);
+    window.addEventListener('blur', this.pointerUp);
+  },
+
+  finishPointer(event) {
+    if (!this.pointer || (event?.pointerId != null && this.pointer.pointerId !== event.pointerId)) return;
+    this.pointer = null;
+    this.renderAll(); this.renderSelection();
+  },
+
+  startToolboxDrag(event) {
+    if (event.button !== 0 || event.target.closest('button, input, select, a')) return;
+    const r = this.toolbox.getBoundingClientRect();
+    this.toolboxDrag = { pointerId: event.pointerId, x: event.clientX - r.left, y: event.clientY - r.top };
+    this.toolbox.setPointerCapture?.(event.pointerId);
+    event.preventDefault();
+  },
+  moveToolbox(event) {
+    const drag = this.toolboxDrag; if (!drag || drag.pointerId !== event.pointerId) return;
+    if (event.buttons !== undefined && (event.buttons & 1) === 0) { this.endToolboxDrag(event); return; }
+    const width = this.toolbox.offsetWidth, height = this.toolbox.offsetHeight;
+    const left = clamp(event.clientX - drag.x, 8, Math.max(8, innerWidth - width - 8));
+    const top = clamp(event.clientY - drag.y, 8, Math.max(8, innerHeight - height - 8));
+    Object.assign(this.toolbox.style, { left: `${left}px`, top: `${top}px`, right: 'auto', transform: 'none' });
+  },
+  clampToolbox() {
+    if (!this.toolbox || this.toolbox.style.left === '') return;
+    const width = this.toolbox.offsetWidth, height = this.toolbox.offsetHeight;
+    const left = clamp(parseFloat(this.toolbox.style.left) || 0, 8, Math.max(8, innerWidth - width - 8));
+    const top = clamp(parseFloat(this.toolbox.style.top) || 0, 8, Math.max(8, innerHeight - height - 8));
+    Object.assign(this.toolbox.style, { left: `${left}px`, top: `${top}px` });
+  },
+  endToolboxDrag(event) {
+    if (!this.toolboxDrag || (event?.pointerId != null && this.toolboxDrag.pointerId !== event.pointerId)) return;
+    this.toolboxDrag = null;
   },
 
   snap(x, y, width, height, id) {
@@ -229,27 +283,41 @@ export const UILayoutCustomizer = {
     return result;
   },
 
+  updateOverlay(id, refresh = false) {
+    if (!this.stage) return null;
+    const tuple = DEFINITIONS.find((entry) => entry[0] === id); if (!tuple) return null;
+    const [, label, selector, dx, dy, mode] = tuple;
+    const node = selector ? document.querySelector(selector) : null, rect = node && this.baseRect(node), entry = this.effective(id);
+    const present = !!(rect && rect.width > 0 && rect.height > 0 && !node.classList.contains('hidden') && getComputedStyle(node).display !== 'none');
+    let box = this.overlayNodes.get(id);
+    if (!this.state.showHidden && !present) { box?.remove(); this.overlayNodes.delete(id); return null; }
+    if (!box) {
+      box = el('button', 'ui-layout-item'); box.type = 'button'; box.dataset.layoutId = id;
+      this.stage.appendChild(box); this.overlayNodes.set(id, box);
+    }
+    box.className = `ui-layout-item${id === this.selected ? ' selected' : ''}${!present ? ' placeholder' : ''}${entry.locked ? ' locked' : ''}${mode === 'canvas' ? ' world-positioned' : ''}`;
+    box.title = `${label}${entry.locked ? ' (locked)' : ''}`;
+    const contentKey = `${label}|${mode}|${present}|${entry.locked}`;
+    if (box.dataset.contentKey !== contentKey) {
+      box.innerHTML = `<span>${escapeHtml(label)}${mode === 'canvas' ? ' (world-positioned)' : present ? '' : ' (placeholder)'}</span>${entry.locked ? '<b class="ui-layout-lock-mark">LOCK</b>' : ''}${mode === 'canvas' ? '' : '<i class="ui-layout-resize" aria-label="Resize"></i>'}`;
+      box.dataset.contentKey = contentKey;
+    }
+    const banner = id === 'notifications', scale = entry.scale / 100;
+    const width = Math.min(entry.width || (banner ? 360 : present ? rect.width : 156), innerWidth / scale);
+    const height = Math.min(entry.height || (banner ? 58 : present ? rect.height : 38), innerHeight / scale);
+    const defaultLeft = banner ? innerWidth / 2 - width / 2 : present ? rect.left : innerWidth * dx;
+    const left = clamp(entry.x == null ? defaultLeft : entry.x * innerWidth, 0, Math.max(0, innerWidth - width * scale));
+    const top = clamp(entry.y == null ? present ? rect.top : innerHeight * dy : entry.y * innerHeight, 0, Math.max(0, innerHeight - height * scale));
+    Object.assign(box.style, { left: `${left}px`, top: `${top}px`, width: `${Math.max(68, width * scale)}px`, height: `${Math.max(26, height * scale)}px`, opacity: String(entry.opacity / 100) });
+    if (refresh && present) this.applyElement(id, node);
+    return box;
+  },
+
   renderAll(refresh = true) {
     if (!this.stage) return;
-    this.overlayNodes.clear();
-    for (const [id, label, selector, dx, dy, mode] of DEFINITIONS) {
-      const def = DEFAULTS.get(id), node = selector ? document.querySelector(selector) : null, rect = node && this.baseRect(node), entry = this.effective(id);
-      const present = rect && rect.width > 0 && rect.height > 0 && !node.classList.contains('hidden') && getComputedStyle(node).display !== 'none';
-      if (!this.state.showHidden && !present) continue;
-      const box = el('button', `ui-layout-item${id === this.selected ? ' selected' : ''}${!present ? ' placeholder' : ''}${entry.locked ? ' locked' : ''}${mode === 'canvas' ? ' world-positioned' : ''}`);
-      box.type = 'button'; box.dataset.layoutId = id; box.title = `${label}${entry.locked ? ' (locked)' : ''}`;
-      const banner = id === 'notifications';
-      const scale = entry.scale / 100;
-      const width = Math.min(entry.width || (banner ? 360 : present ? rect.width : 156), innerWidth / scale);
-      const height = Math.min(entry.height || (banner ? 58 : present ? rect.height : 38), innerHeight / scale);
-      const defaultLeft = banner ? innerWidth / 2 - width / 2 : present ? rect.left : innerWidth * dx;
-      const left = clamp(entry.x == null ? defaultLeft : entry.x * innerWidth, 0, Math.max(0, innerWidth - width * scale));
-      const top = clamp(entry.y == null ? present ? rect.top : innerHeight * dy : entry.y * innerHeight, 0, Math.max(0, innerHeight - height * scale));
-      Object.assign(box.style, { left: `${left}px`, top: `${top}px`, width: `${Math.max(68, width * scale)}px`, height: `${Math.max(26, height * scale)}px`, opacity: String(entry.opacity / 100) });
-      box.innerHTML = `<span>${escapeHtml(label)}${mode === 'canvas' ? ' (world-positioned)' : present ? '' : ' (placeholder)'}</span>${entry.locked ? '<b class="ui-layout-lock-mark">LOCK</b>' : ''}${mode === 'canvas' ? '' : '<i class="ui-layout-resize" aria-label="Resize"></i>'}`;
-      this.stage.appendChild(box); this.overlayNodes.set(id, box);
-      if (refresh && present) this.applyElement(id, node);
-    }
+    const active = new Set();
+    for (const [id] of DEFINITIONS) { this.updateOverlay(id, refresh); if (this.overlayNodes.has(id)) active.add(id); }
+    for (const [id, box] of this.overlayNodes) if (!active.has(id)) { box.remove(); this.overlayNodes.delete(id); }
     this.renderGuides();
   },
 
@@ -265,7 +333,7 @@ export const UILayoutCustomizer = {
     const entry = this.effective(this.selected), selected = DEFAULTS.get(this.selected), profile = this.state.profiles[this.state.activeProfile];
     const options = Object.entries(this.state.profiles).map(([key, p]) => `<option value="${escapeHtml(key)}" ${key === this.state.activeProfile ? 'selected' : ''}>${escapeHtml(p.name)}</option>`).join('');
     this.toolbox.innerHTML = `
-      <header><b>Customize UI</b><button type="button" data-layout-close aria-label="Close">×</button></header>
+      <header class="ui-layout-toolbox-title"><b>Customize UI</b><button type="button" data-layout-close aria-label="Close">×</button></header>
       <label>Layout profile<select data-profile>${options}</select></label>
       <div class="ui-layout-profile-actions"><button data-profile-action="create">New</button><button data-profile-action="rename">Rename</button><button data-profile-action="duplicate">Duplicate</button><button data-profile-action="delete" ${this.state.activeProfile === 'default' ? 'disabled' : ''}>Delete</button></div>
       <label class="ui-layout-check"><input type="checkbox" data-character ${this.state.characterSpecific ? 'checked' : ''}> Character-specific override</label>
@@ -284,6 +352,8 @@ export const UILayoutCustomizer = {
       <div class="ui-layout-profile-actions"><button data-profile-action="export">Export</button><button data-profile-action="import">Import</button><button data-profile-action="default">Restore Default Profile</button></div>
       <input type="file" data-layout-file accept="application/json,.json" hidden>
       <small>Drag an outline to move it. Drag its corner to resize. Positions adapt to the current screen.</small>`;
+    const titlebar = this.toolbox.querySelector('.ui-layout-toolbox-title');
+    titlebar.onpointerdown = (event) => this.startToolboxDrag(event);
     this.toolbox.querySelector('[data-layout-close]').onclick = () => this.cancel();
     this.toolbox.querySelector('[data-profile]').onchange = (e) => { this.pushUndo(); this.state.activeProfile = e.target.value; this.selected = 'character-portrait'; this.renderAll(); this.applyAll(); this.renderSelection(); };
     this.toolbox.querySelector('[data-element]').onchange = (e) => { this.selected = e.target.value; this.renderAll(); this.renderSelection(); };
@@ -303,7 +373,7 @@ export const UILayoutCustomizer = {
     this.toolbox.querySelector('[data-layout-file]').onchange = (e) => this.importFile(e.target.files?.[0]);
   },
 
-  pushUndo() { this.undoStack.push(clone(this.state)); if (this.undoStack.length > 40) this.undoStack.shift(); this.redoStack.length = 0; },
+  pushUndo(snapshot = this.state) { this.undoStack.push(clone(snapshot)); if (this.undoStack.length > 40) this.undoStack.shift(); this.redoStack.length = 0; },
   undo() { if (!this.undoStack.length) return; this.redoStack.push(clone(this.state)); this.working = this.undoStack.pop(); this.applyAll(); this.renderAll(); this.renderSelection(); },
   redo() { if (!this.redoStack.length) return; this.undoStack.push(clone(this.state)); this.working = this.redoStack.pop(); this.applyAll(); this.renderAll(); this.renderSelection(); },
   resetSelected() {
@@ -318,7 +388,10 @@ export const UILayoutCustomizer = {
       this.applyAll(); this.renderAll(); this.renderSelection();
     }, 'Reset All');
   },
-  save() { G.settings.uiLayouts = normalizeLayoutState(this.working); saveSettings(); this.close(); },
+  save() {
+    G.settings.uiLayouts = normalizeLayoutState(this.working); saveSettings(); this.close();
+    UI.dialog({ title: 'Layout Saved', html: '<p>Your interface layout has been saved and applied.</p>', buttons: [{ label: 'Done' }] });
+  },
   cancel() { this.working = clone(this.original || layoutState()); this.applyAll(); this.close(); },
   profileAction(action) {
     const state = this.state, active = state.activeProfile, profile = state.profiles[active];
