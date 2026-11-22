@@ -44,15 +44,13 @@ assert.match(beamCh, /this\.fx !== 'lightning' && this\.fx !== 'storm'/, 'sustai
 assert.match(beamCh, /LIGHTNING_BLUE/, 'sustained lightning beams use the shared lightweight blue-white renderer');
 assert.match(beamCh, /if \(!lineCount\) return/, 'off-screen sustained lightning beams skip rendering');
 assert.doesNotMatch(beamCh.slice(beamCh.indexOf('fire(first)'), beamCh.indexOf('update(dt)')), /ends\.push\(/, 'sustained beam endpoints reuse tuples between combat ticks');
-assert.match(augments, /if \(id === 'tether'\) continue;/, 'tether arcs do not duplicate themselves with additive orbit motes');
 const tether = augments.slice(augments.indexOf('function tether('), augments.indexOf('function tetherArc('));
 assert.doesNotMatch(tether, /sfx\(/, 'Storm Tether does not trigger hammer cast audio');
 assert.match(tether, /h\.tetherT = 0\.25/, 'Storm Tether damage remains at four pulses per second');
 assert.match(tether, /\* 0\.3 \* pow/, 'Storm Tether damage scaling is unchanged');
-assert.match(augments, /h\.tetherVisualT = 1 \/ 12/, 'Storm Tether cosmetic bolt emission is limited to 12 Hz');
-const tetherBody = augments.slice(augments.indexOf('function tether('), augments.indexOf('function tetherArc('));
-assert.doesNotMatch(tetherBody, /addLight\(/, 'Storm Tether does not submit per-hammer dynamic lights');
-assert.doesNotMatch(tetherBody, /spawn\(/, 'Storm Tether creates no particle cloud');
+const tetherBody = augments.slice(augments.indexOf('function tether('), augments.indexOf('// ------------------------------------------------------------------'));
+assert.doesNotMatch(tetherBody, /tetherVisualT|showTether|Bolt\(|addEffect\(|addLight\(|spawn\(/, 'Storm Tether creates and processes no visual effects');
+assert.doesNotMatch(augments.slice(augments.indexOf("case 'tether':"), augments.indexOf("case 'detonate':")), /Bolt\(|addEffect\(/, 'non-hazard Storm Tether procs retain damage without lightning visuals');
 const orbitCast = skillrun.slice(skillrun.indexOf("case 'orbit':"), skillrun.indexOf("case 'cyclone':"));
 assert.match(orbitCast, /sfx\('swing'\);/, 'the Blessed Hammer sound is only requested by the orbit cast path');
 

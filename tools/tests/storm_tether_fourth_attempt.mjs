@@ -7,7 +7,7 @@ import { World } from '../../src/game/world.js';
 import { visitStormTetherTargets } from '../../src/game/stormtether.mjs';
 import { hit } from '../../src/game/combat.js';
 import { G } from '../../src/state.js';
-import { Bolt, addEffect, clearVfx, effects } from '../../src/gfx/vfx.js';
+import { clearVfx, effects } from '../../src/gfx/vfx.js';
 
 const median = (v) => v.sort((a, b) => a - b)[v.length >> 1];
 const augmentsSource = await readFile(new URL('../../src/game/augments.js', import.meta.url), 'utf8');
@@ -21,6 +21,9 @@ assert.match(await readFile(new URL('../../src/game/world.js', import.meta.url),
 assert.doesNotMatch(augmentsSource.slice(augmentsSource.indexOf('function tether(')), /pts\.length > 2/, 'tether makes no extra adjacent-hammer ring connections');
 assert.match(augmentsSource, /h\.tetherT = 0\.25/, 'damage cadence remains four pulses per second');
 assert.match(augmentsSource, /\* 0\.3 \* pow/, 'damage per retained connection uses the existing multiplier');
+const liveTether = augmentsSource.slice(augmentsSource.indexOf('function tether('));
+assert.doesNotMatch(liveTether, /Bolt\(|tetherVisualT|showTether|addEffect\(/, 'Storm Tether damage path creates no lightning visuals');
+assert.doesNotMatch(augmentsSource.slice(augmentsSource.indexOf("case 'tether':"), augmentsSource.indexOf("case 'detonate':")), /Bolt\(|addEffect\(/, 'non-hazard Tether damage proc has no lightning visual');
 assert.match(combatSource, /!o\.noClassHitFx/, 'shared combat honors the tether-specific class-effects opt-out');
 assert.match(combatSource, /showFx && !o\.noHitFx/, 'shared combat honors the tether-specific hit-particle opt-out');
 assert.match(skillSource, /sfx\('swing'\);/, 'Blessed Hammer cast sound remains in the cast path');
@@ -187,16 +190,7 @@ for (const [name, mode] of [
 }
 console.log('Subsystem isolation at 100 connections (120 pulses, exact production query/collision helper):');
 for (const row of isolate) console.log(`  ${row.name}: ${row.ms.toFixed(2)} ms`);
-const visualTimes = [];
-for (let round = 0; round < 5; round++) {
-  const start = performance.now();
-  for (let pulse = 0; pulse < 120; pulse++) for (const [x0, y0, x1, y1] of isolationSegments) {
-    const bolt = Bolt(x0, y0, 26, x1, y1, 24, '#9fcfff', 0.09, 1.6);
-    addEffect(bolt); bolt.update(0.1);
-  }
-  visualTimes.push(performance.now() - start); effects.length = 0;
-}
-console.log(`  cosmetic Bolt creation + pooled geometry at 100 connections: ${median(visualTimes).toFixed(2)} ms/120 pulses; visuals disabled: 0 Bolt work.`);
+console.log('  Storm Tether lightning, particles, glow, animation and geometry: disabled; no cosmetic effect work is scheduled.');
 console.log(`  hit particles, combat numbers/log and hit audio disabled: ${quietHitMs.toFixed(2)} ms; full hit feedback: ${fullFeedbackHitMs.toFixed(2)} ms.`);
 console.log('  audio backend is intentionally not initialized in this non-browser test; Storm Tether now invokes no per-hit sound call.');
 console.log('No browser or game UI was launched.');

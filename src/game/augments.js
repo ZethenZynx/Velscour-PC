@@ -1,6 +1,6 @@
 // Ring augments at runtime, and skill mastery (each skill's own XP and level, 1-1000).
 // Augments ride on a skill's hits as o.aug ({id: pow}, from Player.augFor); combat.hit calls augHit for them, and
-// World.update calls augHazard for every hazard a skill with augments made (enchant visuals, Storm Tether).
+// World.update calls augHazard for every hazard a skill with augments made (enchant visuals and Storm Tether damage).
 import { G } from '../state.js';
 import { rand, chance, TAU, dist } from '../core/util.js';
 import { sfx } from '../core/audio.js';
@@ -72,7 +72,6 @@ export function augHit(src, owner, tgt, dmg, el, o) {
       case 'tether':
         // skills with no hazard to tether (melee, beams, chains) lash out instead
         if (!o.tethered && chance(0.3 * k)) {
-          addEffect(Bolt(owner.x, owner.y, 34, tgt.x, tgt.y, 26, '#b8d8ff', 0.2, 3));
           hitLater(src, tgt, dmg * 0.5 * p, 'light', proc);
         }
         break;
@@ -181,14 +180,14 @@ function shardsFrom(w, src, owner, tgt, n, amount, o) {
 }
 
 // ------------------------------------------------------------------ hazards made by augmented skills
-const GLOW = { ignite: ['#ff7010', '#ffd040'], venom: ['#60ff30', '#2a8a10'], frost: ['#c8f0ff', '#60c8ff'], storm: ['#a8ccff', '#ffffff'], tether: ['#b8d8ff', '#ffffff'], detonate: ['#ff8030', '#ffe080'], smite: ['#fff0a0', '#ffffff'], meteor: ['#ff6020', '#ffb040'], rift: ['#a040ff', '#3a0a60'], blood: ['#c01010', '#600000'], shatter: ['#e0e0e8', '#9a9aa8'] };
+const GLOW = { ignite: ['#ff7010', '#ffd040'], venom: ['#60ff30', '#2a8a10'], frost: ['#c8f0ff', '#60c8ff'], storm: ['#a8ccff', '#ffffff'], detonate: ['#ff8030', '#ffe080'], smite: ['#fff0a0', '#ffffff'], meteor: ['#ff6020', '#ffb040'], rift: ['#a040ff', '#3a0a60'], blood: ['#c01010', '#600000'], shatter: ['#e0e0e8', '#9a9aa8'] };
 /** The points a hazard occupies now (an orbit's weapons, a projectile, a field's centre). */
 function points(h) {
   if (h.pos && h.pos.length) return h.pos;
   if (h.x === undefined || h.dead) return null;
   return [[h.x, h.y]];
 }
-/** Per frame, for a hazard made by an augmented skill: enchant particles and the Storm Tether arcs. */
+/** Per frame, for a hazard made by an augmented skill: enchant particles and Storm Tether damage ticks. */
 export function augHazard(h, dt) {
   const A = h.o && h.o.aug, owner = h.src && (h.src.owner || h.src);
   if (!A || !owner || !owner.isPlayer || h.child) return;
@@ -202,9 +201,6 @@ export function augHazard(h, dt) {
   for (const id in A) {
     const g = GLOW[id];
     if (!g) continue;
-    // Storm Tether's bolts already provide its bright electrical core and halo. Extra additive
-    // motes at every hammer were redundant, overlapped above the caster, and caused the reported orb.
-    if (id === 'tether') continue;
     const testPts = isShieldOrbit ? [pts[(Math.random() * pts.length) | 0]] : pts;
     for (const [x, y] of testPts) {
       const rate = isShieldOrbit ? 1.2 : (id === 'ignite' ? 12 : 6);
@@ -224,9 +220,6 @@ export function augHazard(h, dt) {
 }
 function tether(h, owner, pts, pow, dt) {
   if (!h.o.tethered) h.o.tethered = true;
-  h.tetherVisualT = (h.tetherVisualT || 0) - dt;
-  const showTether = h.tetherVisualT <= 0;
-  if (showTether) h.tetherVisualT = 1 / 12;
   h.tetherT = (h.tetherT || 0) - dt;
   const zap = h.tetherT <= 0;
   if (zap) h.tetherT = 0.25;
@@ -234,9 +227,8 @@ function tether(h, owner, pts, pow, dt) {
   const candidates = h.tetherCandidates || (h.tetherCandidates = []);
   const hitOptions = h.tetherHitOptions || (h.tetherHitOptions = {
     proc: true, noArc: true, crit: false, sk: h.o.sk,
-    // Tether bolts are the feedback. Per-hit combat numbers, log entries,
-    // audio, class splashes, blood and sparks were multiplying with each
-    // connected hammer and obscuring the actual source of Storm Tether's cost.
+    // Storm Tether is damage-only. Suppress per-hit numbers, log entries,
+    // audio, class splashes, blood and sparks from multiplying per connection.
     silent: true, lightFx: true, noClassHitFx: true, noHitFx: true,
   });
   h.tetherDamage = dmg;
@@ -246,13 +238,11 @@ function tether(h, owner, pts, pow, dt) {
     const a = pts[i];
     // One logical connection per eligible hammer. The old adjacent-hammer ring
     // added a second set of beams, duplicate hits, and candidate scans.
-    tetherArc(h, showTether, zap, dmg, owner.team, owner.x, owner.y, a[0], a[1], candidates, onTetherTarget);
+    tetherArc(h, zap, dmg, owner.team, owner.x, owner.y, a[0], a[1], candidates, onTetherTarget);
   }
 }
-function tetherArc(h, showTether, zap, dmg, team, x0, y0, x1, y1, candidates, onTetherTarget) {
+function tetherArc(h, zap, dmg, team, x0, y0, x1, y1, candidates, onTetherTarget) {
   const dx = x1 - x0, dy = y1 - y0, d2 = dx * dx + dy * dy;
   if (d2 < 0.25 || d2 > 81) return;
-  // Cosmetic arcs refresh at 12 Hz; damage stays on its separate 4 Hz timer.
-  if (showTether) addEffect(Bolt(x0, y0, 26, x1, y1, 24, '#9fcfff', 0.09, 1.6));
   if (zap && dmg > 0) visitStormTetherTargets(h.world, team, x0, y0, x1, y1, candidates, onTetherTarget);
 }
