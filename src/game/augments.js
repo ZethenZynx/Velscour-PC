@@ -2,7 +2,7 @@
 // Augments ride on a skill's hits as o.aug ({id: pow}, from Player.augFor); combat.hit calls augHit for them, and
 // World.update calls augHazard for every hazard a skill with augments made (enchant visuals, Storm Tether).
 import { G } from '../state.js';
-import { rand, chance, TAU, dist } from '../core/util.js';
+import { rand, chance, TAU, dist, dist2 } from '../core/util.js';
 import { sfx } from '../core/audio.js';
 import { addEffect, Bolt, Column, Ring, burst, spawn, sparkle, smoke, elem, addLight } from '../gfx/vfx.js';
 import { explosionFx } from '../gfx/shapes.js';
@@ -201,6 +201,9 @@ export function augHazard(h, dt) {
   for (const id in A) {
     const g = GLOW[id];
     if (!g) continue;
+    // Storm Tether's bolts already provide its bright electrical core and halo. Extra additive
+    // motes at every hammer were redundant, overlapped above the caster, and caused the reported orb.
+    if (id === 'tether') continue;
     const testPts = isShieldOrbit ? [pts[(Math.random() * pts.length) | 0]] : pts;
     for (const [x, y] of testPts) {
       const rate = isShieldOrbit ? 1.2 : (id === 'ignite' ? 12 : 6);
@@ -220,17 +223,29 @@ export function augHazard(h, dt) {
 }
 function tether(h, owner, pts, pow, dt) {
   const w = h.world;
-  if (!h.o.tethered) h.o = { ...h.o, tethered: true };
+  if (!h.o.tethered) h.o.tethered = true;
   h.tetherT = (h.tetherT || 0) - dt;
   const zap = h.tetherT <= 0;
   if (zap) h.tetherT = 0.25;
   const dmg = h.dmg ? (h.dmg[0] + h.dmg[1]) / 2 * 0.3 * pow : 0;
-  const segs = pts.map(([x, y]) => [owner.x, owner.y, x, y]);
-  if (pts.length > 2) for (let i = 0; i < pts.length; i++) { const a = pts[i], b = pts[(i + 1) % pts.length]; segs.push([a[0], a[1], b[0], b[1]]); }
-  for (const [x0, y0, x1, y1] of segs) {
-    if (dist(x0, y0, x1, y1) < 0.5 || dist(x0, y0, x1, y1) > 9) continue;
-    if (chance(dt * 22)) addEffect(new Bolt(x0, y0, 26, x1, y1, 24, chance(0.3) ? '#ffffff' : '#9cc4ff', 0.09, 1.8));
-    if (zap && dmg > 0) for (const c of lineTargets(w, owner.team, x0, y0, x1, y1, 0.35)) hit(h.src, c, dmg, 'light', { proc: true, noArc: true, crit: false, sk: h.o.sk, silent: false });
+  const targets = h.tetherTargets || (h.tetherTargets = []), candidates = h.tetherCandidates || (h.tetherCandidates = []);
+  for (let i = 0; i < pts.length; i++) {
+    const a = pts[i];
+    tetherArc(h, owner, dt, zap, dmg, owner.x, owner.y, a[0], a[1], targets, candidates);
+    if (pts.length > 2) {
+      const b = pts[(i + 1) % pts.length];
+      tetherArc(h, owner, dt, zap, dmg, a[0], a[1], b[0], b[1], targets, candidates);
+    }
   }
   for (const [x, y] of pts) addLight(x, y, 1.4, 0.5);
+}
+function tetherArc(h, owner, dt, zap, dmg, x0, y0, x1, y1, targets, candidates) {
+  const d2 = dist2(x0, y0, x1, y1);
+  if (d2 < 0.25 || d2 > 81) return;
+  if (chance(dt * 22)) addEffect(new Bolt(x0, y0, 26, x1, y1, 24, chance(0.3) ? '#ffffff' : '#9cc4ff', 0.09, 1.8));
+  if (zap && dmg > 0) {
+    for (const c of lineTargets(h.world, owner.team, x0, y0, x1, y1, 0.35, targets, candidates)) {
+      hit(h.src, c, dmg, 'light', { proc: true, noArc: true, crit: false, sk: h.o.sk, silent: false });
+    }
+  }
 }

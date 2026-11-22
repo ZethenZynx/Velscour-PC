@@ -134,7 +134,10 @@ export class World {
     }
     return out;
   }
-  hostiles(team, x, y, r) { return this.query(x, y, r, (c) => c.team !== team && c.targetable !== false); }
+  hostiles(team, x, y, r, out = []) {
+    out.length = 0;
+    return this.query(x, y, r, (c) => c.team !== team && c.targetable !== false, out);
+  }
   nearestHostile(team, x, y, r, needLos = false, allowClutter = false) {
     let best = null, bd = Infinity;
     let bestX = Infinity, bestY = Infinity;

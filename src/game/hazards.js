@@ -23,11 +23,12 @@ export function explode(world, src, x, y, r, dmg, el, o = {}, fx = 'explosion') 
 }
 
 /** Hostiles whose centre is near the segment (x0,y0)-(x1,y1). */
-export function lineTargets(world, team, x0, y0, x1, y1, w) {
+export function lineTargets(world, team, x0, y0, x1, y1, w, out = [], candidates = []) {
   const mx = (x0 + x1) / 2, my = (y0 + y1) / 2, len = dist(x0, y0, x1, y1);
-  const out = [];
+  out.length = 0;
+  candidates.length = 0;
   const dx = (x1 - x0) / (len || 1), dy = (y1 - y0) / (len || 1);
-  for (const c of world.hostiles(team, mx, my, len / 2 + w + 1)) {
+  for (const c of world.hostiles(team, mx, my, len / 2 + w + 1, candidates)) {
     const t = clamp((c.x - x0) * dx + (c.y - y0) * dy, 0, len);
     const px = x0 + dx * t, py = y0 + dy * t;
     if (dist(px, py, c.x, c.y) <= w + c.r) out.push(c);

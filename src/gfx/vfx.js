@@ -8,6 +8,7 @@ import { groundHidden } from './terrain.js';
 import { bonesReady, boneDeck, boneLook, drawBoneGib } from './bonegibs.js';
 import { damageNumberAboveBarZ } from '../game/damage-number-layout.mjs';
 import { addGoreDecal, goreDecalAlpha, goreDecalOutsideView, GORE_DECAL_LIFETIME, goreLimit, goreMultiplier, trimGoreDecals, updateGoreDecals } from './goresettings.mjs';
+import { writeBoltGeometry, strokeBoltGeometry } from './lightninggeometry.mjs';
 
 export const ELEM = {
   phys: { name: 'Physical', core: '#ffffff', glow: '#e0d8c8', dark: '#7a7060', sfx: 'phys' },
@@ -254,44 +255,44 @@ export function screenAngle(a) {
   return Math.atan2((dx + dy) * HH, (dx - dy) * HW);
 }
 
+const boltPool = [];
+const MAX_POOLED_BOLTS = 256;
 export class Bolt {
   // jagged lightning between two points (tile coords + z)
   constructor(x0, y0, z0, x1, y1, z1, color, dur = 0.25, width = 3) {
-    Object.assign(this, { x0, y0, z0, x1, y1, z1, color, dur, width, t: 0, seg: null, regen: 0 });
+    const pooled = boltPool.pop();
+    if (pooled) {
+      Object.assign(pooled, { x0, y0, z0, x1, y1, z1, color, dur, width, t: 0, segCount: 0, regen: 0, built: false, pooled: false });
+      return pooled;
+    }
+    Object.assign(this, { x0, y0, z0, x1, y1, z1, color, dur, width, t: 0, seg: new Float32Array(98), segCount: 0, regen: 0, built: false, pooled: false });
   }
   build() {
     const ax = isoX(this.x0, this.y0), ay = isoY(this.x0, this.y0) - this.z0;
     const bx = isoX(this.x1, this.y1), by = isoY(this.x1, this.y1) - this.z1;
     // the tower's warp throws cut-away points 1e7 px off: such a bolt would need a million segments
-    if (Math.abs(ax) > 1e6 || Math.abs(ay) > 1e6 || Math.abs(bx) > 1e6 || Math.abs(by) > 1e6) { this.seg = []; return; }
-    const len = Math.hypot(bx - ax, by - ay);
-    const n = Math.min(48, Math.max(3, Math.floor(len / 12)));
-    const nx = -(by - ay) / (len || 1), ny = (bx - ax) / (len || 1);
-    const pts = [[ax, ay]];
-    for (let i = 1; i < n; i++) {
-      const t = i / n, off = rand(-1, 1) * Math.min(18, len * 0.12);
-      pts.push([ax + (bx - ax) * t + nx * off, ay + (by - ay) * t + ny * off]);
-    }
-    pts.push([bx, by]);
-    this.seg = pts;
+    if (Math.abs(ax) > 1e6 || Math.abs(ay) > 1e6 || Math.abs(bx) > 1e6 || Math.abs(by) > 1e6) { this.segCount = 0; this.built = true; return; }
+    this.segCount = writeBoltGeometry(this.seg, ax, ay, bx, by, Math.random);
+    this.built = true;
   }
   update(dt) {
     this.t += dt; this.regen -= dt;
-    if (this.regen <= 0) { this.build(); this.regen = 0.05; }
-    return this.t < this.dur;
+    // Brief tether arcs need only one jagged path; longer bolts keep their original 20 Hz flicker.
+    if (this.regen <= 0 && (this.dur >= 0.12 || !this.built)) { this.build(); this.regen = 0.05; }
+    const alive = this.t < this.dur;
+    if (!alive && !this.pooled && boltPool.length < MAX_POOLED_BOLTS) { this.pooled = true; boltPool.push(this); }
+    return alive;
   }
   draw(ctx) {
-    if (!this.seg) this.build();
-    if (this.seg.length < 2) return;
+    if (!this.built) this.build();
+    if (this.segCount < 2) return;
     const k = this.t / this.dur;
     ctx.globalAlpha = 1 - k * 0.7;
     ctx.lineJoin = 'round'; ctx.lineCap = 'round';
     for (let pass = 0; pass < 2; pass++) {
       ctx.strokeStyle = pass ? '#ffffff' : this.color;
       ctx.lineWidth = pass ? this.width * 0.4 : this.width * 1.8;
-      ctx.beginPath();
-      this.seg.forEach((p, i) => (i ? ctx.lineTo(p[0], p[1]) : ctx.moveTo(p[0], p[1])));
-      ctx.stroke();
+      strokeBoltGeometry(ctx, this.seg, this.segCount);
     }
     ctx.globalAlpha = 1;
   }
