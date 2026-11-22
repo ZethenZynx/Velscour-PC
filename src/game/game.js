@@ -37,6 +37,7 @@ import { toggleSmite, getUltimate, executeUltimate } from './smite.js';
 import { hearthTick, useHearth, hearthPortalActive, closeHearthPortals, getActiveHearth, returnFromHearth } from './hearth.js';
 import { generateTown, makeTownTiles, rollTownWeather } from '../world/town.js';
 import { generateAct2Town, makeAct2TownTiles, ACT2_TOWN_NAME } from '../world/act2town.js';
+import { actSelectionRows } from './actselection.js';
 import { generateOverworld } from '../world/overworld.js';
 import { createOverworldScenario } from './overworld.js';
 import { addWanderers } from './wanderers.js';
@@ -486,21 +487,12 @@ export const game = {
       },
       use: () => this.confirmDungeon(),
     }];
-    // Waypoint Portal to Sunscorch Oasis (Act II Town) once visited or reached Act 2
-    if (c?.visitedAct2Town || c?.depth >= 101) {
-      world.portals.push({
-        x: t.center.x + 3.8,
-        y: t.center.y - 3.8,
-        active: true,
-        color: '#f3c778',
-        reach: 2.0,
-        label: 'Waypoint — Sunscorch Oasis (Act II)',
-        use: () => {
-          sfx('portal');
-          this.enterAct2Town();
-        },
-      });
-    }
+    // The Act Selection Portal reuses the former Eternal Breach portal's reserved, reachable pad.
+    world.portals.push({
+      x: t.breach.x, y: t.breach.y, active: true, color: '#3a8aff', reach: 2.0,
+      label: 'Portal to the Acts',
+      use: () => this.openActSelection(),
+    });
     // the hero steps out of the portal, a little way down its road toward the square
     const P = t.portal, C = t.center, l = Math.hypot(C.x - P.x, C.y - P.y) || 1;
     let arrive = [P.x + ((C.x - P.x) / l) * 3.2, P.y + ((C.y - P.y) / l) * 3.2];
@@ -610,22 +602,12 @@ export const game = {
       },
     ];
 
-    // Waypoint Portal to Herrington Hollow (Act 1 Town)
-    if (t.act1Portal) {
-      world.portals.push({
-        x: t.act1Portal.x,
-        y: t.act1Portal.y,
-        active: true,
-        color: '#38bdf8',
-        reach: 2.2,
-        label: 'Waypoint — Return to Herrington Hollow (Act I)',
-        use: () => {
-          if (c) c.lastTown = 'act1';
-          sfx('portal');
-          this.enterTown();
-        },
-      });
-    }
+    // The same blue act portal occupies the former Eternal Breach portal pad in Sunscorch Oasis.
+    if (t.breach) world.portals.push({
+      x: t.breach.x, y: t.breach.y, active: true, color: '#3a8aff', reach: 2.0,
+      label: 'Portal to the Acts',
+      use: () => this.openActSelection(),
+    });
 
     const arrive = t.start || [t.center.x, t.center.y];
     this.setWorld(world, arrive, old);
@@ -661,6 +643,40 @@ export const game = {
   /** The deepest floor the town portal can open on: any floor down to one past the deepest cleared. */
   maxPortalFloor(c = G.char) {
     return Math.min(MAX_DEPTH, Math.max(1, c?.depth || 1, (c?.deepest || 0) + 1));
+  },
+
+  /** Select an already unlocked campaign act and travel to its existing town hub. */
+  openActSelection() {
+    const c = G.char;
+    if (!c) return;
+    const currentAct = getActForDepth(Math.min(FINAL_DEPTH, Math.max(1, Number(c.depth) || 1))).act;
+    const rows = actSelectionRows(c);
+    const html = `<p class="dim">Choose an unlocked act town. Travel is free; campaign depth and completed progress are preserved.</p>
+      <div class="act-selection-list">${rows.map((act) => `<section class="act-selection-card${act.act === currentAct ? ' current' : ''}${act.unlocked ? '' : ' locked'}">
+        <div class="act-selection-heading"><strong>ACT ${act.act} — ${escapeHtml(act.name)}</strong><span class="act-selection-status">${act.act === currentAct ? 'Current Act' : act.unlocked ? 'Unlocked' : 'Locked'}</span></div>
+        <div class="act-selection-details"><span>Depths ${act.start}–${act.end}</span><span>Town: ${escapeHtml(act.town)}</span></div>
+        ${act.unlocked ? '' : `<div class="act-selection-requirement">${escapeHtml(act.requirement)}</div>`}
+        <button type="button" class="btn act-selection-travel" data-act="${act.act}" ${act.unlocked ? '' : 'disabled'}>${act.act === currentAct ? 'Travel to Current Town' : 'Travel'}</button>
+      </section>`).join('')}</div>`;
+    const dialog = UI.dialog({
+      title: 'PORTAL TO THE ACTS',
+      cls: 'act-selection-dialog',
+      html,
+      buttons: [{ label: 'Cancel' }],
+    });
+    dialog.box.querySelectorAll('.act-selection-travel:not(:disabled)').forEach((button) => {
+      button.addEventListener('click', () => {
+        const act = rows.find((row) => row.act === Number(button.dataset.act));
+        if (!act?.unlocked) return;
+        dialog.close();
+        sfx('portal');
+        if (act.act === 2) this.enterAct2Town();
+        else {
+          c.lastTown = 'act1';
+          this.enterTown();
+        }
+      });
+    });
   },
 
   /**

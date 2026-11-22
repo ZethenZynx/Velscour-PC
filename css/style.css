@@ -288,6 +288,22 @@ body.touch .rv-btns { margin-top: 6px; }
 
 /* the portal choice at a cleared exit (game.portalChoice) */
 .portal-choice { width: min(680px, 94vw); max-width: min(680px, 94vw) !important; }
+.act-selection-dialog { width: min(650px, 94vw); max-width: min(650px, 94vw) !important; }
+.act-selection-list { display: grid; gap: 8px; text-align: left; }
+.act-selection-card { display: grid; grid-template-columns: 1fr auto; gap: 5px 12px; align-items: center; padding: 9px 11px; border: 1px solid rgba(205,169,103,.38); border-radius: 5px; background: rgba(24,17,14,.82); }
+.act-selection-card.current { border-color: #68aaff; box-shadow: inset 0 0 0 1px rgba(58,138,255,.23); background: rgba(32,57,88,.35); }
+.act-selection-card.locked { opacity: .72; }
+.act-selection-heading { display: flex; flex-wrap: wrap; align-items: baseline; gap: 6px 10px; color: var(--gold-bright); }
+.act-selection-status { color: #9fc7ff; font-size: 12px; }
+.act-selection-card.locked .act-selection-status { color: #b5a89a; }
+.act-selection-details { display: flex; flex-wrap: wrap; gap: 3px 14px; color: #d0c2ad; font-size: 13px; }
+.act-selection-requirement { grid-column: 1 / -1; color: #e0b978; font-size: 12px; }
+.act-selection-travel { grid-column: 2; grid-row: 1 / span 2; min-width: 100px; }
+.act-selection-travel:disabled { cursor: not-allowed; opacity: .42; }
+@media (max-width: 520px) {
+  .act-selection-card { grid-template-columns: 1fr; }
+  .act-selection-travel { grid-column: 1; grid-row: auto; width: 100%; }
+}
 .pc-row { display: flex; gap: 10px; justify-content: center; flex-wrap: wrap; }
 .pc-card { flex: 1 1 150px; max-width: 210px; min-height: 150px; display: flex; flex-direction: column; align-items: center; gap: 5px; padding: 10px 8px; cursor: pointer; border: 2px solid #4a3420; border-radius: 8px; background: radial-gradient(ellipse at 50% 22%, color-mix(in srgb, var(--pc) 30%, transparent), #120a06 70%); color: var(--text); font: 400 12px var(--font-body); transition: transform .12s, border-color .12s; }
 .pc-card:hover { transform: translateY(-2px); }
