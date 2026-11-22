@@ -44,7 +44,7 @@ export const G = {
     autoEquip: true, // equip received gear when a matching equipment slot is empty
     dkBlade: 'sprite', // the Death Knight's flying sword: 'sprite' (his sword as a 2D object), 'model' (live three.js), 'runeblade'
     noSkipCine: false, // Keep previously seen cutscenes at normal speed
-    skipCutscenes: false, // Automatically fast-forward scripted cutscenes and camera transitions
+    skipCutscenes: false, // Skip cutscene playback and scripted camera transitions
     fpsCap: 0, // frame rate cap: 0 none, 30 (phones run cooler over a long session)
     showHeroStats: true, // show/hide the #hero-stats div
     showTargetBox: true, // show/hide the #target-box div

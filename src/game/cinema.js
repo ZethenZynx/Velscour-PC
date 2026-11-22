@@ -1,6 +1,6 @@
 // Cut scenes (the Sky Battle's, docs/SKY_BATTLE.md): letterbox bars, a scripted camera (pans, zooms, shakes), title
 // cards and a dialogue panel (portrait, name, typed text, a syllable-blip voice). While one plays the game holds still
-// round it: no input or monster thinks (game.js), and the scripted sequence cannot be skipped.
+// round it: no input or monster thinks (game.js). The accessibility skip resolves state without playing camera shots.
 // Cine.play(steps) runs steps in order; a step is
 //   { cam: { on, fit, x, y, lv, zoom, dur, ease, wait, push, drift } }  a camera move (wait: true holds the script):
 //       on: () => [wx, wy]       a world px point read every frame (an actor's face, a boat): the camera eases onto it
@@ -13,7 +13,7 @@
 //   { wait: s } | { until: () => bool, max: s } | { do: fn } | { card: [title, sub], dur } | { shake: px }
 //   { say: { name, color, portrait(ctx, x, y, w, h), text, voice: { pitch, wave }, focus, onStart, onEnd }, dur }
 //       focus: () => [wx, wy], the speaker (tests check every line frames its speaker)
-// When a scene ends the zoom eases back to the game's (the director's last shot is usually the hero already).
+// When normal playback ends the zoom eases back to the game's (the director's last shot is usually the hero already).
 // Cine.speed (tests) multiplies time; G.cine is true while a scene plays.
 import { G } from '../state.js';
 import { camera, isoX, isoY, HH } from '../core/view.js';
@@ -124,17 +124,23 @@ function voice(text, v = {}) {
 /** The game's own zoom (settings, screen size), without touching the camera. */
 function baseZoom() { const z = camera.zoom; camera.computeZoom(); const b = camera.zoom; camera.zoom = z; return b; }
 
-/** How much faster a scene the hero has already watched plays (game.js runs that many steps a frame). */
+/** Playback speed for a previously seen scene when the separate skip option is off. */
 export const CINE_FAST = 20;
-export const CINE_SKIP = 60;
 export const Cine = {
-  fast: false,   // this scene was seen: it plays at CINE_FAST (set by the director's first step, game/skybattle.js scene())
+  fast: false,   // this scene was seen: it plays at CINE_FAST when skipCutscenes is off
   active: false, steps: [], i: 0, t: 0, speed: 1, bars: 0, card: null, line: null, cam: null, shook: false, back: null,
-  onEnd: null, zoom0: 1,
+  onEnd: null, zoom0: 1, skipQueue: [], skipping: false,
   /** Start a scene (or queue it after the one playing). */
   play(steps, onEnd = null) {
-    if (this.active) { this.steps.push(...steps); if (onEnd) { const prev = this.onEnd; this.onEnd = () => { prev && prev(); onEnd(); }; } return; }
-    this.active = true; G.cine = true; this.fast = !!G.settings.skipCutscenes; this.steps = steps.slice(); this.i = 0; this.t = 0; this.onEnd = onEnd; this.line = null; this.card = null;
+    if (this.skipping) { this.skipQueue.push({ steps, onEnd }); return; }
+    if (this.active) {
+      this.steps.push(...steps);
+      if (onEnd) { const prev = this.onEnd; this.onEnd = () => { prev && prev(); onEnd(); }; }
+      if (G.settings.skipCutscenes) this.skipActive();
+      return;
+    }
+    if (G.settings.skipCutscenes) { this.zoom0 = baseZoom(); this.skipScene(steps.map((s) => ({ ...s, _on: false, _ended: false })), onEnd); return; }
+    this.active = true; G.cine = true; this.fast = false; this.steps = steps.map((s) => ({ ...s })); this.i = 0; this.t = 0; this.onEnd = onEnd; this.line = null; this.card = null;
     this.zoom0 = baseZoom(); this.back = null; this.cam = null;
     if (G.player) {
       G.player.moveVec = [0, 0];
@@ -166,6 +172,43 @@ export const Cine = {
       }
     }
   },
+  /** Resolve scripted state without entering camera, dialogue, or timed playback. */
+  skipScene(steps, onEnd = null, startAt = 0) {
+    this.skipQueue.push({ steps, onEnd, startAt });
+    if (this.skipping) return;
+    const savedCamera = {
+      x: camera.x, y: camera.y, zoomK: camera.zoomK, leadX: camera.leadX, leadY: camera.leadY,
+      shakeAmt: camera.shakeAmt, shakeX: camera.shakeX, shakeY: camera.shakeY,
+    };
+    this.skipping = true; this.active = true; G.cine = true;
+    let sceneCount = 0;
+    try {
+      while (this.skipQueue.length && sceneCount++ < 1000) {
+        const scene = this.skipQueue.shift();
+        for (let i = scene.startAt || 0; i < scene.steps.length; i++) {
+          const step = scene.steps[i];
+          if (!step._on) { step._on = true; if (step.do) step.do(); if (step.say?.onStart) step.say.onStart(); }
+          if (step.say && !step._ended) { step._ended = true; if (step.say.onEnd) step.say.onEnd(); }
+        }
+        if (scene.onEnd) scene.onEnd();
+      }
+      if (this.skipQueue.length) throw new Error('Cutscene skip queue exceeded its safety limit');
+    } finally {
+      this.skipQueue.length = 0; this.skipping = false; this.active = false; G.cine = false;
+      this.fast = false; this.steps = []; this.i = 0; this.t = 0; this.onEnd = null;
+      this.line = null; this.card = null; this.cam = null; this.back = null; this.bars = 0; G.zoomFlux = false;
+      camera.x = savedCamera.x; camera.y = savedCamera.y; camera.zoomK = savedCamera.zoomK;
+      camera.leadX = savedCamera.leadX; camera.leadY = savedCamera.leadY;
+      camera.shakeAmt = savedCamera.shakeAmt; camera.shakeX = savedCamera.shakeX; camera.shakeY = savedCamera.shakeY;
+      camera.computeZoom();
+      // Keep the pre-skip position; the normal camera follow eases back to the hero next tick.
+    }
+  },
+  /** Skip the current and queued remainder if the preference changes during playback. */
+  skipActive() {
+    if (!this.active || this.skipping) return;
+    this.skipScene(this.steps, this.onEnd, this.i);
+  },
   stop() {
     this.active = false; G.cine = false; this.fast = false; this.steps = []; this.line = null; this.card = null; this.cam = null;
     if (G.settings.skipCutscenes && G.player) { camera.zoom = baseZoom(); camera.follow(G.player.x, G.player.y, 0, true); this.back = null; this.bars = 0; }
@@ -192,6 +235,12 @@ export const Cine = {
    *  him to town, which then draws black). */
   abort() { this.onEnd = null; if (this.active) this.stop(); this.back = null; camera.computeZoom(); this.bars = 0; },
   update(dt) {
+    if (G.settings.skipCutscenes) {
+      if (this.active) this.skipActive();
+      if (this.back) { this.back = null; camera.computeZoom(); }
+      this.bars = 0; this.cam = null; this.card = null; this.line = null; G.zoomFlux = false;
+      return;
+    }
     dt *= this.speed;
     this.bars = clamp(this.bars + (this.active ? dt : -dt) * 2.5, 0, 1);
     G.zoomFlux = this.active || !!this.back;   // the camera's zoom is moving: render.js bakes the floor at zoom steps
@@ -207,7 +256,7 @@ export const Cine = {
       if (!s._on) { s._on = true; this.t = 0; this.begin(s); }
       this.t += guard ? 0 : dt;
       if (!this.done(s)) return;
-      if (s.say && s.say.onEnd) s.say.onEnd();
+      if (s.say && s.say.onEnd && !s._ended) { s._ended = true; s.say.onEnd(); }
       this.i++; this.line = s.say ? null : this.line;
     }
   },

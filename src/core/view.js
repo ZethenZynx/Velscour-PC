@@ -43,7 +43,8 @@ export const camera = {
   leadY: 0,
   zoomK: 1, // a level's own zoom factor (the tower's roof pulls back to show the airships)
   follow(tx, ty, dt, snap = false) {
-    const wx = isoX(tx, ty) + this.leadX, wy = isoY(tx, ty) - 24 + this.leadY;
+    const leadX = G.settings.skipCutscenes ? 0 : this.leadX, leadY = G.settings.skipCutscenes ? 0 : this.leadY;
+    const wx = isoX(tx, ty) + leadX, wy = isoY(tx, ty) - 24 + leadY;
     if (snap) { this.x = wx; this.y = wy; return; }
     const k = 1 - Math.pow(0.0005, dt);
     this.x += (wx - this.x) * k;
@@ -60,7 +61,7 @@ export const camera = {
   computeZoom() {
     const base = Math.max(G.H / 700, G.W / 1400);
     const min = G.touch ? 0.95 : 0.9;
-    this.zoom = clamp(base, min, 3) * (G.settings.zoom || 1) * this.zoomK;
+    this.zoom = clamp(base, min, 3) * (G.settings.zoom || 1) * (G.settings.skipCutscenes ? 1 : this.zoomK);
   },
   /** Apply camera transform to ctx (world px -> device px). */
   apply(ctx) {
