@@ -46,6 +46,8 @@ const chance01 = (k) => Math.random() < k;
 function impact(p, x, y) {
   const w = p.world;
   if (!w || p.dead) return;
+  // Start the dedicated impact cue in the same update as the visual strike and damage.
+  sfx('judgement_impact', 0.9);
   const P = power(p);
   addEffect(new Column(x, y, GOLD, 0.7, 60, 420));
   for (let i = 0; i < 3; i++) addEffect(new Ring(x, y, 0.2, 2.6 + i * 0.7, 0.45 + i * 0.15, i ? WHITE : GOLD, 8 - i * 2, { fill: !i }));
@@ -59,7 +61,6 @@ function impact(p, x, y) {
   addDecal(x, y, 'rgba(255,220,120,0.35)', 1, 'scorch', 0.4);
   w.addHazard(new Consecration(p, x, y));
   camera.shake(10); G.flash = Math.max(G.flash || 0, 0.25);
-  sfx('holy', 1); sfx('thud', 0.9);
 }
 
 class Consecration {
@@ -126,7 +127,7 @@ export default {
     s.runes = 0; s.ready = false; s.flash = 1;
     p.world.addHazard(new Hammer(p, x, y));
     floatText(p.x, p.y, 100, 'JUDGEMENT', GOLD, 20, { life: 1.8, vz: 16 });
-    sfx('holy', 0.8);
+    sfx('judgement_cast', 0.78);
     stat('paladin', 'fire');
     later(p.world, 0.05, () => addEffect(new Ring(p.x, p.y, 0.1, 1.6, 0.4, WHITE, 3)));
   },

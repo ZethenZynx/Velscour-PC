@@ -126,6 +126,20 @@ const SOUNDS = {
     noise(t + 0.08, 0.34, { type: 'highpass', f0: 5200, f1: 1800, vol: 0.12, a: 0.01 });
     tone(t, 0.55, { f0: 185 * p, f1: 125 * p, vol: 0.16, wave: 'triangle', a: 0.04 });
   },
+  judgement_cast: (t, p) => {
+    // A rising low swell, then a restrained, bright chord for the divine charge.
+    noise(t, 0.58, { type: 'lowpass', f0: 120, f1: 520, q: 0.7, vol: 0.18, a: 0.16 });
+    noise(t + 0.08, 0.48, { type: 'highpass', f0: 1500, f1: 3600, vol: 0.11, a: 0.18 });
+    tone(t, 0.62, { f0: 110 * p, f1: 196 * p, vol: 0.22, wave: 'triangle', a: 0.18 });
+    tone(t + 0.08, 0.52, { f0: 330 * p, f1: 587 * p, vol: 0.08, wave: 'sine', a: 0.2 });
+  },
+  judgement_impact: (t, p) => {
+    // Heavy bass and a sharp strike lead; a short holy chord remains above the decay.
+    noise(t, 0.62, { type: 'lowpass', f0: 620, f1: 38, q: 0.8, vol: 0.34, a: 0.002 });
+    noise(t, 0.19, { type: 'highpass', f0: 5200, f1: 850, vol: 0.2, a: 0.001 });
+    tone(t, 0.64, { f0: 92 * p, f1: 34 * p, vol: 0.28, wave: 'triangle', a: 0.002 });
+    [392, 523, 659].forEach((f, i) => tone(t + 0.025 + i * 0.018, 0.42, { f0: f * p, f1: f * p * 0.96, vol: 0.055 - i * 0.008, wave: 'sine', a: 0.006 }));
+  },
   sanctuary: (t, p) => {
     noise(t, 0.9, { type: 'lowpass', f0: 260, f1: 1200, q: 0.7, vol: 0.1, a: 0.25 });
     [146.8, 220, 293.7].forEach((f, i) => tone(t + i * 0.055, 0.95, { f0: f * p, f1: f * p * 1.015, vol: 0.055 - i * 0.009, wave: 'sine', a: 0.22 }));
