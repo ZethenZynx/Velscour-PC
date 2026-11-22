@@ -10,6 +10,7 @@ import { G } from '../../state.js';
 import { camera, elevationAt, HW, HH } from '../../core/view.js';
 import { aoe } from '../combat.js';
 import { Cine } from '../cinema.js';
+import { deckTiltTransform, untiltPointerPoint } from './deck_tilt.mjs';
 
 const ZC = 7.6;   // the Haulfast's beam line: bow-on off the port side, abaft the paddle box, short of the quarterdeck
 const CHAINS = [['grapple:port', 4.4], ['grapple:crane', 7.8], ['grapple:starboard', 11.0]];   // marker, where it bites (ship z)
@@ -282,15 +283,14 @@ function runRamp(api, m) {
 }
 
 // ------------------------------------------------------------------ the deck heels (the same shape in #5)
-/** The whole view lists by `deg` (the game canvas; the HUD stays level), scaled to keep its corners covered. The
- *  pointer is mapped back through the tilt (aimTilt), so clicks land where they look. */
+/** The game canvas lists by `deg` while the HUD stays level. No canvas scaling is applied, so the player's zoom stays
+ *  fixed; pointer input is rotated back through the tilt (aimTilt), so clicks land where they look. */
 function listView(api, deg) {
   const S = api.state, c = G.canvas; if (!c) return;
   if (Math.abs((S.viewDeg ?? 0) - deg) < 0.02) return;
   S.viewDeg = deg;
-  const r = Math.abs(deg) * Math.PI / 180, a = Math.max(G.W / G.H, G.H / G.W) || 1.8, k = Math.cos(r) + a * Math.sin(r);
-  S.viewK = k;
-  c.style.transform = Math.abs(deg) > 0.01 ? `rotate(${deg.toFixed(2)}deg) scale(${k.toFixed(3)})` : '';
+  S.viewK = 1; // deck tilt must not change the selected camera zoom
+  c.style.transform = deckTiltTransform(deg);
   if (!S.viewWatch && deg) {   // put it back when the hero leaves the battle (any way at all)
     S.viewWatch = true; const w = api.world, aim = aimTilt(S, c);
     const f = () => { if (G.world !== w || !w.seaRun || w.seaRun.completed) { c.style.transform = ''; S.viewWatch = false; S.viewDeg = 0; aim(); return; } requestAnimationFrame(f); };
@@ -304,8 +304,7 @@ function aimTilt(S, c) {
   const types = ['pointerdown', 'pointermove', 'pointerup', 'pointercancel'];
   const on = (e) => {
     if (e.target !== c || e.__untilted || !S.viewDeg) return;
-    const th = -S.viewDeg * Math.PI / 180, k = S.viewK || 1, cx = G.W / 2, cy = G.H / 2, dx = (e.clientX - cx) / k, dy = (e.clientY - cy) / k;
-    const x = cx + dx * Math.cos(th) - dy * Math.sin(th), y = cy + dx * Math.sin(th) + dy * Math.cos(th);
+    const [x, y] = untiltPointerPoint(e.clientX, e.clientY, G.W / 2, G.H / 2, S.viewDeg);
     e.stopImmediatePropagation();
     const q = new PointerEvent(e.type, { bubbles: true, cancelable: true, clientX: x, clientY: y, screenX: e.screenX, screenY: e.screenY, pointerId: e.pointerId, pointerType: e.pointerType,
       isPrimary: e.isPrimary, button: e.button, buttons: e.buttons, pressure: e.pressure, ctrlKey: e.ctrlKey, shiftKey: e.shiftKey, altKey: e.altKey, metaKey: e.metaKey });
