@@ -651,7 +651,7 @@ export const game = {
     if (!c) return;
     const currentAct = getActForDepth(Math.min(FINAL_DEPTH, Math.max(1, Number(c.depth) || 1))).act;
     const rows = actSelectionRows(c);
-    const html = `<p class="dim">Choose an unlocked act town. Travel is free; campaign depth and completed progress are preserved.</p>
+    const html = `<p class="dim">Choose an unlocked act town. Travel is free and does not spend currency.</p>
       <div class="act-selection-list">${rows.map((act) => `<section class="act-selection-card${act.act === currentAct ? ' current' : ''}${act.unlocked ? '' : ' locked'}">
         <div class="act-selection-heading"><strong>ACT ${act.act} — ${escapeHtml(act.name)}</strong><span class="act-selection-status">${act.act === currentAct ? 'Current Act' : act.unlocked ? 'Unlocked' : 'Locked'}</span></div>
         <div class="act-selection-details"><span>Depths ${act.start}–${act.end}</span><span>Town: ${escapeHtml(act.town)}</span></div>
