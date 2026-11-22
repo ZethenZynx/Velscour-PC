@@ -65,13 +65,13 @@ function impParticle(m) {
 
 // ------------------------------------------------------------------------------------------------ shrines
 export const SHRINES = {
-  frenzy: { name: 'Shrine of Frenzy', color: '#ff7030', el: 'fire', buff: { as: 40 }, t: 40, msg: '+40% attack and cast speed' },
+  frenzy: { name: 'Shrine of Frenzy', color: '#ff7030', el: 'fire', buff: { as: 40 }, t: 20, msg: '+40% attack and cast speed' },
   fortune: { name: 'Shrine of Fortune', color: '#ffd040', el: 'holy', buff: { mf: 150, gf: 150 }, t: 60, msg: '+150% magic and gold find' },
-  bulwark: { name: 'Shrine of the Bulwark', color: '#a0c0ff', el: 'cold', buff: { life: 40, reduce: 15 }, t: 60, msg: '+40% life, 15% less damage taken' },
+  bulwark: { name: 'Shrine of the Bulwark', color: '#a0c0ff', el: 'cold', buff: { life: 40, reduce: 15 }, t: 45, msg: '+40% life, 15% less damage taken' },
   wisdom: { name: 'Shrine of Wisdom', color: '#60e0ff', el: 'arcane', buff: { xp: 75 }, t: 90, msg: '+75% experience' },
-  wrath: { name: 'Shrine of Wrath', color: '#ff3050', el: 'blood', buff: { dmg: 50, crit: 40 }, t: 40, msg: '+50% damage, +10% critical chance' },
+  wrath: { name: 'Shrine of Wrath', color: '#ff3050', el: 'blood', buff: { dmg: 50, crit: 40 }, t: 25, msg: '+50% damage, +10% critical chance' },
   storm: { name: 'Storm Shrine', color: '#b0a0ff', el: 'light', buff: {}, t: 30, msg: 'lightning lashes nearby foes', storm: true },
-  renewal: { name: 'Shrine of Renewal', color: '#60ff80', el: 'poison', buff: { regen: 30 }, t: 30, msg: 'life and mana restored', heal: true },
+  renewal: { name: 'Shrine of Renewal', color: '#60ff80', el: 'poison', buff: { regen: 30 }, t: 45, msg: 'life and mana restored', heal: true },
 };
 
 const EPITAPHS = [
@@ -179,7 +179,7 @@ export function announceDungeonAffixes(world) {
   clearDungeonAffixBuff();
   const affixes = (world.dungeonAffixes || []).map((id) => DUNGEON_AFFIX_BY_ID[id]).filter(Boolean);
   if (affixes.some((affix) => affix.id === 'surge') && p && typeof p.addBuff === 'function') {
-    p.addBuff({ id: 'dungeon_affix_surge', name: 'Arcane Surge', el: 'arcane', stats: DUNGEON_AFFIX_CONFIG.surge.playerStats, t: 1e6, max: 1e6, aura: true });
+    p.addBuff({ id: 'dungeon_affix_surge', name: 'Arcane Surge', el: 'arcane', stats: DUNGEON_AFFIX_CONFIG.surge.playerStats, t: 60, max: 60, aura: true });
   }
   if (!affixes.length) return;
   const names = affixes.map((affix) => affix.name);
@@ -221,7 +221,7 @@ export function addShrine(world, [x, y], key) {
       const buff = typeof p?.addBuff === 'function' ? p.addBuff({ id: 'shrine_' + key, name: S.name, iconKey: 'shrine:' + key, el: S.el, stats: S.buff, t: S.t, max: S.t, storm: S.storm, floorOnly: true, worldObject: true }) : null;
       if (buff) buff.description = LEGACY_SHRINE_DESCRIPTIONS[key] || S.msg;
       floatText(p.x, p.y, 90, S.name.toUpperCase(), S.color, 16, { life: 2 });
-      UI.log(`<b style="color:${S.color}">${S.name}</b><br><b>Effect Granted:</b><br>${buff?.description || S.msg}<br><b>Duration:</b> ${S.t} seconds.`, S.color, { category: 'dungeon.shrine', important: true });
+      UI.log(`<b style="color:${S.color}">${S.name}</b><br><b>Effect Granted:</b><br>${buff?.description || S.msg}<br><b>Duration:</b> ${Math.ceil(buff?.t || S.t)} seconds.`, S.color, { category: 'dungeon.shrine', important: true });
     },
   });
 }
@@ -430,7 +430,7 @@ function grantImpReward(world, m, variant, options = {}) {
       impDropGear(world, m, lvl, randi(3, 5), { mf: 1.3, bonus: 0.4 }, qty);
       if (chance(0.5)) impDropGems(world, m, lvl, 1, qty);
       break;
-    case 'blood': impBlessing('blood', 'Blood Rush', variant.color, { dmg: 24, as: 20, crit: 16, speed: 10 }, 22); break;
+    case 'blood': impBlessing('blood', 'Blood Rush', variant.color, { dmg: 24, as: 20, crit: 16, speed: 10 }, 20); break;
     case 'relic': impDropGear(world, m, lvl, 2, { mf: 1.1, bonus: 0.5 }, qty); break;
     case 'merchant':
       impDropGear(world, m, lvl, 2, { mf: 0.4, vendorValueMult: 2.5 }, qty);
@@ -445,19 +445,19 @@ function grantImpReward(world, m, variant, options = {}) {
     case 'jewel': impDropGems(world, m, lvl, randi(4, 6), qty, 8); break;
     case 'alchemist':
       for (let i = 0; i < impQuantity(randi(2, 3), qty); i++) impDrop(world, m, 'potion', { item: potionItem(pick(['hp', 'mp', 'rejuv', 'fury'])) });
-      impBlessing('alchemist', 'Alchemical Renewal', variant.color, { regen: 18 }, 18); break;
+      impBlessing('alchemist', 'Alchemical Renewal', variant.color, { regen: 18 }, 45); break;
     case 'vitality':
       for (let i = 0; i < impQuantity(randi(7, 10), qty); i++) impDrop(world, m, 'orb_hp');
-      impBlessing('vitality', 'Verdant Vitality', variant.color, { regen: 38, life: 8 }, 24); break;
+      impBlessing('vitality', 'Verdant Vitality', variant.color, { regen: 38, life: 8 }, 45); break;
     case 'prosperity':
       impDropGold(world, m, lvl, 18 + lvl * 3, 8, qty);
-      impBlessing('prosperity', 'Prosperity', variant.color, { gf: 55, mf: 35 }, 30); break;
+      impBlessing('prosperity', 'Prosperity', variant.color, { gf: 55, mf: 35 }, 60); break;
     case 'sigil':
       for (let i = 0; i < impQuantity(randi(1, 2), qty); i++) impDrop(world, m, 'item', { item: rollSigil(groundRewardDepth(world, world.depth || 1), 0) });
       break;
     case 'arcane':
       for (let i = 0; i < impQuantity(8, qty); i++) impDrop(world, m, 'orb_mp');
-      impBlessing('arcane', 'Arcane Reserve', variant.color, { manaRegenPct: 75 }, 24); break;
+      impBlessing('arcane', 'Arcane Reserve', variant.color, { manaRegenPct: 75 }, 45); break;
     case 'set': {
       for (let i = 0; i < impQuantity(1, qty); i++) {
         const item = makeCovenant(Math.min(100, Math.max(1, G.char?.level || lvl)), { depth: groundRewardDepth(world, world.depth || 1) });
@@ -802,6 +802,12 @@ export function happeningsTick(world, dt) {
   greedTick(world, dt); // the Greed lever's tougher monsters (game/greed.js)
   if (H.streakT > 0) H.streakT -= dt;
   const affixes = new Set(world.dungeonAffixes || []);
+  // Arcane Surge is represented as a finite buff and renewed only while its
+  // floor affix is active. Leaving the floor still clears it immediately.
+  if (affixes.has('surge')) {
+    const surge = p.buffs.find((buff) => buff.id === 'dungeon_affix_surge');
+    if (!surge || surge.t < 30) p.addBuff({ id: 'dungeon_affix_surge', name: 'Arcane Surge', el: 'arcane', stats: DUNGEON_AFFIX_CONFIG.surge.playerStats, t: 60, max: 60, aura: true });
+  }
   if (affixes.has('starfall') && (H.starT -= dt) <= 0) {
     H.starT = rand(...DUNGEON_AFFIX_CONFIG.starfall.repeatDelay);
     starfall(world);

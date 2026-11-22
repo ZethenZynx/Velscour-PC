@@ -8,7 +8,7 @@ import { GroundItem } from './loot.js';
 import { explosionFx } from '../gfx/shapes.js';
 import { hit, aoe, chainHit } from './combat.js';
 import { Projectile, Delayed, Area, makeWall, Orbit, Whirl, Leap, Dash, NovaWave, BeamCh, Trap, Rain, Fissure, AuraFx, explode, coneTargets } from './hazards.js';
-import { buffAmount, curseAmount, skillDuration, spearBarrageAreas, ricochetCount, RICOCHET_BLAST, whirlwindRageRate } from '../data/skills.js';
+import { buffAmount, curseAmount, skillDuration, skillDurationLimit, spearBarrageAreas, ricochetCount, RICOCHET_BLAST, whirlwindRageRate } from '../data/skills.js';
 import { createSummon } from './monster.js';
 import { lanceLeap, lanceSpearBarrage } from '../gfx/lancefx.js';
 import { shieldVariantForSkill, shieldOrbitRadius, preloadLancerShield } from '../gfx/lancershields.js';
@@ -354,7 +354,7 @@ export function castSkill(p, sk, L, tx, ty, opts = {}) {
     case 'summon':
       return summonCast(p, sk, L, tx, ty, dmg);
     case 'buff': {
-      const amt = buffAmount(sk, L), dur = skillDuration(sk, L) * (1 + (morph ? morph.durPct : 0) / 100);
+      const amt = buffAmount(sk, L), dur = Math.min(skillDurationLimit(sk), skillDuration(sk, L) * (1 + (morph ? morph.durPct : 0) / 100));
       const stats = {};
       for (const b of m.buff || ['dmg']) stats[b] = amt;
       const buffPayload = { id: sk.id, name: sk.name, el, fx, stats, t: dur, max: dur, pulse: m.pulse ? { dmg, acc: 0 } : null, transform: m.transform, slowPulse: m.slow };

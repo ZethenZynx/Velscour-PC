@@ -11,6 +11,7 @@ import { drawRuneWeapon } from '../gfx/runeweapon.js';
 import { drawSlime } from '../gfx/slimeart.js';
 import { TURRET3D, drawTurret3D } from '../gfx/gunner3d.js';
 import { isPlayerHostile, isPlayerTargetable } from './targeting.js';
+import { MAX_TEMPORARY_BUFF_SECONDS, normalizeTemporaryBuff } from './buffduration.mjs';
 
 // Bounds for the visible sprite after its local flip/rotation/scale transforms.
 // Kept in world-pixel coordinates and projected by render.js with the current camera.
@@ -258,6 +259,8 @@ export class Creature {
 
   addBuff(b) {
     if (!this.buffs) this.buffs = [];
+    b = normalizeTemporaryBuff(b);
+    if (!b) return null;
     const old = this.buffs.find((x) => x.id === b.id);
     if (old) {
       Object.assign(old, b);
@@ -322,6 +325,9 @@ export class Creature {
     if (this.buffs && this.buffs.length && !this.isPlayer) {
       for (let i = this.buffs.length - 1; i >= 0; i--) {
         const b = this.buffs[i];
+        if (!Number.isFinite(b?.t) || b.t <= 0) { this.buffs.splice(i, 1); continue; }
+        if (b.t > MAX_TEMPORARY_BUFF_SECONDS) { b.t = MAX_TEMPORARY_BUFF_SECONDS; b.max = MAX_TEMPORARY_BUFF_SECONDS; }
+        else if (!Number.isFinite(b.max) || b.max <= 0 || b.max > MAX_TEMPORARY_BUFF_SECONDS) b.max = Math.min(MAX_TEMPORARY_BUFF_SECONDS, Number.isFinite(b.max) && b.max > 0 ? b.max : b.t);
         b.t -= dt;
         if (b.t <= 0) this.buffs.splice(i, 1);
       }

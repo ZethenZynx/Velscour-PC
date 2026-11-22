@@ -112,9 +112,19 @@ export function curseAmount(sk, L) {
 }
 export function skillDuration(sk, L) {
   const d = sk.m.dur;
-  if (sk.kind === 'curse') return (d ?? 6) + (L - 1) * 0.15;
-  if (sk.kind === 'buff') return (d ?? 20) + (L - 1) * 0.3;
+  if (sk.kind === 'curse') return Math.min(60, (d ?? 6) + (L - 1) * 0.15);
+  if (sk.kind === 'buff') return Math.min(skillDurationLimit(sk), (d ?? 20) + (L - 1) * 0.3);
   return d ?? 0;
+}
+
+/** Keep high-rank duration scaling inside the intended combat-buff windows. */
+export function skillDurationLimit(sk) {
+  const stats = Array.isArray(sk?.m?.buff) ? sk.m.buff : ['dmg'];
+  if (stats.includes('xp') || stats.includes('mf') || stats.includes('gf')) return 120;
+  const hasOffense = stats.some((key) => ['dmg', 'crit', 'critDmg', 'leech', 'cdr'].includes(key));
+  if (stats.includes('speed')) return sk.m.amt >= 30 ? 10 : 15;
+  if (stats.includes('as') && !hasOffense && !stats.some((key) => ['armor', 'res', 'block', 'thorns', 'regen', 'life'].includes(key))) return 20;
+  return hasOffense ? 30 : 45;
 }
 
 /** Approximate useful range in tiles (used for auto-aim and melee approach). */

@@ -752,10 +752,10 @@ export const HUD = {
         const helpful = [
           ...extra.map((x) => ({ icon: buffIconURL(x), title: x.name, count: x.n })),
           ...[...mins].map(([id, n]) => ({ icon: skillIconURL(SKILLS[id]), title: `${SKILLS[id].name}: ${n} out`, count: n, minion: true })),
-          ...buffs.map((b) => ({ icon: buffIconURL(b), title: b.description ? `${b.name}: ${b.description}` : b.name, count: b.aura ? null : Math.ceil(b.t) })),
+          ...buffs.map((b) => ({ icon: buffIconURL(b), title: `${b.description ? `${b.name}: ${b.description}` : b.name} · ${Math.ceil(b.t)}s remaining`, count: Math.ceil(b.t) })),
         ];
         render(row, helpful);
-        render(debuffRow, debuffs.map((b) => ({ icon: buffIconURL(b), title: b.description ? `${b.name}: ${b.description}` : b.name, count: b.aura ? null : Math.ceil(b.t) })));
+        render(debuffRow, debuffs.map((b) => ({ icon: buffIconURL(b), title: `${b.description ? `${b.name}: ${b.description}` : b.name} · ${Math.ceil(b.t)}s remaining`, count: Math.ceil(b.t) })));
       }
       // the message log grows up from the skill bar: keep it below the buff row (phones in landscape are short);
       // measured only when the row's size or the layout changed, since reading rects forces a layout mid frame

@@ -450,7 +450,6 @@ export function dropChest(world, chest, depth) {
     if (chance(0.5)) add('potion', { item: potionItem(pick(['hp', 'mp', 'rejuv'])) });
     if (heresyAllows('orb', G.player?.char, world) && chance(0.75)) add('orb_hp', {});
     if (heresyAllows('orb', G.player?.char, world) && chance(0.05)) add('orb_rejuv', {});
-    if (heresyAllows('orb', G.player?.char, world) && chance(0.02)) add('orb_fury', {});
   }
 }
 

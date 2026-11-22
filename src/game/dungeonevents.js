@@ -304,11 +304,11 @@ function startRun(world, def, room) {
     }
     case 'rift': addEventFoes(world,run,{count:6,rank:'champion',hp:1.25}); run.kind='kill'; run.reward={gear:2,quality:3}; break;
     case 'mirror': addEventFoes(world,run,{count:3,rank:'unique',hp:1.05}); run.kind='kill'; run.reward={gear:1,gems:1,quality:3}; break;
-    case 'temporal': pulse(world,run,{element:'light',color:'#64d8dc',duration:18,damage:.035,radius:1.4}); run.reward={gems:1}; if(p.addBuff)p.addBuff({id:'event_temporal',name:'Temporal Haste',el:'light',stats:{as:12},t:30,max:30,floorOnly:true}); break;
+    case 'temporal': pulse(world,run,{element:'light',color:'#64d8dc',duration:18,damage:.035,radius:1.4}); run.reward={gems:1}; if(p.addBuff)p.addBuff({id:'event_temporal',name:'Temporal Haste',el:'light',stats:{as:12},t:20,max:20,floorOnly:true}); break;
     case 'collision': addEventFoes(world,run,{count:5,rank:'normal',hp:1.1}); run.kind='kill'; run.reward={gold:3,gear:1}; break;
     case 'ghosts': addEventFoes(world,run,{count:4,arch:'wraith',rank:'unique',hp:.8,damage:.8}); run.kind='kill'; run.reward={gems:1}; break;
     case 'bloodmoon': pulse(world,run,{element:'blood',color:'#d83653',duration:20,damage:.025,radius:1.5}); addEventFoes(world,run,{count:3,rank:'normal',hp:1.1}); run.reward={gear:1}; break;
-    case 'silence': pulse(world,run,{element:'shadow',color:'#9981bf',duration:16,damage:.02,radius:1.7}); run.reward={gold:3}; if(p.addBuff)p.addBuff({id:'event_silence',name:'Muted Casting',el:'shadow',stats:{as:-8},t:16,max:16,floorOnly:true}); break;
+    case 'silence': pulse(world,run,{element:'shadow',color:'#9981bf',duration:16,damage:.02,radius:1.7}); run.reward={gold:3}; if(p.addBuff)p.addBuff({id:'event_silence',name:'Muted Casting',el:'shadow',stats:{as:-8},t:20,max:20,floorOnly:true}); break;
     case 'whispers': {const at=positions(world,room,1,2.5)[0]||[cx,cy];addEffect(new Ring(at[0],at[1],.2,3,.8,'#b39aff',4));loot(world,at[0],at[1],{gold:5,gems:1});run.kind='timer';run.remaining=10;run.reward={gold:2};break;}
     case 'souls': run.kind='kill';run.reward={gold:4,gear:1};addEventFoes(world,run,{count:5,rank:'normal'});break;
     case 'shadow': addEventFoes(world,run,{count:1,rank:'unique',hp:2.2,damage:1.1});run.kind='kill';run.reward={gear:2,quality:3};break;

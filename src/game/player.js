@@ -23,6 +23,7 @@ import { drawGearFx, updateGearFx } from '../gfx/gearfx.js';
 import { heldHero, drawHeldLayer } from '../gfx/heldart.js';
 import { fxColor } from '../data/gear.js';
 import { freeSlot } from '../data/bar.js';
+import { MAX_TEMPORARY_BUFF_SECONDS, normalizeTemporaryBuff } from './buffduration.mjs';
 import { bardCompose, bardUpdate, harmonyMul } from './bard.js';
 import { ASTRONOMER, astroAfterCast, astroUpdate } from './astronomer.js';
 import { sigCast, sigHit, sigUpdate } from './signature.js';
@@ -341,6 +342,9 @@ export class Player extends Creature {
         : b.id === 'fury' ? 1 + (this.st?.markPotionDuration || 0) / 100 : 1;
       if (scale > 1) b = { ...b, t: b.t * scale, max: (b.max || b.t) * scale };
     }
+    b = normalizeTemporaryBuff(b);
+    if (!b) return null;
+    if (!Array.isArray(this.buffs)) this.buffs = [];
     const old = this.buffs.find((x) => x.id === b.id);
     if (old) { Object.assign(old, b); this.recompute(); return old; }
     this.buffs.push(b);
@@ -802,6 +806,9 @@ export class Player extends Creature {
     let changed = false;
     for (let i = this.buffs.length - 1; i >= 0; i--) {
       const b = this.buffs[i];
+      if (!Number.isFinite(b?.t) || b.t <= 0) { this.buffs.splice(i, 1); changed = true; continue; }
+      if (b.t > MAX_TEMPORARY_BUFF_SECONDS) { b.t = MAX_TEMPORARY_BUFF_SECONDS; b.max = MAX_TEMPORARY_BUFF_SECONDS; changed = true; }
+      else if (!Number.isFinite(b.max) || b.max <= 0 || b.max > MAX_TEMPORARY_BUFF_SECONDS) { b.max = Math.min(MAX_TEMPORARY_BUFF_SECONDS, Number.isFinite(b.max) && b.max > 0 ? b.max : b.t); changed = true; }
       b.t -= dt;
       if (b.selfDrain) {
         b.drainT = (b.drainT || 0) + dt;

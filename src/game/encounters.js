@@ -246,7 +246,7 @@ const BUILD = {
     n.use = () => {
       if (e.used) { n.say('The salve is holding. Thank you.', 2.5); return; }
       choices(n, 'Wounded Warrior', 'A healing potion would get me back on my feet. You may also leave me to recover.', [
-        { label: 'Give healing potion', run: () => { const c = G.char; if (!c || !(c.potions?.hp > 0)) { n.say('You have no healing potion to spare.', 2.5); return; } c.potions.hp--; e.used = true; n.hp = 100; n.feel('proud', 3); buff(world.player, 'wounded_warrior', 'Warrior’s Resolve', 'phys', { dmg: 12, reduce: 5 }, 60, '+12% damage and +5% damage reduction', '#d8a46b'); reward(world, n, { gold: 0.6 }); UI.refresh(); } },
+        { label: 'Give healing potion', run: () => { const c = G.char; if (!c || !(c.potions?.hp > 0)) { n.say('You have no healing potion to spare.', 2.5); return; } c.potions.hp--; e.used = true; n.hp = 100; n.feel('proud', 3); buff(world.player, 'wounded_warrior', 'Warrior’s Resolve', 'phys', { dmg: 12, reduce: 5 }, 25, '+12% damage and +5% damage reduction', '#d8a46b'); reward(world, n, { gold: 0.6 }); UI.refresh(); } },
       ]);
     };
     return e;
@@ -315,7 +315,7 @@ const BUILD = {
     e.n.use = () => {
       if (e.quest.state !== 'available') { e.n.say(e.quest.state === 'failed' ? 'The curse has claimed what remains of me.' : 'The chains are gone. You have my thanks.', 2.5); return; }
       choices(e.n, e.quest.title, 'A curse is eating at me. A rejuvenation draught might break it, but the binding could lash out.', [
-      { label: 'Spend a rejuvenation potion', run: () => { const c = G.char; if (!c || !(c.potions?.rejuv > 0)) { e.n.say('You carry no rejuvenation draught.', 2.5); return; } c.potions.rejuv--; questState(e, 'rewarded', 'The curse is lifted.'); e.quest.rewardClaimed = true; e.n.use = () => e.n.say('The chains are gone. You have my thanks.', 2.5); e.n.feel('relieved', 4); e.n.say('The chains are gone. You have my thanks.', 3); reward(world, e.n, { gold: 0.75 }); buff(world.player, 'cursebreaker', 'Cursebreaker’s Grace', 'holy', { res: 12 }, 50, '+12 all resistances', '#b8e8ff'); UI.refresh(); } },
+      { label: 'Spend a rejuvenation potion', run: () => { const c = G.char; if (!c || !(c.potions?.rejuv > 0)) { e.n.say('You carry no rejuvenation draught.', 2.5); return; } c.potions.rejuv--; questState(e, 'rewarded', 'The curse is lifted.'); e.quest.rewardClaimed = true; e.n.use = () => e.n.say('The chains are gone. You have my thanks.', 2.5); e.n.feel('relieved', 4); e.n.say('The chains are gone. You have my thanks.', 3); reward(world, e.n, { gold: 0.75 }); buff(world.player, 'cursebreaker', 'Cursebreaker’s Grace', 'holy', { res: 12 }, 45, '+12 all resistances', '#b8e8ff'); UI.refresh(); } },
       { label: 'Refuse', run: () => { e.n.say('Then the curse will choose for me!', 2); e.n.feel('angry', 2); const m = pack(world, [e.x, e.y], 1, 'champion')[0]; if (m) { m.name = 'The Cursed Wanderer'; m.awake = true; m.maxHp *= 1.4; m.hp = m.maxHp; } world.npcs.splice(world.npcs.indexOf(e.n), 1); questState(e, 'failed', 'The curse took hold; the wanderer is lost.'); } },
       ]);
     };
@@ -358,8 +358,8 @@ const BUILD = {
     n.use = () => {
       if (e.used) { n.say('The ward will hold for a while.', 2.5); return; }
       choices(n, 'Injured Mage', 'Help me stabilize this spell and I can lend you one of its effects.', [
-        { label: 'Arcane force', run: () => { e.used = true; buff(world.player, 'mage_aid', 'Mage’s Force', 'arcane', { elemental: { arcane: 18 }, dmg: 8 }, 60, '+18% Arcane damage and +8% damage', '#c890ff'); n.say('Let the current carry you.', 2.5); } },
-        { label: 'Steady ward', run: () => { e.used = true; buff(world.player, 'mage_mana', 'Mage’s Reserve', 'arcane', { res: 8, cdr: 8 }, 60, '+8 all resistances and +8% cooldown reduction', '#80d8ff'); n.say('A steadier rhythm. That should help.', 2.5); } },
+        { label: 'Arcane force', run: () => { e.used = true; buff(world.player, 'mage_aid', 'Mage’s Force', 'arcane', { elemental: { arcane: 18 }, dmg: 8 }, 25, '+18% Arcane damage and +8% damage', '#c890ff'); n.say('Let the current carry you.', 2.5); } },
+        { label: 'Steady ward', run: () => { e.used = true; buff(world.player, 'mage_mana', 'Mage’s Reserve', 'arcane', { res: 8, cdr: 8 }, 45, '+8 all resistances and +8% cooldown reduction', '#80d8ff'); n.say('A steadier rhythm. That should help.', 2.5); } },
       ]);
     };
     return e;
@@ -452,10 +452,10 @@ const BUILD = {
     const e = questNpc(world, at, 'Mysterious Pilgrim', 'A Pilgrim’s Choice', 'Choose one temporary blessing and its burden.');
     e.n.use = () => {
       if (e.quest.state !== 'available') { e.n.say('The blessing is already yours.', 2.5); return; }
-      choices(e.n, e.quest.title, 'Every blessing carries a burden. Choose one; the effect lasts 60 seconds.', [
-        { label: 'Might · defense reduced', run: () => { questState(e, 'rewarded', 'Might’s blessing is active for 60 seconds.'); buff(world.player, 'pilgrim_might', 'Pilgrim’s Might', 'holy', { dmg: 24, reduce: -12 }, 60, '+24% damage, -12% damage reduction', '#ffe080'); } },
-        { label: 'Fleetness · maximum life reduced', run: () => { questState(e, 'rewarded', 'Fleetness is active for 60 seconds.'); buff(world.player, 'pilgrim_fleet', 'Pilgrim’s Fleetness', 'holy', { speed: 25, life: -10 }, 60, '+15% movement speed, -10% maximum life', '#a0e0ff'); } },
-        { label: 'Clarity · resistance reduced', run: () => { questState(e, 'rewarded', 'Clarity is active for 60 seconds.'); buff(world.player, 'pilgrim_clarity', 'Pilgrim’s Clarity', 'holy', { cdr: 20, res: -8 }, 60, '+20% cooldown reduction, -8 all resistances', '#d0a0ff'); } },
+      choices(e.n, e.quest.title, 'Every blessing carries a burden. Choose one; its duration depends on the blessing.', [
+        { label: 'Might · defense reduced', run: () => { questState(e, 'rewarded', 'Might’s blessing is active for 30 seconds.'); buff(world.player, 'pilgrim_might', 'Pilgrim’s Might', 'holy', { dmg: 24, reduce: -12 }, 30, '+24% damage, -12% damage reduction', '#ffe080'); } },
+        { label: 'Fleetness · maximum life reduced', run: () => { questState(e, 'rewarded', 'Fleetness is active for 15 seconds.'); buff(world.player, 'pilgrim_fleet', 'Pilgrim’s Fleetness', 'holy', { speed: 25, life: -10 }, 15, '+15% movement speed, -10% maximum life', '#a0e0ff'); } },
+        { label: 'Clarity · resistance reduced', run: () => { questState(e, 'rewarded', 'Clarity is active for 30 seconds.'); buff(world.player, 'pilgrim_clarity', 'Pilgrim’s Clarity', 'holy', { cdr: 20, res: -8 }, 30, '+20% cooldown reduction, -8 all resistances', '#d0a0ff'); } },
       ]);
     };
     return e;
@@ -571,7 +571,7 @@ const BUILD = {
       } else if (!guardsAround(e, 12).length) {
         ch.opened = true; k.feel('proud', 5); k.say('We held! I swear my oath to you, hero.', 3.5);
         e.quest.rewardClaimed = true; questState(e, 'rewarded', 'The knight’s oath is yours.');
-        if (p) buff(p, 'oath', 'Knight\'s Oath', 'holy', { dmg: 35, reduce: 10 }, 90, '+35% damage, 10% less damage taken', '#a0c0ff');
+        if (p) buff(p, 'oath', 'Knight\'s Oath', 'holy', { dmg: 35, reduce: 10 }, 30, '+35% damage, 10% less damage taken', '#a0c0ff');
         reward(world, k, { items: 1, gold: 1 });
         k.after(3.5, () => k.feel('cheer', 3));
         leave(world, k, 9);
@@ -621,7 +621,7 @@ const BUILD = {
           if (e.wave >= 3) {
             e.state = 'done'; ch.opened = true; z.feel('cheer', 4); z.say('It works! You have my thanks — and my blessing.', 3.5);
             const p = world.player;
-            if (p) buff(p, 'zebulon', 'Purple Blessing', 'arcane', { xp: 60, cdr: 20 }, 120, '+60% experience, 20% faster cooldowns', '#c890ff');
+            if (p) buff(p, 'zebulon', 'Purple Blessing', 'arcane', { xp: 60, cdr: 20 }, 90, '+60% experience, 20% faster cooldowns', '#c890ff');
             addEffect(new Column(z.x, z.y, '#c890ff', 0.8, 30, 260));
             reward(world, z, { items: 1, gold: 1, gem: true });
             leave(world, z, 10);
@@ -654,7 +654,7 @@ const BUILD = {
       if (chance(0.72)) {
         w.feel('proud', 4); w.say(pick(['Drink up, dearie. Good for what ails you.', 'Nettle and moonmoss. You\'ll feel ten feet tall.', 'Only a little frog in it.']), 3.5);
         p.hp = p.maxHp; p.mana = p.maxMana;
-        buff(p, 'bramble', 'Bramble Brew', 'poison', pick([{ life: 30, regen: 20 }, { as: 30 }, { mf: 120, gf: 120 }, { dmg: 30 }]), 90, 'a witch\'s blessing', '#80ff90');
+        { const stats = pick([{ life: 30, regen: 20 }, { as: 30 }, { mf: 120, gf: 120 }, { dmg: 30 }]); const duration = stats.mf ? 60 : stats.life ? 45 : stats.as ? 20 : 25; buff(p, 'bramble', 'Bramble Brew', 'poison', stats, duration, 'a witch\'s blessing', '#80ff90'); }
       } else {
         w.feel('embarrassed', 4); w.say('Ah. That was the OTHER cauldron. Run, dearie!', 3);
         ambush(world, 'drop', randi(3, 5));

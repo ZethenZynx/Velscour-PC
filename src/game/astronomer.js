@@ -21,7 +21,7 @@ import { bodyR } from '../world/map.js';
 
 export const ASTRONOMER = 'arcane_sorcerer';
 export const CHART_N = 5;           // stars that complete a constellation
-const STAR_LIFE = 12, LINK = 9, NEAR = 1.3, BOON_T = 15;
+const STAR_LIFE = 12, LINK = 9, NEAR = 1.3, BOON_T = 20;
 const roll = (d) => rand(d[0], d[1]);
 const avg = (d) => (d[0] + d[1]) / 2;
 class Wait {
