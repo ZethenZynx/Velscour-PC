@@ -345,6 +345,11 @@ export const game = {
     UI.refresh();
     Vendor.restock();
     this.enterTown();
+    // applyUILayoutSettings above registers the customizer while the character
+    // is being created. Apply again after the HUD is visible and town/environment
+    // elements have finished their default layout, otherwise hidden nodes have
+    // zero-sized bounds and the saved profile is skipped until the editor opens.
+    applyUILayoutSettings();
     setTimeout(() => {
       if (G.char !== c || (G.world && G.world.kind !== 'town')) return;   // (a test or the skull has already taken the hero elsewhere)
       if (fresh) {

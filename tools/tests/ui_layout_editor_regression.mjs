@@ -1,10 +1,11 @@
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 
-const [source, styles, html] = await Promise.all([
+const [source, styles, html, gameSource] = await Promise.all([
   readFile(new URL('../../src/ui/layoutcustomizer.js', import.meta.url), 'utf8'),
   readFile(new URL('../../css/style.css', import.meta.url), 'utf8'),
   readFile(new URL('../../index.html', import.meta.url), 'utf8'),
+  readFile(new URL('../../src/game/game.js', import.meta.url), 'utf8'),
 ]);
 
 const renderAll = source.match(/renderAll\(refresh = true\)\s*\{([\s\S]*?)\n  \},\n\n  renderGuides/);
@@ -22,6 +23,13 @@ assert.match(source, /this\.pauseScreen\?\.classList\.add\('ui-layout-pause-hidd
 assert.match(source, /this\.pauseScreen\?\.classList\.remove\('ui-layout-pause-hidden'\)/, 'the pause menu is restored on exit');
 assert.match(source, /Environment Information/, 'environment details are registered as one named layout element');
 assert.match(source, /migrateEnvironmentInfoLayout\(state\)/, 'legacy environment-affix positioning is migrated without deleting old data');
+const startChar = gameSource.match(/startChar\(c, fresh\)\s*\{([\s\S]*?)\n\s*\},\s*autosave/);
+assert.ok(startChar, 'character startup lifecycle is present');
+const showHudAt = startChar[1].indexOf('HUD.show(true)');
+const enterTownAt = startChar[1].indexOf('this.enterTown()');
+const applyCalls = [...startChar[1].matchAll(/applyUILayoutSettings\(\)/g)].map((match) => match.index);
+assert.ok(showHudAt >= 0 && enterTownAt > showHudAt, 'HUD and initial environment are initialized before the final layout pass');
+assert.ok(applyCalls.some((index) => index > enterTownAt), 'saved UI layout is reapplied after character entry has exposed and arranged HUD elements');
 for (const action of ['save', 'undo', 'redo', 'reset-selected', 'reset-all', 'cancel']) assert.match(source, new RegExp(`data-editor-action="${action}"`), `${action} control is inside the editor panel`);
 assert.match(source, /Your interface layout has been saved and applied\./, 'saving confirms the applied layout');
 assert.match(styles, /\.screen\.ui-layout-screen[^\n]*pointer-events: none/, 'empty editor overlay areas let underlying interface elements receive input');
