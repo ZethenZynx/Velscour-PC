@@ -28,7 +28,6 @@ export function visitStormTetherTargets(world, team, x0, y0, x1, y1, out, visit,
     if (ex * ex + ey * ey > radius * radius) continue;
     visit(creature);
     hits++;
-    if (stats) stats.damageEvents++;
   }
   return hits;
 }
