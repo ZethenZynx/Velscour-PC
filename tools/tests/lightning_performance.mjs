@@ -22,8 +22,8 @@ assert.match(vfx, /const boltFrame = \[\]/, 'visible bolts share one reusable re
 const boltRenderer = vfx.slice(vfx.indexOf('export function Bolt('), vfx.indexOf('export class Beam'));
 assert.doesNotMatch(boltRenderer, /shadowBlur|globalCompositeOperation/, 'Bolt rendering does not use blur or additive glow');
 assert.match(augments, /const candidates = h\.tetherCandidates \|\| \(h\.tetherCandidates = \[\]\)/, 'Storm Tether reuses hit candidates per hazard');
-assert.match(augments, /if \(zap && dmg > 0\) w\.hostiles\(owner\.team, owner\.x, owner\.y, 11, candidates\)/, 'Storm Tether performs one broadphase lookup per damage pulse');
-assert.match(augments, /function damageTetherArc\(h, x0, y0, x1, y1, dmg, candidates\)/, 'Storm Tether reuses broadphase candidates for each arc');
+assert.match(augments, /visitStormTetherTargets\(h\.world, team, x0, y0, x1, y1, candidates/, 'Storm Tether uses a local segment query for each retained beam');
+assert.doesNotMatch(augments, /hostiles\(owner\.team, owner\.x, owner\.y, 11/, 'Storm Tether avoids an unnecessarily wide 11-tile caster query');
 assert.doesNotMatch(augments, /lineTargets\(/, 'Storm Tether no longer performs a separate world query per connection');
 assert.doesNotMatch(augments, /pts\.map\(\(\[x, y\]\) => \[owner\.x, owner\.y, x, y\]\)/, 'Storm Tether does not rebuild segment arrays each frame');
 assert.match(hazards, /out = \[\], candidates = \[\]/, 'line targeting accepts reusable output buffers');
@@ -49,7 +49,7 @@ const tether = augments.slice(augments.indexOf('function tether('), augments.ind
 assert.doesNotMatch(tether, /sfx\(/, 'Storm Tether does not trigger hammer cast audio');
 assert.match(tether, /h\.tetherT = 0\.25/, 'Storm Tether damage remains at four pulses per second');
 assert.match(tether, /\* 0\.3 \* pow/, 'Storm Tether damage scaling is unchanged');
-assert.match(augments, /chance\(dt \* 12\)/, 'Storm Tether cosmetic bolt emission is limited to 12 Hz');
+assert.match(augments, /h\.tetherVisualT = 1 \/ 12/, 'Storm Tether cosmetic bolt emission is limited to 12 Hz');
 const tetherBody = augments.slice(augments.indexOf('function tether('), augments.indexOf('function tetherArc('));
 assert.doesNotMatch(tetherBody, /addLight\(/, 'Storm Tether does not submit per-hammer dynamic lights');
 assert.doesNotMatch(tetherBody, /spawn\(/, 'Storm Tether creates no particle cloud');
@@ -137,60 +137,6 @@ for (const count of [1, 10, 25, 50, 100]) {
 }
 effects.length = 0;
 
-// Compare the former per-segment world lookup with the current shared broadphase
-// and identical segment-circle hit checks. This isolates search/collision work.
-const TAU = Math.PI * 2;
-const enemies = Array.from({ length: 200 }, (_, id) => {
-  const a = id * 2.399963229728653, r = 1 + (id % 95) / 10;
-  return { id, x: Math.cos(a) * r, y: Math.sin(a) * r, r: 0.25 + (id % 4) * 0.12 };
-});
-const queryBuffer = [], sharedCandidates = [], oldHits = [], newHits = [];
-let oldQueries = 0, newQueries = 0;
-function queryEnemies(x, y, radius, out) {
-  out.length = 0;
-  for (const e of enemies) {
-    const rr = radius + e.r, dx = e.x - x, dy = e.y - y;
-    if (dx * dx + dy * dy <= rr * rr) out.push(e);
-  }
-  return out;
-}
-function segmentHit(e, x0, y0, x1, y1) {
-  const dx = x1 - x0, dy = y1 - y0, len = Math.sqrt(dx * dx + dy * dy);
-  const t = Math.max(0, Math.min(len, ((e.x - x0) * dx + (e.y - y0) * dy) / (len || 1)));
-  const ex = x0 + dx / (len || 1) * t - e.x, ey = y0 + dy / (len || 1) * t - e.y, rr = 0.35 + e.r;
-  return ex * ex + ey * ey <= rr * rr;
-}
-function oldSearch(segments) {
-  oldHits.length = 0;
-  for (const [x0, y0, x1, y1] of segments) {
-    const len = Math.hypot(x1 - x0, y1 - y0), mx = (x0 + x1) / 2, my = (y0 + y1) / 2;
-    for (const e of queryEnemies(mx, my, len / 2 + 1.35, queryBuffer)) if (segmentHit(e, x0, y0, x1, y1)) oldHits.push(e.id);
-    oldQueries++;
-  }
-  return oldHits.length;
-}
-function sharedSearch(segments) {
-  newHits.length = 0;
-  queryEnemies(0, 0, 11, sharedCandidates); newQueries++;
-  for (const [x0, y0, x1, y1] of segments) for (const e of sharedCandidates) if (segmentHit(e, x0, y0, x1, y1)) newHits.push(e.id);
-  return newHits.length;
-}
-const combatCases = [];
-for (const count of [1, 10, 25, 50, 100]) {
-  const segments = Array.from({ length: count }, (_, i) => {
-    const angle = TAU * i / count, len = 5 + (i % 5) * 0.65;
-    return [0, 0, Math.cos(angle) * len, Math.sin(angle) * len];
-  });
-  assert.equal(sharedSearch(segments), oldSearch(segments), `shared candidate search preserves hit results (${count})`);
-  assert.deepEqual([...newHits].sort((a, b) => a - b), [...oldHits].sort((a, b) => a - b), `shared candidate search preserves targets (${count})`);
-  const repeats = 200, oldTimes = [], sharedTimes = [];
-  for (let round = 0; round < 5; round++) {
-    let start = performance.now(); for (let i = 0; i < repeats; i++) oldSearch(segments); oldTimes.push(performance.now() - start);
-    start = performance.now(); for (let i = 0; i < repeats; i++) sharedSearch(segments); sharedTimes.push(performance.now() - start);
-  }
-  combatCases.push({ count, queriesOld: count, queriesNew: 1, oldMs: median(oldTimes), sharedMs: median(sharedTimes) });
-}
-
 // Compare the former nested-array geometry builder with the new in-place writer.
 // This is a CPU/allocation microbenchmark, not a full-game frame-time claim.
 const iterations = 50000;
@@ -214,6 +160,4 @@ for (let round = 0; round < 5; round++) {
 const legacyMs = median(legacyTimes), reusedMs = median(reusedTimes);
 console.log('Lightning renderer scalability (Node mock canvas; stroke calls per frame, not GPU timing):');
 for (const row of renderCases) console.log(`  ${row.count} connections: ${row.legacyStrokes / 10000} -> ${row.batchedStrokes / 10000} strokes/frame; ${row.legacyLines / 10000} -> ${row.lines / 10000} line segments/frame; ${row.legacyMs.toFixed(2)} -> ${row.batchedMs.toFixed(2)} ms per 2,000 mock frames`);
-console.log('Storm Tether search and segment-check scalability (200 synthetic enemies; per 200 pulses):');
-for (const row of combatCases) console.log(`  ${row.count} connections: ${row.queriesOld} -> ${row.queriesNew} broadphase queries/pulse; ${row.oldMs.toFixed(2)} -> ${row.sharedMs.toFixed(2)} ms`);
 console.log(`Lightning geometry check passed. Median of 5 × ${iterations.toLocaleString()} builds: nested arrays ${legacyMs.toFixed(1)} ms; reusable typed buffer ${reusedMs.toFixed(1)} ms (${Math.round((1 - reusedMs / legacyMs) * 100)}% faster in this Node microbenchmark; checksum ${checksum | 0}).`);

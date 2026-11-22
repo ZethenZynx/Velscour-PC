@@ -103,8 +103,10 @@ export class World {
     const teams = this.teams || (this.teams = new Map());
     for (const a of teams.values()) a.length = 0;
     this.taunters = 0;
+    let maxCreatureRadius = 0;
     for (const c of this.creatures) {
       if (c.dead) continue;
+      if (Number.isFinite(c.r) && c.r > maxCreatureRadius) maxCreatureRadius = c.r;
       const gx = Math.floor(c.x / CELL), gy = Math.floor(c.y / CELL), k = (gx << 16) | (gy & 0xffff);
       let a = this.grid.get(k);
       if (!a) this.grid.set(k, (a = this.gridPool.pop() || []));
@@ -115,6 +117,7 @@ export class World {
       t.push(c);
       if (c.taunt) this.taunters++;
     }
+    this.maxCreatureRadius = maxCreatureRadius;
   }
 
   /** Creatures within r of (x,y). filter(c) optional. */
@@ -137,6 +140,24 @@ export class World {
   hostiles(team, x, y, r, out = []) {
     out.length = 0;
     return this.query(x, y, r, (c) => c.team !== team && c.targetable !== false, out);
+  }
+  /** Hostile bodies whose collision circles overlap a world-space rectangle. */
+  hostilesInBounds(team, minX, minY, maxX, maxY, out = []) {
+    out.length = 0;
+    const pad = this.maxCreatureRadius || 0;
+    const x0 = Math.floor((minX - pad) / CELL), x1 = Math.floor((maxX + pad) / CELL);
+    const y0 = Math.floor((minY - pad) / CELL), y1 = Math.floor((maxY + pad) / CELL);
+    for (let cy = y0; cy <= y1; cy++) for (let cx = x0; cx <= x1; cx++) {
+      const cell = this.grid.get((cx << 16) | (cy & 0xffff));
+      if (!cell) continue;
+      for (const c of cell) {
+        if (c.dead || c.team === team || c.targetable === false) continue;
+        const r = c.r || 0;
+        if (c.x + r < minX || c.x - r > maxX || c.y + r < minY || c.y - r > maxY) continue;
+        out.push(c);
+      }
+    }
+    return out;
   }
   nearestHostile(team, x, y, r, needLos = false, allowClutter = false) {
     let best = null, bd = Infinity;

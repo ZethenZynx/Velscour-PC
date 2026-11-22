@@ -233,7 +233,7 @@ export function hit(src, tgt, amount, el = 'phys', o = {}) {
   const tLvl = tgt.level || depthLevel((world && world.depth) || 1); // what the hero sees is shownDmg (data/depth.js), not raw power
   if (byHero) Meter.add(shownDmg(Math.min(dmg, Math.max(0, tgt.hp)), tLvl));
   if (byHero && src && src.isPlayer && !o.dot) G.lastHit = tgt; // the HUD's target window
-  if (byHero && src && src.isPlayer && o.sk && !o.dot && showFx) classHitFx(src, tgt, o.sk, el); // the class's own splash (gfx/classfx.js)
+  if (byHero && src && src.isPlayer && o.sk && !o.dot && showFx && !o.noClassHitFx) classHitFx(src, tgt, o.sk, el); // the class's own splash (gfx/classfx.js)
   const actualDamage = Math.min(dmg, Math.max(0, tgt.hp));
   if (!o.silent && actualDamage > 0 && G.ui?.event) {
     const attacker = src?.isPlayer ? 'You' : (src?.name || src?.arch || 'Enemy');
@@ -377,7 +377,7 @@ export function hit(src, tgt, amount, el = 'phys', o = {}) {
       damageText(tgt.x, tgt.y, z, Math.max(1, shownDmg(dmg, tLvl)), crit ? 'crit' : o.dot ? 'dot' : 'hit', elem(el).glow, tgt);
     }
   }
-  if ((!o.dot || chance(0.15)) && showFx) {
+  if ((!o.dot || chance(0.15)) && showFx && !o.noHitFx) {
     const ang = o.ang ?? (src ? angleTo(src.x, src.y, tgt.x, tgt.y) : rand(TAU));
     const force = clamp(dmg / tgt.maxHp, 0.05, 1);
     if (!(tgt.goreType === 'spark' || tgt.goreType === 'ecto') || chance(0.5)) bloodSpray(tgt.x, tgt.y, 28, ang, Math.round(4 + force * 18), bloodOf(tgt), 0.7 + force);
