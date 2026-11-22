@@ -902,6 +902,8 @@ export class BeamCh {
     this.team = this.src.team;
     if (this.dur > 0) this.src.channel = this;
     this.ends = [];
+    this.lightningPaths = this.fx === 'lightning' || this.fx === 'storm' ? new Float32Array((this.n || 1) * 40) : null;
+    this.lightningRegen = 0;
     this.instant = !(this.dur > 0);
     if (this.instant) { this.dur = 0.3; this.fire(true); }
     sfx(this.sound || (this.cone ? 'fire' : this.E.sfx));
@@ -962,13 +964,26 @@ export class BeamCh {
           addLight(ex, ey, 2.5, 1);
         }
       }
+      if (this.lightningPaths && (this.lightningRegen -= dt) <= 0) {
+        this.lightningRegen = 0.05;
+        for (let beam = 0; beam < this.ends.length; beam++) {
+          const offset = beam * 40;
+          for (let i = 0; i < 18; i += 2) {
+            this.lightningPaths[offset + i] = rand(-8, 8);
+            this.lightningPaths[offset + i + 1] = rand(-8, 8);
+            this.lightningPaths[offset + 20 + i] = rand(-8, 8);
+            this.lightningPaths[offset + 21 + i] = rand(-8, 8);
+          }
+        }
+      }
     }
     return true;
   }
   draw(ctx) {
     if (this.instant || this.cone) return;
     const s = this.src;
-    for (const [ex, ey] of this.ends) {
+    for (let endIndex = 0; endIndex < this.ends.length; endIndex++) {
+      const [ex, ey] = this.ends[endIndex];
       const ax = isoX(s.x, s.y), ay = isoY(s.x, s.y) - 26;
       const bx = isoX(ex, ey), by = isoY(ex, ey) - 16;
       if (this.fx?.startsWith('n_')) { bardBeamDraw(ctx, this, ax, ay, bx, by); continue; }
@@ -977,10 +992,12 @@ export class BeamCh {
       ctx.lineCap = 'round';
       if (this.fx === 'lightning' || this.fx === 'storm') {
         const n = 10;
+        const path = this.lightningPaths, offset = endIndex * 40;
         for (let pass = 0; pass < 2; pass++) {
           ctx.strokeStyle = pass ? '#fff' : this.E.glow; ctx.lineWidth = pass ? 1.5 : 4;
           ctx.beginPath(); ctx.moveTo(ax, ay);
-          for (let i = 1; i < n; i++) ctx.lineTo(ax + (bx - ax) * i / n + rand(-8, 8), ay + (by - ay) * i / n + rand(-8, 8));
+          const pathOffset = offset + pass * 20;
+          for (let i = 1; i < n; i++) ctx.lineTo(ax + (bx - ax) * i / n + path[pathOffset + (i - 1) * 2], ay + (by - ay) * i / n + path[pathOffset + (i - 1) * 2 + 1]);
           ctx.lineTo(bx, by); ctx.stroke();
         }
       } else {

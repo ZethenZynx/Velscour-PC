@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 import { performance } from 'node:perf_hooks';
 import { writeBoltGeometry } from '../../src/gfx/lightninggeometry.mjs';
+import { Bolt } from '../../src/gfx/vfx.js';
 
 const [vfx, augments, hazards, world] = await Promise.all([
   readFile(new URL('../../src/gfx/vfx.js', import.meta.url), 'utf8'),
@@ -18,6 +19,12 @@ assert.match(augments, /const targets = h\.tetherTargets \|\| \(h\.tetherTargets
 assert.doesNotMatch(augments, /pts\.map\(\(\[x, y\]\) => \[owner\.x, owner\.y, x, y\]\)/, 'Storm Tether does not rebuild segment arrays each frame');
 assert.match(hazards, /out = \[\], candidates = \[\]/, 'line targeting accepts reusable output buffers');
 assert.match(world, /hostiles\(team, x, y, r, out = \[\]\)/, 'hostile queries can fill caller-owned storage');
+const beamStart = hazards.indexOf('export class BeamCh {');
+const trapStart = hazards.indexOf('// ===================================================================== Trap', beamStart);
+const beamCh = hazards.slice(beamStart, trapStart);
+assert.match(beamCh, /this\.lightningPaths = .*new Float32Array\(\(this\.n \|\| 1\) \* 40\)/, 'lightning channels retain reusable per-beam paths');
+assert.match(beamCh, /this\.lightningRegen = 0\.05/, 'beam flicker geometry refreshes at 20 Hz instead of per rendered frame');
+assert.doesNotMatch(beamCh.slice(beamCh.indexOf('draw(ctx)')), /rand\(-8, 8\)/, 'beam draw reuses offsets instead of generating random geometry');
 assert.match(augments, /if \(id === 'tether'\) continue;/, 'tether arcs do not duplicate themselves with additive orbit motes');
 const tether = augments.slice(augments.indexOf('function tether('), augments.indexOf('function tetherArc('));
 assert.doesNotMatch(tether, /sfx\(/, 'Storm Tether does not trigger hammer cast audio');
@@ -35,6 +42,12 @@ assert.deepEqual(Array.from(buffer.slice((points - 1) * 2, points * 2)), [240, 8
 const reusedBuffer = buffer;
 writeBoltGeometry(buffer, 4, 5, 180, 80, () => 0.5);
 assert.equal(buffer, reusedBuffer, 'subsequent bolt geometry writes reuse the same typed buffer');
+const expiredBolt = new Bolt(0, 0, 10, 2, 2, 10, '#ffffff', 0.09, 2);
+const boltBuffer = expiredBolt.seg;
+assert.equal(expiredBolt.update(0.1), false, 'expired lightning connections are removed immediately');
+const pooledBolt = new Bolt(1, 1, 10, 3, 3, 10, '#a8ccff', 0.09, 2);
+assert.equal(pooledBolt, expiredBolt, 'expired bolt objects are reused');
+assert.equal(pooledBolt.seg, boltBuffer, 'recycled bolts retain their geometry buffer');
 
 // Compare the former nested-array geometry builder with the new in-place writer.
 // This is a CPU/allocation microbenchmark, not a full-game frame-time claim.
