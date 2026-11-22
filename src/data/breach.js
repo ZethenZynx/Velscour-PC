@@ -2,7 +2,7 @@
 // tools/eternalbreach.py), the floors' difficulty and the final boss's rewards. The Breach's creatures never join the
 // regular bestiary's draws (artPool skips `breach` art), and the Breach draws only on them.
 import { BREACH_ROSTER } from './breachroster.js';
-import { depthLevel } from './depth.js';
+import { depthLevel, FINAL_DEPTH } from './depth.js';
 import { ARCH } from './enemies.js';
 
 const BONE = { undead: true };
@@ -63,6 +63,15 @@ export function breachInterludeFloor(depth, best = 0) {
   if (!Number.isInteger(d) || d < 10 || d > MAX_BREACH_FLOOR * 10 || d % 10 !== 0) return 0;
   const target = d / 10, cleared = Math.max(0, Math.floor(Number(best) || 0));
   return cleared < target ? cleared + 1 : 0;
+}
+
+/** Resolve the destination used by both an exit portal's label and dungeon entry. */
+export function resolveDepthDestination(depth, best = 0, biomeId = '') {
+  const d = Number(depth);
+  const breachFloor = breachInterludeFloor(d, best);
+  if (breachFloor) return { kind: 'breach', id: 'eternal_breach', name: 'The Eternal Breach', floor: breachFloor };
+  if (d === FINAL_DEPTH) return { kind: 'biome', id: 'throne', name: "Velscour's Throne" };
+  return { kind: 'biome', id: biomeId || 'catacombs' };
 }
 export const breachLevel = (floor) => depthLevel(breachDepth(floor));
 

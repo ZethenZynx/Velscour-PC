@@ -45,7 +45,7 @@ import { generateDarkForest } from '../world/darkforest.js';
 import { loadDarkForestTrees } from '../gfx/darkforest.js';
 import { generateBreach } from '../world/breach.js';
 import { createBreachRun, chestAt, breachMonster } from './breach.js';
-import { breachDepth, breachLevel, BREACH_ART, BREACH_ARCHS, MAX_BREACH_FLOOR, breachInterludeFloor } from '../data/breach.js';
+import { breachDepth, breachLevel, BREACH_ART, BREACH_ARCHS, MAX_BREACH_FLOOR, resolveDepthDestination } from '../data/breach.js';
 import { useAlpine } from './alpine.js';
 import { castle3dTick } from './castle3d.js';
 import { useTerrain, terrainOf } from '../gfx/terrain.js';
@@ -680,7 +680,7 @@ export const game = {
     const maxFloor = Math.max(1, this.maxPortalFloor(c));
     const current = maxFloor;
     c.depth = maxFloor;
-    if (c.depth > FINAL_DEPTH && regionNeeds(BIOME_BY_ID[c.nextBiome], c.level)) c.nextBiome = drawBiome(c, c.depth); // level gates apply only to optional endgame pools
+    if (c.depth !== FINAL_DEPTH && (!c.nextBiome || !biomesForDepth(c.depth).includes(c.nextBiome) || (c.depth > FINAL_DEPTH && regionNeeds(BIOME_BY_ID[c.nextBiome], c.level)))) c.nextBiome = drawBiome(c, c.depth);
     const currentBiome = BIOME_BY_ID[current === FINAL_DEPTH ? 'throne' : c.nextBiome] || BIOME_BY_ID.catacombs;
 
     let mode = initialTab === 'unbound' && endgameUnlocked(c) ? 'unbound' : 'campaign';
@@ -714,7 +714,6 @@ export const game = {
         '</div>';
     };
 
-    const breachDestinationForDepth = (d) => breachInterludeFloor(d, c.breach?.best);
     const describe = (d) => {
       const act = getActForDepth(d);
       const isSuper = isSuperbossDepth(d);
@@ -735,12 +734,13 @@ export const game = {
       const actHeader = d <= FINAL_DEPTH
         ? `<div style="color:#ffd880;font-size:12px;font-weight:bold;margin-bottom:4px;letter-spacing:0.5px;">ACT ${act.act}: ${act.name.toUpperCase()}</div>`
         : '<div style="color:#c58bff;font-size:12px;font-weight:bold;margin-bottom:4px;letter-spacing:0.5px;">INFINITE ENDGAME</div>';
-      const breachFloor = breachDestinationForDepth(d);
-      if (breachFloor) {
-        return `${actHeader}<p>The portal leads to <b style="color:#d8b0ff">The Eternal Breach · Floor ${breachFloor}</b>.</p><p class="dim">This is the Breach interlude for Campaign Depth ${d}. Clear the floor, then return to town to continue toward its boss room.</p>`;
+      const destination = resolveDepthDestination(d, c.breach?.best, d === current ? currentBiome.id : c.nextBiome);
+      if (destination.kind === 'breach') {
+        return `${actHeader}<p>The portal leads to <b style="color:#d8b0ff">${escapeHtml(destination.name)} · Floor ${destination.floor}</b>.</p><p class="dim">This is the Breach interlude for Depth ${d}. Clear the floor, then return to town to continue the campaign.</p>`;
       }
       if (d === current) {
-        return `${actHeader}<p>The portal hums. Beyond lies <b style="color:#ffb070">${escapeHtml(currentBiome.name)}</b>.</p><p class="dim">${this.biomeBlurb(currentBiome)}${tail}</p>${affixPreviewHtml(d)}`;
+        const actualBiome = BIOME_BY_ID[destination.id] || currentBiome;
+        return `${actHeader}<p>The portal hums. Beyond lies <b style="color:#ffb070">${escapeHtml(actualBiome.name)}</b>.</p><p class="dim">${this.biomeBlurb(actualBiome)}${tail}</p>${affixPreviewHtml(d)}`;
       }
       return `${actHeader}<p>The portal's glow shifts. A fresh path will be drawn into <b style="color:#ffb070">Depth ${d}</b>.</p><p class="dim">Monsters, loot and the biome are rolled for this depth when you step through.${tail}</p>${affixPreviewHtml(d)}`;
     };
@@ -825,7 +825,7 @@ export const game = {
         { label: 'Cancel' },
         { label: 'Enter', cls: 'red floor-pick-go', fn: () => {
           if (mode === 'unbound') this.enterUnboundExploration(unboundValue);
-          else this.enterDungeonAt(value, breachDestinationForDepth(value) ? [] : [...affixesForCampaignDepth(value)]);
+          else this.enterDungeonAt(value, resolveDepthDestination(value, c.breach?.best, c.nextBiome).kind === 'breach' ? [] : [...affixesForCampaignDepth(value)]);
         } },
       ],
     });
@@ -884,8 +884,8 @@ export const game = {
       if (mode === 'campaign') {
         if (goBtn) {
           goBtn.disabled = false;
-          const breachFloor = breachDestinationForDepth(value);
-          goBtn.textContent = breachFloor ? `Enter Breach · Floor ${breachFloor}` : `Enter Depth ${value}`;
+          const destination = resolveDepthDestination(value, c.breach?.best, c.nextBiome);
+          goBtn.textContent = destination.kind === 'breach' ? `Enter ${destination.name} · Floor ${destination.floor}` : destination.id === 'throne' ? 'Enter Velscour’s Throne' : `Enter Depth ${value}`;
         }
       }
       const curAct = getActForDepth(value);
@@ -1235,9 +1235,9 @@ export const game = {
       }
       this.autosave();
     }
-    const breachFloor = breachInterludeFloor(depth, c.breach?.best);
-    if (breachFloor) {
-      this.enterBreach(breachFloor);
+    let destination = resolveDepthDestination(depth, c.breach?.best, c.nextBiome);
+    if (destination.kind === 'breach') {
+      this.enterBreach(destination.floor);
       return;
     }
     const isStarterDepth = depth === 1;
@@ -1247,8 +1247,11 @@ export const game = {
       c.affixStreak = 0;
       c.affixBiome = null;
     }
-    if (depth !== FINAL_DEPTH && (!c.nextBiome || !biomesForDepth(depth).includes(c.nextBiome) || (depth > FINAL_DEPTH && regionNeeds(BIOME_BY_ID[c.nextBiome], c.level)))) c.nextBiome = drawBiome(c, depth);
-    const biome = BIOME_BY_ID[depth === FINAL_DEPTH ? 'throne' : c.nextBiome] || BIOME_BY_ID.catacombs;
+    if (depth !== FINAL_DEPTH && (!c.nextBiome || !biomesForDepth(depth).includes(c.nextBiome) || (depth > FINAL_DEPTH && regionNeeds(BIOME_BY_ID[c.nextBiome], c.level)))) {
+      c.nextBiome = drawBiome(c, depth);
+      destination = resolveDepthDestination(depth, c.breach?.best, c.nextBiome);
+    }
+    const biome = BIOME_BY_ID[destination.id] || BIOME_BY_ID.catacombs;
     const mix = mixPartner(biome); // a like-coloured biome whose tiles this level borrows, or null
     LoadingScreen.show({
       title: biome.name,
@@ -1757,29 +1760,35 @@ export const game = {
     }
     // Preserve destinations, affixes and selection after Cancel so reopening
     // the still-present exit presents the same choices.
+    const destination = resolveDepthDestination(next, c?.breach?.best, c?.nextBiome);
+    const destinationKey = `${destination.kind}:${destination.id}:${destination.floor || ''}`;
     let choiceState = world.completionPortalChoice;
-    if (!choiceState || choiceState.depth !== world.depth || choiceState.next !== next || choiceState.used) {
-      const ids = biomeChoices(c, next, 3);
+    if (!choiceState || choiceState.depth !== world.depth || choiceState.next !== next || choiceState.destinationKey !== destinationKey || choiceState.used) {
+      let ids = destination.kind === 'breach' || destination.id === 'throne' ? [destination.id] : biomeChoices(c, next, 3);
+      if (destination.kind === 'biome' && destination.id !== 'throne' && next > FINAL_DEPTH) {
+        ids = ids.filter((id) => !regionNeeds(BIOME_BY_ID[id], c.level));
+        if (!ids.length) ids = biomesForDepth(next).filter((id) => BIOME_BY_ID[id] && !regionNeeds(BIOME_BY_ID[id], c.level)).slice(0, 3);
+      }
       const eligible = new Set(biomesForDepth(next));
-      const want = wantedBiomes(c).filter((id) => eligible.has(id) && BIOME_BY_ID[id] && !ids.includes(id) && id !== c.lastBiome);
+      const want = destination.kind === 'biome' && destination.id !== 'throne' ? wantedBiomes(c).filter((id) => eligible.has(id) && BIOME_BY_ID[id] && !ids.includes(id) && id !== c.lastBiome) : [];
       if (want.length && ids.length && next !== FINAL_DEPTH && Math.random() < 0.4) ids[ids.length - 1] = want[Math.floor(Math.random() * want.length)];
       const cards = ids.map((id) => {
-        const biome = BIOME_BY_ID[id] || BIOME_BY_ID.catacombs;
+        const biome = id === 'eternal_breach' ? BREACH_BIOME : BIOME_BY_ID[id] || BIOME_BY_ID.catacombs;
         const comm = commState(c).open.find((e) => { const ch = LINE_BY_ID[e.id] && LINE_BY_ID[e.id].chapters[e.ch]; return ch && ch.biome === biome.id; });
         const sameEnvironment = c.affixBiome === biome.id;
-        const affixes = next <= FINAL_DEPTH ? [] : rollDungeonAffixesForStreak(c.affixStreak || 0, Math.random, sameEnvironment ? c.dungeonAffixes || [] : [], !sameEnvironment);
-        return { id: biome.id, biome, affixes, comm: comm && LINE_BY_ID[comm.id].name };
+        const affixes = next <= FINAL_DEPTH || destination.kind === 'breach' ? [] : rollDungeonAffixesForStreak(c.affixStreak || 0, Math.random, sameEnvironment ? c.dungeonAffixes || [] : [], !sameEnvironment);
+        return { id: biome.id, biome, affixes, comm: comm && LINE_BY_ID[comm.id].name, floor: destination.kind === 'breach' ? destination.floor : 0 };
       });
-      choiceState = world.completionPortalChoice = { depth: world.depth, next, cards, selected: 0, used: false };
+      choiceState = world.completionPortalChoice = { depth: world.depth, next, destinationKey, cards, selected: 0, used: false };
     }
     const cards = choiceState.cards;
     let sel = Math.max(0, Math.min(cards.length - 1, choiceState.selected | 0));
-    const tag = (cd) => (cd.biome.id === 'throne' ? (next === FINAL_DEPTH ? '<b style="color:#ff4020">Demon Lord Velscour awaits</b>' : 'Guardian') : cd.biome.id === 'skyship' ? 'Sky battle' : cd.biome.sea ? 'Sea battle' : cd.biome.id === 'dark_forest' ? 'Guardian · Optional labyrinths' : cd.biome.id === 'castle' ? 'Castle Guardian' : cd.biome.id === 'overworld' ? 'Forsaken Guardian' : cd.biome.overworld ? 'Overworld trial' : isRaidDepth(next) ? '<b style="color:#ff6030">BOSS ROOM</b>' : 'Dungeon');
+    const tag = (cd) => cd.biome.id === 'eternal_breach' ? `<b style="color:#d8b0ff">Breach interlude · Floor ${cd.floor}</b>` : (cd.biome.id === 'throne' ? (next === FINAL_DEPTH ? '<b style="color:#ff4020">Demon Lord Velscour awaits</b>' : 'Guardian') : cd.biome.id === 'skyship' ? 'Sky battle' : cd.biome.sea ? 'Sea battle' : cd.biome.id === 'dark_forest' ? 'Guardian · Optional labyrinths' : cd.biome.id === 'castle' ? 'Castle Guardian' : cd.biome.id === 'overworld' ? 'Forsaken Guardian' : cd.biome.overworld ? 'Overworld trial' : isRaidDepth(next) ? '<b style="color:#ff6030">BOSS ROOM</b>' : 'Dungeon');
     const affixLine = (cd) => `<span class="pc-affixes"><b>Affixes</b>${cd.affixes.length ? cd.affixes.map((id) => {
       const affix = DUNGEON_AFFIX_BY_ID[id];
       return affix ? `<span title="${escapeHtml(affix.description)}"><b>${escapeHtml(affix.name)}</b><small class="pc-affix-description">${escapeHtml(String(affix.description || '').trim())}</small></span>` : '';
     }).join('') : '<i>No affixes</i>'}</span>`;
-    const html = `<p class="dim">${cards.length > 1 ? `Depth ${next} lies beyond ${['', 'one', 'two', 'three'][cards.length]} portals. Choose your way down.` : `The way down opens onto Depth ${next}.`}</p>
+    const html = `<p class="dim">${destination.kind === 'breach' ? `Depth ${next} leads to ${escapeHtml(destination.name)} · Floor ${destination.floor}. Clear the interlude, then return to town to continue.` : cards.length > 1 ? `Depth ${next} lies beyond ${['', 'one', 'two', 'three'][cards.length]} portals. Choose your way down.` : `The way down opens onto ${escapeHtml(cards[0]?.biome.name || `Depth ${next}`)}.`}</p>
       <div class="pc-row">${cards.map((cd, i) => `<button type="button" class="pc-card${i === sel ? ' sel' : ''}" data-i="${i}" style="--pc:${cd.biome.torch || '#ff8040'}"><i class="pc-swirl"></i><b class="pc-name">${escapeHtml(cd.biome.name)}</b><span class="pc-tag">${tag(cd)}</span>${cd.comm ? `<span class="pc-commission" style="color:#8fe0ff"><b>Commission</b>${escapeHtml(cd.comm)}</span>` : ''}${affixLine(cd)}</button>`).join('')}</div>
       `;
     const go = (town) => {
@@ -1798,7 +1807,7 @@ export const game = {
     };
     const d = UI.dialog({
       title: `Depth ${world.depth} Cleared`, html, closable: true, cls: 'portal-choice',
-      buttons: [{ label: 'Cancel' }, { label: 'Return to Town', fn: () => go(true) }, { label: `Descend to Depth ${next}`, cls: 'red', fn: () => go(false) }],
+      buttons: [{ label: 'Cancel' }, { label: 'Return to Town', fn: () => go(true) }, { label: destination.kind === 'breach' ? `Enter ${destination.name} · Floor ${destination.floor}` : destination.id === 'throne' ? 'Enter the Throne' : `Descend to Depth ${next}`, cls: 'red', fn: () => go(false) }],
     });
     const btns = [...d.box.querySelectorAll('.pc-card')];
     btns.forEach((b) => b.addEventListener('click', () => {
