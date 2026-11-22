@@ -14,7 +14,7 @@ import { explosionFx } from '../gfx/shapes.js';
 import { hit, aoe } from './combat.js';
 import { makeMonster, makeElite, monsterBase } from './monster.js';
 import { ambush } from './mayhem.js';
-import { GroundItem, dropChest, rollGroundItem, rollGroundGem, rollOrbKind } from './loot.js';
+import { GroundItem, dropChest, groundRewardDepth, rollGroundItem, rollGroundGem, rollOrbKind } from './loot.js';
 import { rollItem, rollGem, potionItem, itemName, itemColor, rarityAt, goldScale, rollSigil } from '../data/items.js';
 import { depthLevel, FINAL_DEPTH } from '../data/depth.js';
 import { addToBag } from './player.js';
@@ -368,7 +368,7 @@ function recordGuaranteedImp(world) {
   if (!c.treasureImpGuaranteedAreas.includes(key)) { c.treasureImpGuaranteedAreas.push(key); G.game?.autosave?.(); }
 }
 function impContext(world) {
-  return { depth: world.depth || 1, endgameUnlocked: endgameUnlocked(G.char), canEarnMarks: canEarnInfernalMarks(world, G.char) };
+  return { depth: groundRewardDepth(world, world.depth || 1), endgameUnlocked: endgameUnlocked(G.char), canEarnMarks: canEarnInfernalMarks(world, G.char) };
 }
 function impQuantity(count, multiplier) { const n = count * multiplier; return Math.max(1, Math.floor(n) + (chance(n % 1) ? 1 : 0)); }
 function impDropPosition(world, m, trail = false) {
@@ -453,14 +453,14 @@ function grantImpReward(world, m, variant, options = {}) {
       impDropGold(world, m, lvl, 18 + lvl * 3, 8, qty);
       impBlessing('prosperity', 'Prosperity', variant.color, { gf: 55, mf: 35 }, 30); break;
     case 'sigil':
-      for (let i = 0; i < impQuantity(randi(1, 2), qty); i++) impDrop(world, m, 'item', { item: rollSigil(world.depth, 0) });
+      for (let i = 0; i < impQuantity(randi(1, 2), qty); i++) impDrop(world, m, 'item', { item: rollSigil(groundRewardDepth(world, world.depth || 1), 0) });
       break;
     case 'arcane':
       for (let i = 0; i < impQuantity(8, qty); i++) impDrop(world, m, 'orb_mp');
       impBlessing('arcane', 'Arcane Reserve', variant.color, { manaRegenPct: 75 }, 24); break;
     case 'set': {
       for (let i = 0; i < impQuantity(1, qty); i++) {
-        const item = makeCovenant(Math.min(100, Math.max(1, G.char?.level || lvl)), { depth: world.depth });
+        const item = makeCovenant(Math.min(100, Math.max(1, G.char?.level || lvl)), { depth: groundRewardDepth(world, world.depth || 1) });
         if (item) impDrop(world, m, 'item', { item });
       }
       break;
@@ -480,7 +480,7 @@ function grantImpReward(world, m, variant, options = {}) {
       break;
     }
     case 'artisan':
-      for (let i = 0; i < impQuantity(3, qty); i++) impDrop(world, m, 'item', { item: rollSigil(world.depth, 0) });
+      for (let i = 0; i < impQuantity(3, qty); i++) impDrop(world, m, 'item', { item: rollSigil(groundRewardDepth(world, world.depth || 1), 0) });
       impDropGems(world, m, lvl, 1, qty);
       break;
     case 'abyssal':

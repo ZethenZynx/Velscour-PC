@@ -36,6 +36,9 @@ assert.equal(qualityAtDepth(riftLootDepth(16)), 19, 'Tier 20 becomes eligible at
 G.char.depth = FINAL_DEPTH;
 G.world = { depth: FINAL_DEPTH, rift: { tier: 15 } };
 assert.equal(makeCovenant(100), null, 'Covenant drops remain locked before the Rift reaches Tier 20 eligibility');
+G.char.depth = 2000;
+assert.equal(makeCovenant(100, { depth: G.char.depth }), null,
+  'a high saved campaign depth and explicit caller depth cannot bypass low-tier Rift eligibility');
 G.world.rift.tier = 16;
 assert.equal(makeCovenant(100)?.rarity, 19, 'Covenant drops become eligible when Rift progression reaches the existing Tier 20 unlock');
 

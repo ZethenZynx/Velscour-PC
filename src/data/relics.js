@@ -253,8 +253,13 @@ export function makeHeirloom(ilvl, opts = {}) {
 }
 /** A Covenant piece (pieceId, or a random piece of setId / of any set). */
 export function makeCovenant(ilvl, opts = {}) {
-  const worldDepth = G.world?.rift ? riftLootDepth(G.world.rift.tier) : G.world?.depth || 0;
-  const depth = Number.isFinite(opts.depth) ? opts.depth : Math.max(worldDepth, G.char?.depth || 0, 1);
+  const inRift = !!G.world?.rift;
+  const worldDepth = inRift ? riftLootDepth(G.world.rift.tier) : G.world?.depth || 0;
+  // Rifts are a self-contained progression lane. A character's saved campaign depth
+  // must not let a low-tier Rift produce Tier 20 Covenant equipment.
+  const depth = opts.preview ? (Number.isFinite(opts.depth) ? opts.depth : worldDepth) : inRift
+    ? worldDepth
+    : Number.isFinite(opts.depth) ? opts.depth : Math.max(worldDepth, G.char?.depth || 0, 1);
   if (!opts.preview && depth < TIER_20_MIN_DEPTH) return null;
   const pool = Object.values(PIECE_BY_ID).filter((p) => (opts.pieceId ? p.id === opts.pieceId : !opts.setId || p.set === opts.setId) && (!opts.slot || p.slot === opts.slot));
   if (!pool.length) return null;
