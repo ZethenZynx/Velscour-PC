@@ -517,10 +517,8 @@ function rollTown(tileset, seed, last) {
     return null;
   }
   if (!last && (npcs.length < VENDORS.length || !reach(portal.x, portal.y) || !reach(breach.x, breach.y) || npcs.some((n) => !reach(n.x, n.y)))) return null;
-  // the Endgame's places (docs/ENDGAME.md): the Abyssal Rift gate on the breach yard's road, short of the purple portal,
-  // and the Altar of Heresy at the plaza's edge; both on walkable, reachable, unbuilt ground
-  const toC = Math.atan2(C.y + 0.5 - breach.y, C.x + 0.5 - breach.x);
-  const rift = spot(breach.x + Math.cos(toC) * 3.6, breach.y + Math.sin(toC) * 3.6, 0, 2.5) || spot(breach.x, breach.y, 2.7, 4.5);
+  // The Altar of Heresy remains a town fixture; Abyssal Rift selection now
+  // opens from the Portal to the Depths rather than a second town entrance.
   const altar = spot(C.x + 0.5 + Math.cos(aB + 1.3) * 5.5, C.y + 0.5 + Math.sin(aB + 1.3) * 5.5, 0, 3) || spot(C.x + 0.5, C.y + 0.5, 4, 7);
   // The sprite's bottom edge is the front tip of its ritual circle. The marked
   // base point is about 0.64 map tiles back on both axes; block the tile under it.
@@ -528,7 +526,7 @@ function rollTown(tileset, seed, last) {
     const altarBlockX = Math.floor(altar.x - 0.64), altarBlockY = Math.floor(altar.y - 0.64);
     if (inb(altarBlockX, altarBlockY)) map.block[I(altarBlockX, altarBlockY)] = 1;
   }
-  return { map, buildings, npcs, props, torches, wallHangings, portal, breach, rift, altar, center: { x: C.x + 0.5, y: C.y + 0.5 }, start };
+  return { map, buildings, npcs, props, torches, wallHangings, portal, breach, altar, center: { x: C.x + 0.5, y: C.y + 0.5 }, start };
 }
 
 function shuffle(a, rng) {

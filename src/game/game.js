@@ -486,8 +486,6 @@ export const game = {
       },
       use: () => this.confirmDungeon(),
     }];
-    // the Abyssal Rift gate (game.confirmRift): lit once the Endgame is open
-    if (t.rift) world.portals.push({ x: t.rift.x, y: t.rift.y, rift: true, color: '#20e0ff', reach: 1.7, get active() { return endgameUnlocked(); }, set active(v) {}, get label() { return endgameUnlocked() ? `Abyssal Rift — Tier ${riftOpen()}` : 'Abyssal Rift (sealed)'; }, use: () => this.confirmRift() });
     // Waypoint Portal to Sunscorch Oasis (Act II Town) once visited or reached Act 2
     if (c?.visitedAct2Town || c?.depth >= 101) {
       world.portals.push({
@@ -626,20 +624,6 @@ export const game = {
           sfx('portal');
           this.enterTown();
         },
-      });
-    }
-
-    // Abyssal Rift Gate
-    if (t.rift) {
-      world.portals.push({
-        x: t.rift.x,
-        y: t.rift.y,
-        rift: true,
-        color: '#20e0ff',
-        reach: 1.7,
-        get active() { return endgameUnlocked(); },
-        get label() { return endgameUnlocked() ? `Abyssal Rift — Tier ${riftOpen()}` : 'Abyssal Rift (sealed)'; },
-        use: () => this.confirmRift(),
       });
     }
 
@@ -788,6 +772,7 @@ export const game = {
           <div class="portal-mode-tabs" style="display:flex;gap:8px;justify-content:center;margin-bottom:12px;border-bottom:1px solid rgba(255,255,255,0.15);padding-bottom:10px;">
             <button type="button" class="btn portal-tab-btn tab-campaign" data-mode="campaign" style="flex:1;padding:6px 12px;font-size:12px;font-weight:bold;">Campaign &amp; Torment (1+)</button>
             <button type="button" class="btn portal-tab-btn tab-unbound" data-mode="unbound" style="flex:1;padding:6px 12px;font-size:12px;font-weight:bold;${canUnbound ? '' : 'opacity:0.4;'}" ${canUnbound ? '' : 'disabled title="Complete the 100-depth campaign to unlock"'}><span style="color:#20e0ff;">✦</span> Unbound Exploration (1–100)</button>
+            <button type="button" class="btn portal-tab-btn tab-rifts" data-mode="rifts" style="flex:1;padding:6px 12px;font-size:12px;font-weight:bold;color:#8feaff;border-color:rgba(32,224,255,0.45);${canUnbound ? '' : 'opacity:0.4;'}" ${canUnbound ? '' : 'disabled title="Defeat Velscour at Depth 100 to unlock"'}>Abyssal Rifts</button>
           </div>
 
           <div class="portal-pane portal-campaign-pane">
@@ -841,6 +826,7 @@ export const game = {
     const box = dialog.box;
     const tabCampaign = box.querySelector('.tab-campaign');
     const tabUnbound = box.querySelector('.tab-unbound');
+    const tabRifts = box.querySelector('.tab-rifts');
     const paneCampaign = box.querySelector('.portal-campaign-pane');
     const paneUnbound = box.querySelector('.portal-unbound-pane');
 
@@ -880,6 +866,11 @@ export const game = {
 
     tabCampaign.addEventListener('click', () => { sfx('ui'); setMode('campaign'); });
     if (canUnbound) tabUnbound.addEventListener('click', () => { sfx('ui'); setMode('unbound'); });
+    if (canUnbound) tabRifts.addEventListener('click', () => {
+      sfx('ui');
+      dialog.close();
+      this.confirmRift(undefined, { backToDepths: true });
+    });
 
     const set = (v, fromTyping = false) => {
       const n = parseInt(v, 10);
@@ -1545,7 +1536,7 @@ export const game = {
       this.autosave();
       if (m.isVelscour && !world.practice) {
         // Defeating Velscour is the sole campaign clear and opens all existing endgame activities.
-        if (unlockEndgame()) UI.log('<b style="color:#20e0ff">The Endgame opens.</b> The Altar of Heresy and the Abyssal Rift gate in Herrington Hollow answer to every hero now.', '#a0f0ff');
+        if (unlockEndgame()) UI.log('<b style="color:#20e0ff">The Endgame opens.</b> The Altar of Heresy and Abyssal Rifts in the Portal to the Depths answer to every hero now.', '#a0f0ff');
         c.depth = FINAL_DEPTH + 1;
         c.deepest = Math.max(c.deepest || 0, FINAL_DEPTH);
         c.nextBiome = drawBiome(c, c.depth);
@@ -2008,9 +1999,9 @@ export const game = {
 
   // ------------------------------------------------------------ ABYSSAL RIFTS (docs/ENDGAME.md)
   /** The rift gate: pick a tier (ui/rifts.js) and step in. Refused until the Endgame is open. */
-  confirmRift(tier) {
+  confirmRift(tier, { backToDepths = false } = {}) {
     if (!endgameUnlocked()) { UI.log(`<b style="color:#20e0ff">The Abyssal Rift</b> is sealed: slay Velscour at Depth ${FINAL_DEPTH} to open it for every hero.`, '#a0f0ff'); sfx('error'); return null; }
-    return Rifts.open(tier);
+    return Rifts.open(tier, { onBack: backToDepths ? () => this.confirmDungeon() : null });
   },
   enterRift(tier) {
     const c = G.char;

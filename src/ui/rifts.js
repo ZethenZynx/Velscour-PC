@@ -1,4 +1,4 @@
-// The Abyssal Rift gate's dialogs (docs/ENDGAME.md): the tier to enter, the results of a closed rift, and the honour
+// The Abyssal Rift dialogs (docs/ENDGAME.md): the tier to enter, the results of a closed rift, and the honour
 // board (game/leaderboard.js).
 import { G } from '../state.js';
 import { escapeHtml } from '../core/util.js';
@@ -26,8 +26,8 @@ function buildHtml(e) {
 }
 
 export const Rifts = {
-  /** The gate: pick a tier (1 .. the tier the hero's wins opened) and step in. */
-  open(tier) {
+  /** Pick a tier (1 .. the tier the hero's wins opened) and step in. */
+  open(tier, { onBack = null } = {}) {
     const c = G.char, top = riftOpen(c), pick = Math.min(top, Math.max(1, tier || top)), r = c.rifts;
     const opt = (n) => {
       const L = riftLevel(n), best = r.bestTime[n];
@@ -43,7 +43,7 @@ export const Rifts = {
         <label class="velscour-message-label" for="rift-pick">Tier</label><select id="rift-pick" class="velscour-biome-select">${tiers.join('')}</select>
         <p class="breach-warn" id="rift-warn"></p>
         <p class="rb-stats dim">Best: ${r.best ? `Tier ${r.best}` : 'none yet'}${acc ? ` · your ${escapeHtml(CLASSES[c.classId]?.name || c.classId)}s' best Tier ${acc.tier} in ${fmtTime(acc.time)}` : ''} · ${r.runs | 0} run${r.runs === 1 ? '' : 's'}, ${Object.values(r.cleared).reduce((a, n) => a + n, 0)} closed, ${r.fails | 0} collapsed, ${r.deaths | 0} fallen</p>`,
-      buttons: [{ label: 'Not yet' }, { label: 'Honour Board', keepOpen: true, fn: () => this.board() }, { label: 'Enter the Rift', cls: 'red', fn: () => G.game.enterRift(+d.box.querySelector('#rift-pick').value) }],
+      buttons: [{ label: onBack ? 'Back' : 'Not yet', fn: onBack || undefined }, { label: 'Honour Board', keepOpen: true, fn: () => this.board() }, { label: 'Enter the Rift', cls: 'red', fn: () => G.game.enterRift(+d.box.querySelector('#rift-pick').value) }],
     });
     const sel = d.box.querySelector('#rift-pick'), warn = d.box.querySelector('#rift-warn');
     const upd = () => { const L = riftLevel(+sel.value); warn.innerHTML = L > c.level + 4 ? `<b style="color:#ff6050">Monsters there are level ${L}; you are level ${c.level}. Expect to die.</b>` : ''; };
