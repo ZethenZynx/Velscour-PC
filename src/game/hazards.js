@@ -411,7 +411,7 @@ export class Area {
         case 'poison': case 'plague': case 'spore': smoke(x, y, 2, chance(0.5) ? '#3a6a10' : '#5a8a20', 1, 9); break;
         case 'void': smoke(x, y, 4, '#2a0a40', 1, 8); if (chance(0.3)) spawn({ type: 'glow', x, y, z: 4, vz: 20, life: 0.6, size: 2, color: E.glow, add: true }); break;
         case 'slime': spawn({ type: 'glow', x, y, z: 0, vz: rand(5, 20), life: 0.8, size: 2, size1: 3.5, color: E.glow, add: true }); break;
-        case 'storm': if (chance(0.25)) addEffect(new Bolt(x, y, 0, x + rand(-0.5, 0.5), y + rand(-0.5, 0.5), 30, E.glow, 0.12, 1.5)); break;
+        case 'storm': if (chance(0.25)) addEffect(Bolt(x, y, 0, x + rand(-0.5, 0.5), y + rand(-0.5, 0.5), 30, E.glow, 0.12, 1.5)); break;
         case 'blood': spawn({ type: 'blood', x, y, z: 30, vz: 0, g: 260, life: 1, size: 2, color: '#8a0000' }); break;
         case 'thorn': case 'spike': spawn({ type: 'shard', x, y, z: 0, vz: 25, g: 80, life: 0.5, size: 3, color: this.fx === 'thorn' ? '#4a6a20' : '#9a9aa0', rot: rand(-0.3, 0.3) }); break;
         case 'note': spawn({ type: 'glow', x, y, z: rand(10, 30), vz: 25, life: 0.8, size: 2.5, size1: 0, color: E.glow, add: true }); break;
@@ -864,7 +864,7 @@ export class NovaWave {
       const type = ['frost', 'shard', 'spike', 'earth', 'bone', 'thorn'].includes(this.fx) ? 'shard' : this.fx === 'crow' ? 'dot' : 'glow';
       spawn({ type, x: this.x, y: this.y, z: 12, vx: Math.cos(a) * sp, vy: Math.sin(a) * sp, life: this.dur * 1.05, size: type === 'shard' ? 3 : 3.5, size1: 1, color: this.fx === 'crow' ? '#140c18' : this.fx === 'bone' ? '#e8dcc0' : i % 2 ? this.E.glow : this.E.core, add: type === 'glow', rot: a });
     }
-    if (this.fx === 'lightning' || this.fx === 'storm') for (let i = 0; i < 6; i++) { const a = rand(TAU); addEffect(new Bolt(this.x, this.y, 20, this.x + Math.cos(a) * this.r, this.y + Math.sin(a) * this.r, 10, this.E.glow, 0.25, 2)); }
+    if (this.fx === 'lightning' || this.fx === 'storm') for (let i = 0; i < 6; i++) { const a = rand(TAU); addEffect(Bolt(this.x, this.y, 20, this.x + Math.cos(a) * this.r, this.y + Math.sin(a) * this.r, 10, this.E.glow, 0.25, 2)); }
     if (!this.o.silentSfx) sfx(this.E.sfx);
     addLight(this.x, this.y, this.r * 1.5, 1.2, 20, this.E && this.E.glow);
   }
@@ -935,7 +935,7 @@ export class BeamCh {
         }
         this.ends.push([ex, ey, a]);
         if (this.instant) {
-          if (this.fx === 'lightning') addEffect(new Bolt(s.x, s.y, 26, ex, ey, 20, this.E.glow, 0.3, 3));
+          if (this.fx === 'lightning') addEffect(Bolt(s.x, s.y, 26, ex, ey, 20, this.E.glow, 0.3, 3));
           else addEffect(new Beam(s.x, s.y, ex, ey, this.E.glow, this.fx === 'laser' ? 9 : 6, 0.32, { core: this.E.core }));
           burst(ex, ey, 20, this.el, 8, 2);
         }

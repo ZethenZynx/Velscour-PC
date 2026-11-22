@@ -2668,7 +2668,7 @@ export const game = {
           src: null, team: 'enemy', x, y, r: storm.radius, delay: storm.warningSeconds,
           dmg: p.maxHp * storm.damageFraction, el: 'light', fx: 'lightning',
           o: { team: 'enemy', crit: false },
-          onImpact: () => addEffect(new Bolt(x, y, 220, x, y, 0, '#a8ccff', 0.28, 6)),
+          onImpact: () => addEffect(Bolt(x, y, 220, x, y, 0, '#a8ccff', 0.28, 6)),
         }));
         w.affixStormT = rand(...storm.repeatDelay) + storm.warningSeconds;
         UI.log('A storm gathers. Move out of the marked lightning strike.', '#8feaff');

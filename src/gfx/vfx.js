@@ -8,7 +8,7 @@ import { groundHidden } from './terrain.js';
 import { bonesReady, boneDeck, boneLook, drawBoneGib } from './bonegibs.js';
 import { damageNumberAboveBarZ } from '../game/damage-number-layout.mjs';
 import { addGoreDecal, goreDecalAlpha, goreDecalOutsideView, GORE_DECAL_LIFETIME, goreLimit, goreMultiplier, trimGoreDecals, updateGoreDecals } from './goresettings.mjs';
-import { writeBoltGeometry, strokeBoltGeometry } from './lightninggeometry.mjs';
+import { writeBoltGeometry, appendBoltGeometry } from './lightninggeometry.mjs';
 
 export const ELEM = {
   phys: { name: 'Physical', core: '#ffffff', glow: '#e0d8c8', dark: '#7a7060', sfx: 'phys' },
@@ -257,33 +257,53 @@ export function screenAngle(a) {
 
 const boltPool = [];
 const MAX_POOLED_BOLTS = 256;
-export class Bolt {
-  // jagged lightning between two points (tile coords + z)
-  constructor(x0, y0, z0, x1, y1, z1, color, dur = 0.25, width = 3) {
-    const pooled = boltPool.pop();
-    if (pooled) {
-      Object.assign(pooled, { x0, y0, z0, x1, y1, z1, color, dur, width, t: 0, segCount: 0, regen: 0, built: false, pooled: false });
-      return pooled;
-    }
-    Object.assign(this, { x0, y0, z0, x1, y1, z1, color, dur, width, t: 0, seg: new Float32Array(98), segCount: 0, regen: 0, built: false, pooled: false });
+const BOLT_ALPHA_BUCKETS = 8;
+const boltBatches = new Map();
+const boltBatchList = [];
+function boltBatch(key, color, width) {
+  let batch = boltBatches.get(key);
+  if (!batch) {
+    batch = { color, width, bins: Array.from({ length: BOLT_ALPHA_BUCKETS }, () => []) };
+    boltBatches.set(key, batch);
+    boltBatchList.push(batch);
   }
-  build() {
+  return batch;
+}
+function boltOnScreen(b, x0, y0, x1, y1) {
+  return !(b.maxX < x0 || b.minX > x1 || b.maxY < y0 || b.minY > y1);
+}
+// Callable factory: hot combat paths use Bolt(...) to reuse pooled objects
+// without the throwaway allocation that `new Bolt(...)` incurs when pooled.
+export function Bolt(x0, y0, z0, x1, y1, z1, color, dur = 0.25, width = 3) {
+  const pooled = boltPool.pop();
+  const bolt = pooled || (this instanceof Bolt ? this : Object.create(Bolt.prototype));
+  Object.assign(bolt, { x0, y0, z0, x1, y1, z1, color, width, batch: boltBatch(`${color}:${width}`, color, width), dur, t: 0, segCount: 0, regen: 0, built: false, pooled: false });
+  if (!pooled) bolt.seg = new Float32Array(98);
+  return bolt;
+}
+Bolt.prototype.build = function() {
     const ax = isoX(this.x0, this.y0), ay = isoY(this.x0, this.y0) - this.z0;
     const bx = isoX(this.x1, this.y1), by = isoY(this.x1, this.y1) - this.z1;
     // the tower's warp throws cut-away points 1e7 px off: such a bolt would need a million segments
     if (Math.abs(ax) > 1e6 || Math.abs(ay) > 1e6 || Math.abs(bx) > 1e6 || Math.abs(by) > 1e6) { this.segCount = 0; this.built = true; return; }
     this.segCount = writeBoltGeometry(this.seg, ax, ay, bx, by, Math.random);
+    this.minX = this.minY = Infinity; this.maxX = this.maxY = -Infinity;
+    for (let i = 0; i < this.segCount; i++) {
+      const x = this.seg[i * 2], y = this.seg[i * 2 + 1];
+      if (x < this.minX) this.minX = x; if (x > this.maxX) this.maxX = x;
+      if (y < this.minY) this.minY = y; if (y > this.maxY) this.maxY = y;
+    }
     this.built = true;
-  }
-  update(dt) {
+};
+Bolt.prototype.update = function(dt) {
     this.t += dt; this.regen -= dt;
     // Brief tether arcs need only one jagged path; longer bolts keep their original 20 Hz flicker.
     if (this.regen <= 0 && (this.dur >= 0.12 || !this.built)) { this.build(); this.regen = 0.05; }
     const alive = this.t < this.dur;
     if (!alive && !this.pooled && boltPool.length < MAX_POOLED_BOLTS) { this.pooled = true; boltPool.push(this); }
     return alive;
-  }
-  draw(ctx) {
+};
+Bolt.prototype.draw = function(ctx) {
     if (!this.built) this.build();
     if (this.segCount < 2) return;
     const k = this.t / this.dur;
@@ -292,11 +312,10 @@ export class Bolt {
     for (let pass = 0; pass < 2; pass++) {
       ctx.strokeStyle = pass ? '#ffffff' : this.color;
       ctx.lineWidth = pass ? this.width * 0.4 : this.width * 1.8;
-      strokeBoltGeometry(ctx, this.seg, this.segCount);
+      ctx.beginPath(); appendBoltGeometry(ctx, this.seg, this.segCount); ctx.stroke();
     }
     ctx.globalAlpha = 1;
-  }
-}
+};
 
 export class Beam {
   constructor(x0, y0, x1, y1, color, width, dur, opts = {}) {
@@ -938,12 +957,41 @@ export function drawDecals(ctx, vr, stamped = null, goreVr = vr) {
 }
 
 export function drawEffects(ctx, layer) {
+  for (let i = 0; i < boltBatchList.length; i++) {
+    const bins = boltBatchList[i].bins;
+    for (let j = 0; j < BOLT_ALPHA_BUCKETS; j++) bins[j].length = 0;
+  }
+  const halfW = G.W / (2 * camera.zoom) + 24, halfH = G.H / (2 * camera.zoom) + 24;
+  const x0 = camera.x - halfW, x1 = camera.x + halfW, y0 = camera.y - halfH, y1 = camera.y + halfH;
   for (const e of effects) {
     if (e.layer !== layer) continue;
+    if (e instanceof Bolt) {
+      if (!e.built) e.build();
+      if (e.segCount < 2 || !boltOnScreen(e, x0, y0, x1, y1)) continue;
+      const alpha = Math.max(0, 1 - e.t / e.dur * 0.7);
+      e.batch.bins[Math.min(BOLT_ALPHA_BUCKETS - 1, alpha * BOLT_ALPHA_BUCKETS | 0)].push(e);
+      continue;
+    }
     if (e.add) ctx.globalCompositeOperation = 'lighter';
     e.draw(ctx);
     ctx.globalCompositeOperation = 'source-over';
   }
+  const priorAlpha = ctx.globalAlpha, priorComposite = ctx.globalCompositeOperation;
+  ctx.globalCompositeOperation = 'source-over'; ctx.lineJoin = 'round'; ctx.lineCap = 'round';
+  for (let batchIndex = 0; batchIndex < boltBatchList.length; batchIndex++) for (let bin = 0; bin < BOLT_ALPHA_BUCKETS; bin++) {
+    const batch = boltBatchList[batchIndex];
+    const bolts = batch.bins[bin];
+    if (!bolts.length) continue;
+    ctx.globalAlpha = (bin + 0.5) / BOLT_ALPHA_BUCKETS;
+    for (let pass = 0; pass < 2; pass++) {
+      ctx.strokeStyle = pass ? '#ffffff' : batch.color;
+      ctx.lineWidth = pass ? batch.width * 0.4 : batch.width * 1.8;
+      ctx.beginPath();
+      for (const bolt of bolts) appendBoltGeometry(ctx, bolt.seg, bolt.segCount);
+      ctx.stroke();
+    }
+  }
+  ctx.globalAlpha = priorAlpha; ctx.globalCompositeOperation = priorComposite;
 }
 
 const FIRE = ['#fff4c0', '#ffd860', '#ff9a28', '#ff5a10', '#d02008', '#7a0a04']; // a 'flame' particle's colour over its life

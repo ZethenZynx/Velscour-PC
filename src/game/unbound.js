@@ -193,7 +193,7 @@ export function unboundTick(V, dt) {
     b.raidPriority = timed || b.waned ? 0 : 6; // (once its Pact has waned, he is the target again: a wizard spent 19 minutes on Vexis)
     if (R.gap > (R.gap0 ?? Infinity) && !V.hold) R.gap *= UNBOUND.courtGap;
     R.gap0 = R.gap;
-    if ((b.tetherT = (b.tetherT || 0) - dt) <= 0 && !V.hold) { b.tetherT = 0.2; addEffect(new Bolt(b.x, b.y, 80, m.x, m.y, 110, '#20e0ff', 0.16, 2)); }
+    if ((b.tetherT = (b.tetherT || 0) - dt) <= 0 && !V.hold) { b.tetherT = 0.2; addEffect(Bolt(b.x, b.y, 80, m.x, m.y, 110, '#20e0ff', 0.16, 2)); }
     if (inArena(b.x, b.y, k)) { b.outT = 0; continue; }
     if ((b.outT = (b.outT || 0) + dt) > 1.5) { [b.x, b.y] = w.map.nudge(b.post[0], b.post[1], 1); b.nav = null; b.outT = 0; smoke(b.x, b.y, 0, '#200808', 6, 10); }
   }

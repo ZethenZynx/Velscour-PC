@@ -272,7 +272,7 @@ export function hit(src, tgt, amount, el = 'phys', o = {}) {
     }
     if (worldAffixes.has('shared_health') && !o.sharedTransfer && tgt.world) {
       const ally = tgt.world.query(tgt.x, tgt.y, 4, (m) => m !== tgt && m.team === 'enemy' && !m.dead)[0];
-      if (ally) { addEffect(new Bolt(tgt.x, tgt.y, 24, ally.x, ally.y, 24, '#b080e8', 0.2, 2)); hit(src, ally, actualDamage * 0.2, el, { dot: true, crit: false, sharedTransfer: true, silent: true }); }
+      if (ally) { addEffect(Bolt(tgt.x, tgt.y, 24, ally.x, ally.y, 24, '#b080e8', 0.2, 2)); hit(src, ally, actualDamage * 0.2, el, { dot: true, crit: false, sharedTransfer: true, silent: true }); }
     }
     if (worldAffixes.has('blood_sacrifice') && owner?.isPlayer && !o.affixSacrifice) {
       owner.hp = Math.max(1, owner.hp - owner.maxHp * 0.005);
@@ -310,7 +310,7 @@ export function hit(src, tgt, amount, el = 'phys', o = {}) {
       const stolen = Math.min(tgt.mana || 0, Math.max(1, (tgt.maxMana || 0) * 0.05));
       tgt.mana = Math.max(0, (tgt.mana || 0) - stolen);
       if (src.heal) src.heal(Math.max(1, actualDamage * 0.15));
-      addEffect(new Bolt(src.x, src.y, 25, tgt.x, tgt.y, 25, '#a77aff', 0.2, 2));
+      addEffect(Bolt(src.x, src.y, 25, tgt.x, tgt.y, 25, '#a77aff', 0.2, 2));
     }
 
     if (src.rank === 'boss' && worldAffixes.has('legendary_hunt') && chance(0.15) && !o.affixBossEcho) {
@@ -457,13 +457,13 @@ function applyStatus(src, tgt, dmg, el, o) {
       const team = src ? src.team : 'player';
       const n = w.hostiles(team, tgt.x, tgt.y, 3.5).filter((c) => c !== tgt && !c.clutter)[0];
       if (n) {
-        addEffect(new Bolt(tgt.x, tgt.y, 28, n.x, n.y, 28, '#a8ccff', 0.18, 2));
+        addEffect(Bolt(tgt.x, tgt.y, 28, n.x, n.y, 28, '#a8ccff', 0.18, 2));
         hit(src, n, dmg * 0.35, 'light', { noArc: true, silent: false, crit: false });
       }
     }
   }
   if (src && src.isPlayer && leg.thunder && !o.noArc && chance(0.12)) {
-    addEffect(new Bolt(tgt.x - 0.3, tgt.y - 0.3, 260, tgt.x, tgt.y, 0, '#c0d8ff', 0.25, 3));
+    addEffect(Bolt(tgt.x - 0.3, tgt.y - 0.3, 260, tgt.x, tgt.y, 0, '#c0d8ff', 0.25, 3));
     hit(src, tgt, dmg * 0.6, 'light', { noArc: true, crit: false });
   }
   if (src?.isPlayer || tgt?.isPlayer) {
@@ -674,7 +674,7 @@ export function chainHit(world, src, x0, y0, first, n, dmg, el, color, o = {}) {
   let cur = first, px = x0, py = y0, pz = 30;
   for (let i = 0; i <= n && cur; i++) {
     hitSet.add(cur.id);
-    addEffect(new Bolt(px, py, pz, cur.x, cur.y, 28, color, 0.22, 2.5));
+    addEffect(Bolt(px, py, pz, cur.x, cur.y, 28, color, 0.22, 2.5));
     hit(src, cur, dmg, el, { ...o, noArc: true });
     px = cur.x; py = cur.y; pz = 28;
     const team = src ? src.team : 'player';

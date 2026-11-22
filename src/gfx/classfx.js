@@ -159,7 +159,7 @@ export class EnergyLance {
       const f = rand(0.15, 1), x = s.x + Math.cos(this.ang) * this.len * f, y = s.y + Math.sin(this.ang) * this.len * f;
       P({ type: this.el === 'light' && chance(0.3) ? 'streak' : 'glow', x, y, z: 26 + rand(-4, 4), vx: rand(-1.5, 1.5), vy: rand(-1.5, 1.5), vz: rand(-20, 40), drag: 3, life: rand(0.15, 0.4), size: rand(1.5, 3.5), size1: 0, color: chance(0.5) ? c[0] : c[1], add: true });
     }
-    if (this.el === 'light' && chance(dt * 12)) { const f = rand(0.3, 1); addEffect(new Bolt(s.x + Math.cos(this.ang) * this.len * f, s.y + Math.sin(this.ang) * this.len * f, 26, s.x + Math.cos(this.ang) * this.len * f + rand(-1, 1), s.y + Math.sin(this.ang) * this.len * f + rand(-1, 1), 0, c[0], 0.12, 2)); }
+    if (this.el === 'light' && chance(dt * 12)) { const f = rand(0.3, 1); addEffect(Bolt(s.x + Math.cos(this.ang) * this.len * f, s.y + Math.sin(this.ang) * this.len * f, 26, s.x + Math.cos(this.ang) * this.len * f + rand(-1, 1), s.y + Math.sin(this.ang) * this.len * f + rand(-1, 1), 0, c[0], 0.12, 2)); }
     addLight(s.x + Math.cos(this.ang) * this.len * 0.6, s.y + Math.sin(this.ang) * this.len * 0.6, 3 + this.len * 0.4, 0.7);
     return this.t < this.dur;
   }

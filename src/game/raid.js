@@ -814,7 +814,7 @@ class Raid {
     if (I.t > 30) {
       // too slow: the crystals pour themselves into the boss
       for (const c of live) {
-        addEffect(new Bolt(c.x, c.y, 40, m.x, m.y, 60, this.E.glow, 0.5, 5));
+        addEffect(Bolt(c.x, c.y, 40, m.x, m.y, 60, this.E.glow, 0.5, 5));
         explosionFx(c.x, c.y, 1.5, this.tpl.el === 'phys' ? 'arcane' : this.tpl.el, 'explosion');
         c.dead = true;
         m.heal(m.maxHp * 0.04);
@@ -847,7 +847,7 @@ class Raid {
     c.wardTick = (dt) => {
       c.moving = false;
       if (m.dead) { c.dead = true; return; }
-      if ((c.beamT = (c.beamT || 0) - dt) <= 0) { c.beamT = 0.12; addEffect(new Bolt(c.x, c.y, 44, m.x, m.y, 70, E.glow, 0.13, 2)); }
+      if ((c.beamT = (c.beamT || 0) - dt) <= 0) { c.beamT = 0.12; addEffect(Bolt(c.x, c.y, 44, m.x, m.y, 70, E.glow, 0.13, 2)); }
       m.heal(m.maxHp * 0.002 * dt);
       const p = c.world.player;
       if ((c.cd -= dt) <= 0 && p && !p.dead && dist(c.x, c.y, p.x, p.y) < 12 && c.world.map.los(c.x, c.y, p.x, p.y)) {

@@ -54,7 +54,7 @@ function storm(p, x, y) {
   for (let i = 0; i < Math.max(4, spots.length); i++) {
     const [sx, sy, c] = spots[i % spots.length];
     later(p.world, i * 0.05, () => {
-      addEffect(new Bolt(sx - 0.4, sy - 0.4, 280, sx, sy, 4, '#a8ccff', 0.3, 4));
+      addEffect(Bolt(sx - 0.4, sy - 0.4, 280, sx, sy, 4, '#a8ccff', 0.3, 4));
       burst(sx, sy, 6, 'light', 8, 2.5);
       if (c && !c.dead) hit(p, c, P * 2.5, 'light', sigO({ noArc: true, stun: true }));
     });
@@ -82,7 +82,7 @@ export default {
     s.ch[e] = 0; s.fl[e] = 1;
     explosionFx(p.x, p.y, 3, e, e === 'fire' ? 'meteor' : 'explosion');
     aoe(w, p, p.x, p.y, 3, power(p) * 3, e, sigO({ freeze: e === 'cold', burn: e === 'fire', stun: e === 'light', knock: 1 }));
-    if (e === 'light') for (let i = 0; i < 6; i++) { const a = rand(TAU); addEffect(new Bolt(p.x, p.y, 30, p.x + Math.cos(a) * 3, p.y + Math.sin(a) * 3, 6, E.glow, 0.3, 3)); }
+    if (e === 'light') for (let i = 0; i < 6; i++) { const a = rand(TAU); addEffect(Bolt(p.x, p.y, 30, p.x + Math.cos(a) * 3, p.y + Math.sin(a) * 3, 6, E.glow, 0.3, 3)); }
     floatText(p.x, p.y, 96, 'OVERLOAD', E.glow, 15, { life: 1.3 });
     camera.shake(5);
     stat('wizard', 'overload');

@@ -13,10 +13,9 @@ export function writeBoltGeometry(out, ax, ay, bx, by, random = Math.random) {
   return n + 1;
 }
 
-/** Draw the cached interleaved bolt points without creating temporary point arrays. */
-export function strokeBoltGeometry(ctx, points, count) {
+/** Append cached interleaved bolt points to the current path without temporary arrays. */
+export function appendBoltGeometry(ctx, points, count) {
   if (count < 2) return;
-  ctx.beginPath(); ctx.moveTo(points[0], points[1]);
+  ctx.moveTo(points[0], points[1]);
   for (let i = 1; i < count; i++) ctx.lineTo(points[i * 2], points[i * 2 + 1]);
-  ctx.stroke();
 }

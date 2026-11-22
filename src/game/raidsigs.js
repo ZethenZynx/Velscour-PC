@@ -210,7 +210,7 @@ sig('tether', 'Soul Tether', (R) => {
   T.autoGoal = () => ({ x: sx, y: sy, r: len - 1.6 });
   T.tick = (dt) => {
     const d = dist(p.x, p.y, sx, sy);
-    if ((T.fx = (T.fx || 0) - dt) <= 0) { T.fx = 0.08; addEffect(new Bolt(sx, sy, 30, p.x, p.y, 30, d > len ? '#ff4030' : '#fff0b0', 0.1, d > len ? 4 : 2)); }
+    if ((T.fx = (T.fx || 0) - dt) <= 0) { T.fx = 0.08; addEffect(Bolt(sx, sy, 30, p.x, p.y, 30, d > len ? '#ff4030' : '#fff0b0', 0.1, d > len ? 4 : 2)); }
     if (d > len && (T.hurt = (T.hurt || 0) - dt) <= 0) { T.hurt = 0.5; hit(R.m, p, R.m.dmg * 0.9, 'holy', { force: true, crit: false }); floatText(p.x, p.y, 70, 'TETHER!', '#ff6040', 13); }
   };
   addEffect(new Column(sx, sy, '#fff0b0', 0.7, 26, 300));
@@ -293,10 +293,10 @@ sig('conduits', 'Overload Conduits', (R) => {
     c.charge = 0;
     c.tick = (dt) => {
       const p = hero(R);
-      if (p && c.inside(p)) { c.charge += dt; if (chance(dt * 30)) addEffect(new Bolt(x, y, 10, p.x, p.y, 40, '#80e0ff', 0.1, 2)); }
+      if (p && c.inside(p)) { c.charge += dt; if (chance(dt * 30)) addEffect(Bolt(x, y, 10, p.x, p.y, 40, '#80e0ff', 0.1, 2)); }
       if (c.charge >= 1.4) {
         c.dead = true;
-        addEffect(new Bolt(x, y, 20, m.x, m.y, 80, '#ffffff', 0.4, 6)); explosionFx(x, y, 1.5, 'light', 'nova');
+        addEffect(Bolt(x, y, 20, m.x, m.y, 80, '#ffffff', 0.4, 6)); explosionFx(x, y, 1.5, 'light', 'nova');
         const left = R.conduits.filter((q) => !q.dead).length;
         m.ward = left ? 0.15 + (1 - left / n) * 0.6 : 1;
         if (!left) { m.status.stun = { t: 4 }; say(R, 'SHIELD OVERLOADED', '#80e0ff'); hit(hero(R), m, m.maxHp * 0.04, 'light', { force: true, crit: false }); }
@@ -417,7 +417,7 @@ sig('verdict', 'Verdict Chains', (R) => {
       const d = dist(m.x, m.y, p.x, p.y);
       if (d > 9.5) { floatText(p.x, p.y, 70, 'CHAINS BROKEN', '#c0a0ff', 13); burst(p.x, p.y, 30, 'arcane', 20, 3); return false; }
       const a = angleTo(p.x, p.y, m.x, m.y); w.map.move(p, Math.cos(a) * 1.4 * dt, Math.sin(a) * 1.4 * dt);
-      if ((this.fx = (this.fx || 0) - dt) <= 0) { this.fx = 0.06; addEffect(new Bolt(m.x, m.y, 60, p.x, p.y, 30, '#b080ff', 0.08, 3)); }
+      if ((this.fx = (this.fx || 0) - dt) <= 0) { this.fx = 0.06; addEffect(Bolt(m.x, m.y, 60, p.x, p.y, 30, '#b080ff', 0.08, 3)); }
       if (this.t >= dur) { hit(m, p, p.maxHp * 0.45, 'arcane', { force: true, crit: false }); explosionFx(p.x, p.y, 2, 'arcane', 'nova'); return false; }
       return true;
     }, draw() {},
@@ -819,7 +819,7 @@ sig('storm_cells', 'Storm Cells', (R) => {
       if ((cell.zap -= dt) > 0) return;
       cell.zap = 1.5;
       blast(R, cell.x, cell.y, 1.3, 0.6, 1.2, { el: 'light' });
-      later(R.m.world, 0.6, () => live(R) && addEffect(new Bolt(cell.x, cell.y, 120, cell.x, cell.y, 0, '#e0e8ff', 0.25, 5)));
+      later(R.m.world, 0.6, () => live(R) && addEffect(Bolt(cell.x, cell.y, 120, cell.x, cell.y, 0, '#e0e8ff', 0.25, 5)));
     };
     cell.danger = (out) => out.push({ x: cell.x, y: cell.y, r: 1.5, minor: true });
   }
@@ -831,7 +831,7 @@ sig('arc_chain', 'Arc Chain', (R, t) => {
   const done = new Set();
   for (let i = 0; i < 6 && cur; i++) {
     const a = from, b = cur;
-    later(w, i * 0.12, () => { if (!live(R) || b.dead) return; addEffect(new Bolt(a.x, a.y, 50, b.x, b.y, 30, '#a0c0ff', 0.3, 4)); hit(m, b, m.dmg * (1.1 - i * 0.1), 'light', {}); });
+    later(w, i * 0.12, () => { if (!live(R) || b.dead) return; addEffect(Bolt(a.x, a.y, 50, b.x, b.y, 30, '#a0c0ff', 0.3, 4)); hit(m, b, m.dmg * (1.1 - i * 0.1), 'light', {}); });
     done.add(cur); from = cur;
     cur = w.hostiles(m.team, cur.x, cur.y, 6).find((c) => !done.has(c)) || null;
   }
@@ -944,7 +944,7 @@ sig('thralls', 'Blood Thralls', (R) => {
     add(R, x, y, { name: 'Blood Thrall', ai: 'melee', hp: 0.03, dmg: 0.45, sprite: 'ghoul', arch: 'ghoul', artH: 48, priority: 7, gore: 'blood',
       tick(c, dt) {
         m.heal(monsterBase(m.level || 1).hp * 0.015 * dt);
-        if ((c.beam = (c.beam || 0) - dt) <= 0) { c.beam = 0.1; addEffect(new Bolt(c.x, c.y, 30, m.x, m.y, 70, '#ff2030', 0.1, 3)); }
+        if ((c.beam = (c.beam || 0) - dt) <= 0) { c.beam = 0.1; addEffect(Bolt(c.x, c.y, 30, m.x, m.y, 70, '#ff2030', 0.1, 3)); }
         const p = hero(R); if (p) c.moveToward(p.x, p.y, dt, 1.4);
       },
     });
@@ -1029,7 +1029,7 @@ sig('exchange', 'Curse of Exchange', (R) => {
   later(w, 1.4, () => {
     if (!live(R) || p.dead) return;
     const [mx, my] = [m.x, m.y], [px, py] = w.map.nudge(mx, my, p.r || 0.35), [bx, by] = w.map.nudge(p.x, p.y, 1);
-    addEffect(new Bolt(mx, my, 60, p.x, p.y, 30, '#ffe080', 0.4, 5));
+    addEffect(Bolt(mx, my, 60, p.x, p.y, 30, '#ffe080', 0.4, 5));
     p.x = px; p.y = py; m.x = bx; m.y = by; m.nav = null;
     explosionFx(bx, by, 2.4, 'holy', 'nova'); for (const c of w.hostiles(m.team, bx, by, 2.4)) hit(m, c, m.dmg * 1.6, 'holy', { knock: 1 });
     camera.follow(p.x, p.y, 0, true);
@@ -1164,8 +1164,8 @@ export const PASSIVES = {
     if (!R.staticMark) R.staticMark = w.addHazard({ autoMove: true, update() { return live(R); }, draw() {} });
     const moved = dist(R.sx ?? p.x, R.sy ?? p.y, p.x, p.y) > 0.02; R.sx = p.x; R.sy = p.y;
     R.static = clamp((R.static || 0) + (moved ? -1.2 : 2) * dt, 0, 8);
-    if (R.static >= 8) { R.static = 0; addEffect(new Bolt(p.x, p.y, 300, p.x, p.y, 0, '#ffffff', 0.4, 8)); hit(R.m, p, p.maxHp * 0.4, 'light', { force: true, crit: false, stun: 1 }); explosionFx(p.x, p.y, 1.6, 'light', 'nova'); G.flash = 0.4; }
-    else if (R.static > 4 && chance(dt * 10)) addEffect(new Bolt(p.x + rand(-0.5, 0.5), p.y + rand(-0.5, 0.5), 30, p.x, p.y, 70, '#a0c0ff', 0.1, 2));
+    if (R.static >= 8) { R.static = 0; addEffect(Bolt(p.x, p.y, 300, p.x, p.y, 0, '#ffffff', 0.4, 8)); hit(R.m, p, p.maxHp * 0.4, 'light', { force: true, crit: false, stun: 1 }); explosionFx(p.x, p.y, 1.6, 'light', 'nova'); G.flash = 0.4; }
+    else if (R.static > 4 && chance(dt * 10)) addEffect(Bolt(p.x + rand(-0.5, 0.5), p.y + rand(-0.5, 0.5), 30, p.x, p.y, 70, '#a0c0ff', 0.1, 2));
   },
   // Hollowmere: deep chill — frost stacks build; braziers thaw; at 10 the hero freezes solid
   hollowmere(R, dt) {

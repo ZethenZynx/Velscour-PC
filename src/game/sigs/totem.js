@@ -200,7 +200,7 @@ class GreatTotem {
       if (Math.random() < 0.4) sfx('roar', 0.25);
     } else if (k === 'eagle') {
       const c = foesNear(p, x, y, 7)[Math.floor(rand(3))] || foesNear(p, x, y, 7)[0];
-      if (c) { addEffect(new Bolt(x, y, z + 10, c.x, c.y, 20, SPIRIT.eagle, 0.3, 3)); hit(p, c, P * 1.2, 'light', sigO({ noArc: false })); sfx('light', 0.5); }
+      if (c) { addEffect(Bolt(x, y, z + 10, c.x, c.y, 20, SPIRIT.eagle, 0.3, 3)); hit(p, c, P * 1.2, 'light', sigO({ noArc: false })); sfx('light', 0.5); }
     } else {
       const c = foesNear(p, x, y, 6)[0];
       if (c) { addEffect(new Beam(x, y, c.x, c.y, SPIRIT.serpent, 4, 0.3, { z, core: '#e8ff90' })); hit(p, c, P * 0.9, 'poison', sigO({ poison: true })); burst(c.x, c.y, 28, 'poison', 8, 2); }

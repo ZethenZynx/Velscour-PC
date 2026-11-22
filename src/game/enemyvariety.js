@@ -360,7 +360,7 @@ export function executeEnemyAttack(m, a) {
     case 'flame_wave': {
       const L = w.map.rayLength(m.x, m.y, ang, 6), ex = m.x + Math.cos(ang) * L, ey = m.y + Math.sin(ang) * L;
       w.addHazard(new Fissure({ world: w, src: m, x: m.x, y: m.y, ang, len: L, dmg: [d * 0.7, d], el: 'fire', fx: 'fire' }));
-      addEffect(new Bolt(m.x, m.y, 28, ex, ey, 12, elem('fire').glow, 0.28, 4)); break;
+      addEffect(Bolt(m.x, m.y, 28, ex, ey, 12, elem('fire').glow, 0.28, 4)); break;
     }
     case 'teleport_strike': {
       if (target) { let moved = false; for (let i = 0; i < 10; i++) { const a2 = rand(TAU), x = target.x + Math.cos(a2) * rand(1.1, 1.7), y = target.y + Math.sin(a2) * rand(1.1, 1.7); if (w.map.circleFree(x, y, m.r + 0.03) && w.map.flowAt(x, y) >= 0) { sparkle(m.x, m.y, 15, '#b86aff', 14, 0.35); m.x = x; m.y = y; m.nav = null; moved = true; break; } } if (moved) hurt(target, 1.15, { melee: true, knock: 0.55 }); } break;

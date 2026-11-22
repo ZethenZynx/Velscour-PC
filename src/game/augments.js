@@ -8,7 +8,7 @@ import { addEffect, Bolt, Column, Ring, burst, spawn, sparkle, smoke, elem, addL
 import { explosionFx } from '../gfx/shapes.js';
 import { isoX, isoY } from '../core/view.js';
 import { hit, leechHeal } from './combat.js';
-import { Projectile, lineTargets } from './hazards.js';
+import { Projectile } from './hazards.js';
 
 // ------------------------------------------------------------------ mastery
 export const MAX_MASTERY = 1000;
@@ -71,7 +71,7 @@ export function augHit(src, owner, tgt, dmg, el, o) {
       case 'tether':
         // skills with no hazard to tether (melee, beams, chains) lash out instead
         if (!o.tethered && chance(0.3 * k)) {
-          addEffect(new Bolt(owner.x, owner.y, 34, tgt.x, tgt.y, 26, '#b8d8ff', 0.2, 3));
+          addEffect(Bolt(owner.x, owner.y, 34, tgt.x, tgt.y, 26, '#b8d8ff', 0.2, 3));
           hitLater(src, tgt, dmg * 0.5 * p, 'light', proc);
         }
         break;
@@ -124,7 +124,7 @@ function chainFrom(w, src, first, n, amount, o) {
     }
     if (!best) break;
     seen.add(best.id);
-    addEffect(new Bolt(cur.x, cur.y, 28, best.x, best.y, 28, '#a8ccff', 0.25, 2.6));
+    addEffect(Bolt(cur.x, cur.y, 28, best.x, best.y, 28, '#a8ccff', 0.25, 2.6));
     hitLater(src, best, amount, 'light', o);
     cur = best;
   }
@@ -228,24 +228,32 @@ function tether(h, owner, pts, pow, dt) {
   const zap = h.tetherT <= 0;
   if (zap) h.tetherT = 0.25;
   const dmg = h.dmg ? (h.dmg[0] + h.dmg[1]) / 2 * 0.3 * pow : 0;
-  const targets = h.tetherTargets || (h.tetherTargets = []), candidates = h.tetherCandidates || (h.tetherCandidates = []);
+  const candidates = h.tetherCandidates || (h.tetherCandidates = []);
+  if (zap && dmg > 0) w.hostiles(owner.team, owner.x, owner.y, 11, candidates);
   for (let i = 0; i < pts.length; i++) {
     const a = pts[i];
-    tetherArc(h, owner, dt, zap, dmg, owner.x, owner.y, a[0], a[1], targets, candidates);
+    tetherArc(h, dt, zap, dmg, owner.x, owner.y, a[0], a[1], candidates);
     if (pts.length > 2) {
       const b = pts[(i + 1) % pts.length];
-      tetherArc(h, owner, dt, zap, dmg, a[0], a[1], b[0], b[1], targets, candidates);
+      tetherArc(h, dt, zap, dmg, a[0], a[1], b[0], b[1], candidates);
     }
   }
   for (const [x, y] of pts) addLight(x, y, 1.4, 0.5);
 }
-function tetherArc(h, owner, dt, zap, dmg, x0, y0, x1, y1, targets, candidates) {
+function tetherArc(h, dt, zap, dmg, x0, y0, x1, y1, candidates) {
   const d2 = dist2(x0, y0, x1, y1);
   if (d2 < 0.25 || d2 > 81) return;
-  if (chance(dt * 22)) addEffect(new Bolt(x0, y0, 26, x1, y1, 24, chance(0.3) ? '#ffffff' : '#9cc4ff', 0.09, 1.8));
-  if (zap && dmg > 0) {
-    for (const c of lineTargets(h.world, owner.team, x0, y0, x1, y1, 0.35, targets, candidates)) {
-      hit(h.src, c, dmg, 'light', { proc: true, noArc: true, crit: false, sk: h.o.sk, silent: false });
-    }
+  // The arc visuals are cosmetic and use 15 Hz emission; damage remains on its separate 4 Hz timer.
+  if (chance(dt * 15)) addEffect(Bolt(x0, y0, 26, x1, y1, 24, chance(0.3) ? '#ffffff' : '#9cc4ff', 0.09, 1.8));
+  if (zap && dmg > 0) damageTetherArc(h, x0, y0, x1, y1, dmg, candidates);
+}
+function damageTetherArc(h, x0, y0, x1, y1, dmg, candidates) {
+  const dx = x1 - x0, dy = y1 - y0, len = Math.sqrt(dx * dx + dy * dy);
+  for (const c of candidates) {
+    if (c.dead) continue;
+    const t = Math.max(0, Math.min(len, ((c.x - x0) * dx + (c.y - y0) * dy) / (len || 1)));
+    const px = x0 + dx / (len || 1) * t, py = y0 + dy / (len || 1) * t;
+    const ex = px - c.x, ey = py - c.y, radius = 0.35 + c.r;
+    if (ex * ex + ey * ey <= radius * radius) hit(h.src, c, dmg, 'light', { proc: true, noArc: true, crit: false, sk: h.o.sk, silent: false });
   }
 }

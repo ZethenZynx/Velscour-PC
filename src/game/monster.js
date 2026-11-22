@@ -900,7 +900,7 @@ export class Monster extends Creature {
         if (!t) return;
         if (A.fx === 'meteor') w.addHazard(new Delayed({ world: w, src: this, x: t.x, y: t.y, r: 1.3, delay: 0.6, fx: 'meteor', el, dmg, showRing: false }));
         else {
-          addEffect(new Bolt(t.x - 0.6, t.y - 0.6, 300, t.x, t.y, 0, E.glow, 0.25, 3));
+          addEffect(Bolt(t.x - 0.6, t.y - 0.6, 300, t.x, t.y, 0, E.glow, 0.25, 3));
           if (A.fx === 'pillar') addEffect(new Column(t.x, t.y, E.glow, 0.4, 20, 240));
           aoe(w, this, t.x, t.y, 0.9, rand(dmg[0], dmg[1]), el, {});
           sfx(E.sfx, 0.4);
@@ -916,7 +916,7 @@ export class Monster extends Creature {
           const L = w.map.rayLength(this.x, this.y, ang, A.range || 7);
           const ex = this.x + Math.cos(ang) * L, ey = this.y + Math.sin(ang) * L;
           for (const c of lineTargets(w, this.team, this.x, this.y, ex, ey, 0.5)) hit(this, c, rand(dmg[0], dmg[1]), el, { freeze: A.freeze });
-          addEffect(new Bolt(mz ? mz.x : this.x, mz ? mz.y : this.y, mz ? mz.z : 30, ex, ey, 20, E.glow, 0.2, 3));
+          addEffect(Bolt(mz ? mz.x : this.x, mz ? mz.y : this.y, mz ? mz.z : 30, ex, ey, 20, E.glow, 0.2, 3));
         }
         sfx(E.sfx, 0.35);
         break;
@@ -1265,7 +1265,7 @@ export class Monster extends Creature {
           a.hits.set(c, w.time + 0.35);
           this.deal(c, dmg * 0.8, el, {});
         }
-        if ((a.fx = (a.fx || 0) - dt) <= 0) { a.fx = 0.04; addEffect(new Bolt(this.x, this.y, 30, ex, ey, 20, elem(el).glow, 0.08, 3)); }
+        if ((a.fx = (a.fx || 0) - dt) <= 0) { a.fx = 0.04; addEffect(Bolt(this.x, this.y, 30, ex, ey, 20, elem(el).glow, 0.08, 3)); }
         if (a.left <= 0) done();
         break;
       }
@@ -1468,7 +1468,7 @@ export class Monster extends Creature {
         const L = w.map.rayLength(this.x, this.y, a.ang, len);
         const ex = this.x + Math.cos(a.ang) * L, ey = this.y + Math.sin(a.ang) * L;
         for (const c of lineTargets(w, this.team, this.x, this.y, ex, ey, 0.75)) this.deal(c, dmg * 2, el, {});
-        for (let i = 0; i < 3; i++) addEffect(new Bolt(this.x, this.y, 40, ex, ey, 20, i ? E.core : E.glow, 0.45, 6 - i * 2));
+        for (let i = 0; i < 3; i++) addEffect(Bolt(this.x, this.y, 40, ex, ey, 20, i ? E.core : E.glow, 0.45, 6 - i * 2));
         sfx('explode');
         break;
       }

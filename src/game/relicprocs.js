@@ -58,7 +58,7 @@ function fire(p, pr, tgt, base) {
         const next = w.hostiles(p.team, from.x, from.y, pr.r || 6).filter((m) => !m.dead && !hitSet.has(m.id)).sort((a, b) => dist(from.x, from.y, a.x, a.y) - dist(from.x, from.y, b.x, b.y))[0];
         if (!next) break;
         hitSet.add(next.id);
-        addEffect(new Bolt(from.x, from.y, 30, next.x, next.y, 30, E.glow, 0.3, 3));
+        addEffect(Bolt(from.x, from.y, 30, next.x, next.y, 30, E.glow, 0.3, 3));
         hit(p, next, amt, el, { ...PROC });
         from = next;
       }

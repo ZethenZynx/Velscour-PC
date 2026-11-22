@@ -116,7 +116,7 @@ export function riftTick(world, dt) {
       const targets = world.creatures.filter((m) => m.team === 'enemy' && !m.dead && Math.hypot(m.x - p.x, m.y - p.y) < 10);
       if (targets.length) {
         const target = targets[Math.floor(Math.random() * targets.length)];
-        addEffect(new Bolt(p.x, p.y, 25, target.x, target.y, 25, '#30b0ff', 0.15, 4));
+        addEffect(Bolt(p.x, p.y, 25, target.x, target.y, 25, '#30b0ff', 0.15, 4));
         sfx('spark');
         hit(p, target, (b.zap || 0) * 4.5 * (1 + (R.tier || 1) * 0.1), 'light');
         sparkle(target.x, target.y, 10, '#30b0ff', 12, 0.5);

@@ -236,7 +236,7 @@ class VelscourFight {
     for (const [x, y, n] of SEALS) {
       const [sx, sy] = w.map.nudge(x, y, 0.45);
       const seal = this.crystal(sx, sy, { vk: 'seal', name: `Seal of the ${n}`, color: '#b080ff', hp: 0.03, h: 54,
-        tick: (c, dt) => { if ((c.beamT = (c.beamT || 0) - dt) <= 0) { c.beamT = 0.15; addEffect(new Bolt(c.x, c.y, 50, m.x, m.y, 110, '#b080ff', 0.14, 2)); }
+        tick: (c, dt) => { if ((c.beamT = (c.beamT || 0) - dt) <= 0) { c.beamT = 0.15; addEffect(Bolt(c.x, c.y, 50, m.x, m.y, 110, '#b080ff', 0.14, 2)); }
           c.ward = c.warden && !c.warden.dead ? 0.25 : 1; } });
       const [gx, gy] = w.map.randomNear(sx, sy, 2.2);
       const warden = makeMonster(w, pick(['demon', 'knight', 'gargoyle']), w.biome, m.level, 'unique', gx, gy);
@@ -253,7 +253,7 @@ class VelscourFight {
     const left = this.parts.filter((c) => c.vk === 'seal' && !c.dead);
     if (!left.length) return this.endSeals('The seals shatter!');
     if (this.p2t > 120) {
-      for (const c of left) { addEffect(new Bolt(c.x, c.y, 50, this.m.x, this.m.y, 110, '#ff4040', 0.5, 5)); c.dead = true; if (c.warden) c.warden.dead = true; }
+      for (const c of left) { addEffect(Bolt(c.x, c.y, 50, this.m.x, this.m.y, 110, '#ff4040', 0.5, 5)); c.dead = true; if (c.warden) c.warden.dead = true; }
       this.sealBuff = left.length;
       this.m.dmg *= Math.pow(1.15, left.length);
       this.endSeals(`${left.length} seal${left.length > 1 ? 's pour' : ' pours'} itself into him: +${left.length * 15}% damage!`);
@@ -431,7 +431,7 @@ class VelscourFight {
     for (const [ox, oy] of OBELISKS) {
       const [x, y] = w.map.nudge(ox + 0.5 + Math.sign(C.x - ox) * 1.2, oy + 0.5 + Math.sign(C.y - oy) * 1.2, 0.45);
       this.crystal(x, y, { vk: 'obelisk', name: 'Bound Obelisk', color: '#d0d0d0', hp: this.unbound ? UNBOUND.obelisk : 0.02, h: 50,
-        tick: (c, dt) => { if ((c.beamT = (c.beamT || 0) - dt) <= 0) { c.beamT = 0.2; addEffect(new Bolt(c.x, c.y, 50, m.x, m.y, 120, '#e0e0e0', 0.2, 2)); } } });
+        tick: (c, dt) => { if ((c.beamT = (c.beamT || 0) - dt) <= 0) { c.beamT = 0.2; addEffect(Bolt(c.x, c.y, 50, m.x, m.y, 120, '#e0e0e0', 0.2, 2)); } } });
     }
   }
   p6(dt) {

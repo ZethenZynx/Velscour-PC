@@ -134,7 +134,7 @@ export function castSkill(p, sk, L, tx, ty, opts = {}) {
               w.addHazard(new Projectile({ world: w, src: p, x: bx, y: by, ang: ba,
                 speed: 12, range: 3.1, fx: 'bolt', el: 'light', z: 22, r: 0.18, size: 0.68,
                 dmg: dmg.map((v) => v * 0.24), o: { ...o, bashBolt: true }, light: true }));
-              addEffect(new Bolt(bx, by, 25, bx + Math.cos(ba) * 1.4, by + Math.sin(ba) * 1.4, 22,
+              addEffect(Bolt(bx, by, 25, bx + Math.cos(ba) * 1.4, by + Math.sin(ba) * 1.4, 22,
                 '#9ddcff', 0.16, 2.2));
             }
             sparkle(fxX, fxY, 24, '#d9efff', 6, 0.22);
@@ -248,7 +248,7 @@ export function castSkill(p, sk, L, tx, ty, opts = {}) {
             let k = 0;
             for (const t of w.hostiles(p.team, x, y, r + 1.5)) {
               if (!t.status || !t.status.stun || t.status.stun.t <= 0) continue;
-              if (k++ < 12) addEffect(new Bolt(t.x, t.y, 220, t.x, t.y, 6, E.glow, 0.22, 3));
+              if (k++ < 12) addEffect(Bolt(t.x, t.y, 220, t.x, t.y, 6, E.glow, 0.22, 3));
               hit(p, t, roll(dmg) * 0.6, el, { ...o, stun: false, knock: false, aoe: true });
             }
             if (k) sfx('light', 0.8);
@@ -267,7 +267,7 @@ export function castSkill(p, sk, L, tx, ty, opts = {}) {
     case 'chain': {
       const first = w.nearestHostile(p.team, tx, ty, 3, false) || w.nearestHostile(p.team, p.x, p.y, 7, true);
       if (first) chainHit(w, p, p.x, p.y, first, (m.n || 4) + Math.floor(st.chainPlus || 0), roll(dmg), el, E.glow, { ...o, leech: m.leech });
-      else addEffect(new Bolt(p.x, p.y, 28, tx, ty, 10, E.glow, 0.25, 2.5));
+      else addEffect(Bolt(p.x, p.y, 28, tx, ty, 10, E.glow, 0.25, 2.5));
       playCastSfx(el === 'light' ? 'light' : E.sfx);
       break;
     }
@@ -343,7 +343,7 @@ export function castSkill(p, sk, L, tx, ty, opts = {}) {
       const [x, y] = clampTarget(w, p, tx, ty, 6.5 * (m.range ?? 1), canLand);
       smoke(p.x, p.y, 10, fx === 'smoke' || fx === 'shadow' ? '#201820' : E.dark, 6, 8);
       sparkle(p.x, p.y, 20, E.glow, 10, 0.4);
-      if (fx === 'lightning') addEffect(new Bolt(p.x, p.y, 20, x, y, 20, E.glow, 0.25, 3));
+      if (fx === 'lightning') addEffect(Bolt(p.x, p.y, 20, x, y, 20, E.glow, 0.25, 3));
       p.x = x; p.y = y; p.path = null; p.moveTarget = null;
       sparkle(x, y, 20, E.glow, 14, 0.5);
       addEffect(new Ring(x, y, 0.1, 1.2, 0.3, E.glow, 3));
@@ -549,7 +549,7 @@ function sigil(x, y, r, E) {
 function strikeFx(x, y, fx, E) {
   switch (fx) {
     case 'lightning': case 'spirit': case 'crow':
-      addEffect(new Bolt(x - 0.8, y - 0.8, 320, x, y, 0, E.glow, 0.3, 3.5));
+      addEffect(Bolt(x - 0.8, y - 0.8, 320, x, y, 0, E.glow, 0.3, 3.5));
       addEffect(new Ring(x, y, 0.1, 1, 0.3, E.glow, 3));
       burst(x, y, 4, 'light', 10, 2.5);
       sfx('light', 0.6);

@@ -118,7 +118,7 @@ export function ninjaCast(p, sk, L, tx, ty, C) {
       for (let i = 0; i < 4; i++) later(w, i * 0.085, () => { if (!p.dead) addEffect(new Slash(p.x, p.y, ang + (i % 2 ? 0.5 : -0.5), 2.6, 1.05, 0.14, i % 2 ? '#ffd890' : '#c08a48', { width: 5, flip: i % 2 })); });
       o.chucks = true;
       return undefined;
-    case 'kick': flip(p, 0.48, 1, 0); shadowTrail(p, 0.48, { a: 0.4, glow: '#a8ccff' }); later(w, 0.48, () => addEffect(new Bolt(p.x - 0.6, p.y - 0.6, 300, p.x, p.y, 0, '#cfe2ff', 0.3, 4))); return undefined;
+    case 'kick': flip(p, 0.48, 1, 0); shadowTrail(p, 0.48, { a: 0.4, glow: '#a8ccff' }); later(w, 0.48, () => addEffect(Bolt(p.x - 0.6, p.y - 0.6, 300, p.x, p.y, 0, '#cfe2ff', 0.3, 4))); return undefined;
     case 'dragon': // the cuts come down as fire
       flip(p, 0.5, 2, 40); shadowTrail(p, 0.5, { a: 0.4, glow: '#ff7a10' });
       for (let i = 0; i < 3; i++) later(w, i * 0.12, () => addEffect(new Crescent(p.x, p.y, ang + i * 2.1, { r: 2 + i * 0.4, arc: 5, dur: 0.3, color: '#ff8a20' })));

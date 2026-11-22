@@ -133,7 +133,7 @@ class LanceLeap {
         for (let i = 0; i < 24; i++) spawn({ type: 'glow', x: x + rand(-0.4, 0.4), y: y + rand(-0.4, 0.4), z: rand(0, 10), vz: rand(40, 140), life: rand(0.3, 0.8), size: rand(2, 5), size1: 0, color: i % 3 ? st.glow : st.core, add: true });
         if (st.trail === 'wings') addEffect(new Column(x, y, st.glow, 0.45, 34, 240));
         break;
-      case 'storm': addEffect(new Bolt(x, y, 320, x, y, 0, st.glow, 0.22, 3)); break;
+      case 'storm': addEffect(Bolt(x, y, 320, x, y, 0, st.glow, 0.22, 3)); break;
       case 'stars': for (let i = 0; i < 6; i++) this.addStar(x + rand(-0.6, 0.6), y + rand(-0.6, 0.6), rand(4, 30), 1.4); break;
     }
     addLight(x, y, 3, 1);
@@ -203,7 +203,7 @@ class LanceLeap {
       }
       case 'storm':
         emit(55, dt, () => { const a = rand(TAU), v = rand(4, 9); spawn({ type: 'streak', x, y, z: z + rand(-18, 12), vx: Math.cos(a) * v, vy: Math.sin(a) * v, vz: rand(-60, 60), drag: 6, life: rand(0.1, 0.22), size: rand(1, 2), color: Math.random() < 0.5 ? '#ffffff' : st.glow, add: true }); });
-        emit(9, dt, () => { const a = rand(TAU), d = rand(0.6, 1.8); addEffect(new Bolt(x, y, z, x + Math.cos(a) * d, y + Math.sin(a) * d, 0, st.glow, 0.14, 2)); });
+        emit(9, dt, () => { const a = rand(TAU), d = rand(0.6, 1.8); addEffect(Bolt(x, y, z, x + Math.cos(a) * d, y + Math.sin(a) * d, 0, st.glow, 0.14, 2)); });
         break;
       case 'cyclone':
         emit(80, dt, () => {
@@ -229,7 +229,7 @@ class LanceLeap {
     addLight(s.x, s.y, 5, 1.6);
     switch (st.trail) {
       case 'storm':
-        for (let i = 0; i < 3; i++) { const a = rand(TAU), d = rand(0.3, 1.4); addEffect(new Bolt(s.x + Math.cos(a) * d, s.y + Math.sin(a) * d, 340, s.x, s.y, 0, st.glow, 0.3, 3)); }
+        for (let i = 0; i < 3; i++) { const a = rand(TAU), d = rand(0.3, 1.4); addEffect(Bolt(s.x + Math.cos(a) * d, s.y + Math.sin(a) * d, 340, s.x, s.y, 0, st.glow, 0.3, 3)); }
         G.flash = G.settings?.reduceFlashing ? 0 : Math.max(G.flash || 0, 0.08);
         break;
       case 'stars': for (let i = 0; i < 10; i++) { const a = i / 10 * TAU; this.addStar(s.x + Math.cos(a) * 1.2, s.y + Math.sin(a) * 1.2, rand(4, 20), 1.3); } break;
