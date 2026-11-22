@@ -28,7 +28,9 @@ class Hammer {
     const k = Math.min(1, this.t / this.fall);
     ctx.globalAlpha = 0.35 * k; ctx.fillStyle = '#000';
     ctx.beginPath(); ctx.ellipse(px, isoY(this.x, this.y), 30 * k + 6, 12 * k + 3, 0, 0, TAU); ctx.fill();
-    glow(ctx, GOLD, px, py - 50, 80, 0.8 * a);
+    // Keep the falling hammer's light attached to the model. The old broad additive
+    // bloom (80px radius at 0.8 alpha) saturated into a detached white orb above it.
+    glow(ctx, GOLD, px, py - 34, 42, 0.24 * a);
     if (this.t < this.fall) { // light streaming behind it from the sky
       ctx.globalCompositeOperation = 'lighter';
       for (let i = -2; i <= 2; i++) { ctx.globalAlpha = 0.25 * a; ctx.fillStyle = i ? GOLD : '#ffffff'; ctx.fillRect(px + i * 9 - 1.5, py - 420, 3, 300); }
@@ -37,7 +39,7 @@ class Hammer {
     ctx.globalAlpha = 0.95 * a; // the hammer itself: the 3D model (gfx/hammer3d.js) cast in light, turning as it falls
     drawGreatHammer(ctx, px, py, 4.6, hammerPalette(null, true), -0.7 + this.t * 1.6);
     const cy = py - 17;
-    ctx.globalCompositeOperation = 'lighter'; glow(ctx, '#ffffff', px, cy - 3, 26, 0.6 * a);
+    ctx.globalCompositeOperation = 'lighter'; glow(ctx, '#ffffff', px, cy - 3, 14, 0.22 * a);
     ctx.globalAlpha = 1; ctx.globalCompositeOperation = 'source-over';
   }
 }
@@ -133,8 +135,8 @@ export default {
   },
   draw(ctx, p, s, t) {
     const [cx, cy0] = headAt(p, 12), cy = cy0 + Math.sin(t * 2) * 1.5, RX = G.touch ? 13 : 16, RY = RX * 0.32, f = s.runes / RUNES;
-    // Keep the charge readable without the additive core blooming into a solid white disk over the hero's face.
-    glow(ctx, GOLD, cx, cy, RX * 1.12, 0.08 + 0.16 * f + s.flash * 0.18);
+    // Use the rune halo itself to show charge; a centered additive glow stacks with
+    // seven lit rune glows and blooms into a solid disk on bright floors.
     ctx.globalCompositeOperation = 'lighter';
     ctx.strokeStyle = GOLD; ctx.lineWidth = 2; ctx.globalAlpha = 0.45 + 0.4 * f;
     ctx.beginPath(); ctx.ellipse(cx, cy, RX, RY, 0, 0, TAU); ctx.stroke();
