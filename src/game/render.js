@@ -1015,7 +1015,7 @@ export function renderWorld(ctx, world) {
   if (map.castleMat) drawCastleWater(ctx, world, vr, G.time, G.touch);
   ctx.imageSmoothingQuality = hq;
   const fc = world.floorNow;
-  drawDecals(ctx, vr, world.tower || world.cave ? () => false : (d, px, py) => decalStamped(fc, d, px, py)); // the tower turns: its blood can't bake
+  drawDecals(ctx, vr, world.tower || world.cave ? () => false : (d, px, py) => decalStamped(fc, d, px, py), camera.viewRect(0)); // cull gore at the actual viewport edge; the tower turns: its blood can't bake
   drawMapEdgeFade(ctx, world, camT, tx0, ty0, tx1, ty1);
   // Flat trap fixtures sit on the terrain plane. Draw them after floor decals,
   // but before corpses, actors, and the depth-sorted elevated mechanisms.

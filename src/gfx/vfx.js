@@ -7,6 +7,7 @@ import { makeCanvas, rand, TAU, shade, randi, pick, fmt, shuffle, clamp, colourS
 import { groundHidden } from './terrain.js';
 import { bonesReady, boneDeck, boneLook, drawBoneGib } from './bonegibs.js';
 import { damageNumberAboveBarZ } from '../game/damage-number-layout.mjs';
+import { addGoreDecal, goreDecalAlpha, goreDecalOutsideView, GORE_DECAL_LIFETIME, updateGoreDecals } from './goredecals.mjs';
 
 export const ELEM = {
   phys: { name: 'Physical', core: '#ffffff', glow: '#e0d8c8', dark: '#7a7060', sfx: 'phys' },
@@ -27,6 +28,7 @@ export const elem = (k) => ELEM[k] || ELEM.phys;
 const MAX_P = () => (G.touch ? 1400 : 3000);
 export const particles = [];
 export const decals = []; // live decals: growing pools, scorch, frost (capped, drawn every frame)
+const goreDecals = []; // cosmetic blood/gore only; never stamped into cached floor chunks
 // Finished blood (splats, grown pools) never changes again: it is stamped once into the baked floor chunks
 // (render.js drawFloors -> stampDecals) and costs nothing per frame after that, so it isn't capped like the live ones.
 // Each has a rising `seq`; a chunk remembers the last seq it has stamped.
@@ -189,10 +191,12 @@ export function gibs(x, y, z, n, color, boneColor = '#e8dcc0', force = 1, sets =
 }
 
 // ----------------------------------------------------------------- decals
-export function addDecal(x, y, color, size = 1, kind = 'splat', alpha = 0.9) {
-  if (kind === 'splat' && G.settings.gore === 0) return;
+export function addDecal(x, y, color, size = 1, kind = 'splat', alpha = 0.9, opts = {}) {
+  if ((kind === 'splat' || opts.gore === true) && G.settings.gore === 0) return;
   const max = G.touch ? 500 : 1100;
-  const d = { x, y, color, size, kind, alpha, rot: rand(TAU), idx: randi(0, 7), grow: kind === 'pool' ? 0 : 1, life: kind === 'scorch' || kind === 'frost' ? 14 : 9999, t: 0 };
+  const gore = opts.gore === true;
+  const d = { x, y, color, size, kind, alpha, gore, rot: rand(TAU), idx: randi(0, 7), grow: kind === 'pool' ? 0 : 1, life: gore ? GORE_DECAL_LIFETIME : kind === 'scorch' || kind === 'frost' ? 14 : 9999, t: 0 };
+  if (gore) { addGoreDecal(goreDecals, d); return; }
   if (kind === 'splat') { bake(d); return; }
   if (decals.length >= max) decals.shift();
   decals.push(d);
@@ -772,7 +776,7 @@ export function addLight(x, y, radius, intensity = 1, z = 20, color = null, prio
 }
 
 export function clearVfx() {
-  particles.length = 0; spriteGibs = 0; evict = 0; dead = 0; decals.length = 0; bakedDecals.length = 0; effects.length = 0; texts.length = 0; lights.length = 0;
+  particles.length = 0; spriteGibs = 0; evict = 0; dead = 0; decals.length = 0; goreDecals.length = 0; bakedDecals.length = 0; effects.length = 0; texts.length = 0; lights.length = 0;
 }
 
 // --------------------------------------------------------------- update
@@ -808,7 +812,7 @@ export function updateVfx(dt, world) {
     p.vz -= p.g * dt; p.z += p.vz * dt; p.rot += p.vr * dt;
     if (p.type === 'blood') {
       if (p.z <= 0) {
-        if (world && world.map.isFloor(p.x, p.y) && Math.random() < 0.55) addDecal(p.x, p.y, p.color, rand(0.12, 0.3) * p.size / 2);
+        if (world && world.map.isFloor(p.x, p.y) && Math.random() < 0.55) addDecal(p.x, p.y, p.color, rand(0.12, 0.3) * p.size / 2, 'splat', 0.9, { gore: true });
         kill(p); // gone from the next update's compaction (a splice here was O(n) per landing drop)
       }
     } else if (p.type === 'gib') {
@@ -817,7 +821,7 @@ export function updateVfx(dt, world) {
         p.z = 0;
         if (p.vz < -40 && p.bounces < 2) {
           p.vz *= -0.35; p.bounces++; p.vx *= 0.6; p.vy *= 0.6; p.vr *= 0.5;
-          if (p.blood) addDecal(p.x, p.y, p.blood, rand(0.25, 0.5));
+          if (p.blood) addDecal(p.x, p.y, p.blood, rand(0.25, 0.5), 'splat', 0.9, { gore: true });
         } else { p.vz = 0; p.vx *= 0.8; p.vy *= 0.8; p.vr = 0; }
       } else if (p.blood && Math.random() < dt * 14) {
         spawn({ type: 'blood', x: p.x, y: p.y, z: p.z, vz: 0, g: 260, life: 1, size: 1.4, color: p.blood });
@@ -830,10 +834,11 @@ export function updateVfx(dt, world) {
     if (d.grow < 1) d.grow = Math.min(1, d.grow + dt * 1.2);
     if (d.life < 9999) d.life -= dt;
     if (d.life <= 0) continue;
-    if (d.kind === 'pool' && d.grow >= 1) { bake(d); continue; } // a grown pool is finished blood
+    if (d.kind === 'pool' && d.grow >= 1 && !d.gore) { bake(d); continue; } // a grown non-gore pool is finished blood
     decals[decalWrite++] = d;
   }
   decals.length = decalWrite;
+  updateGoreDecals(goreDecals, dt);
   // Preserve the prior newest-first update order while compacting. Effects
   // spawned during update are retained for next frame without array splices.
   const effectEnd = effects.length;
@@ -888,7 +893,7 @@ export function stampDecals(g, after, x0, y0, x1, y1) {
 }
 
 /** Live decals, plus baked ones over floor that isn't in a stamped chunk yet (`stamped(d)`: render.js). */
-export function drawDecals(ctx, vr, stamped = null) {
+export function drawDecals(ctx, vr, stamped = null, goreVr = vr) {
   const B = ctx.getTransform(), ba = B.a, bb = B.b, bc = B.c, bd = B.d, be = B.e, bf = B.f;
   for (const d of bakedDecals) {
     const px = isoX(d.x, d.y), py = isoY(d.x, d.y);
@@ -913,6 +918,18 @@ export function drawDecals(ctx, vr, stamped = null) {
       ctx.beginPath(); ctx.ellipse(px, py, s, s * 0.5, 0, 0, TAU); ctx.fill();
     }
   }
+  let goreWrite = 0;
+  for (let i = 0; i < goreDecals.length; i++) {
+    const d = goreDecals[i], px = isoX(d.x, d.y), py = isoY(d.x, d.y), s = d.size * HW * 1.6;
+    if (goreDecalOutsideView(d, px, py, goreVr, s)) continue;
+    if (!groundHidden(d.x, d.y)) {
+      const k = d.kind === 'pool' ? 0.3 + 0.7 * d.grow : 1;
+      ctx.globalAlpha = goreDecalAlpha(d);
+      drawSplat(ctx, d, s * k, ba, bb, bc, bd, be, bf);
+    }
+    goreDecals[goreWrite++] = d;
+  }
+  goreDecals.length = goreWrite;
   ctx.globalAlpha = 1;
 }
 

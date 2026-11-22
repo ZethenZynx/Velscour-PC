@@ -594,7 +594,7 @@ export function kill(tgt, src, info = {}) {
       gibs(tgt.x, tgt.y, 16, Math.round((overkill ? 14 : 6) * (big ? 1.8 : 1)), gore.gib || shade3(blood), gore.bones ? '#e8dcc0' : '#d8ccb0', overkill ? 1.4 : 1, gibSets(tgt),
         { blood: gore.bones ? null : blood, scale: big ? 1.3 : 1 });   // a skeleton's bones come out clean
     }
-    if (gore.blood !== '#ffcc40') addDecal(tgt.x, tgt.y, blood, (big ? 1.1 : 0.7) * rand(0.8, 1.2), 'pool', 0.92);
+    if (gore.blood !== '#ffcc40') addDecal(tgt.x, tgt.y, blood, (big ? 1.1 : 0.7) * rand(0.8, 1.2), 'pool', 0.92, { gore: true });
   }
   sfx(gore.bones ? 'bones' : overkill ? 'gore' : 'squish', 0.8);
   if ((!overkill || tgt.enemyPackId) && tgt.sprite && world && world.corpses) world.corpses.push({ x: tgt.x, y: tgt.y, sprite: tgt.sprite, pal: tgt.pal, art: tgt.art, swap: tgt.swap, artH: tgt.artH, px: tgt.px, scale: tgt.scale, flip: tgt.flip, t: 0, maxHp: tgt.maxHp, arch: tgt.arch, level: tgt.level, fly: tgt.fly, enemyPackId: tgt.enemyPackId || null });

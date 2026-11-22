@@ -115,12 +115,12 @@ export function bloodCut(t, ang, power = 1, color = null) {
   const sa = screenAngle(ang) + rand(-0.5, 0.5);
   addEffect(new CutLine(t.x, t.y, sa, { len: 44 + 18 * power, color: BLOOD, width: 4 + power, dur: 0.28, z: 24 + rand(-6, 8) }));
   bloodSpray(t.x, t.y, 24, ang, Math.round((5 + 4 * power) * touch()), col, 1 + power * 0.35);
-  if (chance(0.25 + 0.15 * power)) addDecal(t.x + rand(-0.3, 0.3), t.y + rand(-0.3, 0.3), col, 0.5 + 0.25 * power, chance(0.5) ? 'pool' : 'splat');
+  if (chance(0.25 + 0.15 * power)) addDecal(t.x + rand(-0.3, 0.3), t.y + rand(-0.3, 0.3), col, 0.5 + 0.25 * power, chance(0.5) ? 'pool' : 'splat', 0.9, { gore: true });
 }
 /** Blood thrown outward from a point (a finisher's burst). */
 export function bloodBurst(x, y, n, color, force = 1.6) {
   for (let i = 0; i < n; i++) bloodSpray(x, y, 20 + rand(0, 16), (i / n) * TAU + rand(-0.3, 0.3), Math.round(4 * touch()), color, force);
-  addDecal(x, y, color, 1.1, 'pool');
+  addDecal(x, y, color, 1.1, 'pool', 0.9, { gore: true });
 }
 /** Dust and chips where steel breaks the ground. */
 export function dirtPop(x, y, color = '#5a4a40') {

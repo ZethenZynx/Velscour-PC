@@ -619,7 +619,7 @@ function corpseFx(p, c, sk, dmg, el, fx, area, o) {
   const base = rand(dmg[0], dmg[1]) + c.maxHp * 0.25;
   bloodSpray(c.x, c.y, 10, rand(TAU), 40, w.biome ? w.biome.blood : '#8a0b08', 1.6);
   gibs(c.x, c.y, 8, 12, '#7a1010', '#e8dcc0', 1.5);
-  addDecal(c.x, c.y, w.biome ? w.biome.blood : '#8a0b08', 1.1, 'pool');
+  addDecal(c.x, c.y, w.biome ? w.biome.blood : '#8a0b08', 1.1, 'pool', 0.9, { gore: true });
   switch (fx) {
     case 'bone':
       for (let i = 0; i < 8; i++) w.addHazard(new Projectile({ world: w, src: p, x: c.x, y: c.y, ang: (i / 8) * TAU, speed: 9, range: 6, fx: 'bone', el: 'phys', dmg: [base * 0.5, base * 0.6], pierce: 2 }));

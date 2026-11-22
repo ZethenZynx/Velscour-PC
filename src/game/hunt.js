@@ -141,7 +141,7 @@ export function createHuntRun(world, gen, biome, depth, onWin) {
   function paintClues(leg) {
     for (const cl of run.clues) {
       if (cl.leg !== leg) continue;
-      for (let i = 0; i < (land.blood[cl.kind] || 0); i++) addDecal(cl.x + (Math.random() - 0.5) * 2, cl.y + (Math.random() - 0.5) * 2, blood, 0.35 + Math.random() * 0.55, 'splat', 0.88);
+      for (let i = 0; i < (land.blood[cl.kind] || 0); i++) addDecal(cl.x + (Math.random() - 0.5) * 2, cl.y + (Math.random() - 0.5) * 2, blood, 0.35 + Math.random() * 0.55, 'splat', 0.88, { gore: true });
     }
   }
   // the first frame (after setWorld cleared the decals, and game.js set the Wilds' weather and ambience)
@@ -230,8 +230,10 @@ export function createHuntRun(world, gen, biome, depth, onWin) {
     if (run.storm?.on && Math.random() < 0.5) return; // the snow covers half of it
     const i = Math.min(line.length - 2, Math.floor(d)), f = d - i, a = line[i], b = line[i + 1];
     const x = a[0] + (b[0] - a[0]) * f + (Math.random() - 0.5) * 0.9, y = a[1] + (b[1] - a[1]) * f + (Math.random() - 0.5) * 0.9;
-    if (twist === 'burrow') addDecal(x, y, Math.random() < 0.35 ? blood : SAND, 0.3 + Math.random() * 0.4, 'splat', 0.8); // the seam it leaves, and some blood
-    else addDecal(x, y, blood, 0.25 + Math.random() * 0.35, 'splat', 0.85);
+    if (twist === 'burrow') {
+      const bloodSeam = Math.random() < 0.35;
+      addDecal(x, y, bloodSeam ? blood : SAND, 0.3 + Math.random() * 0.4, 'splat', 0.8, { gore: bloodSeam }); // the seam it leaves, and some blood
+    } else addDecal(x, y, blood, 0.25 + Math.random() * 0.35, 'splat', 0.85, { gore: true });
   }
   function park(g) {
     m.entering = null; m.x = g[0]; m.y = g[1]; m.home = [g[0], g[1]]; m.z = 0;

@@ -694,7 +694,7 @@ export function executeUltimate(ult, x, y, w, p) {
         explosionFx(x, y, 3.7, 'fire', 'explosion', { sound: false });
         addEffect(new Ring(x, y, 0.2, ult.r + 0.9, 0.7, '#ff6020', 9));
         addEffect(new Ring(x, y, 0.2, ult.r * 0.75, 0.48, '#ffa030', 6, { fill: true }));
-        addDecal(x, y, '#501004', ult.r * 0.9, 'splat', 1.2);
+        addDecal(x, y, '#501004', ult.r * 0.9, 'splat', 1.2, { gore: true });
         burst(x, y, 36, 'fire', 58, 9);
         gibs(x, y, 14, 20, '#501408', '#802010', 2.4);
         smoke(x, y, 16, '#200804', 20, 30);
