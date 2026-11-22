@@ -1,4 +1,6 @@
 // Global game state singleton. Modules import G and read fields at runtime.
+import { GORE_PRESET_VERSION, normalizeGorePreset } from './gfx/goresettings.mjs';
+
 export const G = {
   canvas: null,
   ctx: null,
@@ -21,7 +23,10 @@ export const G = {
     sfx: 0.6,
     music: 0.35,
     amb: 0.5,
-    gore: 2, // 0 off, 1 normal, 2 extreme
+    gore: 3, // Bloody; settings default to the moderate gore preset
+    gorePresetVersion: GORE_PRESET_VERSION,
+    goreCustomEnabled: false,
+    goreCustomLimit: 150,
     dmgNumbers: true,
     shake: true,
     reduceFlashing: false, // reduce full-screen flashes, flashbangs, and rapid hit strobing
@@ -65,6 +70,15 @@ export function loadSettings() {
   try {
     const s = JSON.parse(localStorage.getItem(SETTINGS_KEY) || '{}');
     Object.assign(G.settings, s);
+    if (s.gorePresetVersion !== GORE_PRESET_VERSION) {
+      if (Object.prototype.hasOwnProperty.call(s, 'gore')) {
+        const old = Number(s.gore);
+        // Previous settings used 0=Off, 1=Bloody, 2=Extreme.
+        G.settings.gore = old === 0 ? 0 : old === 1 ? 3 : old === 2 ? 5 : normalizeGorePreset(old);
+      }
+      G.settings.gorePresetVersion = GORE_PRESET_VERSION;
+    }
+    G.settings.gore = normalizeGorePreset(G.settings.gore);
     for (const key of ['lockSkillBar', 'mobileSkillBar', 'mobileHudV2', 'firstPerson']) delete G.settings[key];
   } catch (e) { /* ignore */ }
 }

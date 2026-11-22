@@ -9,6 +9,7 @@ import { floatText, damageText, bloodSpray, gibs, addDecal, addEffect, Bolt, Rin
 import { Meter } from './dpsmeter.js';
 import { explosionFx, hitSpark } from '../gfx/shapes.js';
 import { GORE } from '../data/enemies.js';
+import { goreMultiplier } from '../gfx/goresettings.mjs';
 import { dropLoot } from './loot.js';
 import { augHit } from './augments.js';
 import { classHitFx } from '../gfx/classfx.js';
@@ -587,7 +588,7 @@ export function kill(tgt, src, info = {}) {
   const blood = bloodOf(tgt);
   const big = tgt.r > 0.45 || tgt.rank === 'boss';
   const overkill = info.overkill > 0.5 || info.aoe && info.overkill > 0.25 || (info.crit && info.overkill > 0.3);
-  const goreMul = G.settings.gore === 2 ? 1.4 : 1;
+  const goreMul = goreMultiplier('death', G.settings);
   if (G.settings.gore > 0) {
     bloodSpray(tgt.x, tgt.y, 26, src ? angleTo(src.x, src.y, tgt.x, tgt.y) : rand(TAU), Math.round((big ? 40 : 22) * goreMul), blood, big ? 1.6 : 1.2);
     if (overkill || big || chance(0.35)) {

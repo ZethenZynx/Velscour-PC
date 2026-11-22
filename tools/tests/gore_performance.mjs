@@ -1,12 +1,23 @@
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
-import { addGoreDecal, goreDecalAlpha, goreDecalOutsideView, GORE_DECAL_FADE_START, GORE_DECAL_LIFETIME, MAX_GORE_DECALS, updateGoreDecals } from '../../src/gfx/goredecals.mjs';
+import { addGoreDecal, goreDecalAlpha, goreDecalOutsideView, GORE_DECAL_FADE_START, GORE_DECAL_LIFETIME, GORE_PRESETS, goreLimit, goreMultiplier, trimGoreDecals, updateGoreDecals } from '../../src/gfx/goresettings.mjs';
+
+assert.deepEqual(GORE_PRESETS.map((preset) => preset.name), ['Off', 'Minimal', 'Light', 'Bloody', 'Very Bloody', 'Extreme', 'Carnage', 'Massacre', 'Annihilation', 'Unlimited']);
+assert.deepEqual(GORE_PRESETS.map((preset) => Number.isFinite(preset.limit) ? preset.limit : 'unlimited'), [0, 25, 75, 150, 250, 400, 700, 1200, 2500, 'unlimited']);
+assert.equal(goreMultiplier('spray', 3), 1, 'Bloody retains the previous normal spray output');
+assert.equal(goreMultiplier('spray', 5), 1.6, 'Extreme retains the previous 1.6x spray output');
+assert.equal(goreMultiplier('gibs', 5), 1.5, 'Extreme retains the previous 1.5x gib output');
+assert.equal(goreLimit({ gore: 5 }), 400, 'Extreme has its own larger splatter limit');
+assert.equal(goreLimit({ gore: 8, goreCustomEnabled: true, goreCustomLimit: 321 }), 321, 'custom limits override the selected preset cap');
+assert.equal(goreLimit({ gore: 0, goreCustomEnabled: true, goreCustomLimit: 321 }), 0, 'Off remains off even if a custom limit is enabled');
 
 const pool = [];
-for (let i = 0; i < MAX_GORE_DECALS; i++) addGoreDecal(pool, { id: i, life: 10, grow: 1, alpha: 1 });
-addGoreDecal(pool, { id: MAX_GORE_DECALS, life: 10, grow: 1, alpha: 1 });
-assert.equal(pool.length, 150, 'gore collection stays within the cap');
-assert.equal(pool[0].id, 1, 'the oldest gore is removed first at capacity');
+for (let i = 0; i < 5; i++) addGoreDecal(pool, { id: i, life: 10, grow: 1, alpha: 1 }, 3);
+assert.deepEqual(pool.map((d) => d.id), [2, 3, 4], 'oldest entries are removed first at the selected cap');
+assert.equal(trimGoreDecals(pool, 2), 1, 'lowering a limit immediately removes the excess oldest decal');
+assert.deepEqual(pool.map((d) => d.id), [3, 4]);
+assert.equal(trimGoreDecals(pool, Infinity), 0, 'Unlimited retains the complete active collection');
+assert.equal(addGoreDecal(pool, { id: 5 }, 0), false, 'Off does not accumulate cosmetic gore');
 
 const fade = { alpha: 0.8, life: GORE_DECAL_LIFETIME - GORE_DECAL_FADE_START };
 assert.equal(goreDecalAlpha(fade), 0.8, 'gore remains fully opaque through eight seconds');
@@ -27,11 +38,16 @@ assert.equal(expiring[0].grow, 0.12, 'only growing blood pools need a size updat
 const vfx = await readFile(new URL('../../src/gfx/vfx.js', import.meta.url), 'utf8');
 const render = await readFile(new URL('../../src/game/render.js', import.meta.url), 'utf8');
 const combat = await readFile(new URL('../../src/game/combat.js', import.meta.url), 'utf8');
-assert.match(vfx, /if \(gore\) \{ addGoreDecal\(goreDecals, d\); return; \}/, 'gore bypasses permanently baked floor chunks');
+const screens = await readFile(new URL('../../src/ui/screens.js', import.meta.url), 'utf8');
+assert.match(vfx, /addGoreDecal\(goreDecals, d, goreLimit\(G\.settings\)\)/, 'the active preference controls the cap and gore bypasses baked chunks');
 assert.match(vfx, /updateGoreDecals\(goreDecals, dt\)/, 'gore ages in its dedicated collection');
+assert.match(vfx, /export function applyGoreSettings\(\) \{ trimGoreDecals\(goreDecals, goreLimit\(G\.settings\)\); \}/, 'lowering the selected cap trims old gore immediately');
 assert.match(vfx, /goreDecalOutsideView\(d, px, py, goreVr, s\)/, 'off-screen gore is removed during rendering');
 assert.match(render, /camera\.viewRect\(0\)/, 'gore culling uses the actual viewport boundary');
 assert.match(combat, /'pool', 0\.92, \{ gore: true \}/, 'cosmetic enemy-death pools use temporary gore cleanup');
+assert.match(screens, /data-gore-preset/, 'the settings UI exposes the ten presets');
+assert.match(screens, /data-gore-limit/, 'the settings UI exposes a custom numeric limit');
+assert.match(screens, /Performance warning:/, 'high and unlimited limits display a performance warning');
 
 function timing(fn, rounds = 15) {
   const samples = [];
@@ -41,9 +57,10 @@ function timing(fn, rounds = 15) {
   return { p50: +samples[Math.floor(rounds * 0.5)].toFixed(3), p95: +samples[Math.floor(rounds * 0.95)].toFixed(3) };
 }
 const oldWorstCase = Array.from({ length: 8000 }, (_, i) => ({ x: i % 1000, y: i % 500, size: 1 }));
-const cappedGore = oldWorstCase.slice(0, MAX_GORE_DECALS);
+const bloodyLimit = GORE_PRESETS[3].limit;
+const cappedGore = oldWorstCase.slice(0, bloodyLimit);
 const scan = (list) => { let visible = 0; for (const d of list) if (d.x >= 250 && d.x <= 750 && d.y >= 100 && d.y <= 400) visible += d.size; return visible; };
 const scanBatch = (list) => { for (let i = 0; i < 300; i++) scan(list); };
 const benchmark = { previous8000CandidateScan: timing(() => scanBatch(oldWorstCase)), capped150CandidateScan: timing(() => scanBatch(cappedGore)) };
 console.log(JSON.stringify({ syntheticCandidateScanMsPer300Passes: benchmark }, null, 2));
-console.log(`Gore lifetime, fading, culling, oldest-first cap (${MAX_GORE_DECALS}), and render integration checks passed. Candidate timing is a Node microbenchmark, not a full-game frame measurement.`);
+console.log(`Gore preset limits, custom caps, lifetime, fading, culling, and render integration checks passed. Bloody limit: ${bloodyLimit}. Candidate timing is a Node microbenchmark, not a full-game frame measurement.`);

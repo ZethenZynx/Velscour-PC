@@ -7,7 +7,7 @@ import { makeCanvas, rand, TAU, shade, randi, pick, fmt, shuffle, clamp, colourS
 import { groundHidden } from './terrain.js';
 import { bonesReady, boneDeck, boneLook, drawBoneGib } from './bonegibs.js';
 import { damageNumberAboveBarZ } from '../game/damage-number-layout.mjs';
-import { addGoreDecal, goreDecalAlpha, goreDecalOutsideView, GORE_DECAL_LIFETIME, updateGoreDecals } from './goredecals.mjs';
+import { addGoreDecal, goreDecalAlpha, goreDecalOutsideView, GORE_DECAL_LIFETIME, goreLimit, goreMultiplier, trimGoreDecals, updateGoreDecals } from './goresettings.mjs';
 
 export const ELEM = {
   phys: { name: 'Physical', core: '#ffffff', glow: '#e0d8c8', dark: '#7a7060', sfx: 'phys' },
@@ -141,8 +141,8 @@ export function smoke(x, y, z, color = '#2a2420', n = 4, size = 8) {
 
 /** Blood spray: angle = direction of travel in tile space. */
 export function bloodSpray(x, y, z, angle, n, color, force = 1) {
-  if (G.settings.gore === 0) { burst(x, y, z, 'phys', Math.ceil(n / 3), 2); return; }
-  n = Math.round(n * (G.settings.gore === 2 ? 1.6 : 1));
+  if (Number(G.settings.gore) === 0) { burst(x, y, z, 'phys', Math.ceil(n / 3), 2); return; }
+  n = Math.round(n * goreMultiplier('spray', G.settings));
   for (let i = 0; i < n; i++) {
     const a = angle + rand(-0.9, 0.9), s = rand(0.8, 4.5) * force;
     spawn({
@@ -159,8 +159,8 @@ export function bloodSpray(x, y, z, angle, n, color, force = 1) {
  *  bone sheet has loaded. */
 let spriteGibs = 0;
 export function gibs(x, y, z, n, color, boneColor = '#e8dcc0', force = 1, sets = null, o = {}) {
-  if (G.settings.gore === 0) return;
-  n = Math.round(n * (G.settings.gore === 2 ? 1.5 : 1));
+  if (Number(G.settings.gore) === 0) return;
+  n = Math.round(n * goreMultiplier('gibs', G.settings));
   const M = sets && A.gibImg && A.gibMeta;
   const deck = bonesReady() ? boneDeck(n, o.loose) : null, coat = o.blood === undefined ? color : o.blood;
   for (let i = 0; i < n; i++) {
@@ -192,11 +192,11 @@ export function gibs(x, y, z, n, color, boneColor = '#e8dcc0', force = 1, sets =
 
 // ----------------------------------------------------------------- decals
 export function addDecal(x, y, color, size = 1, kind = 'splat', alpha = 0.9, opts = {}) {
-  if ((kind === 'splat' || opts.gore === true) && G.settings.gore === 0) return;
+  if ((kind === 'splat' || opts.gore === true) && Number(G.settings.gore) === 0) return;
   const max = G.touch ? 500 : 1100;
   const gore = opts.gore === true;
   const d = { x, y, color, size, kind, alpha, gore, rot: rand(TAU), idx: randi(0, 7), grow: kind === 'pool' ? 0 : 1, life: gore ? GORE_DECAL_LIFETIME : kind === 'scorch' || kind === 'frost' ? 14 : 9999, t: 0 };
-  if (gore) { addGoreDecal(goreDecals, d); return; }
+  if (gore) { addGoreDecal(goreDecals, d, goreLimit(G.settings)); return; }
   if (kind === 'splat') { bake(d); return; }
   if (decals.length >= max) decals.shift();
   decals.push(d);
@@ -778,6 +778,9 @@ export function addLight(x, y, radius, intensity = 1, z = 20, color = null, prio
 export function clearVfx() {
   particles.length = 0; spriteGibs = 0; evict = 0; dead = 0; decals.length = 0; goreDecals.length = 0; bakedDecals.length = 0; effects.length = 0; texts.length = 0; lights.length = 0;
 }
+
+/** Apply visual preference changes to already-visible cosmetic gore immediately. */
+export function applyGoreSettings() { trimGoreDecals(goreDecals, goreLimit(G.settings)); }
 
 // --------------------------------------------------------------- update
 export function updateVfx(dt, world) {

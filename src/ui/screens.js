@@ -23,6 +23,8 @@ import { changesAfterBundledBuild, showUpdateDialog, checkForGameUpdates } from 
 import { initTitleForkUpdater } from '../game/forkreleaseupdater.js';
 import { MOUSE_CURSOR_DEFAULTS, refreshMouseCursor } from './mousecursor.js';
 import { CharacterPortrait } from './characterportrait.js';
+import { GORE_PERFORMANCE_WARNING_LIMIT, GORE_PRESET_VERSION, GORE_PRESETS, MAX_CUSTOM_GORE_LIMIT, normalizeGorePreset, goreLimit } from '../gfx/goresettings.mjs';
+import { applyGoreSettings } from '../gfx/vfx.js';
 
 let current = null;
 let currentCleanup = null;
@@ -562,7 +564,9 @@ export function settingsDialog() {
       <label>Camera zoom</label><input type="range" min="0.7" max="1.6" step="0.05" value="${st.zoom}" data-k="zoom">
       <label title="Changes the terrain and walls on the TAB map only; important markers stay clear">TAB Map Transparency</label><div class="map-opacity-control"><input type="range" min="0" max="100" step="1" value="${st.tabMapTransparency ?? 45}" data-k="tabMapTransparency"><output data-map-opacity>${st.tabMapTransparency ?? 45}%</output><button type="button" class="btn small" data-reset-map-opacity>Reset</button></div>
       <label title="30 draws half the frames: smoother than a frame rate that keeps dipping, and a phone stays cooler (a hot phone slows itself down after a long session)">Frame rate cap</label><select data-k="fpsCap"><option value="0">None</option><option value="30">30 fps (cooler phone)</option></select>
-      <label>Gore</label><select data-k="gore"><option value="0">Off</option><option value="1">Bloody</option><option value="2">Extreme</option></select>
+      <label title="Cosmetic splatter and gib intensity. This does not change blood damage, healing, or hazards.">Gore level</label><select data-gore-preset>${GORE_PRESETS.map((preset, i) => `<option value="${i}">${preset.name} — ${Number.isFinite(preset.limit) ? `${preset.limit.toLocaleString()} splatters` : '∞ splatters'}</option>`).join('')}</select>
+      <label title="Use a custom maximum number of cosmetic splatters instead of the selected preset limit">Custom splatter limit</label><div class="gore-custom-control"><label><input type="checkbox" data-gore-custom ${st.goreCustomEnabled ? 'checked' : ''}> Custom</label><input type="number" min="1" max="${MAX_CUSTOM_GORE_LIMIT}" step="1" value="${Math.max(1, Math.min(MAX_CUSTOM_GORE_LIMIT, Number(st.goreCustomLimit) || 150))}" data-gore-limit aria-label="Custom maximum splatter count"></div>
+      <div class="gore-performance-warning" data-gore-warning role="status" aria-live="polite"></div>
       <label>Screen shake</label><input type="checkbox" data-k="shake" ${st.shake ? 'checked' : ''}>
       <label title="Reduce full-screen flashes, flashbangs, and rapid hit strobing">Reduce flashing effects</label><input type="checkbox" data-k="reduceFlashing" ${st.reduceFlashing ? 'checked' : ''}>
       <label title="The hero, monsters and pets keep a coloured outline over spells, walls and darkness (hidden only behind another creature)">See-through outlines</label><input type="checkbox" data-k="outlines" ${st.outlines !== false ? 'checked' : ''}>
@@ -777,8 +781,38 @@ export function settingsDialog() {
     refreshKeybindButtons();
     refreshMacroButtons();
   };
-  d.box.querySelector('[data-k=gore]').value = String(st.gore);
   d.box.querySelector('[data-k=fpsCap]').value = String(st.fpsCap || 0);
+  const gorePresetControl = d.box.querySelector('[data-gore-preset]');
+  const goreCustomControl = d.box.querySelector('[data-gore-custom]');
+  const goreLimitControl = d.box.querySelector('[data-gore-limit]');
+  const goreWarning = d.box.querySelector('[data-gore-warning]');
+  const refreshGoreControls = () => {
+    st.gore = normalizeGorePreset(st.gore);
+    gorePresetControl.value = String(st.gore);
+    goreCustomControl.checked = !!st.goreCustomEnabled;
+    goreLimitControl.disabled = !st.goreCustomEnabled || st.gore === 0;
+    const limit = goreLimit(st);
+    goreWarning.textContent = st.gore === GORE_PRESETS.length - 1 && !st.goreCustomEnabled
+      ? 'Performance warning: Unlimited has no splatter cap and may cause severe frame drops on slower systems.'
+      : limit > GORE_PERFORMANCE_WARNING_LIMIT
+        ? `Performance warning: ${limit.toLocaleString()} simultaneous splatters may cause frame drops.` : '';
+  };
+  const saveGoreControls = () => {
+    st.gorePresetVersion = GORE_PRESET_VERSION;
+    refreshGoreControls(); applyGoreSettings(); saveSettings();
+  };
+  refreshGoreControls();
+  gorePresetControl.oninput = gorePresetControl.onchange = () => { st.gore = Number(gorePresetControl.value); saveGoreControls(); };
+  goreCustomControl.oninput = goreCustomControl.onchange = () => { st.goreCustomEnabled = goreCustomControl.checked; saveGoreControls(); };
+  goreLimitControl.oninput = () => {
+    if (goreLimitControl.value === '') return;
+    st.goreCustomLimit = Math.max(1, Math.min(MAX_CUSTOM_GORE_LIMIT, Math.floor(Number(goreLimitControl.value) || 1)));
+    saveGoreControls();
+  };
+  goreLimitControl.onchange = () => {
+    st.goreCustomLimit = Math.max(1, Math.min(MAX_CUSTOM_GORE_LIMIT, Math.floor(Number(goreLimitControl.value) || 150)));
+    goreLimitControl.value = String(st.goreCustomLimit); saveGoreControls();
+  };
   d.box.querySelector('[data-backups]').onclick = () => { sfx('ui'); backupsDialog(); };
   d.box.querySelector('[data-reset-map-opacity]').onclick = () => {
     st.tabMapTransparency = 45;
