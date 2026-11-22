@@ -26,7 +26,7 @@ import { generateDungeon, isRaidDepth } from '../world/dungeon.js';
 import { findReachableInteractableSpot } from '../core/interactable-hit.js';
 import { FINAL_DEPTH, MAX_DEPTH, depthLevel, blockStart, isSuperbossDepth, superbossForDepth, getActForDepth, isActFinaleDepth, ACTS } from '../data/depth.js';
 import { addDefiance, clearDefiance, defianceText, tickBlessing } from './defiance.js';
-import { setupHappenings, announceDungeonAffixes, happeningsTick, eventImpsTick, spawnGuaranteedImp, townHappening, townTick, recordDepth, markNemesis } from './happenings.js';
+import { setupHappenings, announceDungeonAffixes, happeningsTick, eventImpsTick, spawnGuaranteedImp, townHappening, townTick, beginVictoryTownCelebration, recordDepth, markNemesis } from './happenings.js';
 import { setupWorldObjects, worldObjectsTick, clearWorldObjectBuffs } from './worldobjects.js';
 import { setupDungeonEvent, dungeonEventTick } from './dungeonevents.js';
 import { GREED_LEVELS, greedOf, greedWorld, setGreed, rollGreedAffixes, getGreedAffixPreview } from './greed.js';
@@ -501,6 +501,7 @@ export const game = {
     Vendor.restock();
     const p = G.player;
     townHappening(world); // a festival, a blessing, a gift (game/happenings.js)
+    beginVictoryTownCelebration(world, c);
     p.hp = p.maxHp; p.mana = p.maxMana;
     this.autosave();
   },
@@ -603,6 +604,7 @@ export const game = {
     setAmbience('sea_of_sand');
     Vendor.restock();
     const p = G.player;
+    beginVictoryTownCelebration(world, c);
     p.hp = p.maxHp;
     p.mana = p.maxMana;
     this.autosave();
@@ -1576,6 +1578,9 @@ export const game = {
         return;
       }
       const first = !c.cleared[depth];
+      if (m.isVelscour && !world.practice && !c.townVictoryFireworksDone && !c.townVictoryFireworksPending) {
+        c.townVictoryFireworksPending = true;
+      }
       c.cleared[depth] = true;
       c.deepest = Math.max(c.deepest || 0, depth);
       this.brokeThrough(depth);

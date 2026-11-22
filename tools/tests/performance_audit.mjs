@@ -7,6 +7,7 @@ import { performance } from 'node:perf_hooks';
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '../..');
 const suite = [
+  ['Town update budget and late-dungeon lifecycle cleanup', ['tools/tests/town_performance_lifecycle.mjs']],
   ['Shared VFX cleanup and ambient lighting', ['tools/tests/performance_hotpaths.mjs']],
   ['Storm Tether combat and target-search stress', ['tools/tests/storm_tether_fourth_attempt.mjs']],
   ['Lightning renderer and geometry', ['tools/tests/lightning_performance.mjs']],

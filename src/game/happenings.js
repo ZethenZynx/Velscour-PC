@@ -849,12 +849,11 @@ function starfall(world) {
 }
 
 // ------------------------------------------------------------------------------------------------ milestones
-/** First clear of a depth: every tenth is a new record worth fireworks (and a little gift). */
+/** First clear of a depth: every tenth is a new record worth a little gift. */
 export function recordDepth(world, depth) {
   if (depth % 10 !== 0) return;
   const p = G.player;
   UI.centerMsg(`DEPTH ${depth} CONQUERED`, 'A new record descent', 3);
-  for (let i = 0; i < 6; i++) setTimeout(() => { if (G.world === world && p) firework(p.x + rand(-4, 4), p.y + rand(-4, 4)); }, i * 260);
   world.addLoot(new GroundItem(p.x, p.y, 'item', { item: rollGroundItem(depthLevel(depth) + 2, { rarity: rarityAt(depthLevel(depth) + 2, chance(0.12) ? 4 : 3), mf: p.st.magicFind }) }));
 }
 
@@ -870,7 +869,7 @@ function firework(x, y) {
 
 // ------------------------------------------------------------------------------------------------ town
 export const TOWN_EVENTS = {
-  festival: { name: 'Harvest Festival', color: '#ffb040', text: 'The Hollow celebrates! Free potions for the hero.', fn: (c) => { c.potions.hp += 3; c.potions.mp += 3; c.potions.rejuv += 1; return 'Received 3 healing, 3 mana and 1 rejuvenation potion.'; }, fireworks: true },
+  festival: { name: 'Harvest Festival', color: '#ffb040', text: 'The Hollow celebrates! Free potions for the hero.', fn: (c) => { c.potions.hp += 3; c.potions.mp += 3; c.potions.rejuv += 1; return 'Received 3 healing, 3 mana and 1 rejuvenation potion.'; } },
   priestess: { name: "The Priestess's Blessing", color: '#ffe080', text: 'Blessed for the next 3 depths: +15% damage, +15% life.', bless: { dmg: 15, life: 15 } },
   oracle: { name: 'The Fortune Teller', color: '#d080ff', text: 'Your stars align for 3 depths: +60% magic and gold find.', bless: { mf: 60, gf: 60 } },
   scholar: { name: 'A Travelling Scholar', color: '#60e0ff', text: 'Lessons in monster lore: +30% experience for 3 depths.', bless: { xp: 30 } },
@@ -916,13 +915,30 @@ export function townHappening(world) {
     sfx('gate', 0.5);
     UI.refresh();
   }, 1800);
-  if (E.fireworks || chance(0.3)) world.happen = { t: 0, fireT: 2, fireLeft: 24 };
 }
 
-/** Town tick: fireworks over the square during a festival. */
+/** Start the one-time saved celebration after a character's first real Velscour victory. */
+export function beginVictoryTownCelebration(world, character) {
+  if (!world || world.kind !== 'town' || !character?.townVictoryFireworksPending || character.townVictoryFireworksDone) return false;
+  // Claim and save the celebration before any visual/audio work so returning, refreshing, or re-entering
+  // town cannot replay it. The normal town-entry autosave immediately following this call persists the flag.
+  character.townVictoryFireworksPending = false;
+  character.townVictoryFireworksDone = true;
+  world.victoryFireworks = { elapsed: 0, duration: 6.2, next: 0, shots: 0 };
+  UI.centerMsg('VELSCOUR HAS FALLEN', 'The townsfolk celebrate your victory!', 4);
+  UI.log('<b style="color:#ffd060">The Hollow erupts in celebration.</b> The townsfolk honor your victory over Velscour.', '#ffd060');
+  return true;
+}
+
+/** Town tick: only the saved, one-time Velscour victory earns fireworks. */
 export function townTick(world, dt) {
-  const H = world.happen, p = world.player;
-  if (!H || !H.fireLeft || !p) return;
-  H.fireLeft -= dt;
-  if ((H.fireT -= dt) <= 0) { H.fireT = rand(0.5, 1.4); firework(p.x + rand(-7, 7), p.y + rand(-7, 7)); }
+  const celebration = world?.victoryFireworks, p = world?.player;
+  if (!celebration || !p) return;
+  celebration.elapsed += dt;
+  if (celebration.elapsed >= celebration.duration) { world.victoryFireworks = null; return; }
+  if (celebration.elapsed >= celebration.next && celebration.shots < 6) {
+    firework(p.x + rand(-7, 7), p.y + rand(-7, 7));
+    celebration.shots++;
+    celebration.next = celebration.elapsed + rand(0.72, 1.02);
+  }
 }

@@ -233,9 +233,10 @@ export class World {
     this.pathBudget = 10; // A* searches monsters and minions may run this frame (Monster.navTo), and for at most
     this.pathEnd = performance.now() + 3; // 3 ms of it: a phone a few times slower runs fewer, the rest wait a frame
     const p = this.player;
-    // flow field toward the player for monster path finding
+    // Flow fields are only consumed by dungeon enemies. Town residents use their own
+    // bounded A* routes, so rebuilding a full player-centered field there is wasted work.
     this.flowTimer -= dt;
-    if (p && !p.dead && this.flowTimer <= 0) {
+    if (this.kind !== 'town' && p && !p.dead && this.flowTimer <= 0) {
       this.map.buildFlow(p.x, p.y, this.map.flowRange || 64); // (the Castle's: far enough to lead round by its stairs)
       this.flowTimer = 0.25;
     }

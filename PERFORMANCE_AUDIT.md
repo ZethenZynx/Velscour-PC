@@ -6,9 +6,11 @@ Run the repeatable diagnostic suite with:
 node tools/tests/performance_audit.mjs
 ```
 
-The suite uses production helpers and deterministic synthetic workloads. It covers VFX cleanup and ambient-light candidates, Storm Tether combat, lightning geometry, Pirate Seas wave accounting, ground-loot distance checks, Iron Express light selection and scenery, gore cleanup, traps, Eternal Breach generation, Sea of Sand generation, and terrain/minimap rules. It never opens a browser.
+The suite uses production helpers and deterministic synthetic workloads. It covers town update work and lifecycle cleanup, VFX cleanup and ambient-light candidates, Storm Tether combat, lightning geometry, Pirate Seas wave accounting, ground-loot distance checks, Iron Express light selection and scenery, gore cleanup, traps, Eternal Breach generation, Sea of Sand generation, and terrain/minimap rules. It never opens a browser.
 
 ## Findings
+
+Town updates no longer schedule the dungeon-only player flow field. In a four-second synthetic update, the town built zero fields while the dungeon control retained 15 scheduled builds; the production 96×96 flat-map helper cost a median 0.112 ms and p95 0.159 ms when a new tile origin forced a rebuild (worst sample 0.757 ms). This removes irrelevant route-field work from both act towns without changing dungeon pathing. A late-run lifecycle fixture also injected 250 dead creatures, 80 expired hazards, 80 expired loot entries, expired corpses/remains, and expired VFX; all were removed from their live arrays in the next update. This is a bounded synthetic check, not a full-session browser memory profile.
 
 The audit confirmed several existing optimizations: VFX arrays compact in one pass, expired effects are released, recurring Pirate Seas checks avoid copying/filtering, Iron Express chooses nearest lights without sorting a temporary array, Storm Tether has localized enemy searches and no lightning visual workload, large map features are cached, and A* work is limited by the world's per-frame path budget. It also found one additional safe hot path: every ground item calculated a square root each update for magnet and pickup radius checks. Those comparisons now use squared distances, preserving the same strict radius boundaries and behavior.
 

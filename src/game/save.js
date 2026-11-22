@@ -196,7 +196,7 @@ export function newCharData(classId, name) {
     jewelBox: Array(JEWEL_BOX_COLS * JEWEL_BOX_BASE_ROWS).fill(null), // dedicated town vault for gems & runes
     tabs: Array(TAB_SLOTS).fill(null), tabAt: 0, // the Bard's Tabs: locked Music Sheets he plays (data/tabs.js)
     gold: 150, potions: { hp: 6, mp: 4, rejuv: 1, fury: 1 },
-    depth: 1, deepest: 0, nextBiome: 'catacombs', biomeBag: [], cleared: {}, dungeonAffixes: [], nextAffixes: [], greedLevel: 0, greed: 0, greedSystemV1: true, greedAffixPreview: null, greedAffixPreviews: {}, greedPortalDestinations: {}, overworldMisses: 0, overworldLastVisit: null, seaOfSandRuns: {}, darkForestRuns: {}, wandererBounties: {}, npcEncounterDepths: {}, treasureImpDepths: [], treasureImpGuaranteedAreas: [], treasureImpRandomAreas: [], treasureImpGuaranteedPending: {}, treasureImpRandomCheckedAreas: [], treasureImpRandomPending: {}, treasureImpTutorialShown: false, breach: { best: 0, cleared: {} },
+    depth: 1, deepest: 0, nextBiome: 'catacombs', biomeBag: [], cleared: {}, dungeonAffixes: [], nextAffixes: [], greedLevel: 0, greed: 0, greedSystemV1: true, greedAffixPreview: null, greedAffixPreviews: {}, greedPortalDestinations: {}, overworldMisses: 0, overworldLastVisit: null, seaOfSandRuns: {}, darkForestRuns: {}, wandererBounties: {}, npcEncounterDepths: {}, treasureImpDepths: [], treasureImpGuaranteedAreas: [], treasureImpRandomAreas: [], treasureImpGuaranteedPending: {}, treasureImpRandomCheckedAreas: [], treasureImpRandomPending: {}, treasureImpTutorialShown: false, townVictoryFireworksPending: false, townVictoryFireworksDone: false, breach: { best: 0, cleared: {} },
     heresy: { on: [] }, rifts: { open: 1, best: 0, cleared: {}, bestTime: {}, runs: 0, fails: 0, deaths: 0 }, keys: 0, unbound: { wins: 0, best: 0 }, unboundExploration: { depth: 1, deepest: 1, cleared: {} }, // the Endgame (docs/ENDGAME.md)
     kills: 0, deaths: 0, created: Date.now(), lastPlayed: Date.now(), tips: {}, critterTutorialSeen: false, critterArrowEncounters: 0, wdmg: 1,
   };
@@ -340,6 +340,8 @@ function rescaleFlatDmg(it, a) {
 
 /** Fill in fields added by later versions. */
 export function migrate(c) {
+  c.townVictoryFireworksDone = !!c.townVictoryFireworksDone;
+  c.townVictoryFireworksPending = !!c.townVictoryFireworksPending && !c.townVictoryFireworksDone;
   const savedDepth = Number(c.depth);
   c.depth = Number.isFinite(savedDepth) ? Math.max(1, Math.min(MAX_DEPTH, Math.floor(savedDepth))) : 1;
   const savedDeepest = Number(c.deepest);
