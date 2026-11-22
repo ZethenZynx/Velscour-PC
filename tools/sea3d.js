@@ -109,6 +109,7 @@ function seaMaterial(U) {
     sh.fragmentShader = sh.fragmentShader.replace('#include <common>', `#include <common>
       uniform sampler2D wTex; uniform float wTime, wAmp, wChop; uniform vec3 wSkyLo, wSkyHi, wDeep, wShallow; uniform vec2 wCurrent;
       uniform vec4 wShipA[${MAX_SHIPS}], wShipB[${MAX_SHIPS}]; uniform vec4 wRings[${MAX_RINGS}];
+      uniform int wShipCount, wRingCount;
       varying vec3 vWPos;
       ${swellGLSL()}
       vec4 wFlowed(vec2 p, vec2 flow, float scale, float rate, float seed) {
@@ -130,6 +131,7 @@ function seaMaterial(U) {
       // ships: foam round the hull, a bow wave, a churned wake and the two arms of a Kelvin wake astern
       float wShipF = 0.0;
       for (int i = 0; i < ${MAX_SHIPS}; i++) {
+        if (i >= wShipCount) break;
         vec4 A = wShipA[i], B = wShipB[i];
         if (B.x <= 0.0) continue;
         vec2 d = wp - A.xy, fw = vec2(A.z, A.w), rt = vec2(-A.w, A.z);
@@ -153,6 +155,7 @@ function seaMaterial(U) {
       // splash rings: (x, z, age, strength)
       float wRingF = 0.0;
       for (int i = 0; i < ${MAX_RINGS}; i++) {
+        if (i >= wRingCount) break;
         vec4 Q = wRings[i];
         if (Q.w <= 0.0) continue;
         vec2 rv = wp - Q.xy; float rd = length(rv), front = Q.z * 3.2 * sqrt(Q.w), k = exp(-Q.z * 1.4);
@@ -372,6 +375,7 @@ export function buildSea(scene, { size = 420, seg = 220, level = 0, weather = 'd
     wShipA: { value: Array.from({ length: MAX_SHIPS }, () => new THREE.Vector4()) },
     wShipB: { value: Array.from({ length: MAX_SHIPS }, () => new THREE.Vector4()) },
     wRings: { value: Array.from({ length: MAX_RINGS }, () => new THREE.Vector4()) },
+    wShipCount: { value: 0 }, wRingCount: { value: 0 },
   };
   const geo = new THREE.PlaneGeometry(size, size, seg, seg).rotateX(-Math.PI / 2);
   const mesh = new THREE.Mesh(geo, seaMaterial(U));
@@ -392,7 +396,11 @@ export function buildSea(scene, { size = 420, seg = 220, level = 0, weather = 'd
     heightAt: (x, z, t = time) => level + seaHeight(x, z, t, U.wAmp.value),
     ride: (x, z, h, hl, hb, t = time) => { const r = ride(x, z, h, hl, hb, t, U.wAmp.value); r.y += level; return r; },
     /** Ships for the foam: heading in radians (0 = bow toward -Z), hl/hb half length/beam at the waterline, speed 0..1.5. */
-    setShips(list) { ships = list.slice(0, MAX_SHIPS); },
+    setShips(list) {
+      ships.length = 0;
+      for (let i = 0, n = Math.min(list.length, MAX_SHIPS); i < n; i++) ships.push(list[i]);
+      U.wShipCount.value = ships.length;
+    },
     splash(x, z, k = 1) {
       rings.push({ x, z, age: 0, k }); if (rings.length > MAX_RINGS) rings.shift();
       const y = sea.heightAt(x, z), n = Math.round(40 * k);
@@ -419,15 +427,15 @@ export function buildSea(scene, { size = 420, seg = 220, level = 0, weather = 'd
         L.sunCol.value.copy(sun.color).multiplyScalar(sun.intensity / Math.PI);
       }
       if (hemi) L.amb.value.copy(hemi.color).lerp(hemi.groundColor, 0.3).multiplyScalar(hemi.intensity / Math.PI);
-      for (let i = 0; i < MAX_SHIPS; i++) {
+      for (let i = 0; i < ships.length; i++) {
         const s = ships[i];
-        if (!s) { U.wShipB.value[i].set(0, 0, 0, 0); continue; }
         U.wShipA.value[i].set(s.x, s.z, -Math.sin(s.heading), -Math.cos(s.heading));
         U.wShipB.value[i].set(s.hl, s.hb, s.speed ?? 0.5, s.wake ?? s.hl * 3);
       }
       for (const r of rings) r.age += dt;
       while (rings.length && rings[0].age > 4) rings.shift();
-      for (let i = 0; i < MAX_RINGS; i++) { const r = rings[i]; U.wRings.value[i].set(r ? r.x : 0, r ? r.z : 0, r ? r.age : 0, r ? r.k : 0); }
+      U.wRingCount.value = rings.length;
+      for (let i = 0; i < rings.length; i++) { const r = rings[i]; U.wRings.value[i].set(r.x, r.z, r.age, r.k); }
       // foam flecks shed along the wakes, spray off moving bows
       for (const s of ships) {
         const sp = s.speed ?? 0.5; if (sp < 0.05) continue;

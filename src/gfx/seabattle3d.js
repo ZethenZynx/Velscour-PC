@@ -12,6 +12,7 @@ import { enemyImage } from '../core/enemyart.js';
 import { OX, OY, WL, LV } from '../world/seaship.js';
 
 const SC = HW * Math.SQRT2, VZ = LV * 4;   // world px a tile across the screen; a unit of height (LV levels of 4 px: 39.19)
+const byLightDistance = (a, b) => a.d - b.d;
 let T = null, SEA = null, DAWN = null, SMALL = null, KIT = null, M = null;
 let R = null;          // the renderer and its camera
 let S = null;          // the scene being played
@@ -136,6 +137,7 @@ export function buildSea3D(o = {}) {
   // she is under way: the water streams astern past her (the swell keeps its own heading)
   sea.U.wCurrent.value.set(0.12, 1.25);
   S = { scene, sea, weather, hemi, amb, sun, t: 0, boats: [], rigSets: [], planks: [], glows: [], lightSrc: [], pool: [], ropes: [], fx: [], tex: new Map(), sky: [new T.Color(s0), new T.Color(s1)],
+    foam: [], foamRecords: [], nearLights: [],
     crewTint: new T.Color(CREW_TINT[weather] || 0xffffff), fogK: weather === 'fog' ? 1 : 0 };
   if (S.fogK) scene.fog = new T.Fog(0xc6d0d4, 50, 200);
   else if (weather === 'storm' || weather === 'blood') scene.fog = new T.Fog(s1, 50, 200);   // a haze on the far water
@@ -433,14 +435,24 @@ export const seaLevelAt = (x, y) => (S ? S.sea.heightAt(x, y) * LV : WL * LV);
 export function tickSea3D(dt) {
   if (!S) return;
   S.t += dt;
-  const t = S.t, foam = [{ x: OX, z: OY + 0.4, heading: 0, hl: 19.7, hb: 6.1, speed: 0.55, wake: 70, spray: false }];
+  const t = S.t, foam = S.foam, records = S.foamRecords;
+  let foamN = 1, dawnFoam = records[0] || (records[0] = {});
+  dawnFoam.x = OX; dawnFoam.z = OY + 0.4; dawnFoam.heading = 0; dawnFoam.hl = 19.7; dawnFoam.hb = 6.1;
+  dawnFoam.speed = 0.55; dawnFoam.wake = 70; dawnFoam.spray = false;
+  foam[0] = dawnFoam;
   S.dawn.ship.anim(t, dt);
-  for (const b of S.boats.slice()) {
+  for (let i = 0; i < S.boats.length; i++) {
+    const b = S.boats[i];
     tickShip(b, dt, t);
-    if (b.alpha > 0.2 && b.air == null && b.info.hl) foam.push({ x: b.x, z: b.y, heading: b.heading, hl: b.info.hl, hb: b.info.hb, speed: b.speed, wake: b.info.hl * 3.2 });
+    if (b.alpha > 0.2 && b.air == null && b.info.hl) {
+      const f = records[foamN] || (records[foamN] = {});
+      f.x = b.x; f.z = b.y; f.heading = b.heading; f.hl = b.info.hl; f.hb = b.info.hb; f.speed = b.speed; f.wake = b.info.hl * 3.2;
+      foam[foamN++] = f;
+    }
   }
+  foam.length = foamN;
   S.sea.setShips(foam);
-  S.glows.forEach((g, i) => { g.material.opacity = (g.userData.big ? 0.6 : 0.38) + 0.1 * Math.sin(t * 9 + i * 1.7); });
+  for (let i = 0; i < S.glows.length; i++) { const g = S.glows[i]; g.material.opacity = (g.userData.big ? 0.6 : 0.38) + 0.1 * Math.sin(t * 9 + i * 1.7); }
   const rd = renderer();
   S.sea.update(dt, t, { camera: rd.cam, height: rd.h || 720, sun: S.sun, hemi: S.hemi });
 }
@@ -470,17 +482,17 @@ export function drawSea3D(ctx, focus) {
     S.scene.fog.near = d0 + (S.fogK ? 3 : 30); S.scene.fog.far = d0 + (S.fogK ? 42 : 140);
   }
   // the lamps nearest the hero get the point lights; the rest glow on their own
-  const near = [];
+  const near = S.nearLights; let nearN = 0;
   for (const l of S.lightSrc) {
     l.o.localToWorld(l.w.copy(l.p));
     const dd = (l.w.x - fx) ** 2 + (l.w.y - fy) ** 2 * 0.5 + (l.w.z - fz) ** 2;
-    if (dd < 600) near.push([dd, l]);
+    if (dd < 600) { const e = near[nearN] || (near[nearN] = { d: 0, l: null }); e.d = dd; e.l = l; nearN++; }
   }
-  near.sort((a, b) => a[0] - b[0]);
+  near.length = nearN; near.sort(byLightDistance);
   for (let i = 0; i < S.pool.length; i++) {
     const L = S.pool[i], n = near[i];
     if (!n) { L.intensity = 0; continue; }
-    const l = n[1], fl = 0.88 + 0.12 * Math.sin(S.t * 9 + i * 1.7) * Math.sin(S.t * 5.3 + i);
+    const l = n.l, fl = 0.88 + 0.12 * Math.sin(S.t * 9 + i * 1.7) * Math.sin(S.t * 5.3 + i);
     L.position.copy(l.w); L.color.setHex(l.c); L.distance = l.r; L.intensity = 10 * l.i * fl;
   }
   rd.gl.setClearColor(S.sky[1], 1);

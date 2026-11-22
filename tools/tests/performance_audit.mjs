@@ -11,6 +11,7 @@ const suite = [
   ['Storm Tether combat and target-search stress', ['tools/tests/storm_tether_fourth_attempt.mjs']],
   ['Lightning renderer and geometry', ['tools/tests/lightning_performance.mjs']],
   ['Pirate Seas large-wave hot paths', ['tools/tests/seabattle_hotpaths.mjs']],
+  ['Fire Below particle and water-shader regression', ['tools/tests/fire_below_performance.mjs']],
   ['Ground-loot distance and pickup checks', ['tools/tests/loot_hotpaths.mjs']],
   ['Iron Express lights, scenery, and map generation', ['tools/tests/ghosttrain_hotpaths.mjs']],
   ['Gore cleanup and cap regression', ['tools/tests/gore_performance.mjs']],

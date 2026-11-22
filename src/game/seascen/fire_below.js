@@ -5,7 +5,7 @@
 // stands in them, hers too); two fire-bucket stations douse their half of the waist; climbing the stairs to the raised
 // decks silences the bombers. The more of her deck that burns, the more of her prize goes up (the meter costs the
 // chest). Veyl watches from her quarterdeck the whole fight and fights there at the end, throwing cinderbombs of his own.
-import { isoX, isoY, HW, HH } from '../../core/view.js';
+import { isoX, isoY, HW, HH, camera } from '../../core/view.js';
 import { hit } from '../combat.js';
 import { glowSprite, spawn, addLight, addDecal } from '../../gfx/vfx.js';
 
@@ -15,6 +15,7 @@ const BOMBER = 'ap_cinderbomb_grenadier';
 const DOUSE_R = 6;
 const TAU = Math.PI * 2;
 const rnd = (a, b) => a + Math.random() * (b - a);
+const fireFade = (c) => Math.min(1, c.age / 0.6) * Math.min(1, (c.life - c.age) / 2.5);
 
 export default {
   id: 'fire_below', number: 4, name: 'Fire Below the Black Sails', light: "Saint Ivo's Lantern", weather: 'night', weatherName: 'Night',
@@ -64,6 +65,7 @@ export default {
         if (lz2 > zf && lz2 < zq) S.waistN++;
       }
       S.fires = new Map(); S.spreadT = 1; S.burnT = 0.5; S.bombers = []; S.veylT = 6;
+      S.emberT = 0.625; S.smokeT = 2.85; S.fireFxCursor = 0; S.fireDrawEntries = [];
       S.hatches = [S.deck.tile(0, 3.4), S.deck.tile(0, -7.2)];
       // the bombers' posts: the quarterdeck's front rail (both sides of the stair head) and the forecastle's
       S.posts = [[-3.3, zq + 0.9], [3.3, zq + 0.9], [2.9, zf - 1.4]].map(([x, z]) => S.deck.tile(x, z));
@@ -71,6 +73,7 @@ export default {
     start(api) {
       const S = api.state;
       S.meter = api.meter('Her deck burns', { color: '#ff8a2a', full: 'reward', note: 'the bombers are on her raised decks' });
+      S.meterPct = -1; S.meterBombers = -1;
       postBombers(api, 2);
       // the fire buckets: one station a half of her waist, each douses the fires round it
       S.buckets = [[4.3, -5.4, 'fore'], [-4.2, 3.2, 'aft']].map(([x, z, k]) => {
@@ -133,9 +136,14 @@ export default {
       }
       for (const o of S.buckets || []) { o.cd = Math.max(0, o.cd - dt); o.label = o.cd > 0 ? 'Fire Buckets (refilling)' : 'Fire Buckets'; }
       if (S.meter) {
-        const f = S.fires.size / Math.max(1, S.waistN), live = S.bombers.filter((b) => !b.dead).length;
+        const f = S.fires.size / Math.max(1, S.waistN);
         S.meter.add(dt * f * 0.03);
-        S.meter.note = `${Math.round(f * 100)}% alight · ${live ? `${live} bomber${live > 1 ? 's' : ''} above` : 'the bombers are down'}`;
+        const pct = Math.round(f * 100); let live = 0;
+        for (const b of S.bombers) if (!b.dead) live++;
+        if (pct !== S.meterPct || live !== S.meterBombers) {
+          S.meterPct = pct; S.meterBombers = live;
+          S.meter.note = `${pct}% alight · ${live ? `${live} bomber${live > 1 ? 's' : ''} above` : 'the bombers are down'}`;
+        }
       }
     },
     onVictory(api) {   // her fires go out under the Dawnwake's hoses; the gangway stays for the walk home
@@ -208,21 +216,24 @@ function light(S, t, w) {
   return true;
 }
 /** The fires: they age and burn out (a scorch left), spread to the planks beside them, and burn whoever stands in them. */
-function tickFires(api, dt) {
+export function tickFires(api, dt) {
   const S = api.state, map = api.map, w = map.w, wave = Math.max(0, api.run.wave);
   for (const [t, c] of S.fires) {
     c.age += dt;
     if (c.age >= c.life) { S.fires.delete(t); addDecal(c.x, c.y, '#1a120e', 0.8, 'scorch', 0.7); continue; }
-    if (Math.random() < dt * 1.6) spawn({ type: 'glow', x: c.x + rnd(-0.3, 0.3), y: c.y + rnd(-0.3, 0.3), z: rnd(8, 26), vz: rnd(30, 70), life: rnd(0.5, 1.1), size: rnd(1.5, 3), size1: 0, color: Math.random() < 0.5 ? '#ffb040' : '#ff7020', add: true });
-    if (Math.random() < dt * 0.35) api.smoke(c.x, c.y, 24, '#241c1a', 1, 9);
   }
+  tickFireAtmosphere(api, dt);
   // the clock: the deck closes faster wave by wave (to a cap, so it is never all ablaze)
   if ((S.spreadT -= dt) <= 0) {
     S.spreadT = 1;
     // (only while someone up there keeps throwing: with the bombers down and the Admiral not yet at it, the fires burn out)
     const throwing = S.bombers.some((b) => !b.dead) || (api.run.phase === 'final' && api.run.capM && !api.run.capM.dead);
     const cap = throwing ? Math.floor(S.waistN * Math.min(0.42, 0.2 + 0.05 * wave)) : 0, p = 0.05 + 0.02 * wave;
-    for (const [t, c] of [...S.fires]) {
+    // Only inspect fires that existed at the start of this spread step. Iterating
+    // the live Map while adding would allow same-tick chain spreading.
+    const spreadCount = S.fires.size; let spreadSeen = 0;
+    for (const [t, c] of S.fires) {
+      if (spreadSeen++ >= spreadCount) break;
       if (S.fires.size >= cap) break;
       if (c.age < 1.5 || Math.random() > p) continue;
       light(S, [t + 1, t - 1, t + w, t - w][Math.floor(Math.random() * 4)], w);
@@ -237,7 +248,31 @@ function tickFires(api, dt) {
   }
   // the fires light her deck at night (one in five carries a light)
   let k = 0;
-  for (const c of S.fires.values()) if ((k++ % 5) === 0 && k < 70) addLight(c.x, c.y, 2.8, 0.8, 20, '#ff8030');
+  for (const c of S.fires.values()) {
+    if (k >= 70) break;
+    if ((k++ % 5) === 0) addLight(c.x, c.y, 2.8, 0.8, 20, '#ff8030');
+  }
+}
+/** Keep the deck's ember and smoke atmosphere independent of tile count. Fire tongues are drawn per tile. */
+export function tickFireAtmosphere(api, dt) {
+  const S = api.state, fires = S.fires, count = fires.size;
+  if (!count) { S.fireFxCursor = 0; return; }
+  S.emberT = (S.emberT ?? 0) - dt;
+  if (S.emberT <= 0) {
+    S.emberT = 0.625; const c = fireAt(S, 0);
+    if (c) spawn({ type: 'glow', x: c.x + rnd(-0.3, 0.3), y: c.y + rnd(-0.3, 0.3), z: rnd(8, 26), vz: rnd(30, 70), life: rnd(0.5, 1.1), size: rnd(1.5, 3), size1: 0, color: Math.random() < 0.5 ? '#ffb040' : '#ff7020', add: true });
+    S.fireFxCursor = (S.fireFxCursor + 1) % count;
+  }
+  S.smokeT = (S.smokeT ?? 0) - dt;
+  if (S.smokeT <= 0) {
+    S.smokeT = 2.85; const c = fireAt(S, Math.floor(count / 2));
+    if (c) api.smoke(c.x, c.y, 24, '#241c1a', 1, 9);
+  }
+}
+function fireAt(S, offset) {
+  const count = S.fires.size, wanted = (S.fireFxCursor + offset) % count; let i = 0;
+  for (const c of S.fires.values()) if (i++ === wanted) return c;
+  return null;
 }
 /** A fire-bucket station: every fire in its half of the waist goes out in steam. */
 function douse(api, o) {
@@ -252,21 +287,29 @@ function douse(api, o) {
   if (S.meter) S.meter.add(-0.08);
 }
 /** Her burning planks: a char under each fire, an orange glow, flame tongues licking up (under the sprites). */
-function drawFires(api, ctx) {
+export function drawFires(api, ctx) {
   const S = api.state; if (!S.fires.size) return;
-  const t = api.world.time, fade = (c) => Math.min(1, c.age / 0.6) * Math.min(1, (c.life - c.age) / 2.5);
+  const t = api.world.time;
+  const view = camera.viewRect(58), entries = S.fireDrawEntries || (S.fireDrawEntries = []); let count = 0;
+  for (const c of S.fires.values()) {
+    const px = isoX(c.x, c.y), py = isoY(c.x, c.y);
+    if (px + 50 < view.x0 || px - 50 > view.x1 || py + 30 < view.y0 || py - 30 > view.y1) continue;
+    const e = entries[count] || (entries[count] = { ph: 0, px: 0, py: 0, fade: 0 });
+    e.ph = c.ph; e.px = px; e.py = py; e.fade = fireFade(c); count++;
+  }
   ctx.save();
   ctx.fillStyle = '#140a06';
-  for (const c of S.fires.values()) {
-    ctx.globalAlpha = 0.55 * fade(c); ctx.beginPath(); ctx.ellipse(isoX(c.x, c.y), isoY(c.x, c.y), HW * 0.66, HH * 0.66, 0, 0, TAU); ctx.fill();
+  for (let i = 0; i < count; i++) {
+    const e = entries[i];
+    ctx.globalAlpha = 0.55 * e.fade; ctx.beginPath(); ctx.ellipse(e.px, e.py, HW * 0.66, HH * 0.66, 0, 0, TAU); ctx.fill();
   }
   ctx.globalCompositeOperation = 'lighter';
   const gl = glowSprite('#ff6a18');
-  for (const c of S.fires.values()) {
-    const k = fade(c), px = isoX(c.x, c.y), py = isoY(c.x, c.y), f = 0.75 + 0.25 * Math.sin(t * 11 + c.ph) * Math.sin(t * 7.3 + c.ph * 2);
+  for (let i = 0; i < count; i++) {
+    const e = entries[i], ph = e.ph, k = e.fade, px = e.px, py = e.py, f = 0.75 + 0.25 * Math.sin(t * 11 + ph) * Math.sin(t * 7.3 + ph * 2);
     ctx.globalAlpha = 0.6 * k * f; ctx.drawImage(gl, px - 48, py - 28, 96, 52);
-    for (let j = 0; j < 3; j++) {
-      const ox = (j - 1) * 10 + Math.sin(c.ph * 3 + j) * 3, hgt = (12 + 14 * Math.abs(Math.sin(t * (5 + j) + c.ph + j))) * k, sw = Math.sin(t * 6 + c.ph + j * 2) * 4;
+    for (let j = 0; j < 2; j++) {
+      const ox = (j - 1) * 10 + Math.sin(ph * 3 + j) * 3, hgt = (12 + 14 * Math.abs(Math.sin(t * (5 + j) + ph + j))) * k, sw = Math.sin(t * 6 + ph + j * 2) * 4;
       ctx.globalAlpha = 0.8 * k; ctx.fillStyle = '#ff7a18';
       ctx.beginPath(); ctx.moveTo(px + ox - 6, py + 2); ctx.quadraticCurveTo(px + ox - 4, py - hgt * 0.5, px + ox + sw, py - hgt); ctx.quadraticCurveTo(px + ox + 4, py - hgt * 0.5, px + ox + 6, py + 2); ctx.fill();
       ctx.fillStyle = '#ffe07a';
