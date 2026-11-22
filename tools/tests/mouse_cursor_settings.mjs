@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { readFile } from 'node:fs/promises';
 import {
   MOUSE_CURSOR_DEFAULTS,
   MouseCursor,
@@ -17,6 +18,21 @@ import {
   normalizeMouseCursorSettings,
 } from '../../src/ui/mousecursor.js';
 import { G } from '../../src/state.js';
+
+const [cursorCss, wikiCss, mainHtml, cursorSource, gameSource] = await Promise.all([
+  readFile(new URL('../../css/cursor.css', import.meta.url), 'utf8'),
+  readFile(new URL('../../css/wiki.css', import.meta.url), 'utf8'),
+  readFile(new URL('../../index.html', import.meta.url), 'utf8'),
+  readFile(new URL('../../src/ui/mousecursor.js', import.meta.url), 'utf8'),
+  readFile(new URL('../../src/game/game.js', import.meta.url), 'utf8'),
+]);
+assert.match(cursorCss, /cursor:\s*url\([\s\S]*?\)\s*2 2, default !important/, 'one centralized rule forces the original arrow and hotspot');
+assert.match(cursorCss, /body\.custom-mouse-pointer[\s\S]*?cursor:\s*none !important/, 'native arrow hiding remains limited to the custom-arrow overlay handoff');
+assert.match(mainHtml, /css\/cursor\.css/, 'game loads the centralized cursor policy');
+assert.match(wikiCss, /@import url\("cursor\.css"\)/, 'standalone Wiki pages load the same cursor policy');
+assert.match(cursorSource, /const CURSOR_ARROW_PATH = 'M2 2 L20 9 L12 12 L9 20 Z'/, 'the custom cursor keeps the original arrow artwork');
+assert.doesNotMatch(cursorSource, /pointer:\s*'M2 22/, 'the custom pointing-hand path is removed');
+assert.doesNotMatch(gameSource, /G\.canvas\.style\.cursor\s*=/, 'the game loop no longer changes cursor shape on hover');
 
 const defaults = normalizeMouseCursorSettings();
 assert.deepEqual(defaults, MOUSE_CURSOR_DEFAULTS, 'new cursor preferences start at their defaults');

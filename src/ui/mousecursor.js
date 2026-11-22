@@ -91,7 +91,6 @@ const HISTORY_TRAILS = new Set(['solid', 'dotted', 'ghost']);
 const trailFadeDuration = (settings) => settings.trailLength / settings.fadeSpeed;
 export const MAX_CURSOR_TRAIL_POINTS = 80;
 export const MAX_CURSOR_TRAIL_PARTICLES = 128;
-const INTERACTIVE_POINTER = '[role="button"],button,a,summary,.slot,.pc-card,.hbtn,.gr-btn,.tab,.panel-close,.save-row,.book-item,.settings-tab-btn,.gc-tab,.gc-pin,.gc-minimize,#xp-track,#xp-text,#minimap,#target-box:not(.no-pic)';
 
 export function cursorNeedsPointerOverlay(settings) {
   const s = normalizeMouseCursorSettings(settings);
@@ -118,57 +117,14 @@ export function cursorTrailGap(size = 100, directionX = 1, directionY = 0, width
   const effectRadius = Math.max(Math.max(1, Number(width) || 1) * 0.5, Math.max(0, Number(particleSize) || 0) * 1.2) + Math.min(5, Math.max(0, Number(glow) || 0) / 22) + 2;
   return Math.max(4 + scale * 5.5, behindExtent + effectRadius);
 }
-const CURSOR_PATHS = {
-  default: 'M2 2 L20 9 L12 12 L9 20 Z',
-  pointer: 'M2 22 L2 10 Q2 7 5 8 L6 13 L6 3 Q6 0 9 2 L10 12 L11 5 Q12 2 14 5 L14 12 L16 8 Q19 7 19 11 L18 20 L14 26 L7 26 Z',
-  crosshair: 'M2 12 H9 M15 12 H22 M12 2 V9 M12 15 V22 M12 9 A3 3 0 1 0 12.01 9',
-  text: 'M9 2 H15 M12 2 V22 M9 22 H15',
-  move: 'M12 1 L16 6 H14 V10 H18 V8 L23 12 L18 16 V14 H14 V18 H16 L12 23 L8 18 H10 V14 H6 V16 L1 12 L6 8 V10 H10 V6 H8 Z',
-};
-
-function contextualCursor(target) {
-  if (!target) return 'default';
-  if (target.matches?.('input:not([type="button"]):not([type="submit"]):not([type="checkbox"]):not([type="radio"]):not([type="range"]):not([type="color"]),textarea,[contenteditable="true"]')) return 'text';
-  if (target.closest?.('.aiming') || target.style?.cursor === 'crosshair') return 'crosshair';
-  if (target.closest?.('.resizing') || target.style?.cursor?.includes('resize')) return 'resize';
-  if (target.closest?.('.moving, .panel-head') || target.style?.cursor?.includes('grab')) return 'grab';
-  if (target.closest?.(INTERACTIVE_POINTER) || target.style?.cursor === 'pointer' || G.canvas?.style.cursor === 'pointer') return 'pointer';
-  const inline = target.style?.cursor || '';
-  if (inline.includes('move')) return 'move';
-  if (inline.includes('resize')) return 'resize';
-  return 'default';
-}
-
-function collectCursorRules() {
-  const rules = [];
-  const visit = (list) => {
-    for (const rule of list || []) {
-      if (rule.selectorText && rule.style?.cursor) rules.push({ selector: rule.selectorText, cursor: rule.style.cursor });
-      else if (rule.cssRules) {
-        if (!rule.conditionText || !window.matchMedia || window.matchMedia(rule.conditionText).matches) visit(rule.cssRules);
-      }
-    }
-  };
-  for (const sheet of document.styleSheets) {
-    try { visit(sheet.cssRules); } catch { /* Ignore cross-origin stylesheets; semantic cursor mapping remains available. */ }
-  }
-  return rules;
-}
-
-function authoredCursor(target, rules) {
-  let result = '';
-  for (const rule of rules) {
-    try { if (target.matches(rule.selector)) result = rule.cursor; } catch { /* Ignore selectors unsupported by this browser. */ }
-  }
-  return result;
-}
+const CURSOR_ARROW_PATH = 'M2 2 L20 9 L12 12 L9 20 Z';
 
 export const MouseCursor = {
-  canvas: null, ctx: null, active: false, pointer: { x: -100, y: -100, inside: false, kind: 'default' },
+  canvas: null, ctx: null, active: false, pointer: { x: -100, y: -100, inside: false },
   cursorEl: null, cursorSvg: null, cursorPath: null, highlightEl: null, pointerOverlay: false, effectsActive: false,
   previous: null, history: [], historyPool: [], particles: [], particlePool: [], shakeSamples: [], shakeSamplePool: [], locatorHeld: false, shakeUntil: 0,
   trailDistance: 0,
-  frame: 0, lastFrame: 0, rainbowPhase: 0, cursorRules: [], lastCursorTarget: null, lastCursorKind: 'default', initialized: false,
+  frame: 0, lastFrame: 0, rainbowPhase: 0, initialized: false,
 
   init() {
     if (this.initialized || typeof document === 'undefined') return;
@@ -202,7 +158,6 @@ export const MouseCursor = {
       });
       this.observer.observe(document.body, { childList: true });
     }
-    this.cursorRules = collectCursorRules();
     this.resize();
     window.addEventListener('resize', () => this.resize(), { passive: true });
     window.addEventListener('pointermove', (event) => this.move(event), { passive: true, capture: true });
@@ -307,16 +262,6 @@ export const MouseCursor = {
       if (this.locatorHeld) this.ensureAnimation();
       return;
     }
-    const target = event.target;
-    const cursorTargetChanged = this.pointerOverlay && target !== this.lastCursorTarget;
-    if (cursorTargetChanged) {
-      const semantic = contextualCursor(target);
-      const declared = semantic === 'default' ? authoredCursor(target, this.cursorRules) : '';
-      this.lastCursorTarget = target;
-      this.lastCursorKind = semantic === 'default' ? (['pointer', 'crosshair', 'text', 'move', 'grab', 'grabbing', 'resize', 'ew-resize', 'ns-resize'].includes(declared) ? (declared.includes('resize') ? 'resize' : declared === 'grabbing' ? 'grab' : declared) : 'default') : semantic;
-    }
-    this.pointer.kind = this.lastCursorKind;
-    if (cursorTargetChanged) this.updateCursorStyle();
     this.pointer.x = x; this.pointer.y = y; this.pointer.inside = true;
     if (this.pointerOverlay) this.setPointerVisible(true);
     const dx = this.previous ? x - this.previous.x : 0, dy = this.previous ? y - this.previous.y : 0;
@@ -363,13 +308,13 @@ export const MouseCursor = {
   updateCursorStyle() {
     if (!this.cursorPath) return;
     try {
-      const s = this.settings(), kind = this.pointer.kind || 'default';
-      this.cursorPath.setAttribute('d', CURSOR_PATHS[kind] || CURSOR_PATHS.default);
-      this.cursorPath.setAttribute('fill', kind === 'crosshair' || kind === 'text' ? 'none' : resolvedCursorColor(s, performance.now() / 1000));
-      this.cursorPath.setAttribute('stroke', s.outline ? s.outlineColor : (kind === 'crosshair' || kind === 'text' ? resolvedCursorColor(s, performance.now() / 1000) : '#200'));
-      this.cursorPath.setAttribute('stroke-width', s.outline ? String(s.outlineThickness) : (kind === 'crosshair' || kind === 'text' ? '2' : '1.5'));
+      const s = this.settings();
+      this.cursorPath.setAttribute('d', CURSOR_ARROW_PATH);
+      this.cursorPath.setAttribute('fill', resolvedCursorColor(s, performance.now() / 1000));
+      this.cursorPath.setAttribute('stroke', s.outline ? s.outlineColor : '#200');
+      this.cursorPath.setAttribute('stroke-width', s.outline ? String(s.outlineThickness) : '1.5');
       this.cursorPath.setAttribute('stroke-linejoin', 'round');
-      this.cursorPath.setAttribute('transform', kind === 'pointer' ? 'translate(-6 -2)' : '');
+      this.cursorPath.setAttribute('transform', '');
       this.cursorPath.style.animation = s.color === 'rainbow' ? 'cursor-hue-cycle 2.5s linear infinite' : 'none';
       this.cursorSvg.style.width = `${24 * s.size / 100}px`;
       this.cursorSvg.style.height = `${24 * s.size / 100}px`;

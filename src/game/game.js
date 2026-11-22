@@ -2759,8 +2759,6 @@ export const game = {
     if (G.hurtFlash > 0) G.hurtFlash = Math.max(0, G.hurtFlash - dt * 2.5);
     if (G.flash > 0) G.flash = Math.max(0, G.flash - dt * 3.5);
     HUD.update(dt);
-    // hovering things -> cursor
-    G.canvas.style.cursor = G.hover ? 'pointer' : '';
     saveT += dt;
     if (saveT > 30) this.autosave();
   },

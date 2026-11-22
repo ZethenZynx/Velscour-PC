@@ -1,0 +1,11 @@
+/* One site-wide cursor policy: keep the original Velscour arrow shape/hotspot,
+   while giving the custom arrow overlay its normal native-cursor handoff. */
+:root body:not(.custom-mouse-pointer):is(*, #cursor-policy-specificity),
+:root body:not(.custom-mouse-pointer) *:is(*, #cursor-policy-specificity) {
+  cursor: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='24' height='24'><path d='M2 2 L20 9 L12 12 L9 20 Z' fill='%23d8b26a' stroke='%23200' stroke-width='1.5'/></svg>") 2 2, default !important;
+}
+
+:root body.custom-mouse-pointer:is(*, #cursor-policy-specificity),
+:root body.custom-mouse-pointer *:is(*, #cursor-policy-specificity) {
+  cursor: none !important;
+}

@@ -3,6 +3,8 @@
    Shared Gothic Theme, Navigation Shell, Omni-Search, Cards, Tables & Modals
    ========================================================================== */
 
+@import url("cursor.css");
+
 :root {
   --bg: #090706;
   --bg-darker: #050403;
