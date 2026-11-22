@@ -1,11 +1,11 @@
-export const GORE_PRESET_VERSION = 2;
-export const MAX_CUSTOM_GORE_LIMIT = 20000;
+export const GORE_PRESET_VERSION = 3;
+export const MAX_CUSTOM_GORE_LIMIT = 1000000;
 export const GORE_PERFORMANCE_WARNING_LIMIT = 1000;
 export const GORE_DECAL_LIFETIME = 10;
 export const GORE_DECAL_FADE_START = 8;
 
-// Bloody preserves the prior cap and ordinary gore output. Extreme preserves the old emission multipliers;
-// higher settings increase the cosmetic effect while keeping growth bounded by the selected decal limit.
+// Bloody and Extreme retain their established limits and emission multipliers. The historical 8,000-decal
+// ceiling is assigned to Annihilation; the higher presets increase gore output while remaining bounded.
 export const GORE_PRESETS = Object.freeze([
   { name: 'Off', limit: 0, spray: 0, gibs: 0, death: 0 },
   { name: 'Minimal', limit: 25, spray: 0.25, gibs: 0.25, death: 0.25 },
@@ -15,7 +15,7 @@ export const GORE_PRESETS = Object.freeze([
   { name: 'Extreme', limit: 400, spray: 1.6, gibs: 1.5, death: 1.4 },
   { name: 'Carnage', limit: 700, spray: 2, gibs: 2, death: 1.8 },
   { name: 'Massacre', limit: 1200, spray: 2.5, gibs: 2.6, death: 2.3 },
-  { name: 'Annihilation', limit: 2500, spray: 3, gibs: 3.2, death: 2.8 },
+  { name: 'Annihilation', limit: 8000, spray: 3, gibs: 3.2, death: 2.8 },
   { name: 'Unlimited', limit: Infinity, spray: 4, gibs: 4, death: 3.5 },
 ]);
 

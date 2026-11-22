@@ -71,11 +71,13 @@ export function loadSettings() {
     const s = JSON.parse(localStorage.getItem(SETTINGS_KEY) || '{}');
     Object.assign(G.settings, s);
     if (s.gorePresetVersion !== GORE_PRESET_VERSION) {
-      if (Object.prototype.hasOwnProperty.call(s, 'gore')) {
+      if ((Number(s.gorePresetVersion) || 0) < 2 && Object.prototype.hasOwnProperty.call(s, 'gore')) {
         const old = Number(s.gore);
         // Previous settings used 0=Off, 1=Bloody, 2=Extreme.
         G.settings.gore = old === 0 ? 0 : old === 1 ? 3 : old === 2 ? 5 : normalizeGorePreset(old);
       }
+      // Version 2 introduced the custom cap with Bloody's established 150-decal limit as its default.
+      if (!Object.prototype.hasOwnProperty.call(s, 'goreCustomLimit')) G.settings.goreCustomLimit = 150;
       G.settings.gorePresetVersion = GORE_PRESET_VERSION;
     }
     G.settings.gore = normalizeGorePreset(G.settings.gore);

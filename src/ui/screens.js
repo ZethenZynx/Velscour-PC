@@ -793,7 +793,7 @@ export function settingsDialog() {
     goreLimitControl.disabled = !st.goreCustomEnabled || st.gore === 0;
     const limit = goreLimit(st);
     goreWarning.textContent = st.gore === GORE_PRESETS.length - 1 && !st.goreCustomEnabled
-      ? 'Performance warning: Unlimited has no splatter cap and may cause severe frame drops on slower systems.'
+        ? 'Performance warning: Unlimited has no splatter cap and may cause severe frame drops on slower systems.'
       : limit > GORE_PERFORMANCE_WARNING_LIMIT
         ? `Performance warning: ${limit.toLocaleString()} simultaneous splatters may cause frame drops.` : '';
   };
