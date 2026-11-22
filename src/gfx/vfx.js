@@ -824,25 +824,38 @@ export function updateVfx(dt, world) {
       }
     } else if (p.type !== 'smoke' && p.g > 0 && p.z < 0) { p.z = 0; p.vz *= -0.3; }
   }
-  for (const d of decals) {
+  let decalWrite = 0;
+  for (let i = 0, n = decals.length; i < n; i++) {
+    const d = decals[i];
     if (d.grow < 1) d.grow = Math.min(1, d.grow + dt * 1.2);
     if (d.life < 9999) d.life -= dt;
+    if (d.life <= 0) continue;
+    if (d.kind === 'pool' && d.grow >= 1) { bake(d); continue; } // a grown pool is finished blood
+    decals[decalWrite++] = d;
   }
-  for (let i = decals.length - 1; i >= 0; i--) {
-    const d = decals[i];
-    if (d.life <= 0) decals.splice(i, 1);
-    else if (d.kind === 'pool' && d.grow >= 1) { decals.splice(i, 1); bake(d); } // a grown pool is finished blood
+  decals.length = decalWrite;
+  // Preserve the prior newest-first update order while compacting. Effects
+  // spawned during update are retained for next frame without array splices.
+  const effectEnd = effects.length;
+  let effectWrite = effectEnd;
+  for (let i = effectEnd - 1; i >= 0; i--) {
+    const effect = effects[i];
+    if (effect.update(dt)) effects[--effectWrite] = effect;
   }
-  for (let i = effects.length - 1; i >= 0; i--) if (!effects[i].update(dt)) effects.splice(i, 1);
-  for (let i = texts.length - 1; i >= 0; i--) {
+  let effectCount = effectEnd - effectWrite;
+  for (let i = effectEnd; i < effects.length; i++) effects[effectCount++] = effects[i];
+  effects.length = effectCount;
+  let textWrite = 0;
+  for (let i = 0, n = texts.length; i < n; i++) {
     const t = texts[i];
     t.life -= dt; t.z += t.vz * dt;
     if (t.comic) {
       t.vz *= Math.pow(0.03, dt); t.dx += t.vx * dt;
       if (t.style === 'crit') t.vx *= Math.pow(0.003, dt); // short lateral impact bounce
     } else t.vz *= 0.94;
-    if (t.life <= 0) texts.splice(i, 1);
+    if (t.life > 0) texts[textWrite++] = t;
   }
+  texts.length = textWrite;
 }
 
 // ----------------------------------------------------------------- draw

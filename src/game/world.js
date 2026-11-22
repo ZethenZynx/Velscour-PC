@@ -22,6 +22,9 @@ export class World {
     this.corpses = [];
     this.fallen = []; // dead summons' last poses (core/petart.js)
     this.props = this.props || [];
+    this._ambientPropSource = null;
+    this._ambientPropCount = -1;
+    this._ambientPropCache = [];
     this.buildings = this.buildings || [];
     this.npcs = this.npcs || [];
     this.chests = this.chests || [];
@@ -181,6 +184,24 @@ export class World {
   }
   alliesOf(team, x, y, r) { return this.query(x, y, r, (c) => c.team === team); }
 
+  /** Static prop metadata is generated once per area. Keep only props that can
+   * emit ambient smoke/light so the per-frame ambience pass avoids scanning
+   * every decorative object. Array replacement and additions/removals rebuild
+   * the small cache automatically. */
+  ambientProps() {
+    if (this._ambientPropSource !== this.props || this._ambientPropCount !== this.props.length) {
+      const props = this.props, active = [];
+      for (let i = 0; i < props.length; i++) {
+        const prop = props[i];
+        if (prop && (prop.light || prop.smoke)) active.push(prop);
+      }
+      this._ambientPropSource = props;
+      this._ambientPropCount = props.length;
+      this._ambientPropCache = active;
+    }
+    return this._ambientPropCache;
+  }
+
   update(dt) {
     this.time += dt;
     lights.length = 0; // refilled by this update's addLight calls, drawn by the next render (paused frames keep the last set)
@@ -277,8 +298,8 @@ export class World {
       addLight(t.x, t.y, 5.5 + Math.sin(this.time * 9 + t.x) * 0.3, 0.9, fz, b.torch || '#ff9a40', true);
     }
     const lit = (x, y) => { const px = isoX(x, y), py = isoY(x, y); return px > lr.x0 && px < lr.x1 && py > lr.y0 && py < lr.y1 + 80; };
-    for (const pr of this.props) {
-      if (pr.light && lit(pr.x, pr.y)) addLight(pr.x, pr.y, pr.light + Math.sin(this.time * 7 + pr.x) * 0.15, 0.8, 20 + (pr.z || 0), pr.lightColor || '#ffb050', true);
+    for (const pr of this.ambientProps()) {
+      if (pr.light && lit(pr.x, pr.y)) addLight(pr.x, pr.y, pr.light + Math.sin(this.time * 7 + pr.x) * 0.15, 0.8, 20 + (pr.z || 0), pr.lightColor || '#ffb050');
     }
     for (const po of this.portals) {
       if (po.active && lit(po.x, po.y)) addLight(po.x, po.y, 6, 1, 20, po.color || '#ff6030', true);
@@ -296,7 +317,7 @@ export class World {
       if (chance(dt * 18)) spawn({ type: 'glow', x: t.x + rand(-0.04, 0.04), y: t.y + rand(-0.04, 0.04), z: fz + 20, vz: rand(15, 35), life: rand(0.3, 0.6), size: rand(2, 3.5), size1: 0.5, color: chance(0.5) ? (b.torch || '#ff9a40') : '#fff0a0', add: true });
     }
     // lit props and portals near the view only: smoke & glow particles
-    for (const pr of this.props) {
+    for (const pr of this.ambientProps()) {
       if (!pr.smoke) continue;
       // camp fires and chimneys (the Castle): a slow plume drifting downwind, embers off a fire
       const px = isoX(pr.x, pr.y), py = isoY(pr.x, pr.y);

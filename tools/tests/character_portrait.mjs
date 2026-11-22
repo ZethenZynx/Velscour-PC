@@ -16,8 +16,8 @@ try {
   G.settings.characterPortrait.size = 150;
   assert.deepEqual(CharacterPortrait.bounds(), { width: 285, height: 168 }, 'large size keeps both dimensions proportional');
   const module = await readFile(new URL('../../src/ui/characterportrait.js', import.meta.url), 'utf8');
-  assert.match(module, /shownEquip\(c\)/, 'portrait follows the currently shown helmet and armor');
-  assert.match(module, /heroPortrait\(c\.classId, eq\?\.body, eq\?\.head/, 'portrait reuses existing class and equipment art');
+  assert.match(module, /vanity\?\.body \|\| equipped\.body/, 'portrait follows the currently shown armor without allocating an equipment copy');
+  assert.match(module, /heroPortrait\(c\.classId, body, head/, 'portrait reuses existing class and equipment art');
   assert.match(module, /saveSettings\(\)/, 'movement and window options persist with UI settings');
   assert.match(module, /clamp\(x, 0, maxX\).*clamp\(y, 0, maxY\)/s, 'window movement clamps to visible screen bounds');
   assert.match(module, /document\.addEventListener\('pointerup', end\)/, 'portrait drag ends on pointer release');

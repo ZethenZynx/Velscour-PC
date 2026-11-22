@@ -2,15 +2,22 @@
 // preferences with the regular UI settings, never in character save data.
 import { G, saveSettings } from '../state.js';
 import { fmtInt } from '../core/util.js';
-import { shownEquip } from '../data/items.js';
 import { heroPortrait } from '../core/gearart.js';
 
 const BASE_W = 190, BASE_H = 112;
 const HEAD_CROP_H = 100;
 const FALLBACK_PORTRAITS = new Map();
+const EQUIPMENT_ART_KEYS = new WeakMap();
 const config = () => (G.settings.characterPortrait ||= { visible: true, locked: false, size: 100, position: null });
 const clamp = (v, lo, hi) => Math.max(lo, Math.min(hi, v));
-const artKey = (item) => item ? [item.base, item.look, item.rarity, item.appearance, item.setId] : null;
+function artKey(item) {
+  if (!item) return '';
+  const previous = EQUIPMENT_ART_KEYS.get(item);
+  if (previous && previous.base === item.base && previous.look === item.look && previous.rarity === item.rarity && previous.appearance === item.appearance && previous.setId === item.setId) return previous.key;
+  const key = `${item.base ?? ''}|${item.look ?? ''}|${item.rarity ?? ''}|${item.appearance ?? ''}|${item.setId ?? ''}`;
+  EQUIPMENT_ART_KEYS.set(item, { base: item.base, look: item.look, rarity: item.rarity, appearance: item.appearance, setId: item.setId, key });
+  return key;
+}
 
 /** Class resources shown in the portrait use the same values and colors as their gameplay meters. */
 export function portraitResource(character, player) {
@@ -28,8 +35,22 @@ export const CharacterPortrait = {
   artCanvas: null,
   lastArtKey: '',
   artRetryAt: 0,
-  lastVitals: '',
-  lastVitalsRoot: null,
+  lastArtClass: null,
+  lastBodyArt: null,
+  lastHeadArt: null,
+  lastHideHelm: null,
+  elements: null,
+  lastName: null,
+  lastLevel: null,
+  lastHealth: null,
+  lastHealthPct: null,
+  lastMana: null,
+  lastManaPct: null,
+  lastResourceKind: null,
+  lastResourceText: null,
+  lastResourcePct: null,
+  lastResourceLabel: null,
+  elementsRoot: null,
   resizeListener: null,
   init(host) {
     if (this.root?.isConnected) return;
@@ -41,10 +62,19 @@ export const CharacterPortrait = {
     host.appendChild(root);
     this.root = root;
     this.artCanvas = root.querySelector('[data-portrait-art]');
+    this.elements = {
+      name: root.querySelector('[data-portrait-name]'), level: root.querySelector('[data-portrait-level]'),
+      healthFill: root.querySelector('[data-portrait-health-fill]'), healthText: root.querySelector('[data-portrait-health-text]'),
+      manaFill: root.querySelector('[data-portrait-mana-fill]'), manaText: root.querySelector('[data-portrait-mana-text]'),
+      resource: root.querySelector('[data-portrait-resource]'), resourceFill: root.querySelector('[data-portrait-resource-fill]'),
+      resourceText: root.querySelector('[data-portrait-resource-text]'),
+    };
+    this.elementsRoot = root;
     this.lastArtKey = '';
+    this.lastArtClass = this.lastBodyArt = this.lastHeadArt = this.lastHideHelm = null;
     this.artRetryAt = 0;
-    this.lastVitals = '';
-    this.lastVitalsRoot = null;
+    this.lastName = this.lastLevel = this.lastHealth = this.lastHealthPct = this.lastMana = this.lastManaPct = null;
+    this.lastResourceKind = this.lastResourceText = this.lastResourcePct = this.lastResourceLabel = null;
     root.querySelector('[data-portrait-lock]').addEventListener('click', (e) => {
       e.stopPropagation(); const c = config(); c.locked = !c.locked; this.applySettings(); saveSettings();
     });
@@ -153,19 +183,35 @@ export const CharacterPortrait = {
   },
   update() {
     if (!this.root || !G.char || !G.player || config().visible === false || this.root.classList.contains('hidden')) return;
-    const c = G.char, p = G.player, eq = shownEquip(c);
-    const key = JSON.stringify([c.classId, artKey(eq?.body), artKey(eq?.head), !!c.hideHelm]);
-    if (key !== this.lastArtKey || G.time >= this.artRetryAt) {
-      this.lastArtKey = key;
+    if (!this.elements || this.elementsRoot !== this.root) {
+      const root = this.root;
+      this.elements = {
+        name: root.querySelector('[data-portrait-name]'), level: root.querySelector('[data-portrait-level]'),
+        healthFill: root.querySelector('[data-portrait-health-fill]'), healthText: root.querySelector('[data-portrait-health-text]'),
+        manaFill: root.querySelector('[data-portrait-mana-fill]'), manaText: root.querySelector('[data-portrait-mana-text]'),
+        resource: root.querySelector('[data-portrait-resource]'), resourceFill: root.querySelector('[data-portrait-resource-fill]'),
+        resourceText: root.querySelector('[data-portrait-resource-text]'),
+      };
+      this.elementsRoot = root;
+    }
+    const c = G.char, p = G.player, equipped = c.equip || {}, vanity = c.vanity;
+    const body = vanity?.body || equipped.body;
+    const head = c.hideHelm ? null : (vanity?.head || equipped.head);
+    const bodyArt = artKey(body), headArt = artKey(head), hideHelm = !!c.hideHelm;
+    if (c.classId !== this.lastArtClass || bodyArt !== this.lastBodyArt || headArt !== this.lastHeadArt || hideHelm !== this.lastHideHelm || G.time >= this.artRetryAt) {
+      this.lastArtClass = c.classId; this.lastBodyArt = bodyArt; this.lastHeadArt = headArt; this.lastHideHelm = hideHelm;
+      this.lastArtKey = `${c.classId}|${bodyArt}|${headArt}|${hideHelm ? 1 : 0}`;
       this.artRetryAt = G.time + 0.5;
-      const ctx = this.artCanvas.getContext('2d'); ctx.clearRect(0, 0, this.artCanvas.width, this.artCanvas.height); ctx.imageSmoothingEnabled = false;
-      let portrait = null;
-      try { portrait = heroPortrait(c.classId, eq?.body, eq?.head, 160, 160); } catch (_) { /* class art can still be loading */ }
-      if (portrait) { ctx.drawImage(portrait, 0, 0, 160, HEAD_CROP_H, 0, 0, 160, 100); this.artRetryAt = Infinity; }
-      else {
-        let image = FALLBACK_PORTRAITS.get(c.classId);
-        if (!image) { image = new Image(); image.src = `assets/sprites/select/${c.classId}.webp`; FALLBACK_PORTRAITS.set(c.classId, image); }
-        if (image.complete && image.naturalWidth) ctx.drawImage(image, 0, 0, image.naturalWidth, Math.min(image.naturalHeight, image.naturalWidth), 0, 0, 160, 100);
+      if (this.artCanvas) {
+        const ctx = this.artCanvas.getContext('2d'); ctx.clearRect(0, 0, this.artCanvas.width, this.artCanvas.height); ctx.imageSmoothingEnabled = false;
+        let portrait = null;
+        try { portrait = heroPortrait(c.classId, body, head, 160, 160); } catch (_) { /* class art can still be loading */ }
+        if (portrait) { ctx.drawImage(portrait, 0, 0, 160, HEAD_CROP_H, 0, 0, 160, 100); this.artRetryAt = Infinity; }
+        else {
+          let image = FALLBACK_PORTRAITS.get(c.classId);
+          if (!image) { image = new Image(); image.src = `assets/sprites/select/${c.classId}.webp`; FALLBACK_PORTRAITS.set(c.classId, image); }
+          if (image.complete && image.naturalWidth) ctx.drawImage(image, 0, 0, image.naturalWidth, Math.min(image.naturalHeight, image.naturalWidth), 0, 0, 160, 100);
+        }
       }
     }
     const name = c.name || 'Adventurer', level = `Level ${c.level || 1}`;
@@ -175,21 +221,22 @@ export const CharacterPortrait = {
     const extra = portraitResource(c, p);
     const resourceText = extra ? `${extra.label} ${fmtInt(extra.current)} / ${fmtInt(extra.max)}` : '';
     const resourcePct = extra ? `${clamp(extra.max ? extra.current / extra.max * 100 : 0, 0, 100)}%` : '0%';
-    const vitalKey = `${name}|${level}|${health}|${mana}|${healthPct}|${manaPct}|${extra?.kind || ''}|${resourceText}|${resourcePct}`;
-    if (vitalKey === this.lastVitals && this.lastVitalsRoot === this.root) return;
-    this.lastVitals = vitalKey;
-    this.lastVitalsRoot = this.root;
-    this.root.querySelector('[data-portrait-name]').textContent = name;
-    this.root.querySelector('[data-portrait-level]').textContent = level;
-    this.root.querySelector('[data-portrait-health-fill]').style.width = healthPct;
-    this.root.querySelector('[data-portrait-health-text]').textContent = health;
-    this.root.querySelector('[data-portrait-mana-fill]').style.width = manaPct;
-    this.root.querySelector('[data-portrait-mana-text]').textContent = mana;
-    const resource = this.root.querySelector('[data-portrait-resource]');
-    resource.className = `character-portrait-meter${extra ? ` ${extra.kind}` : ''}${extra ? '' : ' hidden'}`;
-    resource.setAttribute('aria-hidden', extra ? 'false' : 'true');
-    resource.setAttribute('aria-label', extra ? `${extra.label}: ${fmtInt(extra.current)} of ${fmtInt(extra.max)}` : '');
-    this.root.querySelector('[data-portrait-resource-fill]').style.width = resourcePct;
-    this.root.querySelector('[data-portrait-resource-text]').textContent = resourceText;
+    const e = this.elements;
+    if (name !== this.lastName) { e.name.textContent = name; this.lastName = name; }
+    if (level !== this.lastLevel) { e.level.textContent = level; this.lastLevel = level; }
+    if (health !== this.lastHealth) { e.healthText.textContent = health; this.lastHealth = health; }
+    if (healthPct !== this.lastHealthPct) { e.healthFill.style.width = healthPct; this.lastHealthPct = healthPct; }
+    if (mana !== this.lastMana) { e.manaText.textContent = mana; this.lastMana = mana; }
+    if (manaPct !== this.lastManaPct) { e.manaFill.style.width = manaPct; this.lastManaPct = manaPct; }
+    const resourceKind = extra?.kind || '';
+    if (resourceKind !== this.lastResourceKind) {
+      e.resource.className = `character-portrait-meter${extra ? ` ${extra.kind}` : ''}${extra ? '' : ' hidden'}`;
+      e.resource.setAttribute('aria-hidden', extra ? 'false' : 'true');
+      this.lastResourceKind = resourceKind;
+    }
+    if (resourceText !== this.lastResourceText) { e.resourceText.textContent = resourceText; this.lastResourceText = resourceText; }
+    if (resourcePct !== this.lastResourcePct) { e.resourceFill.style.width = resourcePct; this.lastResourcePct = resourcePct; }
+    const resourceLabel = extra ? `${extra.label}: ${fmtInt(extra.current)} of ${fmtInt(extra.max)}` : '';
+    if (resourceLabel !== this.lastResourceLabel) { e.resource.setAttribute('aria-label', resourceLabel); this.lastResourceLabel = resourceLabel; }
   },
 };
