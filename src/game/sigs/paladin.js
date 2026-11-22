@@ -133,7 +133,8 @@ export default {
   },
   draw(ctx, p, s, t) {
     const [cx, cy0] = headAt(p, 12), cy = cy0 + Math.sin(t * 2) * 1.5, RX = G.touch ? 13 : 16, RY = RX * 0.32, f = s.runes / RUNES;
-    glow(ctx, GOLD, cx, cy, RX * 1.6, 0.15 + 0.35 * f + s.flash * 0.4);
+    // Keep the charge readable without the additive core blooming into a solid white disk over the hero's face.
+    glow(ctx, GOLD, cx, cy, RX * 1.12, 0.08 + 0.16 * f + s.flash * 0.18);
     ctx.globalCompositeOperation = 'lighter';
     ctx.strokeStyle = GOLD; ctx.lineWidth = 2; ctx.globalAlpha = 0.45 + 0.4 * f;
     ctx.beginPath(); ctx.ellipse(cx, cy, RX, RY, 0, 0, TAU); ctx.stroke();

@@ -15,6 +15,7 @@ import { camera, isoX, isoY, elevationAt, HW, HH } from '../core/view.js';
 import { rand, pick, chance, clamp } from '../core/util.js';
 import { sfx, setAmbience } from '../core/audio.js';
 import { makeMonster, monsterBase } from './monster.js';
+import { hasLivingEnemy, waveEnemyStatus } from './seabattleperf.js';
 import { aoe, kill } from './combat.js';
 import { makeFolk } from './folk.js';
 import { townSprite } from './render.js';
@@ -522,6 +523,7 @@ export function createSeaBattle(world, gen, biome, depth, opts, onSuccess) {
   run.timers = [];
   run.later = (s, fn, tag) => run.timers.push([s, fn, tag]);
   run.scripted = [];
+  const scriptedBuffers = [run.scripted, []];
   /** Walk `who` to tile `to` over `dur` seconds (scripted, straight line), facing the way. */
   run.walkTo = (who, to, dur, fadeIn = false, then = null) => {
     const fx = who.x, fy = who.y; let t = 0;
@@ -907,20 +909,35 @@ export function createSeaBattle(world, gen, biome, depth, opts, onSuccess) {
   // ------------------------------------------------------------------ every frame
   const area = () => HUD.setArea(`Depth ${depth}`, `${v.name} · ${run.title}`);
   let started = false;
+  const waveEnemies = { count: 0, settled: true };
   function tick(dt) {
     const pl = p();
     if (!started) { started = true; UI.clearLog(); intro(); setAmbience(v.amb); if (H_.start) H_.start(api); }   // the town's tips and commissions stay in town
     cr.frame(dt);
     tickSea3D(dt);
     barkT = Math.max(0, barkT - dt);
-    const sc = run.scripted; run.scripted = [];
-    for (const f of sc) if (f(dt) !== false) run.scripted.push(f);
-    for (const tm of run.timers.slice()) if ((tm[0] -= dt) <= 0) { drop(run.timers, tm); tm[1](); }
-    for (const b of S.boats) boatTick(b, dt);
-    S.boats = S.boats.filter((b) => !b.dead);
+    const sc = run.scripted, nextScripted = sc === scriptedBuffers[0] ? scriptedBuffers[1] : scriptedBuffers[0];
+    nextScripted.length = 0; run.scripted = nextScripted;
+    for (const f of sc) if (f(dt) !== false) nextScripted.push(f);
+    const timerFrame = run._timerFrame || (run._timerFrame = []);
+    timerFrame.length = 0;
+    for (const tm of run.timers) timerFrame.push(tm);
+    for (const tm of timerFrame) if ((tm[0] -= dt) <= 0) { drop(run.timers, tm); tm[1](); }
+    timerFrame.length = 0;
+    let boatWrite = 0;
+    for (let i = 0; i < S.boats.length; i++) {
+      const b = S.boats[i]; boatTick(b, dt);
+      if (!b.dead) S.boats[boatWrite++] = b;
+    }
+    S.boats.length = boatWrite;
     run.rushing = null;
-    for (const s of S.shots) { s.t += dt; if (s.t >= s.dur && !s.done) { s.done = true; if (s.onHit) s.onHit(); } }
-    S.shots = S.shots.filter((s) => !s.done);
+    let shotWrite = 0;
+    for (let i = 0; i < S.shots.length; i++) {
+      const s = S.shots[i]; s.t += dt;
+      if (s.t >= s.dur && !s.done) { s.done = true; if (s.onHit) s.onHit(); }
+      if (!s.done) S.shots[shotWrite++] = s;
+    }
+    S.shots.length = shotWrite;
     lights();
     for (const m of live) if (m.dead) { live.delete(m); if (!m.splashed && !walk(m.x, m.y)) { m.splashed = true; seaSplash(m.x, m.y, 0.6); } }
     if (G.cine || !pl || pl.dead) return;
@@ -932,18 +949,19 @@ export function createSeaBattle(world, gen, biome, depth, opts, onSuccess) {
     if (S.calm > 0.05) run.rushing = hurry();
     if (run.phase === 'waves') {
       const Wv = v.waves[run.wave], last = run.wave + 1 >= v.waves.length, mid = Wv && Wv.mid && !run.midDone;
-      const left = [...live].filter((m) => !m.dead && !(m.wave >= 90)), over = !coming(run.wave), few = over && left.length <= 2 && left.every((m) => !m.entering);
+      waveEnemyStatus(live, waveEnemies);
+      const over = !coming(run.wave), few = over && waveEnemies.count <= 2 && waveEnemies.settled;
       if (run.wave < 0) startWave(0);
       else if (few && !last && !mid) startWave(run.wave + 1);
       else if (few && mid) midBoat();
       else if (few && last) finalBoat();
       const hold = last && H_.holdFinal && H_.holdFinal(api);
-      if (run.wave >= 0 && over && !left.length && (last || mid) && !hold && (run.pause = (run.pause ?? 0.3) - dt) <= 0) { run.pause = undefined; if (last) finalCaptain(); else { run.midDone = true; midBoss(); } }
+      if (run.wave >= 0 && over && !waveEnemies.count && (last || mid) && !hold && (run.pause = (run.pause ?? 0.3) - dt) <= 0) { run.pause = undefined; if (last) finalCaptain(); else { run.midDone = true; midBoss(); } }
     } else if (run.phase === 'mid') {
       if (run.midM && run.midM.dead && !(run.midBoat && run.midBoat.crew.length)) { banner(`${run.midM.name.toUpperCase()} FALLS`, 'More oars on the water'); world.boss = null; startWave(run.wave + 1, true); }
     } else if (run.phase === 'final') {
       if (run.capM && run.capM.dead && !run.capDeadT) { run.capDeadT = 1; UI.clearCenterMsg(); }   // his banner goes with him
-      if (run.capM && run.capM.dead && !(run.finalBoat && run.finalBoat.crew.length) && ![...live].some((m) => !m.dead)) { world.boss = null; victory(); }
+      if (run.capM && run.capM.dead && !(run.finalBoat && run.finalBoat.crew.length) && !hasLivingEnemy(live)) { world.boss = null; victory(); }
     }
   }
   /** In dark weather the Dawnwake's green lanterns and the gate light the deck's sprites. Brask's lantern always glows. */

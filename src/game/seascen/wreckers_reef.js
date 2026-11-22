@@ -85,9 +85,13 @@ export default {
     onBoss(api, m) { m.moveT = Infinity; api.state.bossMove = 4; },   // (the director's specials swing from the Dawnwake's yard: theirs are below)
     tick(api, dt) {
       const S = api.state, pl = api.p(), run = api.run;
-      for (const b of api.world.seaState.boats) if (b.reef) boatTick(api, b, dt);
+      let rowingCount = 0, rowingCrewCount = 0;
+      for (const b of api.world.seaState.boats) if (b.reef) {
+        boatTick(api, b, dt);
+        if (b.st === 'row') { rowingCount++; if (b.crew.length) rowingCrewCount++; }
+      }
       // three or more boats pulling for the reef at once: Pip counts them
-      if (api.world.seaState.boats.filter((b) => b.reef && b.st === 'row').length >= 3) api.bark('sails');
+      if (rowingCount >= 3) api.bark('sails');
       minesTick(api, dt);
       if (run.phase === 'victory' || run.phase === 'done') return;
       for (const L of S.lamps) {
@@ -104,25 +108,32 @@ export default {
           if (D.t >= 1.6) { S.douse = null; out(api, D.L, false); }
         }
       }
-      const lit = S.lamps.filter((L) => L.lit).length;
+      let lit = 0;
+      for (const L of S.lamps) if (L.lit) lit++;
       if (S.meter) { if (lit) { S.meter.note = `${lit} burning · each one calls a longboat`; S.meter.add(dt * lit / 34); } else { S.meter.hide(); S.meter = null; } }
       // mines wash up on the shelves now and then
       if ((S.mineT -= dt) <= 0) {
         S.mineT = 12;
-        if (S.mines.filter((q) => !q.gone).length < 4) {
+        let activeMines = 0;
+        for (const q of S.mines) if (!q.gone) activeMines++;
+        if (activeMines < 4) {
           const free = MINE_SPOTS.map((q) => W(...q)).filter((q) => !S.mines.some((o) => !o.gone && Math.hypot(o.x - q[0], o.y - q[1]) < 3) && (!pl || Math.hypot(pl.x - q[0], pl.y - q[1]) > 3));
           if (free.length) { washIn(api, free[Math.floor(Math.random() * free.length)], 0); api.bark('mines'); }
         }
       }
       // nothing within reach for a moment: a boat on its way rows hard, the next one sets out now
-      const near = [...api.live].some((m) => !m.dead && !m.prop && m.targetable !== false && !m.entering && pl && Math.hypot(m.x - pl.x, m.y - pl.y) < 13);
+      let near = false;
+      if (pl) for (const m of api.live) {
+        if (!m.dead && !m.prop && m.targetable !== false && !m.entering && Math.hypot(m.x - pl.x, m.y - pl.y) < 13) { near = true; break; }
+      }
       S.idle = near || !pl ? 0 : S.idle + dt;
       if (S.idle > 0.8) {
         S.idle = 0;
-        const rowing = api.world.seaState.boats.filter((b) => b.reef && b.st === 'row' && b.crew.length);
-        const tm = run.timers.filter((q) => q[2] !== undefined).sort((a, b) => a[0] - b[0])[0];
-        if (rowing.length) for (const b of rowing) b.fast = 3;
-        else if (tm) tm[0] = 0;
+        let tm = null;
+        for (const q of run.timers) if (q[2] !== undefined && (!tm || q[0] < tm[0])) tm = q;
+        if (rowingCrewCount) {
+          for (const b of api.world.seaState.boats) if (b.reef && b.st === 'row' && b.crew.length) b.fast = 3;
+        } else if (tm) tm[0] = 0;
         else if (lit && S.meter && S.meter.value < 0.85) S.meter.set(0.85);   // a false light calls the next one sooner
       }
       // the captains' own moves
@@ -317,7 +328,9 @@ function minesTick(api, dt) {
     } else if (o.st === 'fuse' && o.t >= 0.35) blow(api, o);
     if (!o.gone) o.h.place(o.x, o.y, o.rot || 0, 0.2);
   }
-  S.mines = S.mines.filter((o) => !o.gone);
+  let write = 0;
+  for (let i = 0; i < S.mines.length; i++) if (!S.mines[i].gone) S.mines[write++] = S.mines[i];
+  S.mines.length = write;
 }
 function blow(api, o) {
   const S = api.state, pl = api.p();
@@ -335,7 +348,7 @@ function blow(api, o) {
  *  brought; an arrow at the screen's edge to each boat rowing in off screen. */
 function drawReef(api, ctx) {
   if (G.cine) return;
-  const sea = api.SEA_LV * api.HS, boats = api.world.seaState.boats.filter((b) => b.reef && b.st === 'row' && b.crew.length);
+  const sea = api.SEA_LV * api.HS;
   ctx.save();
   for (const o of api.state.mines) {
     if (o.gone || o.st === 'wash') continue;
@@ -343,7 +356,8 @@ function drawReef(api, ctx) {
     ctx.globalAlpha = 0.22 + 0.12 * Math.sin(api.world.time * 4 + o.x); ctx.strokeStyle = '#ff5a3a'; ctx.lineWidth = 2; ctx.setLineDash([6, 6]);
     ctx.beginPath(); ctx.ellipse(x, y, r * 32, r * 16, 0, 0, Math.PI * 2); ctx.stroke(); ctx.setLineDash([]);
   }
-  for (const b of boats) {
+  for (const b of api.world.seaState.boats) {
+    if (!b.reef || b.st !== 'row' || !b.crew.length) continue;
     if (b.lamp && b.lamp.lit) {
       const a = [isoX(...b.lamp.at), (b.lamp.at[0] + b.lamp.at[1]) * HH - sea - 70], c = [isoX(b.x, b.y), (b.x + b.y) * HH - sea - 20];
       ctx.globalAlpha = 0.35 + 0.2 * Math.sin(api.world.time * 6); ctx.strokeStyle = '#5aff8a'; ctx.lineWidth = 3; ctx.setLineDash([10, 8]);
