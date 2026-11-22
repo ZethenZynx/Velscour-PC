@@ -20,7 +20,7 @@ const [controls, creature, hud, renderer, events] = await Promise.all([
   'src/game/controls.js', 'src/game/creature.js', 'src/ui/hud.js', 'src/game/render.js', 'src/game/dungeonevents.js',
 ].map((path) => readFile(new URL(`../../${path}`, import.meta.url), 'utf8')));
 assert.match(controls, /isPlayerHostile\(G\.hover\)/, 'direct mouse attacks recognize event foes');
-assert.match(creature, /isPlayerHostile\(this\).*BAR|isPlayerHostile\(this\) &&/, 'event foes use enemy overhead health bars');
+assert.match(creature, /isPlayerTargetable\(this\).*BAR|isPlayerTargetable\(this\) &&/, 'visible, targetable event foes use enemy overhead health bars');
 assert.match(hud, /const live = isPlayerTargetable/, 'target window includes event foes and respects targetability');
 assert.match(renderer, /isPlayerTargetable\(h\)/, 'hover health display includes targetable event foes');
 assert.match(renderer, /isPlayerHostile\(m\) && d < 14/, 'hostile event foes retain an enemy map marker');

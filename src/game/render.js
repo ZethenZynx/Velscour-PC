@@ -20,7 +20,7 @@ import { drawPetCorpse } from '../core/petart.js';
 import { drawLootLabels } from './loot.js';
 import { castleTileDressing, drawCastleParticles, drawCastleWater, MAT } from '../gfx/castleground.js';
 import { drawRim, RIM, xray, drawXray } from './creature.js';
-import { isPlayerHostile, isPlayerTargetable } from './targeting.js';
+import { isPlayerHostile, isPlayerTargetable, setCreatureTargetBounds } from './targeting.js';
 import { drawNebula } from '../gfx/breach.js';
 import { drawWyrm } from '../gfx/breachdragon.js';
 import { skyBack, skyWorld, skyFx, skyFront, drawSkyGate } from '../gfx/skyship.js';
@@ -1178,7 +1178,7 @@ export function renderWorld(ctx, world) {
   for (const c of world.creatures) {
     if (c.dead) continue;
     const px = isoX(c.x, c.y), py = isoY(c.x, c.y);
-    if (px < vr.x0 - 80 || px > vr.x1 + 80 || py < vr.y0 - 40 || py > vr.y1 + 160) { c.sbox = null; continue; }
+    if (px < vr.x0 - 80 || px > vr.x1 + 80 || py < vr.y0 - 40 || py > vr.y1 + 160) { c.sbox = null; c.targetBox = null; continue; }
     enqueue(c.x + c.y + (c.fly ? 0.2 : 0), 6, c);
   }
   const closeEnough = (x,y,marginX=90,marginY=130) => {
@@ -1249,7 +1249,7 @@ export function renderWorld(ctx, world) {
         const hc=world.cave?world.cave.horizon(o):null; // behind higher ground in the caves: hidden below its edge
         if(hc===-Infinity){ // drawn under an empty clip all the same: its rim and bar still show on the see-through layer
           ctx.save();ctx.beginPath();ctx.rect(0,0,0,0);ctx.clip();o.draw(ctx);ctx.restore();
-          if(hz)o.z=oldZ;o.sbox=null;break;
+          if(hz)o.z=oldZ;o.sbox=null;o.targetBox=null;break;
         }
         if(hc!==null){ctx.save();ctx.beginPath();ctx.rect(vr.x0-200,vr.y0-900,vr.x1-vr.x0+400,hc-(vr.y0-900));ctx.clip();}
         const mk=world.cave&&world.cave.mask?world.cave.mask(o):null; // the Pirate Seas: masts and the funnel in front cut their shapes out of it
@@ -1263,6 +1263,12 @@ export function renderWorld(ctx, world) {
         const [sx, sy] = camera.tileToScreen(o.x, o.y, oldZ + hz + (o.fly ? 16 : 0));
         const z = camera.zoom;
         o.sbox = [sx - (w / 2) * z, sy - h * z, sx + (w / 2) * z, sy];
+        const anchor = camera.tileToScreen(o.x, o.y, oldZ + hz + (o.fly ? 16 : 0));
+        if (o.lastTargetBounds) {
+          const [x0, y0] = camera.toScreen(o.lastTargetBounds[0], o.lastTargetBounds[1]);
+          const [x1, y1] = camera.toScreen(o.lastTargetBounds[2], o.lastTargetBounds[3]);
+          setCreatureTargetBounds(o, [x0, y0, x1, y1], anchor);
+        } else setCreatureTargetBounds(o, o.sbox, [sx, sy]);
         o.viewH = h + (o.fly ? 16 : 0); // next frame's see-through hole
         if (o === G.player && o.talkT > 0 && world.kind === 'town') drawTownSpeech(ctx, o, isoX(o.x, o.y), isoY(o.x, o.y) - Math.min(70, h)); // chatting at the forge
         break;

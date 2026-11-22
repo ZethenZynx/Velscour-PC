@@ -101,6 +101,17 @@ export function drawSlime(ctx, m) {
   if (S.tilt) ctx.rotate(S.tilt);
   if (flipX) ctx.scale(-1, 1);
   const dx = -ax, dy = -ay;
+  if (!m.isPlayer && m.team !== 'player') {
+    const cos = Math.cos(S.tilt || 0), sin = Math.sin(S.tilt || 0);
+    let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
+    for (let i = 0; i < 4; i++) {
+      const px = dx + (i & 1 ? dw : 0), py = dy + (i & 2 ? dh : 0);
+      const rx = (flipX ? -px : px) * cos - py * sin, ry = (flipX ? -px : px) * sin + py * cos;
+      x0 = Math.min(x0, ox + rx); y0 = Math.min(y0, oy + ry);
+      x1 = Math.max(x1, ox + rx); y1 = Math.max(y1, oy + ry);
+    }
+    m.lastTargetBounds = [x0, y0, x1, y1];
+  }
   m.drawRim(ctx, img, srcX, srcY, cw, ch, dx, dy, dw, dh);
   ctx.drawImage(tinted(img, m.tintFilter()), srcX, srcY, cw, ch, dx, dy, dw, dh);
   if (m.flash > 0 || S.glowT > 0) {

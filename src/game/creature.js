@@ -10,7 +10,30 @@ import { petAnimation, petTintImage } from '../core/petart.js';
 import { drawRuneWeapon } from '../gfx/runeweapon.js';
 import { drawSlime } from '../gfx/slimeart.js';
 import { TURRET3D, drawTurret3D } from '../gfx/gunner3d.js';
-import { isPlayerHostile } from './targeting.js';
+import { isPlayerHostile, isPlayerTargetable } from './targeting.js';
+
+// Bounds for the visible sprite after its local flip/rotation/scale transforms.
+// Kept in world-pixel coordinates and projected by render.js with the current camera.
+function transformedSpriteBounds(x, y, dx, dy, w, h, { flip = false, rot = 0, sx = 1, sy = 1, outerPivot = null, outerRot = 0, outerScale = 1 } = {}) {
+  const cos = Math.cos(rot), sin = Math.sin(rot), outerCos = Math.cos(outerRot), outerSin = Math.sin(outerRot);
+  let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+  for (let i = 0; i < 4; i++) {
+    let px = dx + (i & 1 ? w : 0), py = dy + (i & 2 ? h : 0);
+    px *= sx; py *= sy;
+    const rx = px * cos - py * sin;
+    const ry = px * sin + py * cos;
+    px = flip ? -rx : rx; py = ry;
+    px += x; py += y;
+    if (outerPivot) {
+      const ox = px - outerPivot[0], oy = py - outerPivot[1];
+      px = outerPivot[0] + (ox * outerCos - oy * outerSin) * outerScale;
+      py = outerPivot[1] + (ox * outerSin + oy * outerCos) * outerScale;
+    }
+    minX = Math.min(minX, px); minY = Math.min(minY, py);
+    maxX = Math.max(maxX, px); maxY = Math.max(maxY, py);
+  }
+  return [minX, minY, maxX, maxY];
+}
 
 let UID = 0;
 
@@ -398,6 +421,7 @@ export class Creature {
   }
 
   draw(ctx) {
+    this.lastTargetBounds = null;
     if (this.alpha === 0) return;
     if (this.summonKey === 'runeweapon' && drawRuneWeapon(ctx, this)) return; // the Death Knight's 3D Runeblade
     if (TURRET3D.has(this.summonKey) && drawTurret3D(ctx, this)) return; // the Gunner's 3D turrets
@@ -468,6 +492,7 @@ export class Creature {
     // monster art is anchored at its feet (weapons stick out to one side), mirrored with the sprite
     const ax = img._art ? (this.flip ? 1 - img._art.fx / img.width : img._art.fx / img.width) : 0.5;
     const dx = px - w * ax + lx, dy = py - h * squash - z + ly;
+    if (!isHero) this.lastTargetBounds = [dx, dy, dx + w, dy + h * squash];
     ctx.save();
     if (this.alpha !== undefined) ctx.globalAlpha = this.alpha;
     const ti = tinted(img, this.tintFilter());
@@ -535,6 +560,7 @@ export class Creature {
     if (a.walk) ctx.rotate(Math.sin(this.animT * 9) * 0.05);
     if (this.flip) ctx.scale(-1, 1);
     const dx = -dw / 2, dy = -foot;
+    if (isPlayerHostile(this)) this.lastTargetBounds = transformedSpriteBounds(px + lx, py - z + ly, dx, dy, dw, dh, { flip: this.flip, rot: a.walk ? Math.sin(this.animT * 9) * 0.05 : 0 });
     const img = petTintImage(a.img, this.tintFilter());
     this.drawRim(ctx, a.img, a.sx, a.sy, a.cw, a.ch, dx, dy, dw, dh);
     ctx.drawImage(img, a.sx, a.sy, a.cw, a.ch, dx, dy, dw, dh);
@@ -597,6 +623,14 @@ export class Creature {
     const squash = isHero ? 1 : sy;
     const dx = -a.ax * k, dy = -a.ay * k * squash;
     const where = { img: a.img, x: px + lx, y: py + ly - z, dx, dy, k, sq: squash, flip: this.flip, rot: rot + (this.moving ? lean : 0), sx, sy };
+    if (!isHero) {
+      const pivot = [where.x, where.y - this.spriteH * this.scale * 0.5];
+      const tuck = ar ? 1 - 0.16 * Math.sin(Math.PI * au) : 1;
+      this.lastTargetBounds = transformedSpriteBounds(where.x, where.y, dx, dy, w, h, {
+        flip: this.flip, rot: where.rot, sx, sy,
+        outerPivot: ar ? pivot : null, outerRot: ar, outerScale: tuck,
+      });
+    }
     const mid = this.spriteH * this.scale * 0.5;
     this.lastArt = { a, x: where.x, y: where.y, k, flip: this.flip, rot: where.rot, ar, mid };
     if (ar) { const tuck = 1 - 0.16 * Math.sin(Math.PI * au); ctx.save(); ctx.translate(where.x, where.y - mid); ctx.rotate(ar); ctx.scale(tuck, tuck); ctx.translate(-where.x, -(where.y - mid)); }
@@ -643,7 +677,7 @@ export class Creature {
     // life bars: over every enemy, bosses too (Settings › life bars; off, one only flashes up over a monster that was
     // hit, bosses aside) and over hurt summons. In the world's frame they go on the see-through layer, over the spells.
     let col = null, bw = 24, bh = 4;
-    if (isPlayerHostile(this) && (G.settings.lifeBars !== false ? this.targetable !== false : this.hpShow > 0 && this.rank !== 'boss')) {
+    if (isPlayerTargetable(this) && (G.settings.lifeBars !== false || this.hpShow > 0 && this.rank !== 'boss')) {
       const big = this.rank === 'boss';
       bw = big ? Math.max(40, Math.min(84, w * 0.75)) : Math.max(22, Math.min(46, w * 0.8)); bh = big ? 6 : 4;
       col = BAR[this.rank] || BAR.normal;

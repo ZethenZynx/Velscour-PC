@@ -6,22 +6,12 @@ import { dist, angleTo } from '../core/util.js';
 import { SKILLS, isMovementSkill } from '../data/skills.js';
 import { SLOT_KEYS, RMB } from '../data/bar.js';
 import { Macros } from './macros.js';
-import { isPlayerHostile } from './targeting.js';
+import { isPlayerHostile, isPlayerTargetable, pickPlayerTarget } from './targeting.js';
 import { chestSpriteHit, portalSpriteHit } from '../core/interactable-hit.js';
 
 function creatureAt(sx, sy) {
   const w = G.world;
-  let best = null, bd = Infinity;
-  for (const c of w.creatures) {
-    if (c.dead || !c.sbox || c.isPlayer || c.targetable === false) continue;
-    const b = c.sbox;
-    const pad = 6;
-    if (sx >= b[0] - pad && sx <= b[2] + pad && sy >= b[1] - pad && sy <= b[3] + pad) {
-      const d = Math.abs((b[0] + b[2]) / 2 - sx) + Math.abs(b[3] - sy) * 0.5 + (isPlayerHostile(c) ? 0 : 50);
-      if (d < bd) { bd = d; best = c; }
-    }
-  }
-  return best;
+  return pickPlayerTarget(w?.creatures, sx, sy);
 }
 
 function interactableAt(tx, ty, sx, sy) {
@@ -125,10 +115,10 @@ export const controls = {
         const it = interactableAt(tx, ty, mouse.x, mouse.y);
         const shift = input.down('ShiftLeft') || input.down('ShiftRight');
         if (loot) { p.lootTarget = loot; p.interact = null; p.attackTarget = null; p.setMoveTarget(loot.x, loot.y); this.mode = 'loot'; }
-        // When a chest, altar or portal is under the pointer, let its visible art
-        // take precedence over an overlapping creature or decorative prop.
+        // A visible hostile body owns its click even when a chest, portal, trap,
+        // or decoration overlaps it. Interactables remain clickable elsewhere.
+        else if (isPlayerTargetable(G.hover)) { this.mode = 'attack'; this.attack(G.hover, tx, ty); }
         else if (it && !shift) { this.mode = 'interact'; p.attackTarget = null; p.interact = it; }
-        else if (isPlayerHostile(G.hover)) { this.mode = 'attack'; this.attack(G.hover, tx, ty); }
         else if (shift) { this.mode = 'attack'; this.useSlot(0, [tx, ty]); }
         else { this.mode = 'move'; p.attackTarget = null; p.interact = null; p.setMoveTarget(tx, ty); }
       } else if (mouse.left) {
