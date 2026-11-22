@@ -3,10 +3,11 @@ import { el, escapeHtml } from '../core/util.js';
 import { UI } from './ui.js';
 import {
   activeLayoutMap, characterLayoutId, cloneLayoutValue, createDefaultLayoutState, snapUILayoutPosition,
-  exportLayoutProfile, importLayoutProfile, normalizeLayoutEntry, normalizeLayoutState,
+  exportLayoutProfile, importLayoutProfile, migrateEnvironmentInfoLayout, normalizeLayoutEntry, normalizeLayoutState,
 } from './ui-layout.mjs';
 
 const DEFINITIONS = [
+  ['environment-info', 'Environment Information', '.hud-environment-info', .02, .04],
   ['character-portrait', 'Character portrait', '.character-portrait-hud', .02, .04],
   ['health', 'Health orb', '#life-cover', .25, .85], ['health-value', 'Health value', '#life-text', .25, .86],
   ['mana', 'Mana orb', '#mana-cover', .72, .85], ['mana-value', 'Mana value', '#mana-text', .72, .86],
@@ -16,7 +17,7 @@ const DEFINITIONS = [
   ['buff-icons', 'Buff and debuff icons', '#buff-row', .02, .53], ['statistics', 'Character stats and damage meter', '#hero-stats', .02, .19],
   ['current-enemy', 'Current / previous enemy', '#target-box', .02, .36], ['minimap', 'Minimap and markers', '#minimap-row', .84, .03],
   ['boss-health', 'Boss health bar', '#boss-bar', .5, .03], ['quest-tracker', 'Objective and event tracker', '#sand-objective', .77, .28],
-  ['rift-tracker', 'Rift tracker', '#rift-bar', .76, .2], ['area-affixes', 'Area affixes', '#area-affixes', .77, .37],
+  ['rift-tracker', 'Rift tracker', '#rift-bar', .76, .2],
   ['notifications', 'Notifications and event announcements', '#center-msg', .5, .42], ['adventurers-log', "Adventurer's Log", '#game-chat', .02, .58],
   ['game-log', 'Combat and loot messages', '#log', .02, .69], ['hud-buttons', 'HUD menu buttons', '#hud-buttons', .96, .62],
   ['greed-control', 'Greed and hoard display', '#greed', .84, .48], ['sealed-loot', 'Sealed loot indicator', '#sealed-btn', .9, .58],
@@ -58,7 +59,9 @@ function setManagedStyle(node, prop, value, enabled) {
 function layoutState() {
   if (!G.settings.uiLayouts || typeof G.settings.uiLayouts !== 'object') G.settings.uiLayouts = createDefaultLayoutState();
   else G.settings.uiLayouts = normalizeLayoutState(G.settings.uiLayouts);
-  return G.settings.uiLayouts;
+  const state = G.settings.uiLayouts;
+  if (migrateEnvironmentInfoLayout(state)) saveSettings();
+  return state;
 }
 
 function stableProfileKey(name, source = layoutState()) {
@@ -150,18 +153,16 @@ export const UILayoutCustomizer = {
     this.selected = 'character-portrait';
     this.pauseScreen = UI.screensEl?.querySelector('.pause-dialog')?.closest('.screen') || null;
     this.pauseScreen?.classList.add('ui-layout-pause-hidden');
-    const d = UI.dialog({ title: '', html: '<div class="ui-layout-stage" aria-label="UI layout preview"></div><aside class="ui-layout-toolbox"></aside>', cls: 'ui-layout-dialog', closable: false, buttons: [
-      { label: 'Save & Apply', cls: 'blue ui-layout-save', fn: () => this.save() },
-      { label: 'Undo', fn: () => this.undo() }, { label: 'Redo', fn: () => this.redo() },
-      { label: 'Reset Selected Element', fn: () => this.resetSelected() },
-      { label: 'Reset All', cls: 'red', fn: () => this.confirmResetAll() },
-      { label: 'Cancel', cls: 'ui-layout-cancel', fn: () => this.cancel() },
-    ] });
+    const d = UI.dialog({ title: '', html: '<div class="ui-layout-stage" aria-label="UI layout preview"></div><aside class="ui-layout-toolbox"><div class="ui-layout-toolbox-content"></div><footer class="ui-layout-toolbox-actions"><div class="ui-layout-toolbox-actions-secondary"><button type="button" data-editor-action="undo">Undo</button><button type="button" data-editor-action="redo">Redo</button><button type="button" data-editor-action="reset-selected">Reset Selected</button><button type="button" data-editor-action="reset-all">Reset All</button></div><div class="ui-layout-toolbox-actions-primary"><button type="button" class="ui-layout-save" data-editor-action="save">Save &amp; Apply</button><button type="button" class="ui-layout-cancel" data-editor-action="cancel">Cancel</button></div></footer></aside>', cls: 'ui-layout-dialog', closable: false });
     this.dialog = d; d.wrap.classList.add('ui-layout-screen');
+    d.box.querySelector(':scope > .row')?.remove();
     d.box.setAttribute('role', 'application'); d.box.setAttribute('aria-label', 'Customize UI');
     this.stage = d.box.querySelector('.ui-layout-stage'); this.toolbox = d.box.querySelector('.ui-layout-toolbox');
+    this.toolboxContent = this.toolbox.querySelector('.ui-layout-toolbox-content');
+    const actions = { save: () => this.save(), cancel: () => this.cancel(), undo: () => this.undo(), redo: () => this.redo(), 'reset-selected': () => this.resetSelected(), 'reset-all': () => this.confirmResetAll() };
+    this.toolbox.querySelectorAll('[data-editor-action]').forEach((button) => { button.onclick = actions[button.dataset.editorAction]; });
     this.guides = el('div', 'ui-layout-guides'); this.stage.appendChild(this.guides);
-    this.bind(); this.renderAll(); this.applyAll(); this.renderSelection();
+    this.bind(); this.renderAll(); this.applyAll(); this.renderSelection(); this.restoreToolboxPosition();
     const escape = (e) => { if (e.key !== 'Escape') return; e.preventDefault(); e.stopImmediatePropagation(); this.cancel(); };
     d.wrap.addEventListener('keydown', escape, true); d.box.tabIndex = -1; d.box.focus(); this.escapeHandler = escape;
     this.resizeHandler = () => { this.renderAll(); this.applyAll(); this.clampToolbox(); };
@@ -191,7 +192,7 @@ export const UILayoutCustomizer = {
       window.removeEventListener('blur', this.toolboxPointerEnd);
       this.applyAll();
     }
-    this.dialog.close(); this.dialog = this.stage = this.toolbox = this.guides = null;
+    this.dialog.close(); this.dialog = this.stage = this.toolbox = this.toolboxContent = this.guides = null;
     this.pauseScreen?.classList.remove('ui-layout-pause-hidden');
     this.pauseScreen = null;
     this.working = this.original = null; this.pointer = this.toolboxDrag = null;
@@ -261,6 +262,13 @@ export const UILayoutCustomizer = {
     const top = clamp(event.clientY - drag.y, 8, Math.max(8, innerHeight - height - 8));
     Object.assign(this.toolbox.style, { left: `${left}px`, top: `${top}px`, right: 'auto', transform: 'none' });
   },
+  restoreToolboxPosition() {
+    const position = G.settings.uiLayoutEditorPosition;
+    if (!this.toolbox || !Number.isFinite(position?.x) || !Number.isFinite(position?.y)) return;
+    const left = clamp(position.x * innerWidth, 8, Math.max(8, innerWidth - this.toolbox.offsetWidth - 8));
+    const top = clamp(position.y * innerHeight, 8, Math.max(8, innerHeight - this.toolbox.offsetHeight - 8));
+    Object.assign(this.toolbox.style, { left: `${left}px`, top: `${top}px`, right: 'auto', transform: 'none' });
+  },
   clampToolbox() {
     if (!this.toolbox || this.toolbox.style.left === '') return;
     const width = this.toolbox.offsetWidth, height = this.toolbox.offsetHeight;
@@ -271,6 +279,11 @@ export const UILayoutCustomizer = {
   endToolboxDrag(event) {
     if (!this.toolboxDrag || (event?.pointerId != null && this.toolboxDrag.pointerId !== event.pointerId)) return;
     this.toolboxDrag = null;
+    if (this.toolbox) {
+      const rect = this.toolbox.getBoundingClientRect();
+      G.settings.uiLayoutEditorPosition = { x: clamp(rect.left / innerWidth, 0, 1), y: clamp(rect.top / innerHeight, 0, 1) };
+      saveSettings();
+    }
   },
 
   snap(x, y, width, height, id) {
@@ -329,10 +342,10 @@ export const UILayoutCustomizer = {
   },
 
   renderSelection() {
-    if (!this.toolbox) return;
+    if (!this.toolboxContent) return;
     const entry = this.effective(this.selected), selected = DEFAULTS.get(this.selected), profile = this.state.profiles[this.state.activeProfile];
     const options = Object.entries(this.state.profiles).map(([key, p]) => `<option value="${escapeHtml(key)}" ${key === this.state.activeProfile ? 'selected' : ''}>${escapeHtml(p.name)}</option>`).join('');
-    this.toolbox.innerHTML = `
+    this.toolboxContent.innerHTML = `
       <header class="ui-layout-toolbox-title"><b>Customize UI</b><button type="button" data-layout-close aria-label="Close">×</button></header>
       <label>Layout profile<select data-profile>${options}</select></label>
       <div class="ui-layout-profile-actions"><button data-profile-action="create">New</button><button data-profile-action="rename">Rename</button><button data-profile-action="duplicate">Duplicate</button><button data-profile-action="delete" ${this.state.activeProfile === 'default' ? 'disabled' : ''}>Delete</button></div>
@@ -352,25 +365,26 @@ export const UILayoutCustomizer = {
       <div class="ui-layout-profile-actions"><button data-profile-action="export">Export</button><button data-profile-action="import">Import</button><button data-profile-action="default">Restore Default Profile</button></div>
       <input type="file" data-layout-file accept="application/json,.json" hidden>
       <small>Drag an outline to move it. Drag its corner to resize. Positions adapt to the current screen.</small>`;
-    const titlebar = this.toolbox.querySelector('.ui-layout-toolbox-title');
+    const titlebar = this.toolboxContent.querySelector('.ui-layout-toolbox-title');
     titlebar.onpointerdown = (event) => this.startToolboxDrag(event);
-    this.toolbox.querySelector('[data-layout-close]').onclick = () => this.cancel();
-    this.toolbox.querySelector('[data-profile]').onchange = (e) => { this.pushUndo(); this.state.activeProfile = e.target.value; this.selected = 'character-portrait'; this.renderAll(); this.applyAll(); this.renderSelection(); };
-    this.toolbox.querySelector('[data-element]').onchange = (e) => { this.selected = e.target.value; this.renderAll(); this.renderSelection(); };
-    this.toolbox.querySelector('[data-character]').onchange = (e) => { this.pushUndo(); this.state.characterSpecific = e.target.checked; this.renderAll(); this.applyAll(); this.renderSelection(); };
-    this.toolbox.querySelectorAll('[data-field]').forEach((control) => control.addEventListener('input', () => {
+    this.toolboxContent.querySelector('[data-layout-close]').onclick = () => this.cancel();
+    this.toolboxContent.querySelector('[data-profile]').onchange = (e) => { this.pushUndo(); this.state.activeProfile = e.target.value; this.selected = 'character-portrait'; this.renderAll(); this.applyAll(); this.renderSelection(); };
+    this.toolboxContent.querySelector('[data-element]').onchange = (e) => { this.selected = e.target.value; this.renderAll(); this.renderSelection(); };
+    this.toolboxContent.querySelector('[data-character]').onchange = (e) => { this.pushUndo(); this.state.characterSpecific = e.target.checked; this.renderAll(); this.applyAll(); this.renderSelection(); };
+    this.toolboxContent.querySelectorAll('[data-field]').forEach((control) => control.addEventListener('input', () => {
       if (!control.dataset.undoStarted) { this.pushUndo(); control.dataset.undoStarted = '1'; }
       const field = control.dataset.field, value = control.type === 'checkbox' ? control.checked : control.type === 'number' && control.value === '' ? null : Number(control.value);
       this.entry(this.selected)[field] = value;
-      const output = this.toolbox.querySelector(`[data-out="${field}"]`); if (output) output.textContent = `${value}%`;
+      const output = this.toolboxContent.querySelector(`[data-out="${field}"]`); if (output) output.textContent = `${value}%`;
       this.applyElement(this.selected); this.renderAll(false);
     }));
-    this.toolbox.querySelectorAll('[data-field]').forEach((control) => control.addEventListener('change', () => { delete control.dataset.undoStarted; this.renderAll(); this.renderSelection(); }));
-    this.toolbox.querySelectorAll('[data-setting]').forEach((control) => control.onchange = () => {
+    this.toolboxContent.querySelectorAll('[data-field]').forEach((control) => control.addEventListener('change', () => { delete control.dataset.undoStarted; this.renderAll(); this.renderSelection(); }));
+    this.toolboxContent.querySelectorAll('[data-setting]').forEach((control) => control.onchange = () => {
       const key = control.dataset.setting; this.state[key] = control.type === 'checkbox' ? control.checked : Number(control.value); this.renderAll(); this.renderSelection();
     });
-    this.toolbox.querySelectorAll('[data-profile-action]').forEach((button) => button.onclick = () => this.profileAction(button.dataset.profileAction));
-    this.toolbox.querySelector('[data-layout-file]').onchange = (e) => this.importFile(e.target.files?.[0]);
+    this.toolboxContent.querySelectorAll('[data-profile-action]').forEach((button) => button.onclick = () => this.profileAction(button.dataset.profileAction));
+    this.toolboxContent.querySelector('[data-layout-file]').onchange = (e) => this.importFile(e.target.files?.[0]);
+    this.clampToolbox();
   },
 
   pushUndo(snapshot = this.state) { this.undoStack.push(clone(snapshot)); if (this.undoStack.length > 40) this.undoStack.shift(); this.redoStack.length = 0; },
@@ -408,7 +422,7 @@ export const UILayoutCustomizer = {
       return;
     }
     else if (action === 'export') { const data = JSON.stringify(exportLayoutProfile(state, active), null, 2); const url = URL.createObjectURL(new Blob([data], { type: 'application/json' })); const a = document.createElement('a'); a.href = url; a.download = `${fileName(profile.name)}.json`; a.click(); setTimeout(() => URL.revokeObjectURL(url), 0); return; }
-    else if (action === 'import') { this.toolbox.querySelector('[data-layout-file]').click(); return; }
+    else if (action === 'import') { this.toolboxContent.querySelector('[data-layout-file]').click(); return; }
     this.applyAll(); this.renderAll(); this.renderSelection();
   },
   async importFile(file) {

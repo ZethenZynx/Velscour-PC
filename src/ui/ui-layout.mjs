@@ -44,6 +44,21 @@ export function normalizeLayoutState(value = {}) {
   return state;
 }
 
+/** Preserve the former independently positioned area-affix block when it joins environment information. */
+export function migrateEnvironmentInfoLayout(state) {
+  let changed = false;
+  for (const profile of Object.values(state?.profiles || {})) {
+    const migrate = (layouts) => {
+      if (!layouts || layouts['environment-info'] || !layouts['area-affixes']) return;
+      layouts['environment-info'] = cloneLayoutValue(layouts['area-affixes']);
+      changed = true;
+    };
+    migrate(profile.layouts);
+    for (const layouts of Object.values(profile.characterOverrides || {})) migrate(layouts);
+  }
+  return changed;
+}
+
 export function characterLayoutId(character) {
   if (!character) return '';
   return String(character.id || character.uuid || character.created || `${character.name || ''}:${character.class || character.classId || ''}`);

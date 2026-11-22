@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import {
   activeLayoutMap, characterLayoutId, cloneLayoutValue, createDefaultLayoutState,
-  exportLayoutProfile, importLayoutProfile, normalizeLayoutEntry, normalizeLayoutState,
+  exportLayoutProfile, importLayoutProfile, migrateEnvironmentInfoLayout, normalizeLayoutEntry, normalizeLayoutState,
   snapUILayoutPosition,
 } from '../../src/ui/ui-layout.mjs';
 
@@ -21,6 +21,14 @@ assert.equal(characterMap.minimap.visible, false);
 assert.equal(activeLayoutMap(state, 'hero-b').minimap, undefined, 'character overrides stay isolated');
 assert.equal(characterLayoutId({ id: 'hero-a', name: 'A' }), 'hero-a');
 assert.equal(normalizeLayoutState(state).activeProfile, 'default');
+
+const legacyState = createDefaultLayoutState();
+legacyState.profiles.default.layouts['area-affixes'] = { x: .35, y: .16, scale: 110 };
+legacyState.profiles.default.characterOverrides['hero-a'] = { 'area-affixes': { x: .6, y: .2, opacity: 70 } };
+assert.equal(migrateEnvironmentInfoLayout(legacyState), true, 'legacy environment layouts migrate once');
+assert.deepEqual(legacyState.profiles.default.layouts['environment-info'], legacyState.profiles.default.layouts['area-affixes']);
+assert.deepEqual(legacyState.profiles.default.characterOverrides['hero-a']['environment-info'], legacyState.profiles.default.characterOverrides['hero-a']['area-affixes']);
+assert.equal(migrateEnvironmentInfoLayout(legacyState), false, 'existing migrated positions are not overwritten');
 
 const exported = exportLayoutProfile(state);
 const imported = importLayoutProfile(exported);
