@@ -3,6 +3,7 @@ import { hit } from './combat.js';
 import { Clutter } from './clutter.js';
 import { isoX, isoY } from '../core/view.js';
 import { sfx } from '../core/audio.js';
+import { A } from '../core/assets.js';
 
 export const ENVIRONMENT_TRAP_TYPES = Object.freeze({
   pressurePlate: { name: 'Pressure plate', fixture: 'plate', damage: 0.04, element: 'phys', mode: 'direct', trigger: 'pressure' },
@@ -21,12 +22,49 @@ export const ENVIRONMENT_TRAP_TYPES = Object.freeze({
   rollingBoulder: { name: 'Unstable boulder', fixture: 'boulder', damage: 0.075, element: 'phys', mode: 'direct' },
   poisonousPlant: { name: 'Venomous growth', fixture: 'plant', damage: 0.01, element: 'poison', mode: 'dot', trigger: 'proximity' },
   thornTrap: { name: 'Thorn snare', fixture: 'thorn', damage: 0.04, element: 'phys', mode: 'direct', trigger: 'proximity' },
-  cursedAltar: { name: 'Cursed altar', fixture: 'altar', damage: 0.04, element: 'shadow', mode: 'direct' },
+  cursedAltar: { name: 'Cursed cage trap', fixture: 'altar', damage: 0.04, element: 'shadow', mode: 'direct' },
   boneSpikes: { name: 'Bone spikes', fixture: 'bone', damage: 0.075, element: 'shadow', mode: 'direct' },
   explosiveRune: { name: 'Explosive rune', fixture: 'rune', damage: 0.075, element: 'fire', mode: 'direct' },
   crackingIce: { name: 'Cracking ice', fixture: 'ice', damage: 0.075, element: 'cold', mode: 'direct' },
   freezingVent: { name: 'Freezing vent', fixture: 'frostVent', damage: 0.01, element: 'cold', mode: 'dot' },
 });
+
+// Each atlas row is one physical trap and each column is idle, warning, active, destroyed.
+// The variation atlas supplies material-specific pressure plates, spike beds, vents, flame nozzles and turrets.
+const TRAP_ART = Object.freeze({
+  pressurePlate: { sheet: 'environment-variations', row: 0, variantRows: { ice: 1, frost: 1, snow: 1, sand: 2, desert: 2, sunscar: 2, amber: 2, goldspire: 2, badlands: 2 } },
+  swingingBlade: { sheet: 'mechanical', row: 1 },
+  collapsingFloor: { sheet: 'mechanical', row: 2 },
+  poisonVent: { sheet: 'environment-variations', row: 6, variantRows: { sewers: 7 } },
+  flameJet: { sheet: 'environment-variations', row: 8, variantRows: { molten: 9, forge: 9, volcanic: 9 } },
+  magicalTurret: { sheet: 'environment-variations', row: 10, variantRows: { storm: 11, crag: 11, mountain: 11 } },
+  destructible: { sheet: 'elemental', row: 3 },
+  spikeTrap: { sheet: 'mechanical', row: 3, variantRows: { desert: { sheet: 'environment-variations', row: 5 }, sand: { sheet: 'environment-variations', row: 5 }, sunscar: { sheet: 'environment-variations', row: 5 }, amber: { sheet: 'environment-variations', row: 5 }, badlands: { sheet: 'environment-variations', row: 5 } } },
+  fallingIcicles: { sheet: 'elemental', row: 4 },
+  lightningHazard: { sheet: 'elemental', row: 5 },
+  quicksand: { sheet: 'mechanical', row: 4 },
+  unstableCrystal: { sheet: 'nature', row: 8 },
+  lavaFissure: { sheet: 'nature', row: 7 },
+  rollingBoulder: { sheet: 'mechanical', row: 5 },
+  poisonousPlant: { sheet: 'nature', row: 0 },
+  thornTrap: { sheet: 'nature', row: 1 },
+  cursedAltar: { sheet: 'nature', row: 2 },
+  boneSpikes: { sheet: 'nature', row: 3 },
+  explosiveRune: { sheet: 'nature', row: 4 },
+  crackingIce: { sheet: 'nature', row: 5 },
+  freezingVent: { sheet: 'nature', row: 6 },
+});
+
+const artVariantKey = (variant) => String(variant || '').toLowerCase().replace(/[^a-z0-9]+/g, '_');
+export function trapArtFor(kind, variant = '') {
+  const art = TRAP_ART[kind];
+  if (!art) return null;
+  const id = artVariantKey(variant);
+  for (const [needle, override] of Object.entries(art.variantRows || {})) {
+    if (id.includes(needle)) return typeof override === 'number' ? { sheet: art.sheet, row: override } : override;
+  }
+  return { sheet: art.sheet, row: art.row };
+}
 
 // Profiles cover every combat biome, plus beta/special areas. Castle, tower, cavern, siege, and hunt variants
 // inherit their parent environment profile and receive a color/material variation from their variant id.
@@ -102,41 +140,20 @@ function excluded(world, x, y, start, occupied) {
   return occupied(x, y, start);
 }
 
-const FIXTURE_ART = {
-  plate: /plate|grate|hatch|floor|rune|tile/i, blade: /blade|sword|spike|trap/i,
-  cracked: /crack|rubble|broken|stone/i, vent: /grate|vent|drain|pipe/i,
-  frostVent: /ice|frost|vent|grate|crystal/i, flame: /brazier|torch|fire|flame/i,
-  turret: /statue|pedestal|crystal|obelisk/i, obstacle: /crate|barrel|rock|rubble/i,
-  spikes: /spike|bone|teeth/i, icicle: /icicle|ice|crystal/i,
-  conductor: /crystal|obelisk|metal|rod|statue/i, sand: /sand|dune|rock/i,
-  crystal: /crystal|geode/i, fissure: /lava|rock|crack/i, boulder: /boulder|rock/i,
-  plant: /thorn|plant|root|bush/i, thorn: /thorn|plant|root|bush/i,
-  altar: /altar|obelisk|shrine|idol/i, bone: /bone|skull/i, rune: /rune|glyph|stone/i,
-  ice: /ice|crack|stone/i,
-};
-
-function fixtureSprite(world, fixture) {
-  const scatter = world.tileset?.scatter || [];
-  if (!scatter.length || !world.tileset?.k) return null;
-  const usable = scatter.filter((s) => s?.img && s.w > 0 && s.h > 0 && s.w <= 180 && s.h <= 180 && !/tree|canopy|wall|cliff|floor|large|giant/i.test(s.name || ''));
-  const preferred = usable.filter((s) => FIXTURE_ART[fixture] && FIXTURE_ART[fixture].test(s.name || ''));
-  const choices = preferred.length ? preferred : usable;
-  if (!choices.length) return null;
-  // Prefer a compact existing prop so repeated trap sites remain readable and do not obscure the scene.
-  return choices.reduce((best, s) => {
-    const score = Math.abs(Math.max(s.w, s.h) - 64) + Math.abs(s.w * s.h - 2304) / 256;
-    const bestScore = Math.abs(Math.max(best.w, best.h) - 64) + Math.abs(best.w * best.h - 2304) / 256;
-    return score < bestScore ? s : best;
-  });
-}
-
 function makeSite(world, kind, x, y, id, rng, variant) {
   const type = ENVIRONMENT_TRAP_TYPES[kind];
   const tint = tintFor(variant, type.element);
-  const spr = fixtureSprite(world, type.fixture);
-  // Areas whose tileset has no reusable prop art simply receive fewer trap sites.
-  if (!spr) return null;
-  const fixture = { kind: 'environmentTrapFixture', trapKind: type.fixture, x, y, z: 0, tint, material: materialFor(variant), active: false, id, spr, k: world.tileset.k, flip: rng() < 0.5 };
+  const art = trapArtFor(kind, variant);
+  const image = A.environmentTrapAtlases?.[art.sheet];
+  if (!image?.naturalWidth) return null;
+  const columns = 4;
+  const rows = art.sheet === 'mechanical' || art.sheet === 'elemental' ? 6 : art.sheet === 'nature' ? 9 : 12;
+  const fixture = {
+    kind: 'environmentTrapFixture', trapKind: type.fixture, x, y, z: 0, tint, material: materialFor(variant),
+    active: false, trapState: 'idle', id, trapSheet: art.sheet, trapRow: art.row,
+    trapCellW: image.naturalWidth / columns, trapCellH: image.naturalHeight / rows,
+    k: world.tileset?.k || 0.4, flip: rng() < 0.5,
+  };
   world.props.push(fixture);
   return { id, kind, type, x, y, fixture, tint, rng, next: 8 + rng() * 8, warning: 0, dotLeft: 0, dotTick: 0, dotHit: new Set(), disabled: false };
 }
@@ -169,7 +186,7 @@ function detonateObstacle(world, site, obstacle) {
   sfx('explode', 0.45);
   const radius = 2.6;
   for (const target of world.creatures) if (!target.dead && !target.clutter && target !== obstacle && Math.hypot(target.x - site.x, target.y - site.y) <= radius + (target.r || 0)) damageTarget(world, site, target, 0.075);
-  site.fixture.active = true;
+  site.fixture.active = true; site.fixture.trapState = 'destroyed';
 }
 
 /** Attach one low-cost update/draw manager to an already generated, non-town world. */
@@ -206,13 +223,16 @@ export function setupEnvironmentalTraps(world, start) {
     update(dt) {
       for (const site of sites) {
         if (site.disabled) continue;
-        if (site.flash > 0 && (site.flash -= dt) <= 0 && site.warning <= 0) site.fixture.active = false;
+        if (site.flash > 0 && (site.flash -= dt) <= 0 && site.warning <= 0) {
+          site.fixture.active = false;
+          if (!site.disabled && site.dotLeft <= 0) site.fixture.trapState = 'idle';
+        }
         if (site.type.destructible) continue; // damage-triggered objects do nothing until the player breaks them
         if (site.warning > 0) {
           site.warning -= dt;
           site.next -= dt;
           if (site.warning <= 0) {
-            site.warning = 0; site.flash = 0.35; site.fixture.active = true;
+            site.warning = 0; site.flash = 0.35; site.fixture.active = true; site.fixture.trapState = 'active';
             if (site.type.mode === 'dot') { site.dotLeft = 3; site.dotTick = 0; site.dotHit.clear(); }
             else for (const target of world.creatures) if (!target.dead && Math.hypot(target.x - site.x, target.y - site.y) <= (site.type.trigger === 'pressure' ? 0.9 : 1.5) + (target.r || 0)) damageTarget(world, site, target, site.type.damage);
           }
@@ -222,15 +242,17 @@ export function setupEnvironmentalTraps(world, start) {
           const triggered = triggerRadius > 0 && world.creatures.some((target) => !target.dead && Math.hypot(target.x - site.x, target.y - site.y) <= triggerRadius + (target.r || 0));
           const periodic = site.type.trigger !== 'pressure' && site.type.trigger !== 'proximity';
           if (site.next <= 0 && (periodic || triggered)) {
-            site.warning = 1.1; site.next = 8 + rng() * 8; site.fixture.active = true;
+            site.warning = 1.1; site.next = 8 + rng() * 8; site.fixture.active = true; site.fixture.trapState = 'warning';
             sfx(({ fire: 'fire', cold: 'cold', light: 'light', poison: 'poison', arcane: 'arcane', shadow: 'shadow', phys: 'thud' })[site.type.element] || 'thud', 0.22);
           }
         }
         if (site.dotLeft > 0) {
+          site.fixture.trapState = 'active';
           site.dotTick -= dt;
           if (site.dotTick <= 0) {
             for (const target of world.creatures) if (!target.dead && Math.hypot(target.x - site.x, target.y - site.y) <= 1.5 + (target.r || 0)) damageTarget(world, site, target, site.type.damage);
             site.dotLeft--; site.dotTick = 1;
+            if (site.dotLeft <= 0) { site.fixture.trapState = 'idle'; site.fixture.active = false; }
           }
         }
       }

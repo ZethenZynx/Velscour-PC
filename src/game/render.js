@@ -342,7 +342,19 @@ function drawProp(ctx, pr, alpha) {
     ctx.globalCompositeOperation = 'source-over';
     return;
   }
-  if (pr.k) {
+  if (pr.kind === 'environmentTrapFixture' && pr.trapSheet) {
+    const img = A.environmentTrapAtlases?.[pr.trapSheet];
+    if (img?.complete && img.naturalWidth) {
+      const frame = ({ idle: 0, warning: 1, active: 2, destroyed: 3 })[pr.trapState] ?? 0;
+      const sw = pr.trapCellW, sh = pr.trapCellH, scale = Math.max(52, 148 * (pr.k || 0.4)) / sw;
+      const dw = sw * scale, dh = sh * scale, dx = x - dw / 2, dy = y - dh;
+      ctx.save();
+      ctx.imageSmoothingEnabled = false;
+      if (pr.flip) { ctx.translate(x, 0); ctx.scale(-1, 1); ctx.drawImage(img, frame * sw, pr.trapRow * sh, sw, sh, -dw / 2, dy, dw, dh); }
+      else ctx.drawImage(img, frame * sw, pr.trapRow * sh, sw, sh, dx, dy, dw, dh);
+      ctx.restore();
+    }
+  } else if (pr.k) {
     // biome pack scatter: drawn from its ground pivot (ox/oy in native px), maybe mirrored about it
     const s = pr.spr, w = s.w * pr.k, h = s.h * pr.k, dy = y + s.oy * pr.k;
     if (pr.flip) { ctx.save(); ctx.translate(x, 0); ctx.scale(-1, 1); ctx.drawImage(s.img, s.sx, s.sy, s.w, s.h, s.ox * pr.k, dy, w, h); ctx.restore(); }
@@ -363,11 +375,6 @@ function drawProp(ctx, pr, alpha) {
       ctx.drawImage(glowSprite('#ffb050'), x - 22, y - h - 14, 44, 44);
       ctx.globalCompositeOperation = 'source-over';
     }
-  }
-  if (pr.kind === 'environmentTrapFixture' && pr.active) {
-    const pulse = 0.3 + 0.12 * Math.sin(G.time * 16);
-    ctx.save(); ctx.globalAlpha = pulse; ctx.strokeStyle = pr.tint || '#d6bd7a'; ctx.lineWidth = 2;
-    ctx.beginPath(); ctx.ellipse(x, y, 24, 12, 0, 0, TAU); ctx.stroke(); ctx.restore();
   }
   if (alpha < 1 || pr.light) ctx.globalAlpha = 1;
 }
