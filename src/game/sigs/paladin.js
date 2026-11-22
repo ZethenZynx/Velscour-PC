@@ -135,8 +135,8 @@ export default {
   },
   draw(ctx, p, s, t) {
     const [cx, cy0] = headAt(p, 12), cy = cy0 + Math.sin(t * 2) * 1.5, RX = G.touch ? 13 : 16, RY = RX * 0.32, f = s.runes / RUNES;
-    // Use the rune halo itself to show charge; a centered additive glow stacks with
-    // seven lit rune glows and blooms into a solid disk on bright floors.
+    // Show charge with the ring and distinct rune glyphs. Radial glows at each rune
+    // overlap because the halo is compact; together they bloom into the reported orb.
     ctx.globalCompositeOperation = 'lighter';
     ctx.strokeStyle = GOLD; ctx.lineWidth = 2; ctx.globalAlpha = 0.45 + 0.4 * f;
     ctx.beginPath(); ctx.ellipse(cx, cy, RX, RY, 0, 0, TAU); ctx.stroke();
@@ -146,7 +146,6 @@ export default {
       const a = t * 0.8 + (i / RUNES) * TAU, x = cx + Math.cos(a) * RX, y = cy + Math.sin(a) * RY - 4, lit = i < s.runes;
       ctx.globalAlpha = lit ? 1 : 0.22; ctx.strokeStyle = lit ? (s.ready ? '#ffffff' : '#fff0b0') : '#a08040';
       rune(ctx, x, y, i, G.touch ? 0.8 : 1);
-      if (lit) glow(ctx, GOLD, x, y, 7, 0.6);
       ctx.globalCompositeOperation = 'lighter';
     }
     ctx.globalAlpha = 1; ctx.globalCompositeOperation = 'source-over';

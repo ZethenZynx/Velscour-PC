@@ -12,6 +12,13 @@ assert.match(paladin, /return this\.t < this\.fall \+ 0\.35;/, 'Judgement hammer
 assert.match(paladin, /glow\(ctx, GOLD, px, py - 34, 42, 0\.24 \* a\)/, 'Judgement uses a bounded, attached outer glow');
 assert.match(paladin, /glow\(ctx, '#ffffff', px, cy - 3, 14, 0\.22 \* a\)/, 'Judgement uses a restrained white core');
 assert.doesNotMatch(paladin, /glow\(ctx, GOLD, cx, cy, RX/, 'the Paladin charge no longer paints an additive disk over the head');
+const haloStart = paladin.indexOf('  draw(ctx, p, s, t) {');
+const haloEnd = paladin.indexOf('  ground(ctx, p, s, t) {', haloStart);
+assert.ok(haloStart >= 0 && haloEnd > haloStart, 'Paladin charge halo draw method is present');
+const haloDraw = paladin.slice(haloStart, haloEnd);
+assert.match(haloDraw, /ctx\.ellipse\(cx, cy, RX, RY/, 'the Paladin keeps the readable charge ring');
+assert.match(haloDraw, /rune\(ctx, x, y, i/, 'individual rune charge indicators remain visible');
+assert.doesNotMatch(haloDraw, /glow\(ctx, GOLD, x, y/, 'overlapping per-rune glow halos cannot bloom into a white orb');
 
 const orbitStart = hazards.indexOf('export class Orbit {');
 const orbitEnd = hazards.indexOf('// ===================================================================== Whirlwind', orbitStart);
