@@ -356,11 +356,14 @@ export function createGhostTrainRun(world, gen, biome, depth, onSuccess) {
       if (run.fire <= 0.3) { run.phase = 'last'; station(LAST, true); run.phase = 'last'; }
     }
     // cars cleared, one by one
-    FIGHT_CARS.forEach((car, k) => {
-      if (run.carDone[k] || packs[k].some((m) => !m.dead)) return;
+    for (let k = 0; k < FIGHT_CARS.length; k++) {
+      if (run.carDone[k]) continue;
+      let packAlive = false;
+      for (const m of packs[k]) if (!m.dead) { packAlive = true; break; }
+      if (packAlive) continue;
       run.carDone[k] = true; run.cleared++;
       UI.centerMsg(`CAR ${k + 1} CLEAR`, run.cleared >= FIGHT_CARS.length ? 'The tender. Their chief holds the engine.' : `${FIGHT_CARS.length - run.cleared} to go`, 2.2);
-    });
+    }
     const st = STATIONS[run.nextStation];
     if (st && run.cleared >= st.after && run.phase === 'run' && !run.completed && trainGorgeX() == null) { run.nextStation++; station(st.name, false, st.look); }
     // the gorge: once, between stations, while she runs
@@ -400,7 +403,7 @@ export function createGhostTrainRun(world, gen, biome, depth, onSuccess) {
       if (run.stationX != null && Math.abs(run.stationX - pl.x) < 30) for (let x = -11; x <= 11; x += 5.5) addLight(run.stationX + x, PLAT1 - 0.2, 5, 0.8, 70, '#ffd890');
     }
     trainCutaway(pl ? pl.x : null);
-    tickTrain3D(dt, { speed: run.speed, stationX: run.stationX, fire: run.fire });
+    tickTrain3D(dt, run);
     cr.frame(dt);
   }
   return run;

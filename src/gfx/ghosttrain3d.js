@@ -9,6 +9,7 @@
 import { G } from '../state.js';
 import { camera, HW } from '../core/view.js';
 import { CARS, ENGINE, TENDER, CABOOSE, CZ, ROW0, ROWS, PLAT0, PLAT1, PLAT_LEN, crateCells } from '../world/ghosttrain.js';
+import { clearNearestLights, insertNearestLight, recycleTrainScenery, sceneryVisibilityChanged } from './ghosttrainperf.js';
 /** The train's middle and the length of the land laid round it (ground, ballast, rails; the scenery's wrap). */
 const MID = Math.round((CABOOSE.x0 + ENGINE.x1) / 2), LAND = ENGINE.x1 - CABOOSE.x0 + 240;
 
@@ -395,13 +396,16 @@ function buildDrivers(scene, M) {
 // ------------------------------------------------------------------ the land going by
 const SCN_N = Math.round(46 * LAND / 320), SCN_X0 = CABOOSE.x0 - 66, SCN_SPAN = LAND - 100;
 function buildScenery(scene, M) {
-  const inst = (geo, mat, n) => { const m = new T.InstancedMesh(geo, mat, n); m.instanceMatrix.setUsage(T.DynamicDrawUsage); m.frustumCulled = false; scene.add(m); return m; };
+  const group = new T.Group(); scene.add(group);
+  const inst = (geo, mat, n) => { const m = new T.InstancedMesh(geo, mat, n); m.instanceMatrix.setUsage(T.StaticDrawUsage); m.frustumCulled = false; group.add(m); return m; };
   const I = {
     trunk: inst(new T.CylinderGeometry(0.12, 0.24, 1, 6), M.trunk, SCN_N), crown: inst(new T.IcosahedronGeometry(1, 0), M.leaf, SCN_N),
     bush: inst(new T.DodecahedronGeometry(0.5), M.leaf, SCN_N), pole: inst(new T.BoxGeometry(0.16, 1, 0.16), M.pole, SCN_N),
     bar: inst(new T.BoxGeometry(0.08, 0.08, 1.4), M.pole, SCN_N), rock: inst(new T.DodecahedronGeometry(0.5), M.rock, SCN_N),
   };
-  const items = [];
+  const items = [], m4 = new T.Matrix4(), q = new T.Quaternion(), e = new T.Euler(), p = new T.Vector3(), s = new T.Vector3();
+  const set = (mesh, i, x, y, z, sx, sy, sz, rx = 0, ry = 0, rz = 0) => { e.set(rx, ry, rz); q.setFromEuler(e); m4.compose(p.set(x, y, z), q, s.set(sx, sy, sz)); mesh.setMatrixAt(i, m4); };
+  const hide = (mesh, i) => set(mesh, i, 0, -99, 0, 0.001, 0.001, 0.001);
   const roll = (it, x) => {
     const far = rnd() < 0.6;
     // the near side keeps clear of the platforms and low (a tall tree there would stand over the cars being fought on)
@@ -412,24 +416,30 @@ function buildScenery(scene, M) {
     it.h = it.kind === 'tree' ? 2.4 + rnd() * 2.4 : it.kind === 'pole' ? 4.2 : 1; it.s = 0.6 + rnd() * 0.7; it.ry = rnd() * 6.28; it.lean = (rnd() - 0.5) * 0.2;
   };
   for (let i = 0; i < SCN_N; i++) { const it = {}; roll(it, SCN_X0 + (i / SCN_N) * SCN_SPAN + rnd() * 4); items.push(it); }
-  return { I, items, roll };
+  return { I, items, roll, group, set, hide };
 }
 function placeScenery(N, scroll, gorgeX = null) {
-  const m4 = new T.Matrix4(), q = new T.Quaternion(), e = new T.Euler(), p = new T.Vector3(), s = new T.Vector3(), I = N.I;
-  const set = (mesh, i, x, y, z, sx, sy, sz, rx = 0, ry = 0, rz = 0) => { e.set(rx, ry, rz); q.setFromEuler(e); m4.compose(p.set(x, y, z), q, s.set(sx, sy, sz)); mesh.setMatrixAt(i, m4); };
-  const hide = (mesh, i) => set(mesh, i, 0, -99, 0, 0.001, 0.001, 0.001);
-  N.items.forEach((it, i) => {
-    let x = it.x - scroll;
-    if (x < SCN_X0) { N.roll(it, it.x + SCN_SPAN); x = it.x - scroll; }
+  const I = N.I;
+  N.group.position.x = -scroll;
+  let changed = false;
+  const localGorgeX = gorgeX == null ? null : gorgeX + scroll;
+  for (let i = 0; i < N.items.length; i++) {
+    const it = N.items[i];
+    const recycled = recycleTrainScenery(it, scroll, SCN_X0, SCN_SPAN, N.roll);
+    const inGorge = localGorgeX != null && Math.abs(it.x - localGorgeX) < GORGE_W / 2 + 1.5;
+    const visibilityChanged = sceneryVisibilityChanged(it, inGorge);
+    if (!recycled && !visibilityChanged) continue;
+    changed = true;
     const g = Y_GROUND;
-    if (gorgeX != null && Math.abs(x - gorgeX) < GORGE_W / 2 + 1.5) { for (const k in I) hide(I[k], i); return; }   // nothing stands in the gorge
-    if (it.kind === 'tree') { set(I.trunk, i, x, g + it.h * 0.35, it.z, it.s, it.h * 0.7, it.s, 0, it.ry, it.lean); set(I.crown, i, x + it.lean, g + it.h * 0.8, it.z, it.s * 1.3, it.h * 0.42, it.s * 1.3, 0, it.ry, 0); }
-    else { hide(I.trunk, i); hide(I.crown, i); }
-    if (it.kind === 'bush') set(I.bush, i, x, g + 0.2 * it.s, it.z, it.s * 1.4, it.s, it.s * 1.4, 0, it.ry, 0); else hide(I.bush, i);
-    if (it.kind === 'pole') { set(I.pole, i, x, g + it.h / 2, it.z, 1, it.h, 1); set(I.bar, i, x, g + it.h - 0.3, it.z, 1, 1, 1.4); } else { hide(I.pole, i); hide(I.bar, i); }
-    if (it.kind === 'rock') set(I.rock, i, x, g + 0.1, it.z, it.s * 1.2, it.s * 0.6, it.s, it.ry, it.ry, 0); else hide(I.rock, i);
-  });
-  for (const k in I) I[k].instanceMatrix.needsUpdate = true;
+    const x = it.x;
+    if (inGorge) { for (const k in I) N.hide(I[k], i); continue; }   // nothing stands in the gorge
+    if (it.kind === 'tree') { N.set(I.trunk, i, x, g + it.h * 0.35, it.z, it.s, it.h * 0.7, it.s, 0, it.ry, it.lean); N.set(I.crown, i, x + it.lean, g + it.h * 0.8, it.z, it.s * 1.3, it.h * 0.42, it.s * 1.3, 0, it.ry, 0); }
+    else { N.hide(I.trunk, i); N.hide(I.crown, i); }
+    if (it.kind === 'bush') N.set(I.bush, i, x, g + 0.2 * it.s, it.z, it.s * 1.4, it.s, it.s * 1.4, 0, it.ry, 0); else N.hide(I.bush, i);
+    if (it.kind === 'pole') { N.set(I.pole, i, x, g + it.h / 2, it.z, 1, it.h, 1); N.set(I.bar, i, x, g + it.h - 0.3, it.z, 1, 1, 1.4); } else { N.hide(I.pole, i); N.hide(I.bar, i); }
+    if (it.kind === 'rock') N.set(I.rock, i, x, g + 0.1, it.z, it.s * 1.2, it.s * 0.6, it.s, it.ry, it.ry, 0); else N.hide(I.rock, i);
+  }
+  if (changed) for (const k in I) I[k].instanceMatrix.needsUpdate = true;
 }
 
 // ------------------------------------------------------------------ the gorge (a scenic beat)
@@ -578,7 +588,7 @@ export function buildTrain3D(world) {
   const stations = {};
   for (const look of STATION_LOOKS) stations[look] = buildStation(scene, M, look);
   const st = stations.hall, gorge = buildGorge(scene, M);
-  S = { scene, M, world, t: 0, scroll: 0, speed: 0, fire: 1, ground, ballast, train, cuts: train.cuts, drivers, scn, st, stations, gorge, gorgeX: null, glows: [], lightSrc: [], pool: [], smoke: [], smokeT: 0, steamT: 0, stationX: null };
+  S = { scene, M, world, t: 0, scroll: 0, speed: 0, fire: 1, ground, ballast, train, cuts: train.cuts, drivers, scn, st, stations, gorge, gorgeX: null, glows: [], lightSrc: [], nearLights: [], pool: [], smoke: [], smokeCursor: 0, smokeT: 0, steamT: 0, stationX: null };
   const addGlow = (gl, parent) => {
     const s = new T.Sprite(new T.SpriteMaterial({ map: halo(), color: gl.c, blending: T.AdditiveBlending, depthWrite: false, transparent: true }));
     const engine = gl.x >= ENGINE.x0 && parent === S.scene;
@@ -592,7 +602,7 @@ export function buildTrain3D(world) {
     const s = new T.Sprite(new T.SpriteMaterial({ map: puff(), color: 0x888888, depthWrite: false, transparent: true, opacity: 0 }));
     s.renderOrder = 4; s.visible = false; scene.add(s); S.smoke.push({ s, life: 0 });
   }
-  for (let i = 0; i < (few ? 3 : 5); i++) { const L = new T.PointLight(0xffffff, 0, 7, 1.5); scene.add(L); S.pool.push(L); }
+  for (let i = 0; i < (few ? 3 : 5); i++) { const L = new T.PointLight(0xffffff, 0, 7, 1.5); scene.add(L); S.pool.push(L); S.nearLights.push({ distance: Infinity, light: null }); }
   placeScenery(scn, 0);
   // the scene belongs to this level: it goes once the hero is elsewhere (nothing else ticks it then)
   S.watch = setInterval(() => { if (S && G.world !== S.world) disposeTrain3D(); }, 2500);
@@ -616,8 +626,14 @@ export function trainCutaway(x) {
   for (const c of S.cuts) c.g.visible = x == null || x < c.x0 - 0.6 || x > c.x1 + 0.6;
 }
 function emit(x, y, z, vx, vy, vz, life, color, s0, s1, a) {
-  const sm = S.smoke.find((q) => q.life <= 0); if (!sm) return;
-  Object.assign(sm, { x, y, z, vx, vy, vz, life, max: life, s0, s1, a }); sm.s.material.color.setHex(color); sm.s.visible = true;
+  let sm = null;
+  for (let n = 0; n < S.smoke.length; n++) {
+    const i = (S.smokeCursor + n) % S.smoke.length, candidate = S.smoke[i];
+    if (candidate.life <= 0) { sm = candidate; S.smokeCursor = (i + 1) % S.smoke.length; break; }
+  }
+  if (!sm) return;
+  sm.x = x; sm.y = y; sm.z = z; sm.vx = vx; sm.vy = vy; sm.vz = vz; sm.life = sm.max = life; sm.s0 = s0; sm.s1 = s1; sm.a = a;
+  sm.s.material.color.setHex(color); sm.s.visible = true;
 }
 /** The chief's fight (game/ghosttrain.js): 'vent', the furnace blowing steam out over the tender from both sides of
  *  the cab; 'whistle', a white plume shrieking up from the cab roof. */
@@ -633,9 +649,10 @@ export function trainVent(kind) {
   }
 }
 /** Game time: the land streams by at `speed` tiles a second, the station stands at `stationX` (null: none), the
- *  engine's fire burns at `fire` (0..1: its smoke and firebox). */
-export function tickTrain3D(dt, { speed = 0, stationX = null, fire = 1 } = {}) {
+ *  engine's fire burns at `fire` (0..1: its smoke and firebox). Pass the run state directly to avoid a per-frame object. */
+export function tickTrain3D(dt, run) {
   if (!S) return;
+  const speed = run?.speed ?? 0, stationX = run?.stationX ?? null, fire = run?.fire ?? 1;
   S.t += dt; S.speed = speed; S.fire = fire;
   const dx = speed * dt; S.scroll += dx;
   S.ground.material.map.offset.x = (S.scroll / 8) % 1;
@@ -668,8 +685,9 @@ export function tickTrain3D(dt, { speed = 0, stationX = null, fire = 1 } = {}) {
     sm.s.position.set(sm.x, sm.y, sm.z); sm.s.scale.setScalar(sm.s0 + k * (sm.s1 - sm.s0)); sm.s.material.opacity = sm.a * (1 - k) * Math.min(1, k * 8);
     if (sm.life <= 0) sm.s.visible = false;
   }
-  S.glows.forEach((g, i) => { g.material.opacity = 0.55 + 0.08 * Math.sin(S.t * 7 + i * 1.7); });
-  for (const g of S.engineGlows) g.material.opacity *= 0.3 + 0.7 * fire;
+  for (let i = 0; i < S.glows.length; i++) { const g = S.glows[i]; g.material.opacity = 0.55 + 0.08 * Math.sin(S.t * 7 + i * 1.7); }
+  const fireGlow = 0.3 + 0.7 * fire;
+  for (let i = 0; i < S.engineGlows.length; i++) S.engineGlows[i].material.opacity *= fireGlow;
   S.M.fire.color.setRGB(1, 0.35 + 0.2 * fire, 0.1 * fire).multiplyScalar(0.35 + 0.65 * fire);
 }
 
@@ -691,18 +709,17 @@ export function drawTrain3D(ctx, focus) {
   const [fx, fy, fz] = focus || [MID, 0, CZ];
   const d0 = 800 - (fx * rd.dir.x + fy * rd.dir.y + fz * rd.dir.z);
   S.scene.fog.near = d0 + 22; S.scene.fog.far = d0 + 95;
-  const near = [];
+  clearNearestLights(S.nearLights);
   for (const l of S.lightSrc) {
     if (l.o !== S.scene && !l.o.visible) continue;
     l.o.localToWorld(l.w.copy(l.p));
     const dd = (l.w.x - fx) ** 2 + (l.w.z - fz) ** 2;
-    if (dd < 400) near.push([dd, l]);
+    if (dd < 400) insertNearestLight(S.nearLights, dd, l);
   }
-  near.sort((a, b) => a[0] - b[0]);
   for (let i = 0; i < S.pool.length; i++) {
-    const L = S.pool[i], n = near[i];
-    if (!n) { L.intensity = 0; continue; }
-    const l = n[1], fl = 0.92 + 0.08 * Math.sin(S.t * 9 + i * 1.7) * Math.sin(S.t * 5.3 + i);
+    const L = S.pool[i], l = S.nearLights[i].light;
+    if (!l) { L.intensity = 0; continue; }
+    const fl = 0.92 + 0.08 * Math.sin(S.t * 9 + i * 1.7) * Math.sin(S.t * 5.3 + i);
     L.position.copy(l.w); L.color.setHex(l.c); L.distance = l.r; L.intensity = 9 * fl * (l.engine ? 0.3 + 0.7 * S.fire : 1);
   }
   rd.gl.setClearColor(SKY, 1);
