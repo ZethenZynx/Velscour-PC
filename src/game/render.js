@@ -33,7 +33,6 @@ import { hopArc } from './alpine.js';
 import { townStorageChestArtFor } from '../data/town-storage-chests.js';
 import { CURSED_CHEST_VARIANT, selectDungeonChestVariant } from '../data/chestappearances.js';
 import { MAP_TERRAIN_COLORS, terrainColor, terrainKindFromName } from '../gfx/mapcolors.js';
-import { drawEnvironmentalTrapFixture } from './environmenttraps.js';
 
 let lightCanvas = null, glowCanvas = null, vignette = null, vigKey = '';
 const transitionSprites = new Map();
@@ -328,11 +327,6 @@ function drawWall(ctx, o, k, alpha) {
 function drawProp(ctx, pr, alpha) {
   const x = isoX(pr.x, pr.y), y = isoY(pr.x, pr.y) - (pr.z || 0);
   if (alpha < 1) ctx.globalAlpha = alpha;
-  if (pr.kind === 'environmentTrapFixture') {
-    drawEnvironmentalTrapFixture(ctx, pr, x, y, G.time);
-    if (alpha < 1) ctx.globalAlpha = 1;
-    return;
-  }
   if (TOWN_PROP_KINDS.has(pr.kind)) { drawTownProp(ctx, pr, G.time); if (alpha < 1) ctx.globalAlpha = 1; if (pr.talkT > 0) drawTownSpeech(ctx, pr, x, y - (pr.kind === 'axe_rack' ? 96 : 60)); return; }
   if (pr.kind === 'flame') {
     // a lit wall torch on a town building: a flickering flame over the pack's unlit torch head
@@ -369,6 +363,11 @@ function drawProp(ctx, pr, alpha) {
       ctx.drawImage(glowSprite('#ffb050'), x - 22, y - h - 14, 44, 44);
       ctx.globalCompositeOperation = 'source-over';
     }
+  }
+  if (pr.kind === 'environmentTrapFixture' && pr.active) {
+    const pulse = 0.3 + 0.12 * Math.sin(G.time * 16);
+    ctx.save(); ctx.globalAlpha = pulse; ctx.strokeStyle = pr.tint || '#d6bd7a'; ctx.lineWidth = 2;
+    ctx.beginPath(); ctx.ellipse(x, y, 24, 12, 0, 0, TAU); ctx.stroke(); ctx.restore();
   }
   if (alpha < 1 || pr.light) ctx.globalAlpha = 1;
 }

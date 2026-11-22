@@ -1,4 +1,4 @@
-// Environment-specific physical hazards. Fixtures reuse the game's canvas style and add no image assets.
+// Environment-specific physical hazards. Fixtures reuse existing environment scatter sprites; no new art is generated.
 import { hit } from './combat.js';
 import { Clutter } from './clutter.js';
 import { isoX, isoY } from '../core/view.js';
@@ -102,10 +102,41 @@ function excluded(world, x, y, start, occupied) {
   return occupied(x, y, start);
 }
 
+const FIXTURE_ART = {
+  plate: /plate|grate|hatch|floor|rune|tile/i, blade: /blade|sword|spike|trap/i,
+  cracked: /crack|rubble|broken|stone/i, vent: /grate|vent|drain|pipe/i,
+  frostVent: /ice|frost|vent|grate|crystal/i, flame: /brazier|torch|fire|flame/i,
+  turret: /statue|pedestal|crystal|obelisk/i, obstacle: /crate|barrel|rock|rubble/i,
+  spikes: /spike|bone|teeth/i, icicle: /icicle|ice|crystal/i,
+  conductor: /crystal|obelisk|metal|rod|statue/i, sand: /sand|dune|rock/i,
+  crystal: /crystal|geode/i, fissure: /lava|rock|crack/i, boulder: /boulder|rock/i,
+  plant: /thorn|plant|root|bush/i, thorn: /thorn|plant|root|bush/i,
+  altar: /altar|obelisk|shrine|idol/i, bone: /bone|skull/i, rune: /rune|glyph|stone/i,
+  ice: /ice|crack|stone/i,
+};
+
+function fixtureSprite(world, fixture) {
+  const scatter = world.tileset?.scatter || [];
+  if (!scatter.length || !world.tileset?.k) return null;
+  const usable = scatter.filter((s) => s?.img && s.w > 0 && s.h > 0 && s.w <= 180 && s.h <= 180 && !/tree|canopy|wall|cliff|floor|large|giant/i.test(s.name || ''));
+  const preferred = usable.filter((s) => FIXTURE_ART[fixture] && FIXTURE_ART[fixture].test(s.name || ''));
+  const choices = preferred.length ? preferred : usable;
+  if (!choices.length) return null;
+  // Prefer a compact existing prop so repeated trap sites remain readable and do not obscure the scene.
+  return choices.reduce((best, s) => {
+    const score = Math.abs(Math.max(s.w, s.h) - 64) + Math.abs(s.w * s.h - 2304) / 256;
+    const bestScore = Math.abs(Math.max(best.w, best.h) - 64) + Math.abs(best.w * best.h - 2304) / 256;
+    return score < bestScore ? s : best;
+  });
+}
+
 function makeSite(world, kind, x, y, id, rng, variant) {
   const type = ENVIRONMENT_TRAP_TYPES[kind];
   const tint = tintFor(variant, type.element);
-  const fixture = { kind: 'environmentTrapFixture', trapKind: type.fixture, x, y, z: 0, tint, material: materialFor(variant), active: false, id };
+  const spr = fixtureSprite(world, type.fixture);
+  // Areas whose tileset has no reusable prop art simply receive fewer trap sites.
+  if (!spr) return null;
+  const fixture = { kind: 'environmentTrapFixture', trapKind: type.fixture, x, y, z: 0, tint, material: materialFor(variant), active: false, id, spr, k: world.tileset.k, flip: rng() < 0.5 };
   world.props.push(fixture);
   return { id, kind, type, x, y, fixture, tint, rng, next: 8 + rng() * 8, warning: 0, dotLeft: 0, dotTick: 0, dotHit: new Set(), disabled: false };
 }
@@ -159,7 +190,7 @@ export function setupEnvironmentalTraps(world, start) {
     if (sites.some((s) => Math.hypot(s.x - x, s.y - y) < 7)) continue;
     const kind = profile[Math.floor(rng() * profile.length)];
     const site = makeSite(world, kind, x, y, sites.length, rng, world.environmentVariant || world.biome?.id);
-    sites.push(site);
+    if (site) sites.push(site);
   }
   for (const site of sites.filter((s) => s.type.destructible)) {
     const obstacle = new Clutter(world, site.fixture);
@@ -219,50 +250,4 @@ export function setupEnvironmentalTraps(world, start) {
     },
   });
   return sites.length;
-}
-
-/** Small physical floor fixtures, intentionally drawn as part of the ordinary prop pass. */
-export function drawEnvironmentalTrapFixture(ctx, prop, x, y, time) {
-  const kind = prop.trapKind, c = prop.tint || '#c4a86c', pulse = prop.active ? 0.75 + Math.sin(time * 16) * 0.2 : 0.4;
-  const base = { ice: '#324b59', sand: '#55412c', iron: '#292426', moss: '#263c2b', granite: '#34383b', bone: '#413b36', stone: '#343034' }[prop.material] || '#343034';
-  ctx.save();
-  ctx.lineWidth = 2;
-  ctx.fillStyle = 'rgba(13,11,12,.88)'; ctx.strokeStyle = '#171316';
-  ctx.beginPath(); ctx.ellipse(x, y, 15, 8, 0, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
-  ctx.fillStyle = base; ctx.strokeStyle = c;
-  if (['plate','cracked','ice','sand'].includes(kind)) {
-    ctx.beginPath(); ctx.moveTo(x-12,y-1); ctx.lineTo(x-7,y-6); ctx.lineTo(x+7,y-6); ctx.lineTo(x+12,y-1); ctx.lineTo(x+8,y+5); ctx.lineTo(x-8,y+5); ctx.closePath(); ctx.fill(); ctx.stroke();
-    if (kind === 'cracked' || kind === 'ice') { ctx.beginPath(); ctx.moveTo(x,y-5); ctx.lineTo(x-2,y); ctx.lineTo(x+3,y+4); ctx.stroke(); }
-    if (kind === 'plate') { ctx.beginPath(); ctx.moveTo(x-7,y); ctx.lineTo(x+7,y); ctx.moveTo(x,y-4); ctx.lineTo(x,y+4); ctx.stroke(); }
-  } else if (['vent','frostVent','flame','fissure'].includes(kind)) {
-    ctx.fillStyle = '#201d1b'; ctx.beginPath(); ctx.ellipse(x,y,10,5,0,0,Math.PI*2); ctx.fill();
-    ctx.strokeStyle=c; ctx.beginPath(); ctx.moveTo(x-7,y); ctx.lineTo(x+7,y); ctx.moveTo(x-4,y-3); ctx.lineTo(x-4,y+3); ctx.moveTo(x+4,y-3); ctx.lineTo(x+4,y+3); ctx.stroke();
-    if (prop.active) { ctx.globalAlpha = pulse; ctx.fillStyle=c; ctx.beginPath(); ctx.ellipse(x,y-5,4,7,0,0,Math.PI*2); ctx.fill(); }
-  } else if (['turret','altar','obstacle','boulder'].includes(kind)) {
-    ctx.beginPath(); ctx.moveTo(x-9,y+3); ctx.lineTo(x-7,y-4); ctx.lineTo(x-3,y-8); ctx.lineTo(x+4,y-7); ctx.lineTo(x+9,y-1); ctx.lineTo(x+7,y+4); ctx.closePath(); ctx.fill(); ctx.stroke();
-    if (kind === 'turret' || kind === 'altar') { ctx.fillStyle=c; ctx.beginPath(); ctx.arc(x,y-3,2.3,0,Math.PI*2); ctx.fill(); }
-  } else if (kind === 'blade' || kind === 'spikes' || kind === 'bone' || kind === 'icicle') {
-    ctx.beginPath(); for (let i=0;i<3;i++) { const xx=x-7+i*7; ctx.moveTo(xx-3,y+4); ctx.lineTo(xx,y-5-(i===1?2:0)); ctx.lineTo(xx+3,y+4); } ctx.stroke();
-  } else if (kind === 'conductor' || kind === 'rune' || kind === 'crystal') {
-    ctx.beginPath(); ctx.moveTo(x,y-8); ctx.lineTo(x+7,y); ctx.lineTo(x,y+6); ctx.lineTo(x-7,y); ctx.closePath(); ctx.fill(); ctx.stroke();
-    ctx.globalAlpha=pulse; ctx.fillStyle=c; ctx.beginPath(); ctx.arc(x,y,2.2,0,Math.PI*2); ctx.fill();
-  } else if (kind === 'plant' || kind === 'thorn') {
-    ctx.beginPath(); ctx.moveTo(x,y+4); ctx.quadraticCurveTo(x-9,y-2,x-4,y-8); ctx.quadraticCurveTo(x+1,y-7,x,y+1); ctx.quadraticCurveTo(x+8,y-4,x+7,y-9); ctx.quadraticCurveTo(x+12,y-1,x,y+4); ctx.stroke();
-  }
-  // Material-specific wear makes a shared mechanism belong to its environment variant.
-  ctx.globalAlpha = 0.62;
-  if (prop.material === 'iron') {
-    ctx.fillStyle = '#c49b60'; for (const dx of [-9, 9]) { ctx.beginPath(); ctx.arc(x+dx,y,1.2,0,Math.PI*2); ctx.fill(); }
-  } else if (prop.material === 'ice') {
-    ctx.strokeStyle = '#d4f4ff'; ctx.beginPath(); ctx.moveTo(x-5,y+2); ctx.lineTo(x-1,y-2); ctx.lineTo(x+2,y+1); ctx.lineTo(x+6,y-3); ctx.stroke();
-  } else if (prop.material === 'sand') {
-    ctx.strokeStyle = '#c49a5f'; ctx.beginPath(); ctx.arc(x,y,5,0.2,Math.PI*1.55); ctx.stroke();
-  } else if (prop.material === 'moss') {
-    ctx.fillStyle = '#729260'; for (const dx of [-6, 4]) { ctx.beginPath(); ctx.arc(x+dx,y+2,1.2,0,Math.PI*2); ctx.fill(); }
-  }
-  if (prop.active) {
-    ctx.globalAlpha = pulse; ctx.strokeStyle = c; ctx.lineWidth = 2.5;
-    ctx.beginPath(); ctx.ellipse(x, y, 18, 9, 0, 0, Math.PI * 2); ctx.stroke();
-  }
-  ctx.restore();
 }

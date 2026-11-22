@@ -44,8 +44,10 @@ test('environmental scaling rises gradually and stays inside the approved caps',
 
 test('generated trap sites are deterministic, accessible, and separated from interactables', () => {
   const makeWorld = () => {
+    const existingEnvironmentProp = { name: 'stone_scatter_altar_01', img: {}, sx: 0, sy: 0, w: 64, h: 64, ox: -32, oy: -64 };
     const world = {
       kind: 'dungeon', depth: 55, environmentTrapSeed: 445566, environmentVariant: 'moonwell', biome: { id: 'depths_edge' },
+      tileset: { k: 0.4, scatter: [existingEnvironmentProp] },
       props: [{ x: 15, y: 15 }], chests: [{ x: 30, y: 30 }], npcs: [{ x: 20, y: 20 }], portals: [{ x: 40, y: 40 }], creatures: [], hazards: [{ x: 10, y: 12 }],
       map: { w: 56, h: 56, walkable: () => true, circleFree: () => true },
       add(creature) { creature.world = this; this.creatures.push(creature); return creature; },
@@ -60,6 +62,8 @@ test('generated trap sites are deterministic, accessible, and separated from int
   assert.deepEqual(a.environmentTraps.map(({kind,x,y}) => [kind,x,y]), b.environmentTraps.map(({kind,x,y}) => [kind,x,y]));
   assert.equal(a.props.length, countA + 1, 'only the one pre-existing decorative prop is retained beside trap fixtures');
   for (const site of a.environmentTraps) {
+    assert.equal(site.fixture.spr, a.tileset.scatter[0], 'trap fixtures reuse existing environment artwork');
+    assert.equal(site.fixture.k, a.tileset.k, 'reused artwork keeps the environment scale');
     assert.ok(Math.hypot(site.x - 5, site.y - 5) >= 8);
     assert.ok(Math.hypot(site.x - 30, site.y - 30) >= 2.25);
     assert.ok(Math.hypot(site.x - 20, site.y - 20) >= 2.25);
