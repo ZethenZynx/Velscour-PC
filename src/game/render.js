@@ -32,7 +32,7 @@ import { drawTerrain, drawColumn, occludersFor, occludersOfRect, occluderObj, cl
 import { hopArc } from './alpine.js';
 import { townStorageChestArtFor } from '../data/town-storage-chests.js';
 import { CURSED_CHEST_VARIANT, selectDungeonChestVariant } from '../data/chestappearances.js';
-import { MAP_TERRAIN_COLORS, terrainColor, terrainKindFromName } from '../gfx/mapcolors.js';
+import { MAP_TERRAIN_COLORS, eternalBreachMapColor, terrainColor, terrainKindFromName } from '../gfx/mapcolors.js';
 
 let lightCanvas = null, glowCanvas = null, vignette = null, vigKey = '';
 const transitionSprites = new Map();
@@ -249,6 +249,8 @@ function mapTerrainColor(world, map, i) {
 }
 
 function mapCellColor(world, map, i) {
+  const breachColor = eternalBreachMapColor(map, i);
+  if (breachColor) return breachColor;
   if (map.wet?.[i]) return map.wet[i] > 1 ? MAP_TERRAIN_COLORS.deepWater : MAP_TERRAIN_COLORS.water;
   if (map.sea) return MAP_TERRAIN_COLORS.deepWater;
   if (map.sky || map.ghostTrain || map.voidFace) return MAP_TERRAIN_COLORS.void;

@@ -7,6 +7,22 @@ export const MAP_TERRAIN_COLORS = Object.freeze({
   bridge: '#75664e', rail: '#4c4c51', crystal: '#638995', fungal: '#69724a',
 });
 
+// The Eternal Breach has a fixed void-island palette shared by the TAB map and minimap.
+export const ETERNAL_BREACH_MAP_COLORS = Object.freeze({
+  walkable: '#645476', boundary: '#929BA8', inaccessible: '#141217', pathway: '#847396',
+});
+
+/** Resolve the Breach's revealed collision grid into its dedicated map palette. */
+export function eternalBreachMapColor(map, i) {
+  const own = map?.breach?.own, bridges = map?.breach?.bridgeOf;
+  if (!own || !bridges || i < 0 || i >= own.length) return null;
+  const colors = ETERNAL_BREACH_MAP_COLORS;
+  if (map.t?.[i] !== 1) return colors.inaccessible;
+  if (map.block?.[i] || map.breach.rock?.[i] || (own[i] >= 0 && map.rounded?.[i])) return colors.boundary;
+  if (bridges[i] >= 0 && own[i] < 0) return colors.pathway;
+  return own[i] >= 0 ? colors.walkable : colors.inaccessible;
+}
+
 const RULES = [
   ['deepWater', /deep\s*water|abyss(?:al)?\s*(?:water|pool)|ocean|open\s*sea|void\s*water/],
   ['lava', /lava|magma|molten|volcanic|fire\s*river/],
