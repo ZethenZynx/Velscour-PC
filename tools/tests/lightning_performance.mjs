@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 import { performance } from 'node:perf_hooks';
-import { writeBoltGeometry } from '../../src/gfx/lightninggeometry.mjs';
+import { appendBoltGeometry, writeBoltGeometry } from '../../src/gfx/lightninggeometry.mjs';
 import { Bolt, addEffect, drawEffects, effects } from '../../src/gfx/vfx.js';
 import { camera } from '../../src/core/view.js';
 import { G } from '../../src/state.js';
@@ -15,8 +15,12 @@ const [vfx, augments, hazards, world] = await Promise.all([
 const skillrun = await readFile(new URL('../../src/game/skillrun.js', import.meta.url), 'utf8');
 
 assert.match(vfx, /const MAX_POOLED_BOLTS = 256/, 'shared lightning bolts have a bounded reusable pool');
-assert.match(vfx, /new Float32Array\(98\)/, 'bolt paths use a reusable flat geometry buffer');
+assert.match(vfx, /new Float32Array\(18\)/, 'bolt paths use a compact reusable flat geometry buffer');
 assert.match(vfx, /this\.dur >= 0\.12 \|\| !this\.built/, 'short tether bolts build once instead of regenerating before expiry');
+assert.match(vfx, /this\.regen = 0\.08/, 'long lightning geometry updates at 12.5 Hz');
+assert.match(vfx, /const boltFrame = \[\]/, 'visible bolts share one reusable render batch');
+const boltRenderer = vfx.slice(vfx.indexOf('export function Bolt('), vfx.indexOf('export class Beam'));
+assert.doesNotMatch(boltRenderer, /shadowBlur|globalCompositeOperation/, 'Bolt rendering does not use blur or additive glow');
 assert.match(augments, /const candidates = h\.tetherCandidates \|\| \(h\.tetherCandidates = \[\]\)/, 'Storm Tether reuses hit candidates per hazard');
 assert.match(augments, /if \(zap && dmg > 0\) w\.hostiles\(owner\.team, owner\.x, owner\.y, 11, candidates\)/, 'Storm Tether performs one broadphase lookup per damage pulse');
 assert.match(augments, /function damageTetherArc\(h, x0, y0, x1, y1, dmg, candidates\)/, 'Storm Tether reuses broadphase candidates for each arc');
@@ -24,24 +28,37 @@ assert.doesNotMatch(augments, /lineTargets\(/, 'Storm Tether no longer performs 
 assert.doesNotMatch(augments, /pts\.map\(\(\[x, y\]\) => \[owner\.x, owner\.y, x, y\]\)/, 'Storm Tether does not rebuild segment arrays each frame');
 assert.match(hazards, /out = \[\], candidates = \[\]/, 'line targeting accepts reusable output buffers');
 assert.match(world, /hostiles\(team, x, y, r, out = \[\]\)/, 'hostile queries can fill caller-owned storage');
+const orbitStart = hazards.indexOf('export class Orbit {');
+const whirlStart = hazards.indexOf('// ===================================================================== Whirlwind', orbitStart);
+const orbit = hazards.slice(orbitStart, whirlStart);
+assert.match(orbit, /const p = this\.pos\[i\] \|\| \(this\.pos\[i\] = \[0, 0, 0\]\)/, 'orbiting hazard points reuse allocated tuples');
+assert.doesNotMatch(orbit, /this\.pos\.push\(\[/, 'orbiting hazards do not allocate point tuples each frame');
 const beamStart = hazards.indexOf('export class BeamCh {');
 const trapStart = hazards.indexOf('// ===================================================================== Trap', beamStart);
 const beamCh = hazards.slice(beamStart, trapStart);
-assert.match(beamCh, /this\.lightningPaths = .*new Float32Array\(\(this\.n \|\| 1\) \* 40\)/, 'lightning channels retain reusable per-beam paths');
-assert.match(beamCh, /this\.lightningRegen = 0\.05/, 'beam flicker geometry refreshes at 20 Hz instead of per rendered frame');
+assert.match(beamCh, /this\.lightningPaths = .*new Float32Array\(\(this\.n \|\| 1\) \* 16\)/, 'lightning channels retain compact reusable per-beam paths');
+assert.match(beamCh, /this\.lightningScreenLines = .*new Float32Array\(\(this\.n \|\| 1\) \* 4\)/, 'lightning channels reuse screen-space line buffers');
+assert.match(beamCh, /this\.lightningRegen = 0\.08/, 'beam flicker geometry refreshes at 12.5 Hz instead of per rendered frame');
 assert.doesNotMatch(beamCh.slice(beamCh.indexOf('draw(ctx)')), /rand\(-8, 8\)/, 'beam draw reuses offsets instead of generating random geometry');
+assert.match(beamCh, /this\.fx !== 'lightning' && this\.fx !== 'storm'/, 'sustained lightning beams do not spawn per-frame glow particles or lights');
+assert.match(beamCh, /LIGHTNING_BLUE/, 'sustained lightning beams use the shared lightweight blue-white renderer');
+assert.match(beamCh, /if \(!lineCount\) return/, 'off-screen sustained lightning beams skip rendering');
+assert.doesNotMatch(beamCh.slice(beamCh.indexOf('fire(first)'), beamCh.indexOf('update(dt)')), /ends\.push\(/, 'sustained beam endpoints reuse tuples between combat ticks');
 assert.match(augments, /if \(id === 'tether'\) continue;/, 'tether arcs do not duplicate themselves with additive orbit motes');
 const tether = augments.slice(augments.indexOf('function tether('), augments.indexOf('function tetherArc('));
 assert.doesNotMatch(tether, /sfx\(/, 'Storm Tether does not trigger hammer cast audio');
 assert.match(tether, /h\.tetherT = 0\.25/, 'Storm Tether damage remains at four pulses per second');
 assert.match(tether, /\* 0\.3 \* pow/, 'Storm Tether damage scaling is unchanged');
-assert.match(augments, /chance\(dt \* 15\)/, 'Storm Tether cosmetic bolt emission is reduced without changing its damage pulse');
+assert.match(augments, /chance\(dt \* 12\)/, 'Storm Tether cosmetic bolt emission is limited to 12 Hz');
+const tetherBody = augments.slice(augments.indexOf('function tether('), augments.indexOf('function tetherArc('));
+assert.doesNotMatch(tetherBody, /addLight\(/, 'Storm Tether does not submit per-hammer dynamic lights');
+assert.doesNotMatch(tetherBody, /spawn\(/, 'Storm Tether creates no particle cloud');
 const orbitCast = skillrun.slice(skillrun.indexOf("case 'orbit':"), skillrun.indexOf("case 'cyclone':"));
 assert.match(orbitCast, /sfx\('swing'\);/, 'the Blessed Hammer sound is only requested by the orbit cast path');
 
-const buffer = new Float32Array(98);
+const buffer = new Float32Array(18);
 const points = writeBoltGeometry(buffer, 0, 0, 240, 80, () => 0.5);
-assert.ok(points >= 3 && points <= 49);
+assert.ok(points >= 3 && points <= 9);
 assert.deepEqual(Array.from(buffer.slice(0, 2)), [0, 0]);
 assert.deepEqual(Array.from(buffer.slice((points - 1) * 2, points * 2)), [240, 80]);
 const reusedBuffer = buffer;
@@ -60,7 +77,29 @@ assert.equal(Bolt(2, 2, 10, 4, 4, 10, '#a8ccff', 0.09, 2), factoryBolt, 'hot-pat
 // Renderer scaling check: canvas path submissions for the requested connection counts.
 const median = (values) => values.sort((a, b) => a - b)[Math.floor(values.length / 2)];
 const context = () => ({ strokes: 0, lines: 0, beginPath() {}, moveTo() {}, lineTo() { this.lines++; }, stroke() { this.strokes++; } });
+function legacyDraw(ctx, bolt) {
+  const alpha = 1 - bolt.t / bolt.dur * 0.7;
+  ctx.globalAlpha = alpha;
+  for (let pass = 0; pass < 2; pass++) {
+    ctx.strokeStyle = pass ? '#ffffff' : bolt.color;
+    ctx.lineWidth = pass ? bolt.width * 0.4 : bolt.width * 1.8;
+    ctx.beginPath(); appendBoltGeometry(ctx, bolt.legacySeg, bolt.legacyCount); ctx.stroke();
+  }
+}
+function legacyRender(ctx) {
+  for (const effect of effects) {
+    if (effect.layer !== 'top') continue;
+    legacyDraw(ctx, effect);
+  }
+}
 G.W = 1280; G.H = 720; camera.x = 0; camera.y = 0; camera.zoom = 1;
+function legacyGeometry(out, ax, ay, bx, by) {
+  const dx = bx - ax, dy = by - ay, len = Math.hypot(dx, dy), n = Math.min(48, Math.max(3, Math.floor(len / 12)));
+  const nx = -dy / (len || 1), ny = dx / (len || 1), spread = Math.min(18, len * 0.12);
+  out[0] = ax; out[1] = ay;
+  for (let i = 1; i < n; i++) { const t = i / n, offset = (Math.random() * 2 - 1) * spread, at = i * 2; out[at] = ax + dx * t + nx * offset; out[at + 1] = ay + dy * t + ny * offset; }
+  out[n * 2] = bx; out[n * 2 + 1] = by; return n + 1;
+}
 const renderCases = [];
 effects.length = 0;
 addEffect(Bolt(2000, 2000, 0, 2001, 2001, 0, '#ffffff', 0.2, 2));
@@ -70,31 +109,87 @@ for (const count of [1, 10, 25, 50, 100]) {
   effects.length = 0;
   const bolts = [];
   for (let i = 0; i < count; i++) {
-    const bolt = new Bolt(0, 0, 0, 2 + i * 0.01, 1, 0, i % 2 ? '#9cc4ff' : '#ffffff', 0.09, 1.8);
+    const bolt = new Bolt(0, 0, 0, 8 + i * 0.01, 4, 0, i % 2 ? '#9cc4ff' : '#ffffff', 0.09, 1.8);
     bolt.t = (i % 8) * 0.011;
-    bolt.build(); bolts.push(bolt); addEffect(bolt);
+    bolt.build(); bolt.legacySeg = new Float32Array(98); bolt.legacyCount = legacyGeometry(bolt.legacySeg, 0, 0, 128 + i * 0.32, 192); bolts.push(bolt); addEffect(bolt);
   }
+  assert.equal(effects.length, count, `active lightning effects are not capped (${count})`);
   const legacyCtx = context(), batchCtx = context();
-  for (const bolt of bolts) bolt.draw(legacyCtx);
+  legacyRender(legacyCtx);
   drawEffects(batchCtx, 'top');
   assert.equal(legacyCtx.strokes, count * 2, `legacy renderer submits two strokes per bolt (${count})`);
+  assert.ok(legacyCtx.lines > batchCtx.lines, `simpler geometry reduces submitted line segments (${count})`);
   assert.ok(batchCtx.strokes <= legacyCtx.strokes, `batched renderer does not increase stroke submissions (${count})`);
   if (count > 1) assert.ok(batchCtx.strokes < legacyCtx.strokes, `batched renderer reduces stroke submissions (${count})`);
-  assert.ok(batchCtx.strokes <= 32, `batch stroke count stays bounded as connections increase (${count})`);
+  assert.equal(batchCtx.strokes, 2, `lightweight lightning uses only two strokes for ${count} simultaneous connections`);
   legacyCtx.strokes = legacyCtx.lines = batchCtx.strokes = batchCtx.lines = 0;
   const frames = 2000, legacyTimes = [], batchedTimes = [];
   for (let round = 0; round < 5; round++) {
     let start = performance.now();
-    for (let frame = 0; frame < frames; frame++) for (const bolt of bolts) bolt.draw(legacyCtx);
+    for (let frame = 0; frame < frames; frame++) legacyRender(legacyCtx);
     legacyTimes.push(performance.now() - start);
     start = performance.now();
     for (let frame = 0; frame < frames; frame++) drawEffects(batchCtx, 'top');
     batchedTimes.push(performance.now() - start);
   }
-  renderCases.push({ count, legacyStrokes: legacyCtx.strokes, batchedStrokes: batchCtx.strokes, lines: batchCtx.lines,
+  renderCases.push({ count, legacyStrokes: legacyCtx.strokes, batchedStrokes: batchCtx.strokes, legacyLines: legacyCtx.lines, lines: batchCtx.lines,
     legacyMs: median(legacyTimes), batchedMs: median(batchedTimes) });
 }
 effects.length = 0;
+
+// Compare the former per-segment world lookup with the current shared broadphase
+// and identical segment-circle hit checks. This isolates search/collision work.
+const TAU = Math.PI * 2;
+const enemies = Array.from({ length: 200 }, (_, id) => {
+  const a = id * 2.399963229728653, r = 1 + (id % 95) / 10;
+  return { id, x: Math.cos(a) * r, y: Math.sin(a) * r, r: 0.25 + (id % 4) * 0.12 };
+});
+const queryBuffer = [], sharedCandidates = [], oldHits = [], newHits = [];
+let oldQueries = 0, newQueries = 0;
+function queryEnemies(x, y, radius, out) {
+  out.length = 0;
+  for (const e of enemies) {
+    const rr = radius + e.r, dx = e.x - x, dy = e.y - y;
+    if (dx * dx + dy * dy <= rr * rr) out.push(e);
+  }
+  return out;
+}
+function segmentHit(e, x0, y0, x1, y1) {
+  const dx = x1 - x0, dy = y1 - y0, len = Math.sqrt(dx * dx + dy * dy);
+  const t = Math.max(0, Math.min(len, ((e.x - x0) * dx + (e.y - y0) * dy) / (len || 1)));
+  const ex = x0 + dx / (len || 1) * t - e.x, ey = y0 + dy / (len || 1) * t - e.y, rr = 0.35 + e.r;
+  return ex * ex + ey * ey <= rr * rr;
+}
+function oldSearch(segments) {
+  oldHits.length = 0;
+  for (const [x0, y0, x1, y1] of segments) {
+    const len = Math.hypot(x1 - x0, y1 - y0), mx = (x0 + x1) / 2, my = (y0 + y1) / 2;
+    for (const e of queryEnemies(mx, my, len / 2 + 1.35, queryBuffer)) if (segmentHit(e, x0, y0, x1, y1)) oldHits.push(e.id);
+    oldQueries++;
+  }
+  return oldHits.length;
+}
+function sharedSearch(segments) {
+  newHits.length = 0;
+  queryEnemies(0, 0, 11, sharedCandidates); newQueries++;
+  for (const [x0, y0, x1, y1] of segments) for (const e of sharedCandidates) if (segmentHit(e, x0, y0, x1, y1)) newHits.push(e.id);
+  return newHits.length;
+}
+const combatCases = [];
+for (const count of [1, 10, 25, 50, 100]) {
+  const segments = Array.from({ length: count }, (_, i) => {
+    const angle = TAU * i / count, len = 5 + (i % 5) * 0.65;
+    return [0, 0, Math.cos(angle) * len, Math.sin(angle) * len];
+  });
+  assert.equal(sharedSearch(segments), oldSearch(segments), `shared candidate search preserves hit results (${count})`);
+  assert.deepEqual([...newHits].sort((a, b) => a - b), [...oldHits].sort((a, b) => a - b), `shared candidate search preserves targets (${count})`);
+  const repeats = 200, oldTimes = [], sharedTimes = [];
+  for (let round = 0; round < 5; round++) {
+    let start = performance.now(); for (let i = 0; i < repeats; i++) oldSearch(segments); oldTimes.push(performance.now() - start);
+    start = performance.now(); for (let i = 0; i < repeats; i++) sharedSearch(segments); sharedTimes.push(performance.now() - start);
+  }
+  combatCases.push({ count, queriesOld: count, queriesNew: 1, oldMs: median(oldTimes), sharedMs: median(sharedTimes) });
+}
 
 // Compare the former nested-array geometry builder with the new in-place writer.
 // This is a CPU/allocation microbenchmark, not a full-game frame-time claim.
@@ -118,5 +213,7 @@ for (let round = 0; round < 5; round++) {
 }
 const legacyMs = median(legacyTimes), reusedMs = median(reusedTimes);
 console.log('Lightning renderer scalability (Node mock canvas; stroke calls per frame, not GPU timing):');
-for (const row of renderCases) console.log(`  ${row.count} connections: ${row.legacyStrokes / 10000} -> ${row.batchedStrokes / 10000} strokes/frame; ${row.legacyMs.toFixed(2)} -> ${row.batchedMs.toFixed(2)} ms per 2,000 mock frames`);
+for (const row of renderCases) console.log(`  ${row.count} connections: ${row.legacyStrokes / 10000} -> ${row.batchedStrokes / 10000} strokes/frame; ${row.legacyLines / 10000} -> ${row.lines / 10000} line segments/frame; ${row.legacyMs.toFixed(2)} -> ${row.batchedMs.toFixed(2)} ms per 2,000 mock frames`);
+console.log('Storm Tether search and segment-check scalability (200 synthetic enemies; per 200 pulses):');
+for (const row of combatCases) console.log(`  ${row.count} connections: ${row.queriesOld} -> ${row.queriesNew} broadphase queries/pulse; ${row.oldMs.toFixed(2)} -> ${row.sharedMs.toFixed(2)} ms`);
 console.log(`Lightning geometry check passed. Median of 5 × ${iterations.toLocaleString()} builds: nested arrays ${legacyMs.toFixed(1)} ms; reusable typed buffer ${reusedMs.toFixed(1)} ms (${Math.round((1 - reusedMs / legacyMs) * 100)}% faster in this Node microbenchmark; checksum ${checksum | 0}).`);

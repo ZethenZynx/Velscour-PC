@@ -1,8 +1,8 @@
-/** Write a jagged bolt into a reusable interleaved xy buffer; returns its point count. */
+/** Write a lightweight jagged bolt (at most eight segments) into reusable xy storage. */
 export function writeBoltGeometry(out, ax, ay, bx, by, random = Math.random) {
   const dx = bx - ax, dy = by - ay, len = Math.hypot(dx, dy);
-  const n = Math.min(48, Math.max(3, Math.floor(len / 12)));
-  const nx = -dy / (len || 1), ny = dx / (len || 1), offset = Math.min(18, len * 0.12);
+  const n = Math.min(8, Math.max(3, Math.ceil(len / 24)));
+  const nx = -dy / (len || 1), ny = dx / (len || 1), offset = Math.min(4.5, len * 0.06);
   out[0] = ax; out[1] = ay;
   for (let i = 1; i < n; i++) {
     const t = i / n, off = (random() * 2 - 1) * offset, at = i * 2;

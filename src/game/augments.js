@@ -238,13 +238,12 @@ function tether(h, owner, pts, pow, dt) {
       tetherArc(h, dt, zap, dmg, a[0], a[1], b[0], b[1], candidates);
     }
   }
-  for (const [x, y] of pts) addLight(x, y, 1.4, 0.5);
 }
 function tetherArc(h, dt, zap, dmg, x0, y0, x1, y1, candidates) {
   const d2 = dist2(x0, y0, x1, y1);
   if (d2 < 0.25 || d2 > 81) return;
-  // The arc visuals are cosmetic and use 15 Hz emission; damage remains on its separate 4 Hz timer.
-  if (chance(dt * 15)) addEffect(Bolt(x0, y0, 26, x1, y1, 24, chance(0.3) ? '#ffffff' : '#9cc4ff', 0.09, 1.8));
+  // Cosmetic arcs refresh at 12 Hz; damage stays on its separate 4 Hz timer.
+  if (chance(dt * 12)) addEffect(Bolt(x0, y0, 26, x1, y1, 24, '#9fcfff', 0.09, 1.6));
   if (zap && dmg > 0) damageTetherArc(h, x0, y0, x1, y1, dmg, candidates);
 }
 function damageTetherArc(h, x0, y0, x1, y1, dmg, candidates) {

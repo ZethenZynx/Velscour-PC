@@ -1,9 +1,9 @@
 // Runtime objects spawned by skills and monster attacks.
 import { G } from '../state.js';
 import { rand, chance, TAU, clamp, angleTo, angleDiff, dist, randi } from '../core/util.js';
-import { isoX, isoY, HW, HH } from '../core/view.js';
+import { camera, isoX, isoY, HW, HH } from '../core/view.js';
 import { sfx } from '../core/audio.js';
-import { spawn, burst, addEffect, Ring, Bolt, Beam, Slash, Telegraph, elem, glowSprite, addLight, smoke, addDecal, sparkle, gibs } from '../gfx/vfx.js';
+import { spawn, burst, addEffect, Ring, Bolt, Beam, Slash, Telegraph, elem, glowSprite, addLight, smoke, addDecal, sparkle, gibs, LIGHTNING_BLUE, LIGHTNING_CORE } from '../gfx/vfx.js';
 import { emitWhirlCyclone, captureWhirlGibs, drawWhirlCyclone } from '../gfx/barbarianwhirl.js';
 import { drawShape, trail, explosionFx, hitSpark } from '../gfx/shapes.js';
 import { bardProjInit, bardProjUpdate, bardProjHit, bardProjDraw, bardOrbitDraw, bardRainDraw, bardBeamDraw } from './bard.js';
@@ -595,11 +595,13 @@ export class Orbit {
     if (this.t > this.dur) return false;
     const w = this.world;
     const rad = this.rad = this.spiral ? Math.min(this.radius * 2.2, 0.4 + this.t * 2.1) : this.radius * Math.min(1, this.t * 4);
-    this.pos.length = 0;
     for (let i = 0; i < this.n; i++) {
       const a = this.base + this.t * this.speed + (i * TAU) / this.n;
       const x = this.src.x + Math.cos(a) * rad, y = this.src.y + Math.sin(a) * rad;
-      this.pos.push([x, y, a]);
+      // Keep the per-orbiter point tuples; recreating them every frame made
+      // dense hammer/orbit effects generate avoidable garbage for the collector.
+      const p = this.pos[i] || (this.pos[i] = [0, 0, 0]);
+      p[0] = x; p[1] = y; p[2] = a;
       for (const c of w.hostiles(this.team, x, y, 0.42 * this.size)) {
         const k = c.id * 100 + i;
         if ((this.cd.get(c.id) || 0) > this.t) continue;
@@ -609,6 +611,7 @@ export class Orbit {
       }
       if (!this.shieldVariant && chance(dt * 10)) trail(this.fx, x, y, 24, this.E, dt, this.size);
     }
+    this.pos.length = this.n;
     return true;
   }
   drawShield(ctx, index) {
@@ -902,7 +905,9 @@ export class BeamCh {
     this.team = this.src.team;
     if (this.dur > 0) this.src.channel = this;
     this.ends = [];
-    this.lightningPaths = this.fx === 'lightning' || this.fx === 'storm' ? new Float32Array((this.n || 1) * 40) : null;
+    this.lightningPaths = this.fx === 'lightning' || this.fx === 'storm' ? new Float32Array((this.n || 1) * 16) : null;
+    this.lightningScreenLines = this.lightningPaths ? new Float32Array((this.n || 1) * 4) : null;
+    this.lightningEndIndices = this.lightningPaths ? new Uint16Array(this.n || 1) : null;
     this.lightningRegen = 0;
     this.instant = !(this.dur > 0);
     if (this.instant) { this.dur = 0.3; this.fire(true); }
@@ -918,14 +923,15 @@ export class BeamCh {
     const s = this.src, w = this.world;
     const base = this.aimAngle();
     this.ang = base;
-    this.ends.length = 0;
     const beams = this.n || 1;
+    this.ends.length = beams;
     for (let b = 0; b < beams; b++) {
+      const end = this.ends[b] || (this.ends[b] = [0, 0, 0]);
       const a = base + (beams > 1 ? (b - (beams - 1) / 2) * 0.35 : 0);
       if (this.cone) {
         const targets = coneTargets(w, this.team, s.x, s.y, a, this.len, 0.5);
         for (const c of targets) hit(s, c, roll(this.dmg) * (this.instant ? 1 : 1), this.el, { ...this.o, dot: !this.instant && !first, ang: a });
-        this.ends.push([s.x + Math.cos(a) * this.len, s.y + Math.sin(a) * this.len, a]);
+        end[0] = s.x + Math.cos(a) * this.len; end[1] = s.y + Math.sin(a) * this.len; end[2] = a;
       } else {
         const L = w.map.rayLength(s.x, s.y, a, this.len);
         const ex = s.x + Math.cos(a) * L, ey = s.y + Math.sin(a) * L;
@@ -933,7 +939,7 @@ export class BeamCh {
           hit(s, c, roll(this.dmg), this.el, { ...this.o, dot: !this.instant && !first, ang: a });
           if (this.o.leech) leechHeal(s, c, roll(this.dmg), 0.05);
         }
-        this.ends.push([ex, ey, a]);
+        end[0] = ex; end[1] = ey; end[2] = a;
         if (this.instant) {
           if (this.fx === 'lightning') addEffect(Bolt(s.x, s.y, 26, ex, ey, 20, this.E.glow, 0.3, 3));
           else addEffect(new Beam(s.x, s.y, ex, ey, this.E.glow, this.fx === 'laser' ? 9 : 6, 0.32, { core: this.E.core }));
@@ -960,19 +966,19 @@ export class BeamCh {
             spawn({ type: this.el === 'poison' || this.el === 'acid' ? 'dot' : 'glow', x: s.x + Math.cos(a) * 0.4, y: s.y + Math.sin(a) * 0.4, z: 22, vx: Math.cos(aa) * sp, vy: Math.sin(aa) * sp, drag: 1.5, life: this.len / sp * 0.9, size: rand(3, 6), size1: 9, color: chance(0.5) ? this.E.glow : this.E.core, add: true });
           }
         } else {
-          spawn({ type: 'glow', x: ex, y: ey, z: 16, vz: rand(10, 40), life: 0.3, size: 5, size1: 0, color: this.E.glow, add: true });
-          addLight(ex, ey, 2.5, 1);
+          if (this.fx !== 'lightning' && this.fx !== 'storm') {
+            spawn({ type: 'glow', x: ex, y: ey, z: 16, vz: rand(10, 40), life: 0.3, size: 5, size1: 0, color: this.E.glow, add: true });
+            addLight(ex, ey, 2.5, 1);
+          }
         }
       }
       if (this.lightningPaths && (this.lightningRegen -= dt) <= 0) {
-        this.lightningRegen = 0.05;
+        this.lightningRegen = 0.08;
         for (let beam = 0; beam < this.ends.length; beam++) {
-          const offset = beam * 40;
-          for (let i = 0; i < 18; i += 2) {
-            this.lightningPaths[offset + i] = rand(-8, 8);
-            this.lightningPaths[offset + i + 1] = rand(-8, 8);
-            this.lightningPaths[offset + 20 + i] = rand(-8, 8);
-            this.lightningPaths[offset + 21 + i] = rand(-8, 8);
+          const offset = beam * 16;
+          for (let i = 0; i < 14; i += 2) {
+            this.lightningPaths[offset + i] = rand(-4.5, 4.5);
+            this.lightningPaths[offset + i + 1] = rand(-4.5, 4.5);
           }
         }
       }
@@ -982,6 +988,40 @@ export class BeamCh {
   draw(ctx) {
     if (this.instant || this.cone) return;
     const s = this.src;
+    if (this.fx === 'lightning' || this.fx === 'storm') {
+      const path = this.lightningPaths, lines = this.lightningScreenLines, indices = this.lightningEndIndices;
+      const halfW = G.W / (2 * camera.zoom) + 24, halfH = G.H / (2 * camera.zoom) + 24;
+      const left = camera.x - halfW, right = camera.x + halfW, top = camera.y - halfH, bottom = camera.y + halfH;
+      let lineCount = 0;
+      for (let endIndex = 0; endIndex < this.ends.length; endIndex++) {
+        const end = this.ends[endIndex], ax = isoX(s.x, s.y), ay = isoY(s.x, s.y) - 26;
+        const bx = isoX(end[0], end[1]), by = isoY(end[0], end[1]) - 16;
+        if (Math.max(ax, bx) + 6 < left || Math.min(ax, bx) - 6 > right || Math.max(ay, by) + 6 < top || Math.min(ay, by) - 6 > bottom) continue;
+        const at = lineCount * 4;
+        lines[at] = ax; lines[at + 1] = ay; lines[at + 2] = bx; lines[at + 3] = by;
+        indices[lineCount++] = endIndex;
+      }
+      if (!lineCount) return;
+      ctx.globalCompositeOperation = 'source-over'; ctx.globalAlpha = 0.9; ctx.lineCap = 'round'; ctx.lineJoin = 'round';
+      for (let pass = 0; pass < 2; pass++) {
+        ctx.strokeStyle = pass ? LIGHTNING_CORE : LIGHTNING_BLUE;
+        ctx.lineWidth = pass ? 0.65 : 1.6;
+        ctx.beginPath();
+        for (let line = 0; line < lineCount; line++) {
+          const at = line * 4, ax = lines[at], ay = lines[at + 1], bx = lines[at + 2], by = lines[at + 3];
+          const offset = indices[line] * 16;
+          ctx.moveTo(ax, ay);
+          for (let i = 1; i < 8; i++) {
+            const n = i - 1;
+            ctx.lineTo(ax + (bx - ax) * i / 8 + path[offset + n * 2], ay + (by - ay) * i / 8 + path[offset + n * 2 + 1]);
+          }
+          ctx.lineTo(bx, by);
+        }
+        ctx.stroke();
+      }
+      ctx.globalAlpha = 1; ctx.globalCompositeOperation = 'source-over';
+      return;
+    }
     for (let endIndex = 0; endIndex < this.ends.length; endIndex++) {
       const [ex, ey] = this.ends[endIndex];
       const ax = isoX(s.x, s.y), ay = isoY(s.x, s.y) - 26;
@@ -990,26 +1030,14 @@ export class BeamCh {
       if (drawCosmicBeam(ctx, this.fx, ax, ay, bx, by, this.t)) continue;
       ctx.globalCompositeOperation = 'lighter';
       ctx.lineCap = 'round';
-      if (this.fx === 'lightning' || this.fx === 'storm') {
-        const n = 10;
-        const path = this.lightningPaths, offset = endIndex * 40;
-        for (let pass = 0; pass < 2; pass++) {
-          ctx.strokeStyle = pass ? '#fff' : this.E.glow; ctx.lineWidth = pass ? 1.5 : 4;
-          ctx.beginPath(); ctx.moveTo(ax, ay);
-          const pathOffset = offset + pass * 20;
-          for (let i = 1; i < n; i++) ctx.lineTo(ax + (bx - ax) * i / n + path[pathOffset + (i - 1) * 2], ay + (by - ay) * i / n + path[pathOffset + (i - 1) * 2 + 1]);
-          ctx.lineTo(bx, by); ctx.stroke();
-        }
-      } else {
-        const wv = (this.fx === 'laser' ? 10 : 7) * (1 + Math.sin(this.t * 50) * 0.15);
-        ctx.globalAlpha = 0.35; ctx.strokeStyle = this.E.glow; ctx.lineWidth = wv * 2.4;
-        ctx.beginPath(); ctx.moveTo(ax, ay); ctx.lineTo(bx, by); ctx.stroke();
-        ctx.globalAlpha = 0.9; ctx.lineWidth = wv;
-        ctx.beginPath(); ctx.moveTo(ax, ay); ctx.lineTo(bx, by); ctx.stroke();
-        ctx.strokeStyle = this.fx === 'drain' ? '#ff6060' : this.E.core; ctx.lineWidth = wv * 0.35;
-        ctx.beginPath(); ctx.moveTo(ax, ay); ctx.lineTo(bx, by); ctx.stroke();
-        ctx.globalAlpha = 1;
-      }
+      const wv = (this.fx === 'laser' ? 10 : 7) * (1 + Math.sin(this.t * 50) * 0.15);
+      ctx.globalAlpha = 0.35; ctx.strokeStyle = this.E.glow; ctx.lineWidth = wv * 2.4;
+      ctx.beginPath(); ctx.moveTo(ax, ay); ctx.lineTo(bx, by); ctx.stroke();
+      ctx.globalAlpha = 0.9; ctx.lineWidth = wv;
+      ctx.beginPath(); ctx.moveTo(ax, ay); ctx.lineTo(bx, by); ctx.stroke();
+      ctx.strokeStyle = this.fx === 'drain' ? '#ff6060' : this.E.core; ctx.lineWidth = wv * 0.35;
+      ctx.beginPath(); ctx.moveTo(ax, ay); ctx.lineTo(bx, by); ctx.stroke();
+      ctx.globalAlpha = 1;
       ctx.globalCompositeOperation = 'source-over';
     }
   }
