@@ -1,4 +1,4 @@
-// Environment-specific physical hazards. Fixtures reuse existing environment scatter sprites; no new art is generated.
+// Environment-specific physical hazards. Their dedicated atlas fixtures are visual-only; gameplay remains in this module.
 import { hit } from './combat.js';
 import { Clutter } from './clutter.js';
 import { isoX, isoY } from '../core/view.js';
@@ -47,9 +47,9 @@ const TRAP_ART = Object.freeze({
   lavaFissure: { sheet: 'nature', row: 7 },
   rollingBoulder: { sheet: 'mechanical', row: 5 },
   poisonousPlant: { sheet: 'nature', row: 0 },
-  thornTrap: { sheet: 'nature', row: 1 },
+  thornTrap: { sheet: 'nature', row: 1, variantRows: { forest: { sheet: 'environment-variations', row: 3 }, thornwick: { sheet: 'environment-variations', row: 3 } } },
   cursedAltar: { sheet: 'nature', row: 2 },
-  boneSpikes: { sheet: 'nature', row: 3 },
+  boneSpikes: { sheet: 'nature', row: 3, variantRows: { catacomb: { sheet: 'environment-variations', row: 4 }, cathedral: { sheet: 'environment-variations', row: 4 }, crypt: { sheet: 'environment-variations', row: 4 } } },
   explosiveRune: { sheet: 'nature', row: 4 },
   crackingIce: { sheet: 'nature', row: 5 },
   freezingVent: { sheet: 'nature', row: 6 },

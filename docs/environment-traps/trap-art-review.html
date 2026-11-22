@@ -26,7 +26,7 @@ const rows=[
  ['Quicksand Sink','mechanical',4,6,'Sea of Sand and desert environments'],
  ['Unstable Crystal','nature',8,9,'Crystal caverns, void and arcane environments'],
  ['Lava Fissure','nature',7,9,'Molten and volcanic environments'],
- ['Unstable Boulder','mechanical',5,6,'Desert, mountain and deep mine environments'],
+ ['Rolling Boulder','mechanical',5,6,'Desert, mountain and deep mine environments'],
  ['Venomous Growth','nature',0,9,'Swamps, fungal areas, plague zones'],
  ['Thorn Snare','nature',1,9,'Dark Forest and thorn environments'],
  ['Cursed Cage Trap','nature',2,9,'Necropolis and haunted environments; floor-bound iron/bone trap, distinct from shrines'],
@@ -36,12 +36,18 @@ const rows=[
  ['Freezing Vent','nature',6,9,'Frozen environments and icebound fortresses'],
 ];
 const variants=[
- ['Pressure Plate: cold-forged ice','environment-variations',1,12,'snowy_summit'],
- ['Pressure Plate: desert sandstone','environment-variations',2,12,'sea_of_sand'],
- ['Spike Trap: desert bronze','environment-variations',5,12,'sea_of_sand'],
- ['Poison Vent: sewer iron','environment-variations',7,12,'sewers'],
- ['Flame Jet: volcanic obsidian','environment-variations',9,12,'molten'],
- ['Storm Turret: charged granite','environment-variations',11,12,'snowy_summit'],
+ ['Pressure Plate: Crypt Mechanism','environment-variations',0,12,'catacombs'],
+ ['Pressure Plate: Cold-forged Ice','environment-variations',1,12,'snowy_summit'],
+ ['Pressure Plate: Desert Sandstone','environment-variations',2,12,'sea_of_sand'],
+ ['Root Snare: Dark Forest','environment-variations',3,12,'dark_forest'],
+ ['Bone Aperture: Crypt','environment-variations',4,12,'catacombs'],
+ ['Spike Aperture: Desert Bronze','environment-variations',5,12,'sea_of_sand'],
+ ['Poison Vent: Moss Swamp','environment-variations',6,12,'sewers'],
+ ['Poison Vent: Sewer Iron','environment-variations',7,12,'sewers'],
+ ['Flame Jet: Infernal','environment-variations',8,12,'eternal_breach'],
+ ['Flame Jet: Volcanic Obsidian','environment-variations',9,12,'molten'],
+ ['Turret: Arcane Crystal','environment-variations',10,12,'eternal_breach'],
+ ['Storm Turret: Charged Granite','environment-variations',11,12,'snowy_summit'],
 ];
 const atlasInfo={mechanical:{src:'../../assets/sprites/environment-traps/mechanical.png',cols:4,rows:6,w:256,h:256},elemental:{src:'../../assets/sprites/environment-traps/elemental.png',cols:4,rows:6,w:256,h:256},nature:{src:'../../assets/sprites/environment-traps/nature.png',cols:4,rows:9,w:295.5,h:147.78},'environment-variations':{src:'../../assets/sprites/environment-traps/environment-variations.png',cols:4,rows:12,w:181,h:181}};
 function tileFor(env){const e=String(env||'').toLowerCase();if(e.includes('sand')||e.includes('desert'))return 'sea_of_sand';if(e.includes('snow')||e.includes('frozen')||e.includes('storm'))return 'snowy_summit';if(e.includes('forest')||e.includes('root'))return 'dark_forest';if(e.includes('sewer')||e.includes('swamp')||e.includes('poison'))return 'sewers';if(e.includes('castle'))return 'castle_keep';if(e.includes('infernal')||e.includes('volcan')||e.includes('arcane'))return 'eternal_breach';return 'catacombs'}

@@ -6,6 +6,8 @@ import { BIOMES, BETA_BIOMES, BREACH_BIOME, SCORPION_KING_PYRAMID_BIOME, TOWN_BI
 import { ENVIRONMENT_TRAP_PROFILES, ENVIRONMENT_TRAP_TYPES, setupEnvironmentalTraps, trapArtFor, trapDamageAmount, trapDamageScale } from '../../src/game/environmenttraps.js';
 import { A } from '../../src/core/assets.js';
 
+const ATLAS_DIMENSIONS = { mechanical: [1024, 1536, 6], elemental: [1024, 1536, 6], nature: [1182, 1330, 9], 'environment-variations': [724, 2172, 12] };
+
 test('all playable non-town environments have three to five valid hazard types', () => {
   const biomes = [...new Map([TOWN_BIOME, ACT2_TOWN_BIOME, ...BIOMES, ...BETA_BIOMES, BREACH_BIOME, SCORPION_KING_PYRAMID_BIOME].map((b) => [b.id, b])).values()];
   for (const biome of biomes.filter((b) => !b.town && !['town', 'act2_town'].includes(b.id))) {
@@ -33,11 +35,12 @@ test('every trap uses a dedicated physical sprite atlas and environment variants
   assert.notDeepEqual(trapArtFor('poisonVent', 'blackfen_swamp'), trapArtFor('poisonVent', 'sewers'));
   assert.notDeepEqual(trapArtFor('flameJet', 'infernal_hell'), trapArtFor('flameJet', 'molten_forge'));
   assert.notDeepEqual(trapArtFor('magicalTurret', 'crystal'), trapArtFor('magicalTurret', 'storm_crags'));
+  assert.equal(trapArtFor('thornTrap', 'dark_forest').row, 3);
+  assert.equal(trapArtFor('boneSpikes', 'catacombs').row, 4);
 });
 
 test('generated trap atlases are valid transparent PNGs with all referenced rows', async () => {
-  const dimensions = { mechanical: [1024, 1536, 6], elemental: [1024, 1536, 6], nature: [1182, 1330, 9], 'environment-variations': [724, 2172, 12] };
-  for (const [sheet, [width, height, rows]] of Object.entries(dimensions)) {
+  for (const [sheet, [width, height, rows]] of Object.entries(ATLAS_DIMENSIONS)) {
     const bytes = await readFile(new URL(`../../assets/sprites/environment-traps/${sheet}.png`, import.meta.url));
     assert.equal(bytes.toString('hex', 0, 8), '89504e470d0a1a0a', `${sheet} is PNG`);
     assert.equal(bytes.readUInt32BE(16), width, `${sheet} width`);
@@ -71,7 +74,7 @@ test('environmental scaling rises gradually and stays inside the approved caps',
 });
 
 test('generated trap sites are deterministic, accessible, and separated from interactables', () => {
-  A.environmentTrapAtlases = Object.fromEntries(['mechanical', 'elemental', 'nature', 'environment-variations'].map((id) => [id, { naturalWidth: 1024, naturalHeight: id === 'mechanical' || id === 'elemental' ? 1536 : id === 'nature' ? 2304 : 3072 }]));
+  A.environmentTrapAtlases = Object.fromEntries(Object.entries(ATLAS_DIMENSIONS).map(([id, [naturalWidth, naturalHeight]]) => [id, { naturalWidth, naturalHeight }]));
   const makeWorld = () => {
     const world = {
       kind: 'dungeon', depth: 55, environmentTrapSeed: 445566, environmentVariant: 'moonwell', biome: { id: 'depths_edge' },
