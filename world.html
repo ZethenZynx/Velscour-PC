@@ -41,6 +41,7 @@
       <button class="wiki-tab-btn" type="button" role="tab" data-tab="environments" aria-selected="false">Environments</button>
       <button class="wiki-tab-btn" type="button" role="tab" data-tab="endgame" aria-selected="false">Endgame</button>
       <button class="wiki-tab-btn" type="button" role="tab" data-tab="affixes" aria-selected="false">Dungeon Affixes</button>
+      <button class="wiki-tab-btn" type="button" role="tab" data-tab="hazards" aria-selected="false">Environmental Traps</button>
     </div>
     <section class="atlas-tab" id="panel-campaign" role="tabpanel">
       <div class="wiki-section-header"><h2>Campaign Depth Explorer</h2><span class="wiki-section-sub">Progression and boss milestones from this fork's depth data</span></div>
@@ -69,6 +70,13 @@
       <div class="atlas-controls"><input class="atlas-search" id="affix-search" type="search" placeholder="Search affix names and descriptions"></div>
       <div class="atlas-list" id="affix-list"></div><p class="atlas-empty" id="affix-empty" hidden>No affixes match this search.</p>
     </section>
+    <section class="atlas-tab" id="panel-hazards" role="tabpanel" hidden>
+      <div class="wiki-section-header"><h2>Environmental Traps</h2><span class="atlas-count" id="trap-type-count"></span></div>
+      <p class="wiki-section-sub">Generated combat areas receive up to 3–12 sites, fewer when safe locations are scarce. Periodic hazards use independent randomized 8–16 second cycles; pressure and proximity hazards trigger when approached, and explosive obstacles trigger when destroyed. Standard direct hits start at 4% of target maximum health, heavy hits at 7.5%, capped at 10%; damage-over-time hazards deal 1% per second for at most three seconds. Campaign scaling caps at 1.35× and endgame scaling at 1.75×. Bosses take 20% of normal trap damage, never zero.</p>
+      <div class="atlas-grid" id="trap-type-grid"></div>
+      <div class="wiki-section-header"><h2>Environment Assignments</h2><span class="wiki-section-sub">Eligible hazards vary by area and its architectural or terrain theme.</span></div>
+      <div class="atlas-grid" id="trap-environment-grid"></div>
+    </section>
   </main>
   <script type="module">
     import { mountWikiShell, escapeHtml } from './src/wiki/wiki-shell.js';
@@ -82,6 +90,7 @@
     import { MAX_UNBOUND_DEPTH } from './src/game/unbound.js';
     import { RAID_BOSSES } from './src/game/raid.js';
     import { RARITY, qualityAtDepth } from './src/data/items.js';
+    import { ENVIRONMENT_TRAP_TYPES, trapProfileFor } from './src/game/environmenttraps.js';
 
     mountWikiShell({ active: 'world' });
     const $ = (id) => document.getElementById(id);
@@ -148,6 +157,11 @@
 
     function renderAffixes(){const q=$('affix-search').value.trim().toLowerCase();const rows=DUNGEON_AFFIXES.filter(a=>`${a.name} ${a.desc} ${a.id}`.toLowerCase().includes(q));$('affix-count').textContent=`${rows.length} of ${DUNGEON_AFFIXES.length}`;$('affix-list').innerHTML=rows.map(a=>`<div class="atlas-row"><b>${escapeHtml(a.name||a.id)}</b><small>${escapeHtml(a.desc||'Dungeon modifier')}</small></div>`).join('');$('affix-empty').hidden=rows.length>0;}
     const affixQuery=new URLSearchParams(location.search).get('q');if(affixQuery)$('affix-search').value=affixQuery;$('affix-search').addEventListener('input',renderAffixes);renderAffixes();
+    const trapTypes = Object.entries(ENVIRONMENT_TRAP_TYPES);
+    $('trap-type-count').textContent = `${trapTypes.length} hazard types`;
+    $('trap-type-grid').innerHTML = trapTypes.map(([id, trap]) => `<article class="atlas-card"><span class="wiki-badge gold">${escapeHtml(trap.element)} · ${trap.mode === 'dot' ? 'damage over time' : 'direct damage'}</span><h3>${escapeHtml(trap.name)}</h3><p>${trap.mode === 'dot' ? 'Telegraphed hazard that deals short, capped exposure damage.' : 'Visible hazard with a warning before a capped hit.'} ${trap.destructible ? 'Destroyed by attacking its breakable fixture.' : trap.trigger === 'pressure' ? 'Activated by stepping onto its plate.' : trap.trigger === 'proximity' ? 'Activated by a nearby creature.' : 'Periodic activation uses randomized 8–16 second intervals.'}</p></article>`).join('');
+    const trapEnvironments = allBiomes.filter((b) => !b.town && !['town','act2_town'].includes(b.id)).map((b) => ({ biome: b, ids: trapProfileFor(b.id) }));
+    $('trap-environment-grid').innerHTML = trapEnvironments.map(({biome,ids}) => `<article class="atlas-card"><span class="wiki-badge">${escapeHtml(biome.id)}</span><h3>${escapeHtml(biome.name)}</h3><p>${ids.map((id) => escapeHtml(ENVIRONMENT_TRAP_TYPES[id]?.name || id)).join(' · ')}</p></article>`).join('');
     const tabButtons=[...document.querySelectorAll('.wiki-tab-btn[data-tab]')], panels=[...document.querySelectorAll('.atlas-tab')];
     function setTab(tab){if(!panels.some(p=>p.id===`panel-${tab}`))tab='campaign';tabButtons.forEach(b=>{const on=b.dataset.tab===tab;b.classList.toggle('active',on);b.setAttribute('aria-selected',String(on))});panels.forEach(p=>p.hidden=p.id!==`panel-${tab}`);const u=new URL(location.href);u.searchParams.set('tab',tab);history.replaceState({},'',u);}
     tabButtons.forEach(b=>b.addEventListener('click',()=>setTab(b.dataset.tab)));

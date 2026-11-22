@@ -37,7 +37,7 @@ function bloodOf(c) {
 
 /**
  * Apply damage. Returns damage actually dealt.
- * o: { dot, crit:false to disallow, knock, ang, burn, poison, bleed, slow, freeze, stun, fear, leech, noArc, melee, aoe, silent, bossMul }
+ * o: { dot, crit:false to disallow, knock, ang, burn, poison, bleed, slow, freeze, stun, fear, leech, noArc, melee, aoe, silent, bossMul, noStatus, noVariance, damageCap }
  */
 export function hit(src, tgt, amount, el = 'phys', o = {}) {
   // Reject NaN as well as non-positive hits. NaN HP never reaches the death check.
@@ -214,7 +214,8 @@ export function hit(src, tgt, amount, el = 'phys', o = {}) {
     if (worldAffixes.has('soul_rend')) dmg += (tgt.maxHp - tgt.hp) * 0.025;
     if (worldAffixes.has('crushing_blows') && chance(0.12)) dmg = Math.min(tgt.maxHp * 0.08, Math.max(dmg, tgt.maxHp * 0.03));
   }
-    dmg = tgt.isPlayer && G.godMode ? 0 : Math.max(1, dmg * rand(0.92, 1.08));
+    if (Number.isFinite(o.damageCap)) dmg = Math.min(dmg, Math.max(0, o.damageCap));
+    dmg = tgt.isPlayer && G.godMode ? 0 : Math.max(o.noVariance ? 0 : 1, dmg * (o.noVariance ? 1 : rand(0.92, 1.08)));
   if (tgt.vel) dmg = tgt.vel.absorb(dmg); // Velscour's life gates and damage cap (game/velscour.js)
 
   const byHero = !tgt.isPlayer && tgt.team !== 'player' && (fromPlayer || (src && src.team === 'player'));
@@ -378,7 +379,7 @@ export function hit(src, tgt, amount, el = 'phys', o = {}) {
   }
 
   // ---- status effects
-  if ((!o.dot || o.affixStatus) && !tgt.dead) applyStatus(src, tgt, dmg, el, o);
+  if (!o.noStatus && (!o.dot || o.affixStatus) && !tgt.dead) applyStatus(src, tgt, dmg, el, o);
 
   // ---- leech: by the share of the target's life the hit took (LEECH_K of the hero's own life a whole life's worth),
   // not raw damage, which runs far ahead of hero life (it healed whole life bars a hit)

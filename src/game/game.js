@@ -1,5 +1,6 @@
 // Game flow: characters, town, dungeon depths, death, victory.
 import { G } from '../state.js';
+import { setupEnvironmentalTraps } from './environmenttraps.js';
 import { DUNGEON_AFFIX_BY_ID, DUNGEON_AFFIX_CONFIG, rollDungeonAffixesForStreak, chooseDungeonAffix, normalizeDungeonAffixIds, applyDungeonAffix } from '../data/dungeonaffixes.js';
 import { rollTreasureChest } from '../data/treasurechests.js';
 import { addMarkBonusChest } from './markchests.js';
@@ -413,6 +414,7 @@ export const game = {
     useDunes(world); // so do the Sea of Sand's dunes and pyramids (game/dunes.js)
     useAlpine(world); // and the mountains: the Mountainside and the Snowy Summit (game/alpine.js)
     useSea(world); // the Pirate Seas' three.js scene goes when the hero leaves the Dawnwake (game/seabattle.js)
+    setupEnvironmentalTraps(world, start);
     camera.computeZoom();
     camera.follow(p.x, p.y, 0, true);
     world.map.reveal(p.x, p.y, 12);
@@ -1336,7 +1338,7 @@ export const game = {
       gen.chests.push({ x: cx, y: cy, rare: false });
     }
     if (biome.id === 'sea_of_sand') { c.lastSand = gen.dunes ? 1 + DUNE_VARIANTS.indexOf(gen.variant) : 0; if (gen.dunes) c.seaOfSandRuns[depth] = { seed, dunes: c.lastSand }; }
-    const world = new World('dungeon', { map: gen.map, tileset, biome, depth, props: gen.props, torches: gen.torches, wallHangings: gen.wallHangings, looks: gen.looks, townTiles: gen.townTiles || null, buildings: gen.buildings || [] });
+    const world = new World('dungeon', { map: gen.map, tileset, biome, depth, props: gen.props, torches: gen.torches, wallHangings: gen.wallHangings, looks: gen.looks, townTiles: gen.townTiles || null, buildings: gen.buildings || [], environmentTrapSeed: seed, environmentVariant: gen.variant?.id || biome.id });
     world.startPos = gen.start;
     world.impAreaKey = `${biome.id}:${depth}${mix?.id ? `:${mix.id}` : ''}`;
     // Chest appearance uses the same generated environment context as the level.
@@ -1904,7 +1906,7 @@ export const game = {
     const tileset = { ...a, walls: { ...a.walls, ...b.walls }, families: [...a.families, ...b.families], arches: { ...a.arches, ...b.arches }, doors: { ...a.doors, ...b.doors }, parts: [a, b] };
     keepTileSets(tileset);
     const gen = generateBreach(floor, B, tileset, null, seed);
-    const world = new World('dungeon', { map: gen.map, tileset, biome: B, depth, props: gen.props, torches: [], wallHangings: [], looks: gen.looks, townTiles: null, buildings: [] });
+    const world = new World('dungeon', { map: gen.map, tileset, biome: B, depth, props: gen.props, torches: [], wallHangings: [], looks: gen.looks, townTiles: null, buildings: [], environmentTrapSeed: seed, environmentVariant: `breach-${floor}` });
     world.breach = { floor, seed }; world.impAreaKey = `breach:${floor}`; world.breachBridges = gen.bridges; world.rooms = [];
     world.chests = gen.chests.map((ch) => chestAt(world, ch.x, ch.y, ch.rare, depth));
     const [sx, sy] = gen.start;
@@ -2021,7 +2023,7 @@ export const game = {
     const tileset = mix ? mixedTileSet(biome, mix, Math.random() < 0.5) : biomeTileSet(biome);
     keepTileSets(tileset);
     const gen = generateDungeon(depth, biome, tileset, seed, { rift: true, raid: true, small: true, density: RIFT_DENSITY });
-    const world = new World('dungeon', { map: gen.map, tileset, biome, depth, props: gen.props, torches: gen.torches, wallHangings: gen.wallHangings, looks: gen.looks, townTiles: null, buildings: [] });
+    const world = new World('dungeon', { map: gen.map, tileset, biome, depth, props: gen.props, torches: gen.torches, wallHangings: gen.wallHangings, looks: gen.looks, townTiles: null, buildings: [], environmentTrapSeed: seed, environmentVariant: gen.variant?.id || `rift-${tier}` });
     world.impAreaKey = `rift:${tier}:${biome.id}`;
     world.rooms = gen.rooms || [];
     world.riftHold = true; // rift monsters keep the old Endless Torment life (data/depth.js riftHold)

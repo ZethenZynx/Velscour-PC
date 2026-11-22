@@ -122,6 +122,11 @@ export function breakClutter(c) {
   // Broken props can produce only their small gold, orb or gem rewards.
   dropClutterLoot(w, c.x, c.y);
 
+  // Some ordinary destructible fixtures carry a local environmental charge.
+  // Their effect is owned by the generated world trap manager, not by the
+  // clutter break effects or the loot drop system.
+  if (c.environmentTrapObstacle) w.environmentTrapObstacleDestroyed?.(c, c.environmentTrapObstacle);
+
   // 3. Audio & debris splinters
   sfx('thud', 0.85);
   sfx('hit', 0.75);
