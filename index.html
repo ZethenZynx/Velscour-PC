@@ -45,7 +45,8 @@
         <div class="hs-row hs-tally"><span>Total Monsters Killed</span><b id="hs-kills"></b></div>
       </div>
       <div id="target-box" class="hidden"><canvas id="tb-pic" width="320" height="320"></canvas><div id="tb-info"><div id="tb-name"></div><div id="tb-track"><div id="tb-fill"></div></div><div id="tb-sub"></div><div id="tb-history-details"><div id="tb-stats"></div><div id="tb-affixes"></div><div id="tb-resists"></div></div></div><div id="tb-history-controls"><button id="tb-previous" type="button" class="btn small" aria-label="Previous enemy" title="Previous enemy">◀</button><span id="tb-history-position">0 of 0</span><button id="tb-next" type="button" class="btn small" aria-label="Next enemy" title="Next enemy">▶</button></div></div>
-      <div id="buff-row"></div>
+      <div id="buff-row" data-anchor="left"></div>
+      <div id="debuff-row" data-anchor="left"></div>
     </div>
     <div id="hud-top-right">
       <div id="minimap-row">
@@ -117,10 +118,14 @@
       <div id="hud-rail"></div>
       <div id="xp-track" title="Experience Bar"><div id="xp-fill"></div></div>
       <img id="hud-img" src="assets/ui/hud.webp" alt="" draggable="false">
-      <div class="orb-cover" id="life-cover"><div class="orb-empty"></div></div>
-      <div class="orb-cover" id="mana-cover"><div class="orb-empty"></div></div>
-      <div class="orb-text" id="life-text"></div>
-      <div class="orb-text" id="mana-text"></div>
+      <div class="resource-orb-group" id="life-orb-group" data-orb="health">
+        <div class="orb-cover" id="life-cover"><div class="orb-empty"></div></div>
+        <div class="orb-text" id="life-text"></div>
+      </div>
+      <div class="resource-orb-group" id="mana-orb-group" data-orb="mana">
+        <div class="orb-cover" id="mana-cover"><div class="orb-empty"></div></div>
+        <div class="orb-text" id="mana-text"></div>
+      </div>
       <div id="xp-text" title="Experience: Character Level &amp; Class (hover or click to view XP)"></div>
       <div id="hud-slots"></div>
       <div id="gauge-box">

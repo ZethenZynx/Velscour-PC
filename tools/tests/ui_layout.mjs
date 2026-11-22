@@ -6,7 +6,7 @@ import {
 } from '../../src/ui/ui-layout.mjs';
 
 const defaults = normalizeLayoutEntry();
-assert.deepEqual(defaults, { x: null, y: null, width: null, height: null, scale: 100, opacity: 100, visible: true, locked: false });
+assert.deepEqual(defaults, { x: null, y: null, width: null, height: null, scale: 100, opacity: 100, visible: true, locked: false, anchor: 'left', attachment: 'attached' });
 assert.equal(normalizeLayoutEntry({ scale: 1000, opacity: -10 }).scale, 200);
 assert.equal(normalizeLayoutEntry({ scale: 1000, opacity: -10 }).opacity, 10);
 

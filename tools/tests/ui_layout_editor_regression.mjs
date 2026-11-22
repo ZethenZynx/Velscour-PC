@@ -23,6 +23,14 @@ assert.match(source, /this\.pauseScreen\?\.classList\.add\('ui-layout-pause-hidd
 assert.match(source, /this\.pauseScreen\?\.classList\.remove\('ui-layout-pause-hidden'\)/, 'the pause menu is restored on exit');
 assert.match(source, /Environment Information/, 'environment details are registered as one named layout element');
 assert.match(source, /migrateEnvironmentInfoLayout\(state\)/, 'legacy environment-affix positioning is migrated without deleting old data');
+assert.match(source, /migrateGroupedHudLayout\(state\)/, 'legacy HUD layout entries migrate to the new grouped elements');
+assert.match(source, /\['main-action-bar', 'Main Action Bar', '#hud-bar'/, 'the actual action bar is customized as one grouped element');
+assert.doesNotMatch(source, /\['(?:ability-hotbar|experience|experience-value|health-value|mana-value)'/, 'grouped child elements are no longer independently registered');
+assert.match(source, /data-custom-field="anchor"/, 'buff and debuff groups expose their own anchor selector');
+assert.match(source, /data-custom-field="attachment"/, 'resource orbs expose their attachment selector');
+assert.match(source, /ui-layout-orb-attachment/, 'the HUD relayouts orb groups after attach/detach changes');
+assert.match(html, /id="life-orb-group"[\s\S]*id="life-cover"[\s\S]*id="life-text"/, 'health art and values are wrapped as one movable group');
+assert.match(html, /id="mana-orb-group"[\s\S]*id="mana-cover"[\s\S]*id="mana-text"/, 'mana art and values are wrapped as one movable group');
 const startChar = gameSource.match(/startChar\(c, fresh\)\s*\{([\s\S]*?)\n\s*\},\s*autosave/);
 assert.ok(startChar, 'character startup lifecycle is present');
 const showHudAt = startChar[1].indexOf('HUD.show(true)');

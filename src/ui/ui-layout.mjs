@@ -9,12 +9,15 @@ export function cloneLayoutValue(value) {
 
 export function normalizeLayoutEntry(value = {}) {
   const number = (v, fallback, min, max) => v === null || v === undefined || v === '' ? fallback : Number.isFinite(Number(v)) ? Math.max(min, Math.min(max, Number(v))) : fallback;
+  const anchor = ['left', 'right', 'center'].includes(value.anchor) ? value.anchor : 'left';
+  const attachment = value.attachment === 'detached' ? 'detached' : 'attached';
   return {
     x: number(value.x, null, 0, 1), y: number(value.y, null, 0, 1),
     width: number(value.width, null, 80, 2400), height: number(value.height, null, 28, 1600),
     scale: number(value.scale, 100, UI_LAYOUT_SCALE_MIN, UI_LAYOUT_SCALE_MAX),
     opacity: number(value.opacity, 100, 10, 100),
     visible: value.visible !== false, locked: !!value.locked,
+    anchor, attachment,
   };
 }
 
@@ -52,6 +55,30 @@ export function migrateEnvironmentInfoLayout(state) {
       if (!layouts || layouts['environment-info'] || !layouts['area-affixes']) return;
       layouts['environment-info'] = cloneLayoutValue(layouts['area-affixes']);
       changed = true;
+    };
+    migrate(profile.layouts);
+    for (const layouts of Object.values(profile.characterOverrides || {})) migrate(layouts);
+  }
+  return changed;
+}
+
+/** Keep legacy HUD preferences while the formerly independent hotbar and orb pieces join their visual groups. */
+export function migrateGroupedHudLayout(state) {
+  let changed = false;
+  for (const profile of Object.values(state?.profiles || {})) {
+    const migrate = (layouts) => {
+      if (!layouts) return;
+      if (!layouts['main-action-bar'] && (layouts['ability-hotbar'] || layouts.experience || layouts['experience-value'])) {
+        layouts['main-action-bar'] = cloneLayoutValue(layouts['ability-hotbar'] || layouts.experience || layouts['experience-value']); changed = true;
+      }
+      for (const [newId, oldIds] of [['health-orb', ['health', 'health-value']], ['mana-orb', ['mana', 'mana-value']]]) {
+        if (layouts[newId]) continue;
+        const old = oldIds.map((id) => layouts[id]).find(Boolean);
+        if (old) { layouts[newId] = { ...cloneLayoutValue(old), attachment: 'detached' }; changed = true; }
+      }
+      for (const id of ['buff-icons', 'debuff-icons']) {
+        if (layouts[id] && !['left', 'right', 'center'].includes(layouts[id].anchor)) { layouts[id].anchor = 'left'; changed = true; }
+      }
     };
     migrate(profile.layouts);
     for (const layouts of Object.values(profile.characterOverrides || {})) migrate(layouts);

@@ -85,6 +85,7 @@ export const HUD = {
   enemyHistoryImages: new Map(),
   init() {
     UI.hud = this;
+    window.addEventListener('ui-layout-orb-attachment', () => this.layoutMobile());
     CharacterPortrait.init($('#hud'));
     const geo = A.hudGeo;
     // the bar's aspect (and how much room it takes at the bottom) comes from the art's geometry
@@ -202,10 +203,22 @@ export const HUD = {
   /** Orb shading and numbers over the bar art's orbs, in % of the bar (portrait places its own in px, so redo this after a rotation). */
   placeOrbs(geo) {
     const [lo, mo] = geo.orbs;
-    const place = (elx, o) => Object.assign(elx.style, { left: pct(o.cx - o.r, geo.w), top: pct(o.cy - o.r, geo.h), width: pct(o.r * 2, geo.w), height: pct(o.r * 2, geo.h) });
-    const text = (elx, o) => Object.assign(elx.style, { left: pct(o.cx - 110, geo.w), width: pct(220, geo.w), top: pct(o.cy - 12, geo.h), fontSize: '' });
-    place($('#life-cover'), lo); place($('#mana-cover'), mo);
-    text($('#life-text'), lo); text($('#mana-text'), mo);
+    const bar = $('#hud-bar').getBoundingClientRect(), hud = $('#hud');
+    const place = (group, o) => {
+      const detached = group.parentElement === hud;
+      const left = o.cx - 110, top = o.cy - o.r * 2 / 2, width = 220, height = o.r * 2;
+      const sx = bar.width / geo.w, sy = bar.height / geo.h;
+      Object.assign(group.style, {
+        left: `${detached ? bar.left + left * sx : left / geo.w * 100}${detached ? 'px' : '%'}`,
+        top: `${detached ? bar.top + top * sy : top / geo.h * 100}${detached ? 'px' : '%'}`,
+        width: `${detached ? width * sx : width / geo.w * 100}${detached ? 'px' : '%'}`,
+        height: `${detached ? height * sy : height / geo.h * 100}${detached ? 'px' : '%'}`,
+      });
+      const cover = group.querySelector('.orb-cover'), text = group.querySelector('.orb-text');
+      Object.assign(cover.style, { left: '50%', top: '50%', width: `${(o.r * 2 / width) * 100}%`, height: `${(o.r * 2 / height) * 100}%` });
+      Object.assign(text.style, { left: '50%', top: '50%', width: '100%', fontSize: '' });
+    };
+    place($('#life-orb-group'), lo); place($('#mana-orb-group'), mo);
   },
 
   layoutMobile() {
@@ -387,15 +400,18 @@ export const HUD = {
         { frameX: lifeFrameX, cx: lifeGeo.cx, cy: lifeGeo.cy, r: lifeGeo.r },
         { frameX: manaFrameX, cx: manaGeo.cx - 1653, cy: manaGeo.cy, r: manaGeo.r },
       ];
-      const placeOrb = (cover, text, p) => {
+      const placeOrb = (group, p) => {
         const cx = p.frameX + p.cx * scale;
         const cy = frameY + p.cy * scale;
         const diameter = p.r * 2 * scale;
-        Object.assign(cover.style, { left: `${cx - diameter / 2}px`, top: `${cy - diameter / 2}px`, width: `${diameter}px`, height: `${diameter}px` });
-        Object.assign(text.style, { left: `${cx - 42}px`, top: `${cy - 7}px`, width: '84px', fontSize: portrait ? '9.5px' : '10.5px' });
+        const detached = group.parentElement === hud;
+        Object.assign(group.style, { left: `${detached ? bar.left + cx - 110 : cx - 110}px`, top: `${detached ? bar.top + cy - diameter / 2 : cy - diameter / 2}px`, width: '220px', height: `${diameter}px` });
+        const cover = group.querySelector('.orb-cover'), text = group.querySelector('.orb-text');
+        Object.assign(cover.style, { left: '50%', top: '50%', width: `${diameter}px`, height: `${diameter}px` });
+        Object.assign(text.style, { left: '50%', top: '50%', width: '100%', fontSize: portrait ? '9.5px' : '10.5px' });
       };
-      placeOrb($('#life-cover'), $('#life-text'), orbPos[0]);
-      placeOrb($('#mana-cover'), $('#mana-text'), orbPos[1]);
+      placeOrb($('#life-orb-group'), orbPos[0]);
+      placeOrb($('#mana-orb-group'), orbPos[1]);
 
       this.slots.forEach((s) => {
         const potion = typeof s.map === 'string';
@@ -709,7 +725,7 @@ export const HUD = {
     this.buffT = (this.buffT || 0) - dt;
     if (this.buffT <= 0) {
       this.buffT = 0.25;
-      const row = $('#buff-row');
+      const row = $('#buff-row'), debuffRow = $('#debuff-row');
       // Defiance stacks and the town's blessing ride on the save (game/defiance.js), shown as the first two
       const extra = [];
       if (c.defiance) extra.push({ id: 'defiance', iconKey: 'defiance', el: 'fire', name: `Defiance ${c.defiance.n}: ${defianceText(c.defiance.n)} until you clear Depth ${c.defiance.block + 4}`, color: '#ff5a2a', n: c.defiance.n });
@@ -717,37 +733,34 @@ export const HUD = {
       // minions out, per summoning skill (settings: minionCounts)
       const mins = new Map();
       if (G.settings.minionCounts !== false && w) for (const m of w.creatures) if (m.summon && !m.dead && m.owner === p && m.skillId && SKILLS[m.skillId]) mins.set(m.skillId, (mins.get(m.skillId) || 0) + 1);
-      const key = extra.map((x) => x.name).join('|') + '|' + [...mins].join('|') + '|' + p.buffs.map((b) => `${b.id}:${b.name || ''}:${b.iconKey || ''}:${b.iconSkill || ''}:${b.iconItem?.type || ''}:${b.iconItem?.kind || ''}:${b.iconItem?.icon || ''}:${b.iconItem?.base || ''}:${Math.ceil(b.t)}`).join('|');
+      const isDebuff = (b) => !!(b.debuff || b.curse || Object.values(b.stats || {}).some((v) => Number(v) < 0));
+      const buffs = p.buffs.filter((b) => !b.hidden && !isDebuff(b)), debuffs = p.buffs.filter((b) => !b.hidden && isDebuff(b));
+      const iconKey = (b) => `${b.id}:${b.name || ''}:${b.iconKey || ''}:${b.iconSkill || ''}:${b.iconItem?.type || ''}:${b.iconItem?.kind || ''}:${b.iconItem?.icon || ''}:${b.iconItem?.base || ''}:${Math.ceil(b.t)}`;
+      const key = extra.map((x) => x.name).join('|') + '|' + [...mins].join('|') + '|' + buffs.map(iconKey).join('|') + '|' + debuffs.map(iconKey).join('|');
       if (key !== this.last.buffs) {
         this.last.buffs = key;
-        row.innerHTML = '';
-        for (const x of extra) {
-          const d = el('div', 'buff');
-          const im = new Image(); im.src = buffIconURL(x); im.style.width = '100%'; im.style.height = '100%'; d.appendChild(im);
-          d.title = x.name;
-          d.appendChild(el('span', '', x.n));
-          row.appendChild(d);
-        }
-        for (const [id, n] of mins) {
-          const d = el('div', 'buff minion'), sk = SKILLS[id];
-          const im = new Image(); im.src = skillIconURL(sk); im.style.width = '100%'; d.appendChild(im);
-          d.title = `${sk.name}: ${n} out`;
-          d.appendChild(el('span', '', n));
-          row.appendChild(d);
-        }
-        for (const b of p.buffs) {
-          if (b.hidden) continue;
-          const d = el('div', 'buff');
-          const im = new Image(); im.src = buffIconURL(b); im.style.width = '100%'; im.style.height = '100%'; d.appendChild(im);
-          d.title = b.description ? `${b.name}: ${b.description}` : b.name;
-          if (!b.aura) d.appendChild(el('span', '', Math.ceil(b.t)));
-          row.appendChild(d);
-        }
+        const render = (target, entries) => {
+          target.innerHTML = '';
+          for (const x of entries) {
+            const d = el('div', `buff${x.minion ? ' minion' : ''}`);
+            const im = new Image(); im.src = x.icon; im.style.width = '100%'; im.style.height = '100%'; d.appendChild(im);
+            d.title = x.title;
+            if (x.count != null) d.appendChild(el('span', '', x.count));
+            target.appendChild(d);
+          }
+        };
+        const helpful = [
+          ...extra.map((x) => ({ icon: buffIconURL(x), title: x.name, count: x.n })),
+          ...[...mins].map(([id, n]) => ({ icon: skillIconURL(SKILLS[id]), title: `${SKILLS[id].name}: ${n} out`, count: n, minion: true })),
+          ...buffs.map((b) => ({ icon: buffIconURL(b), title: b.description ? `${b.name}: ${b.description}` : b.name, count: b.aura ? null : Math.ceil(b.t) })),
+        ];
+        render(row, helpful);
+        render(debuffRow, debuffs.map((b) => ({ icon: buffIconURL(b), title: b.description ? `${b.name}: ${b.description}` : b.name, count: b.aura ? null : Math.ceil(b.t) })));
       }
       // the message log grows up from the skill bar: keep it below the buff row (phones in landscape are short);
       // measured only when the row's size or the layout changed, since reading rects forces a layout mid frame
       // (below the whole left column, which includes the target window and buff row)
-      const lg = $('#log'), lk = row.children.length + '|' + innerWidth + 'x' + innerHeight + '|' + document.body.className + '|' + $('#target-box').className;
+      const lg = $('#log'), lk = `${row.children.length}:${debuffRow.children.length}|${innerWidth}x${innerHeight}|${document.body.className}|${$('#target-box').className}`;
       const lr = lg && this.last.logFit !== lk && !document.body.classList.contains('portrait') && lg.getBoundingClientRect();
       if (lr && lr.width) {   // (not while the HUD is hidden: nothing has a size then)
         this.last.logFit = lk;
