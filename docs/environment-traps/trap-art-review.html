@@ -34,6 +34,7 @@ const rows=[
  ['Explosive Rune','nature',4,9,'Infernal, void, siege and deep mine environments'],
  ['Cracking Ice','nature',5,9,'Frozen environments'],
  ['Freezing Vent','nature',6,9,'Frozen environments and icebound fortresses'],
+ ['Wall-mounted Dart Trap','dart-wall',0,4,'Visible stone wall ports; periodic, pressure-plate, or lane-proximity trigger'],
 ];
 const variants=[
  ['Pressure Plate: Crypt Mechanism','environment-variations',0,12,'catacombs'],
@@ -48,8 +49,11 @@ const variants=[
  ['Flame Jet: Volcanic Obsidian','environment-variations',9,12,'molten'],
  ['Turret: Arcane Crystal','environment-variations',10,12,'eternal_breach'],
  ['Storm Turret: Charged Granite','environment-variations',11,12,'snowy_summit'],
+ ['Dart Trap: Castle Iron','dart-wall',1,4,'castle_keep'],
+ ['Dart Trap: Poisoned Sandstone','dart-wall',2,4,'desert_temple'],
+ ['Dart Trap: Poisoned Bone Crypt','dart-wall',3,4,'catacombs'],
 ];
-const atlasInfo={mechanical:{src:'../../assets/sprites/environment-traps/mechanical.png',cols:4,rows:6,w:256,h:256},elemental:{src:'../../assets/sprites/environment-traps/elemental.png',cols:4,rows:6,w:256,h:256},nature:{src:'../../assets/sprites/environment-traps/nature.png',cols:4,rows:9,w:295.5,h:147.78},'environment-variations':{src:'../../assets/sprites/environment-traps/environment-variations.png',cols:4,rows:12,w:181,h:181}};
+const atlasInfo={mechanical:{src:'../../assets/sprites/environment-traps/mechanical.png',cols:4,rows:6,w:256,h:256},elemental:{src:'../../assets/sprites/environment-traps/elemental.png',cols:4,rows:6,w:256,h:256},nature:{src:'../../assets/sprites/environment-traps/nature.png',cols:4,rows:9,w:295.5,h:147.78},'environment-variations':{src:'../../assets/sprites/environment-traps/environment-variations.png',cols:4,rows:12,w:181,h:181},'dart-wall':{src:'../../assets/sprites/environment-traps/dart-wall.png',cols:4,rows:4,w:328,h:300}};
 function tileFor(env){const e=String(env||'').toLowerCase();if(e.includes('sand')||e.includes('desert'))return 'sea_of_sand';if(e.includes('snow')||e.includes('frozen')||e.includes('storm'))return 'snowy_summit';if(e.includes('forest')||e.includes('root'))return 'dark_forest';if(e.includes('sewer')||e.includes('swamp')||e.includes('poison'))return 'sewers';if(e.includes('castle'))return 'castle_keep';if(e.includes('infernal')||e.includes('volcan')||e.includes('arcane'))return 'eternal_breach';return 'catacombs'}
 function sprite(sheet,row,col,scale){const a=atlasInfo[sheet],d=document.createElement('span');d.className='sprite';d.style.width=(a.w*scale)+'px';d.style.height=(a.h*scale)+'px';d.style.backgroundImage=`url('${a.src}')`;d.style.backgroundSize=`${a.cols*100}% ${a.rows*100}%`;d.style.backgroundPosition=`${col/(a.cols-1)*100}% ${row/(a.rows-1)*100}%`;return d}
 function addSample(el,pack){el.classList.add('tile');const img=new Image();img.onload=()=>{const c=document.createElement('canvas');c.width=320;c.height=160;const x=c.getContext('2d');x.imageSmoothingEnabled=false;const desert=pack==='sea_of_sand';x.drawImage(img,desert?2:0,desert?2:0,160,80,0,0,320,160);el.style.backgroundImage=`url('${c.toDataURL()}')`};img.src=`../../assets/tiles/${pack}/${pack==='sea_of_sand'?'floor':'floors'}.webp`}
@@ -57,5 +61,5 @@ function card(name,sheet,row,rows,env,extra=''){const info=atlasInfo[sheet],box=
 const main=document.getElementById('content');for(const [name,sheet,row,,env] of rows){const h=document.createElement('h2');h.className='atlas';h.textContent=name+' — '+env;main.append(h);main.append(card(name,sheet,row,atlasInfo[sheet].rows,env))}
 const vh=document.createElement('h2');vh.textContent='Environment-specific variations';main.append(vh);const vg=document.createElement('div');vg.className='grid';for(const [name,sheet,row,,pack] of variants)vg.append(card(name,sheet,row,12,pack));main.append(vg);
 const atl=document.getElementById('atlases');for(const [id,a] of Object.entries(atlasInfo)){const d=document.createElement('div');d.className='atlas';d.innerHTML=`<h3>${id}</h3><img src="${a.src}" alt="${id} trap sprite atlas"><p class="small">${a.cols} columns: idle, warning, active, destroyed. ${a.rows} trap rows.</p>`;atl.append(d)}
-const gifData=[['Swinging Blade','gifs/swinging-blade.gif'],['Retractable Spikes','gifs/retractable-spikes.gif'],['Rolling Boulder','gifs/rolling-boulder.gif'],['Falling Icicles','gifs/falling-icicles.gif'],['Arcane Turret','gifs/arcane-turret.gif'],['Volcanic Flame Jet','gifs/volcanic-flame-jet.gif']];const gifs=document.getElementById('gifs');for(const [name,src] of gifData){const d=document.createElement('div');d.className='atlas';d.innerHTML=`<h3>${name}</h3><img src="${src}" alt="Animated ${name} preview"><p class="small">Transparent 160 × 160 GIF preview.</p>`;gifs.append(d)}
+const gifData=[['Swinging Blade','gifs/swinging-blade.gif'],['Retractable Spikes','gifs/retractable-spikes.gif'],['Rolling Boulder','gifs/rolling-boulder.gif'],['Falling Icicles','gifs/falling-icicles.gif'],['Arcane Turret','gifs/arcane-turret.gif'],['Volcanic Flame Jet','gifs/volcanic-flame-jet.gif'],['Wall Dart Trap','gifs/wall-dart-trap.gif']];const gifs=document.getElementById('gifs');for(const [name,src] of gifData){const d=document.createElement('div');d.className='atlas';d.innerHTML=`<h3>${name}</h3><img src="${src}" alt="Animated ${name} preview"><p class="small">Transparent 160 × 160 GIF preview.</p>`;gifs.append(d)}
 </script>

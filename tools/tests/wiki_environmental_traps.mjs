@@ -13,6 +13,8 @@ test('World Wiki contains the shared environmental hazard catalog and valid modu
   assert.match(html, /id="panel-hazards"/);
   assert.match(html, /ENVIRONMENT_TRAP_TYPES/);
   assert.match(html, /ENVIRONMENT_TRAP_PROFILES|trapProfileFor/);
+  assert.match(html, /Wall apertures warn before firing three physical projectiles/);
+  assert.match(html, /lane proximity, or periodic trigger/);
   const start = html.indexOf('<script type="module">');
   assert.notEqual(start, -1, 'World Wiki module script exists');
   const bodyStart = html.indexOf('>', start) + 1;

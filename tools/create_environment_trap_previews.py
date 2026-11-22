@@ -10,6 +10,7 @@ SHEETS = {
     'elemental': (SRC / 'elemental.png', 4, 6),
     'nature': (SRC / 'nature.png', 4, 9),
     'environment-variations': (SRC / 'environment-variations.png', 4, 12),
+    'dart-wall': (SRC / 'dart-wall.png', 4, 4),
 }
 
 def frame(sheet_id, row, col):
@@ -43,6 +44,7 @@ previews = {
     'falling-icicles.gif': ('elemental', 4, [0, 1, 2, 3]),
     'arcane-turret.gif': ('environment-variations', 10, [0, 1, 2, 2, 3]),
     'volcanic-flame-jet.gif': ('environment-variations', 9, [0, 1, 2, 2, 3]),
+    'wall-dart-trap.gif': ('dart-wall', 0, [0, 1, 2, 3]),
 }
 for name, (sheet, row, states) in previews.items():
     frames = [frame(sheet, row, col) for col in states]
@@ -60,6 +62,7 @@ SHEETS = {
     'elemental': (SRC / 'elemental.png', 4, 6),
     'nature': (SRC / 'nature.png', 4, 9),
     'environment-variations': (SRC / 'environment-variations.png', 4, 12),
+    'dart-wall': (SRC / 'dart-wall.png', 4, 4),
 }
 # name, atlas, row, intended material/environment, real floor atlas pack
 TRAPS = [
@@ -84,6 +87,7 @@ TRAPS = [
  ('Explosive Rune','nature',4,'Infernal, void, siege and deep-mine regions','eternal_breach'),
  ('Cracking Ice','nature',5,'Frozen environments','snowy_summit'),
  ('Freezing Vent','nature',6,'Frozen fortresses and icebound caves','snowy_summit'),
+ ('Wall-mounted Dart Trap','dart-wall',0,'Ruins, castles, tombs and crypts','catacombs'),
 ]
 VARIATIONS = [
  ('Pressure Plate — Frozen Fortress','environment-variations',1,'Ice-bound steel and snow','snowy_summit'),
@@ -97,6 +101,9 @@ VARIATIONS = [
  ('Flame Jet — Volcanic Forge','environment-variations',9,'Obsidian and molten rock','eternal_breach'),
  ('Turret — Arcane Crystal','environment-variations',10,'Runed stone and amethyst','eternal_breach'),
  ('Turret — Storm Crags','environment-variations',11,'Weathered granite and charged cyan crystals','catacombs'),
+ ('Dart Trap - Castle Iron','dart-wall',1,'Castle blocks and heavy iron','castle_keep'),
+ ('Dart Trap - Poisoned Sandstone','dart-wall',2,'Sandstone, aged brass and poison vial','sea_of_sand'),
+ ('Dart Trap - Poisoned Bone Crypt','dart-wall',3,'Pale bone and black iron','cathedral_graveyard'),
 ]
 
 def atlas_cell(sheet, row, col):
@@ -191,7 +198,8 @@ def make_sheet(entries, path, title):
         if idx+1<len(entries): d.line((12,y+CARD_H-2,CARD_W-12,y+CARD_H-2),fill=(76,58,38),width=1)
     im.save(path,optimize=True)
 
+total_sheets=(len(TRAPS)+6)//7
 for n,start in enumerate(range(0,len(TRAPS),7),1):
-    make_sheet(TRAPS[start:start+7],OUT/f'trap-review-{n:02d}.png',f'Velscour Environmental Traps — Set {n}/3')
+    make_sheet(TRAPS[start:start+7],OUT/f'trap-review-{n:02d}.png',f'Velscour Environmental Traps - Set {n}/{total_sheets}')
 make_sheet(VARIATIONS,OUT/'trap-environment-variations.png','Velscour Environmental Traps — Environmental Variations')
 print('labeled sprite preview PNG sheets written')

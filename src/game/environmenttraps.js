@@ -3,6 +3,7 @@ import { hit } from './combat.js';
 import { Clutter } from './clutter.js';
 import { isoX, isoY } from '../core/view.js';
 import { sfx } from '../core/audio.js';
+import { sparkle, screenAngle } from '../gfx/vfx.js';
 import { A } from '../core/assets.js';
 
 export const ENVIRONMENT_TRAP_TYPES = Object.freeze({
@@ -27,6 +28,7 @@ export const ENVIRONMENT_TRAP_TYPES = Object.freeze({
   explosiveRune: { name: 'Explosive rune', fixture: 'rune', damage: 0.075, element: 'fire', mode: 'direct' },
   crackingIce: { name: 'Cracking ice', fixture: 'ice', damage: 0.075, element: 'cold', mode: 'direct' },
   freezingVent: { name: 'Freezing vent', fixture: 'frostVent', damage: 0.01, element: 'cold', mode: 'dot' },
+  dartTrap: { name: 'Wall Dart Trap', fixture: 'dartWall', damage: 0.03, element: 'phys', mode: 'direct', trigger: 'periodic' },
 });
 
 // Each atlas row is one physical trap and each column is idle, warning, active, destroyed.
@@ -53,6 +55,12 @@ const TRAP_ART = Object.freeze({
   explosiveRune: { sheet: 'nature', row: 4 },
   crackingIce: { sheet: 'nature', row: 5 },
   freezingVent: { sheet: 'nature', row: 6 },
+  dartTrap: { sheet: 'dart-wall', row: 0, element: 'phys', variantRows: {
+    castle: { sheet: 'dart-wall', row: 1, element: 'phys' }, keep: { sheet: 'dart-wall', row: 1, element: 'phys' },
+    desert: { sheet: 'dart-wall', row: 2, element: 'poison' }, tomb: { sheet: 'dart-wall', row: 2, element: 'poison' },
+    catacomb: { sheet: 'dart-wall', row: 3, element: 'poison' }, crypt: { sheet: 'dart-wall', row: 3, element: 'poison' },
+    necropolis: { sheet: 'dart-wall', row: 3, element: 'poison' }, cathedral: { sheet: 'dart-wall', row: 3, element: 'poison' },
+  } },
 });
 
 const artVariantKey = (variant) => String(variant || '').toLowerCase().replace(/[^a-z0-9]+/g, '_');
@@ -61,23 +69,24 @@ export function trapArtFor(kind, variant = '') {
   if (!art) return null;
   const id = artVariantKey(variant);
   for (const [needle, override] of Object.entries(art.variantRows || {})) {
-    if (id.includes(needle)) return typeof override === 'number' ? { sheet: art.sheet, row: override } : override;
+    if (id.includes(needle)) return typeof override === 'number' ? { sheet: art.sheet, row: override, element: art.element } : override;
   }
-  return { sheet: art.sheet, row: art.row };
+  return { sheet: art.sheet, row: art.row, element: art.element };
 }
 
 // Profiles cover every combat biome, plus beta/special areas. Castle, tower, cavern, siege, and hunt variants
 // inherit their parent environment profile and receive a color/material variation from their variant id.
 const profiles = {};
 const assign = (ids, traps) => ids.forEach((id) => { profiles[id] = Object.freeze([...traps]); });
-assign(['catacombs','sunken','blood','ashen','gilded','shadow','obsidian','flesh','serpent','necropolis','cathedral'], ['pressurePlate','swingingBlade','collapsingFloor','boneSpikes','cursedAltar']);
-assign(['castle_keep','castle','shattered','library','throne'], ['pressurePlate','swingingBlade','collapsingFloor','spikeTrap','destructible']);
+assign(['catacombs','sunken','blood','ashen','gilded','shadow','obsidian','flesh','serpent','necropolis','cathedral'], ['pressurePlate','dartTrap','swingingBlade','boneSpikes','cursedAltar']);
+assign(['castle_keep','castle','shattered','library','throne'], ['pressurePlate','dartTrap','swingingBlade','spikeTrap','destructible']);
 assign(['ice_temple','frozen','snowy_summit'], ['fallingIcicles','crackingIce','freezingVent','spikeTrap','destructible']);
 assign(['molten','forge','hell'], ['flameJet','lavaFissure','explosiveRune','magicalTurret','destructible']);
 assign(['fungal','plague','sewers','overworld','dark_forest'], ['poisonVent','poisonousPlant','thornTrap','collapsingFloor','destructible']);
 assign(['void','abyss','astral_plane','eternal_breach'], ['magicalTurret','unstableCrystal','explosiveRune','lightningHazard','collapsingFloor']);
 assign(['crystal'], ['unstableCrystal','magicalTurret','pressurePlate','collapsingFloor','destructible']);
-assign(['desert','amber','sea_of_sand','desert_temple','scorpion_king_pyramid'], ['quicksand','spikeTrap','rollingBoulder','pressurePlate','destructible']);
+assign(['desert','amber','sea_of_sand','scorpion_king_pyramid'], ['quicksand','spikeTrap','rollingBoulder','pressurePlate','destructible']);
+assign(['desert_temple'], ['quicksand','spikeTrap','pressurePlate','destructible','dartTrap']);
 assign(['storm','skyship','mountainside','great_hunt'], ['lightningHazard','rollingBoulder','fallingIcicles','collapsingFloor','destructible']);
 assign(['thorn'], ['thornTrap','poisonousPlant','collapsingFloor','pressurePlate','destructible']);
 assign(['pirate_seas'], ['pressurePlate','collapsingFloor','poisonVent','magicalTurret','destructible']);
@@ -140,22 +149,117 @@ function excluded(world, x, y, start, occupied) {
   return occupied(x, y, start);
 }
 
-function makeSite(world, kind, x, y, id, rng, variant) {
-  const type = ENVIRONMENT_TRAP_TYPES[kind];
-  const tint = tintFor(variant, type.element);
+function dartWallMount(world, x, y, rng) {
+  const map = world.map, tx = Math.floor(x), ty = Math.floor(y), choices = [];
+  for (const [wallX, wallY] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
+    const wallTile = (ty + wallY) * map.w + tx + wallX;
+    if (map.walkableTile(tx + wallX, ty + wallY) || map.clutter?.[wallTile]) continue;
+    const fireX = -wallX, fireY = -wallY;
+    let range = 0;
+    for (let d = 0.35; d <= 6.05; d += 0.35) {
+      if (!map.walkable(x + fireX * d, y + fireY * d)) break;
+      range = d;
+    }
+    if (range >= 3.5) choices.push({ wallX, wallY, fireX, fireY, range: Math.min(6, range) });
+  }
+  return choices.length ? choices[Math.floor(rng() * choices.length)] : null;
+}
+
+function makeSite(world, kind, x, y, id, rng, variant, mount = null) {
+  const baseType = ENVIRONMENT_TRAP_TYPES[kind];
   const art = trapArtFor(kind, variant);
   const image = A.environmentTrapAtlases?.[art.sheet];
   if (!image?.naturalWidth) return null;
   const columns = 4;
-  const rows = art.sheet === 'mechanical' || art.sheet === 'elemental' ? 6 : art.sheet === 'nature' ? 9 : 12;
+  const rows = art.sheet === 'mechanical' || art.sheet === 'elemental' ? 6 : art.sheet === 'nature' ? 9 : art.sheet === 'dart-wall' ? 4 : 12;
+  const element = art.element || baseType.element;
+  const type = kind === 'dartTrap' ? {
+    ...baseType, element, damage: element === 'poison' ? 0.024 : baseType.damage,
+    trigger: ['periodic', 'proximity', 'pressure'][Math.floor(rng() * 3)],
+  } : baseType;
+  const tint = tintFor(variant, type.element);
   const fixture = {
-    kind: 'environmentTrapFixture', trapKind: type.fixture, x, y, z: 0, tint, material: materialFor(variant),
+    kind: 'environmentTrapFixture', trapKind: type.fixture,
+    x: x + (mount?.wallX || 0) * 0.38, y: y + (mount?.wallY || 0) * 0.38, z: 0, tint, material: materialFor(variant),
     active: false, trapState: 'idle', id, trapSheet: art.sheet, trapRow: art.row,
     trapCellW: image.naturalWidth / columns, trapCellH: image.naturalHeight / rows,
-    k: world.tileset?.k || 0.4, flip: rng() < 0.5,
+    k: world.tileset?.k || 0.4, flip: mount ? (mount.wallX === 1 || mount.wallY === -1) : rng() < 0.5,
   };
   world.props.push(fixture);
-  return { id, kind, type, x, y, fixture, tint, rng, next: 8 + rng() * 8, warning: 0, dotLeft: 0, dotTick: 0, dotHit: new Set(), disabled: false };
+  const site = { id, kind, type, x, y, fixture, tint, rng, next: 8 + rng() * 8, warning: 0, dotLeft: 0, dotTick: 0, dotHit: new Set(), disabled: false,
+    wallX: mount?.wallX || 0, wallY: mount?.wallY || 0, fireX: mount?.fireX || 0, fireY: mount?.fireY || 0, fireRange: mount?.range || 0 };
+  if (kind === 'dartTrap' && type.trigger === 'pressure') {
+    const plateArt = trapArtFor('pressurePlate', variant), plateImage = A.environmentTrapAtlases?.[plateArt.sheet];
+    if (plateImage?.naturalWidth) {
+      const plateRows = plateArt.sheet === 'mechanical' || plateArt.sheet === 'elemental' ? 6 : plateArt.sheet === 'nature' ? 9 : 12;
+      site.triggerFixture = {
+        kind: 'environmentTrapFixture', trapKind: 'plate', x, y, z: 0, tint, material: materialFor(variant), active: false,
+        trapState: 'idle', trapSheet: plateArt.sheet, trapRow: plateArt.row,
+        trapCellW: plateImage.naturalWidth / 4, trapCellH: plateImage.naturalHeight / plateRows,
+        k: world.tileset?.k || 0.4, flip: false,
+      };
+      world.props.push(site.triggerFixture);
+    }
+  }
+  return site;
+}
+
+function setSiteVisualState(site, state, active = site.fixture.active) {
+  site.fixture.trapState = state; site.fixture.active = active;
+  if (site.triggerFixture) { site.triggerFixture.trapState = state; site.triggerFixture.active = active; }
+}
+
+function targetOnDartLane(site, target) {
+  const dx = target.x - site.x, dy = target.y - site.y;
+  const along = dx * site.fireX + dy * site.fireY;
+  const across = Math.abs(dx * site.fireY - dy * site.fireX);
+  return along >= 0 && along <= site.fireRange && across <= 0.8 + (target.r || 0);
+}
+
+class DartProjectile {
+  constructor(world, site, lane, delay) {
+    this.world = world; this.site = site; this.x = site.x + site.fireY * lane; this.y = site.y - site.fireX * lane;
+    this.dx = site.fireX; this.dy = site.fireY;
+    this.range = site.fireRange; this.speed = 13; this.wait = delay; this.traveled = 0; this.dead = false;
+    this.depth = this.x + this.y + 0.03; this.ground = false;
+  }
+  update(dt) {
+    if (this.wait > 0) { this.wait -= dt; return true; }
+    const move = Math.min(this.speed * dt, this.range - this.traveled);
+    const steps = Math.max(1, Math.ceil(move / 0.12));
+    for (let i = 0; i < steps; i++) {
+      const step = move / steps, nx = this.x + this.dx * step, ny = this.y + this.dy * step;
+      if (!this.world.map.walkable(nx, ny)) { this.dead = true; return false; }
+      for (const target of this.world.creatures) {
+        if (!target || target.dead || target.clutter || !['player', 'enemy'].includes(target.team)) continue;
+        if (this.site.volleyHit?.has(target)) continue;
+        if (Math.hypot(target.x - nx, target.y - ny) > 0.16 + (target.r || 0)) continue;
+        this.site.volleyHit?.add(target);
+        damageTarget(this.world, this.site, target, this.site.type.damage);
+        sparkle(nx, ny, 3, this.site.type.element === 'poison' ? '#8ac55a' : '#d6d0c0', 4, 0.12);
+        this.dead = true; return false;
+      }
+      this.x = nx; this.y = ny; this.traveled += step;
+    }
+    if (this.traveled >= this.range) { this.dead = true; return false; }
+    return true;
+  }
+  draw(ctx) {
+    const x = isoX(this.x, this.y), y = isoY(this.x, this.y) - 3;
+    ctx.save(); ctx.translate(x, y); ctx.rotate(screenAngle(Math.atan2(this.dy, this.dx)));
+    ctx.fillStyle = this.site.type.element === 'poison' ? '#77933d' : '#6d5540';
+    ctx.fillRect(-8, -1.2, 13, 2.4);
+    ctx.fillStyle = this.site.type.element === 'poison' ? '#a8c56a' : '#c8c3b5';
+    ctx.beginPath(); ctx.moveTo(8, 0); ctx.lineTo(3, -2.2); ctx.lineTo(3, 2.2); ctx.closePath(); ctx.fill();
+    ctx.fillStyle = this.site.type.element === 'poison' ? '#b7d653' : '#c69355';
+    ctx.fillRect(-9, -2.1, 2.5, 1); ctx.fillRect(-9, 1.1, 2.5, 1);
+    ctx.restore();
+  }
+}
+
+function fireDartVolley(world, site) {
+  site.volleyHit = new Set();
+  for (let i = -1; i <= 1; i++) world.addHazard(new DartProjectile(world, site, i * 0.24, (i + 1) * 0.045));
 }
 
 function damageTarget(world, site, target, ratio) {
@@ -205,8 +309,12 @@ export function setupEnvironmentalTraps(world, start) {
   for (const [x, y] of floors) {
     if (sites.length >= targetCount) break;
     if (sites.some((s) => Math.hypot(s.x - x, s.y - y) < 7)) continue;
-    const kind = profile[Math.floor(rng() * profile.length)];
-    const site = makeSite(world, kind, x, y, sites.length, rng, world.environmentVariant || world.biome?.id);
+    let kind = profile[Math.floor(rng() * profile.length)], mount = null;
+    if (kind === 'dartTrap') {
+      mount = dartWallMount(world, x, y, rng);
+      if (!mount) kind = profile.filter((candidate) => candidate !== 'dartTrap')[Math.floor(rng() * (profile.length - 1))];
+    }
+    const site = makeSite(world, kind, x, y, sites.length, rng, world.environmentVariant || world.biome?.id, mount);
     if (site) sites.push(site);
   }
   for (const site of sites.filter((s) => s.type.destructible)) {
@@ -224,25 +332,26 @@ export function setupEnvironmentalTraps(world, start) {
       for (const site of sites) {
         if (site.disabled) continue;
         if (site.flash > 0 && (site.flash -= dt) <= 0 && site.warning <= 0) {
-          site.fixture.active = false;
-          if (!site.disabled && site.dotLeft <= 0) site.fixture.trapState = 'idle';
+          if (!site.disabled && site.dotLeft <= 0) setSiteVisualState(site, 'idle', false);
         }
         if (site.type.destructible) continue; // damage-triggered objects do nothing until the player breaks them
         if (site.warning > 0) {
           site.warning -= dt;
           site.next -= dt;
           if (site.warning <= 0) {
-            site.warning = 0; site.flash = 0.35; site.fixture.active = true; site.fixture.trapState = 'active';
+            site.warning = 0; site.flash = 0.35; setSiteVisualState(site, 'active', true);
             if (site.type.mode === 'dot') { site.dotLeft = 3; site.dotTick = 0; site.dotHit.clear(); }
+            else if (site.kind === 'dartTrap') fireDartVolley(world, site);
             else for (const target of world.creatures) if (!target.dead && Math.hypot(target.x - site.x, target.y - site.y) <= (site.type.trigger === 'pressure' ? 0.9 : 1.5) + (target.r || 0)) damageTarget(world, site, target, site.type.damage);
           }
         } else {
           site.next -= dt;
-          const triggerRadius = site.type.trigger === 'pressure' ? 0.58 : site.type.trigger === 'proximity' ? 1.0 : 0;
+          const triggerRadius = site.type.trigger === 'pressure' ? 0.58 : site.type.trigger === 'proximity' ? (site.kind === 'dartTrap' ? 0 : 1.0) : 0;
           const triggered = triggerRadius > 0 && world.creatures.some((target) => !target.dead && Math.hypot(target.x - site.x, target.y - site.y) <= triggerRadius + (target.r || 0));
+          const dartApproached = site.kind === 'dartTrap' && site.type.trigger === 'proximity' && world.creatures.some((target) => !target.dead && targetOnDartLane(site, target));
           const periodic = site.type.trigger !== 'pressure' && site.type.trigger !== 'proximity';
-          if (site.next <= 0 && (periodic || triggered)) {
-            site.warning = 1.1; site.next = 8 + rng() * 8; site.fixture.active = true; site.fixture.trapState = 'warning';
+          if (site.next <= 0 && (periodic || triggered || dartApproached)) {
+            site.warning = 1.1; site.next = 8 + rng() * 8; setSiteVisualState(site, 'warning', true);
             sfx(({ fire: 'fire', cold: 'cold', light: 'light', poison: 'poison', arcane: 'arcane', shadow: 'shadow', phys: 'thud' })[site.type.element] || 'thud', 0.22);
           }
         }

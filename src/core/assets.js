@@ -91,7 +91,7 @@ export async function loadAssets(progress) {
   jobs.push(track(loadImage('assets/sprites/bones.webp').then((i) => { A.boneImg = i; })));
   jobs.push(track(loadJSON('assets/sprites/bones.json').then((j) => { A.boneMeta = j; })));
   jobs.push(track(loadImage('assets/sprites/props/heresy_altar.png').then((i) => { A.heresyAltar = i; })));
-  jobs.push(track(Promise.all(['mechanical', 'elemental', 'nature', 'environment-variations'].map(async (id) => [
+  jobs.push(track(Promise.all(['mechanical', 'elemental', 'nature', 'environment-variations', 'dart-wall'].map(async (id) => [
     id, await loadImage(`assets/sprites/environment-traps/${id}.png`),
   ])).then((pairs) => { A.environmentTrapAtlases = Object.fromEntries(pairs); })));
   jobs.push(track(loadJSON('assets/props/chests.json').then((j) => { A.chestMeta = j; })));
