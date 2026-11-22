@@ -2,8 +2,9 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 
-const [audio, paladin] = await Promise.all([
+const [audio, combat, paladin] = await Promise.all([
   readFile(new URL('../../src/core/audio.js', import.meta.url), 'utf8'),
+  readFile(new URL('../../src/game/combat.js', import.meta.url), 'utf8'),
   readFile(new URL('../../src/game/sigs/paladin.js', import.meta.url), 'utf8'),
 ]);
 
@@ -25,4 +26,12 @@ test('impact cue starts in the same update as Judgement damage and casting remai
   assert.ok(impact.indexOf("sfx('judgement_impact'") < impact.indexOf('const P = power(p)'));
   assert.match(fire, /sfx\('judgement_cast'/);
   assert.doesNotMatch(impact, /sfx\('(holy|thud)'/);
+  assert.match(impact, /sigO\(\{ stun: true, knock: 1\.2, noHitSound: true \}\)/);
+  assert.match(impact, /sigO\(\{ noHitSound: true \}\)/);
+  const consecration = paladin.slice(paladin.indexOf('class Consecration'), paladin.indexOf('/** A rune of the halo'));
+  assert.match(consecration, /sigO\(\{ crit: false, noHitSound: true \}\)/);
+});
+
+test('Judgement-specific hit sound suppression does not remove ordinary combat hit sounds', () => {
+  assert.match(combat, /if \(!o\.dot && !o\.silent && !o\.noHitSound\) sfx\(crit \? 'crit' : 'hit', 0\.5\)/);
 });

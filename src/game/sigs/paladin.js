@@ -52,11 +52,11 @@ function impact(p, x, y) {
   addEffect(new Column(x, y, GOLD, 0.7, 60, 420));
   for (let i = 0; i < 3; i++) addEffect(new Ring(x, y, 0.2, 2.6 + i * 0.7, 0.45 + i * 0.15, i ? WHITE : GOLD, 8 - i * 2, { fill: !i }));
   burst(x, y, 20, 'holy', G.touch ? 24 : 50, 6, { up: 2 });
-  aoe(w, p, x, y, 2.6, P * 6, 'holy', sigO({ stun: true, knock: 1.2 }));
+  aoe(w, p, x, y, 2.6, P * 6, 'holy', sigO({ stun: true, knock: 1.2, noHitSound: true }));
   for (let i = 0; i < 4; i++) { // the cross of light, along the floor's axes
     const a = i * Math.PI / 2, ex = x + Math.cos(a) * 4.5, ey = y + Math.sin(a) * 4.5;
     addEffect(new Beam(x, y, ex, ey, GOLD, 12, 0.55, { z: 6, core: '#ffffff' }));
-    for (const c of lineTargets(w, p.team, x, y, ex, ey, 0.55)) hit(p, c, P * 2, 'holy', sigO());
+    for (const c of lineTargets(w, p.team, x, y, ex, ey, 0.55)) hit(p, c, P * 2, 'holy', sigO({ noHitSound: true }));
   }
   addDecal(x, y, 'rgba(255,220,120,0.35)', 1, 'scorch', 0.4);
   w.addHazard(new Consecration(p, x, y));
@@ -70,7 +70,7 @@ class Consecration {
     const p = this.p, w = this.world;
     if ((this.tick -= dt) <= 0 && !p.dead) {
       this.tick = 0.5;
-      aoe(w, p, this.x, this.y, this.r, power(p) * 0.3, 'holy', sigO({ crit: false }));
+      aoe(w, p, this.x, this.y, this.r, power(p) * 0.3, 'holy', sigO({ crit: false, noHitSound: true }));
       if (Math.hypot(p.x - this.x, p.y - this.y) < this.r) p.heal(p.maxHp * 0.012, true);
     }
     if (Math.random() < dt * 14) { const a = rand(TAU), d = rand(this.r); spawn({ type: 'glow', x: this.x + Math.cos(a) * d, y: this.y + Math.sin(a) * d, z: 2, vz: rand(30, 70), life: rand(0.5, 1), size: rand(2, 3.5), size1: 0, color: Math.random() < 0.5 ? GOLD : WHITE, add: true }); }

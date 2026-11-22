@@ -37,7 +37,7 @@ function bloodOf(c) {
 
 /**
  * Apply damage. Returns damage actually dealt.
- * o: { dot, crit:false to disallow, knock, ang, burn, poison, bleed, slow, freeze, stun, fear, leech, noArc, melee, aoe, silent, bossMul, noStatus, noVariance, damageCap }
+ * o: { dot, crit:false to disallow, knock, ang, burn, poison, bleed, slow, freeze, stun, fear, leech, noArc, melee, aoe, silent, noHitSound, bossMul, noStatus, noVariance, damageCap }
  */
 export function hit(src, tgt, amount, el = 'phys', o = {}) {
   // Reject NaN as well as non-positive hits. NaN HP never reaches the death check.
@@ -381,7 +381,7 @@ export function hit(src, tgt, amount, el = 'phys', o = {}) {
     const force = clamp(dmg / tgt.maxHp, 0.05, 1);
     if (!(tgt.goreType === 'spark' || tgt.goreType === 'ecto') || chance(0.5)) bloodSpray(tgt.x, tgt.y, 28, ang, Math.round(4 + force * 18), bloodOf(tgt), 0.7 + force);
     if (!o.dot) hitSpark(tgt.x, tgt.y, 28, el);
-    if (!o.dot && !o.silent) sfx(crit ? 'crit' : 'hit', 0.5);
+    if (!o.dot && !o.silent && !o.noHitSound) sfx(crit ? 'crit' : 'hit', 0.5);
     if (crit && dmg > tgt.maxHp * 0.3) G.hitStop = Math.max(G.hitStop, 0.035);
   }
 
