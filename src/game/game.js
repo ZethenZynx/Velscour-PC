@@ -12,6 +12,7 @@ import { biomeTileSet, loadBiomeArt, mixedTileSet, keepTileSets } from '../core/
 import { loadArtFor, enemyImage, markArtCaches, trimArtCaches } from '../core/enemyart.js';
 import { loadClassArt } from '../core/classart.js';
 import { preloadSkillSheets } from '../ui/icons.js';
+import { dungeonAffixIconHTML } from '../ui/dungeonaffixicons.js';
 import { applyUILayoutSettings } from '../ui/layoutcustomizer.js';
 import { loadGearArt } from '../core/gearart.js';
 import { loadHeld } from '../gfx/heldart.js';
@@ -861,7 +862,6 @@ export const game = {
       const destination = resolveDepthDestination(depth, c.breach?.best, environment);
       return destination.kind !== 'breach' && destination.id !== 'throne';
     };
-    const greedIconByCategory = { 'Enemy Stat Modifiers': '⚔', 'On-Death Effects': '☠', 'Elemental Hazards': '✹', 'Enemy Attack Modifiers': '➶', 'Enemy Movement & Behavior': '➤', 'Player Debuffs & Curses': '☠', 'Summoning & Reinforcements': '♟', 'Environmental & Dungeon Modifiers': '⌖', 'Elite & Boss Modifiers': '♛', 'Chaotic & Special Mechanics': '✧', 'World Effects': '◉', 'Risk & Reward': '✦' };
     const renderGreedPanel = (depth) => {
       const eligible = mode === 'campaign' && greedEligibleAt(depth);
       if (!greedPanel) return;
@@ -885,8 +885,8 @@ export const game = {
         const affix = DUNGEON_AFFIX_BY_ID[id];
         if (!affix) return '';
         const description = escapeHtml(affix.description || 'Dungeon affix');
-        const icon = greedIconByCategory[affix.category] || '✧';
-        return `<li title="${escapeHtml(`${affix.name}: ${affix.description || 'Dungeon affix'}`)}"><span class="greed-affix-icon" title="${escapeHtml(affix.category)}" aria-hidden="true">${icon}</span><span><b>${escapeHtml(affix.name)}</b><small>${description}</small></span></li>`;
+        const icon = dungeonAffixIconHTML(id, 25);
+        return `<li title="${escapeHtml(`${affix.name}: ${affix.description || 'Dungeon affix'}`)}"><span class="greed-affix-icon" aria-hidden="true">${icon}</span><span><b>${escapeHtml(affix.name)}</b><small>${description}</small></span></li>`;
       }).join('') || '<li class="greed-inline-empty">No affixes at Greed 0.</li>';
     };
 
@@ -1813,13 +1813,12 @@ export const game = {
     if (!biome.beta) recordBiomeVisit(c, biome, depth); // a beta biome leaves the overworld guarantee alone
     c.lastBiome = biome.id;
     const uFloor = world.unboundExploration?.floor;
-    const activeAffixNames = (world.dungeonAffixes || []).map((id) => DUNGEON_AFFIX_BY_ID[id]?.name).filter(Boolean);
     HUD.setArea(
       world.unbound ? 'Velscour Unbound' :
       uFloor ? `Unbound Floor ${uFloor}` :
       `Depth ${depth}${depth > FINAL_DEPTH ? ' — Endless Torment' : ''}`,
       (biome.overworld ? `${biome.id === 'scorpion_king_pyramid' ? biome.name : gen.variant ? gen.variant.name : biome.name}${world.overworldScenario?.title ? ` · ${world.overworldScenario.title}` : ''}` : gen.raid ? `${biome.name} · Boss Room` : biome.name) + (worldRank(world) ? ` · Heresy ${worldRank(world)}` : ''),
-      activeAffixNames
+      world.dungeonAffixes || []
     );
     playMusic('wilds', { delay: 4 + Math.random() * 20 }); setAmbience(sky ? world.sky.v.amb : sea ? world.seaRun.variant.amb : reg?.amb || biome.id);
     const kin = tileset.mixed && BIOME_BY_ID[tileset.mixed];

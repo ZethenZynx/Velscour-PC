@@ -18,6 +18,7 @@ import { enemyImage } from '../core/enemyart.js';
 import { pixelSprite } from '../gfx/pixelart.js';
 import { ELITE_AFFIXES } from '../data/enemies.js';
 import { DUNGEON_AFFIX_BY_ID } from '../data/dungeonaffixes.js';
+import { dungeonAffixIconURL } from './dungeonaffixicons.js';
 import { appendEnemyHistory, loadEnemyHistory, saveEnemyHistory } from './enemyhistory.js';
 
 const TAUNT_KEY = 'velscour_taunts_v1'; // Velscour's level-up deck: the last mood and the lines already shown
@@ -1015,9 +1016,29 @@ export const HUD = {
     if (an) an.textContent = name;
     if (as) as.textContent = sub || '';
     if (af) {
-      const names = Array.isArray(affixes) ? affixes.filter(Boolean) : [];
-      af.textContent = names.length ? `Affixes: ${names.join(' · ')}` : '';
-      af.classList.toggle('hidden', !names.length);
+      const active = (Array.isArray(affixes) ? affixes : []).map((entry) => {
+        if (entry && typeof entry === 'object') return DUNGEON_AFFIX_BY_ID[entry.id] || entry;
+        return DUNGEON_AFFIX_BY_ID[entry] || Object.values(DUNGEON_AFFIX_BY_ID).find((affix) => affix.name === entry);
+      }).filter((affix) => affix?.name && dungeonAffixIconURL(affix.id)).slice(0, 5);
+      af.replaceChildren();
+      if (active.length) {
+        af.appendChild(el('div', 'area-affix-heading', 'Active Affixes'));
+        const list = el('div', 'area-affix-list');
+        for (const affix of active) {
+          const row = el('div', 'area-affix-row');
+          const icon = el('img', 'area-affix-icon');
+          icon.src = dungeonAffixIconURL(affix.id);
+          icon.alt = '';
+          icon.width = 20;
+          icon.height = 20;
+          icon.draggable = false;
+          row.append(icon, el('span', 'area-affix-name', escapeHtml(affix.name)));
+          UI.tip(row, () => `<b>${escapeHtml(affix.name)}</b><div>${escapeHtml(affix.description || 'Dungeon affix')}</div>`);
+          list.appendChild(row);
+        }
+        af.appendChild(list);
+      }
+      af.classList.toggle('hidden', !active.length);
     }
   },
   show(v) { $('#hud').classList.toggle('hidden', !v); if (v) { this.layoutMobile(); this.applyVisibilitySettings(); CharacterPortrait.refreshSettings(); } },

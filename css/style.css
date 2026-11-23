@@ -364,7 +364,13 @@ body.touch #sealed-btn i { width: 16px; height: 16px; }
 #hud-top-left { position: absolute; left: 12px; top: 10px; pointer-events: none; text-shadow: 0 0 4px #000, 0 0 2px #000; }
 #area-name { font: 700 20px var(--font-head); color: var(--gold-bright); letter-spacing: 1px; }
 #area-sub { font: 400 14px var(--font-body); color: var(--text-dim); }
-#area-affixes { max-width: 380px; margin-top: 2px; font: 600 12px/1.3 var(--font-body); color: #f0d6a1; }
+#area-affixes { max-width: min(380px, 42vw); margin-top: 5px; font: 600 12px/1.3 var(--font-body); color: #f0d6a1; pointer-events: auto; }
+.area-affix-heading { margin: 3px 0 2px; color: var(--gold-bright); font: 700 11px/1.2 var(--font-head); letter-spacing: .35px; }
+.area-affix-list { display: inline-grid; gap: 2px; max-width: 100%; text-align: inherit; vertical-align: top; }
+.area-affix-row { display: flex; align-items: center; gap: 6px; min-width: 0; max-width: 100%; min-height: 22px; overflow: hidden; color: #f0d6a1; text-shadow: 0 0 4px #000, 0 0 2px #000; pointer-events: auto; cursor: help; }
+.area-affix-icon { display: block; flex: 0 0 20px; width: 20px; height: 20px; object-fit: contain; image-rendering: pixelated; border: 1px solid rgba(205,169,103,.55); border-radius: 3px; background: rgba(20,15,15,.85); }
+.area-affix-name { min-width: 0; overflow-wrap: anywhere; }
+.greed-affix-icon .dungeon-affix-spell-icon { display: block; width: 25px; height: 25px; image-rendering: pixelated; border-radius: 3px; }
 #buff-row, #debuff-row { position: fixed; z-index: 12; display: flex; gap: 4px; margin: 0; flex-wrap: wrap; align-content: flex-start; box-sizing: border-box; min-height: 32px; width: min(50vw, 380px); max-width: 50vw; }
 #buff-row { left: 12px; top: 53vh; }
 #debuff-row { left: 12px; top: 59vh; }
