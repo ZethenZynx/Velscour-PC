@@ -21,6 +21,7 @@ import { heresyAllows } from './heresies.js';
 import { keyChance } from './unbound.js';
 import { CHEST_RARITIES } from '../data/treasurechests.js';
 import { riftLootDepth } from '../data/rifts.js';
+import { greedQuantity } from './greed.js';
 
 /** Highest quality unlocked for ground drops at this campaign depth. */
 export function groundDropRarityCap(depth) { return qualityAtDepth(Math.max(1, depth || 1)); }
@@ -359,8 +360,8 @@ export function dropLoot(world, m) {
   const rank = m.rank || 'normal';
   const R = { normal: 1, champion: 3, unique: 5, boss: 10 }[rank];
   const add = (kind, data) => world.addLoot(new GroundItem(m.x + rand(-0.2, 0.2), m.y + rand(-0.2, 0.2), kind, data));
-  const q = 1 + ((st.drops || 0) + (world.greedLootPct || 0)) / 100, more = (n) => { const x = n * q; return Math.floor(x) + (chance(x % 1) ? 1 : 0); };
-  const greedMore = (n) => { const x = n * (1 + (world.greedLootPct || 0) / 100); return Math.floor(x) + (chance(x % 1) ? 1 : 0); };
+  const more = (n) => greedQuantity(n, (st.drops || 0) + (world.greedLootPct || 0), chance);
+  const greedMore = (n) => greedQuantity(n, world.greedLootPct || 0, chance);
   // gold (suppressed during active rifts)
   if (!isRiftActive && chance(rank === 'normal' ? 0.45 : 1)) {
     const n = rank === 'boss' ? 5 : 1;
@@ -424,7 +425,7 @@ export function dropChest(world, chest, depth) {
   const st = G.player ? G.player.st : { magicFind: 0, goldFind: 0 };
   const breachScale = world.breach ? 1 + (st.markBreachRewards || 0) / 100 : 1;
   const breachCount = (n) => Math.floor(n * breachScale) + (chance((n * breachScale) % 1) ? 1 : 0);
-  const greedCount = (n) => { const x = n * (1 + (world.greedLootPct || 0) / 100); return Math.floor(x) + (chance(x % 1) ? 1 : 0); };
+  const greedCount = (n) => greedQuantity(n, world.greedLootPct || 0, chance);
   const add = (kind, data) => world.addLoot(new GroundItem(chest.x, chest.y + 0.3, kind, data));
   const rarity = Number.isInteger(chest.chestRarity) ? CHEST_RARITIES[chest.chestRarity] : null;
   const goldOnly = chest.chestType === 'gilded';

@@ -27,7 +27,7 @@ export const LORE_TIPS = [
   "Socket gems into socketed weapons and armor to boost attributes, critical damage, and survivability.",
   "Overworld biomes like the Sea of Sand and Castle Hollow feature massive multi-phase raid encounters.",
   "Every class possesses distinct primary attributes. Strength, Dexterity, and Intellect empower unique archetypes.",
-  "After defeating Velscour, choose a Greed level at the Portal to the Depths for more affixes and greater endgame rewards.",
+  "After defeating Velscour, choose a Greed level at the Portal to the Depths for more affixes, enemies, and endgame rewards.",
   "Heresies twist the laws of the dungeon past Velscour's fall, multiplying peril and Infernal Mark rewards.",
   "Listen closely in the dark: champions, shrines, and treasure chests betray their presence before you see them."
 ];

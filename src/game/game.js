@@ -29,7 +29,7 @@ import { addDefiance, clearDefiance, defianceText, tickBlessing } from './defian
 import { setupHappenings, announceDungeonAffixes, happeningsTick, eventImpsTick, spawnGuaranteedImp, townHappening, townTick, beginVictoryTownCelebration, recordDepth, markNemesis } from './happenings.js';
 import { setupWorldObjects, worldObjectsTick, clearWorldObjectBuffs } from './worldobjects.js';
 import { setupDungeonEvent, dungeonEventTick } from './dungeonevents.js';
-import { GREED_LEVELS, greedOf, greedWorld, setGreed, rollGreedAffixes, getGreedAffixPreview } from './greed.js';
+import { GREED_LEVELS, greedOf, greedWorld, greedPacks, setGreed, rollGreedAffixes, getGreedAffixPreview } from './greed.js';
 import { assignPackLeader } from './packleaders.js';
 import { pickMonsterArchetype } from './monsterroster.js';
 import { spectateTick } from './spectate.js';
@@ -775,7 +775,8 @@ export const game = {
               <div class="greed-inline-summary"><b class="greed-inline-name"></b><span class="greed-inline-count"></span></div>
               <input type="range" class="greed-inline-range" min="0" max="5" step="1" value="${greedOf(c)}" aria-label="Greed difficulty from 0 to 5">
               <div class="greed-config-levels"><span>0</span><span>1</span><span>2</span><span>3</span><span>4</span><span>5</span></div>
-              <div class="greed-config-rewards"><span>Gold <b class="greed-inline-gold">+0%</b></span><span>Experience <b class="greed-inline-xp">+0%</b></span><span>Loot quantity <b class="greed-inline-loot">+0%</b></span></div>
+              <div class="greed-config-rewards"><span>Gold <b class="greed-inline-gold">+0%</b></span><span>Experience <b class="greed-inline-xp">+0%</b></span><span>Loot quantity <b class="greed-inline-loot">+0%</b></span><span>Enemy population <b class="greed-inline-population">+0%</b></span></div>
+              <div class="greed-inline-elites">Champion leader chance: <b class="greed-inline-champions">+0%</b></div>
               <ul class="greed-config-affixes greed-inline-affixes"></ul>
             </section>
           </div>
@@ -876,6 +877,8 @@ export const game = {
       greedPanel.querySelector('.greed-inline-gold').textContent = `+${info.goldPct}%`;
       greedPanel.querySelector('.greed-inline-xp').textContent = `+${info.xpPct}%`;
       greedPanel.querySelector('.greed-inline-loot').textContent = `+${info.lootPct}%`;
+      greedPanel.querySelector('.greed-inline-population').textContent = `+${info.populationPct}%`;
+      greedPanel.querySelector('.greed-inline-champions').textContent = `+${info.championPct}%`;
       const affixList = greedPanel.querySelector('.greed-inline-affixes');
       affixList.innerHTML = ids.map((id) => {
         const affix = DUNGEON_AFFIX_BY_ID[id];
@@ -1505,7 +1508,10 @@ export const game = {
     world.unbound = biome.id === 'throne' && !!G.unboundNext; G.unboundNext = false; // Velscour Unbound (game/unbound.js)
     world.practice = biome.id === 'throne' && depth !== FINAL_DEPTH && practiceFinalBoss && !world.unbound; // Skull-only Velscour practice; ordinary Throne depths use a regular guardian
     const heresies = heresyBegin(world, c); // the Heresies (game/heresies.js): twinned packs now, BOSS ROOM phases, the rest as monsters appear
-    for (const s of heresySpawns(gen.spawns, heresies)) {
+    const destination = resolveDepthDestination(depth, c?.breach?.best, biome.id);
+    const greedPopulationEligible = depth > FINAL_DEPTH && endgameUnlocked(c) && destination.kind !== 'breach' && destination.id !== 'throne';
+    const generatedSpawns = greedPopulationEligible ? greedPacks(gen.spawns, greedOf(c)) : gen.spawns;
+    for (const s of heresySpawns(generatedSpawns, heresies)) {
       if (s.rank === 'raid') {
         const superbossId = superbossForDepth(depth);
         const tpl = superbossId ? RAID_BOSSES.find((b) => b.id === superbossId) : undefined;

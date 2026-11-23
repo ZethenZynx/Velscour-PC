@@ -5,12 +5,12 @@ import { chooseDungeonAffix, normalizeDungeonAffixIds } from '../data/dungeonaff
 
 export const GREED_MAX = 5;
 export const GREED_LEVELS = Object.freeze([
-  { level: 0, name: 'Disabled', affixes: 0, goldPct: 0, xpPct: 0, lootPct: 0 },
-  { level: 1, name: 'Temptation', affixes: 1, goldPct: 20, xpPct: 10, lootPct: 10 },
-  { level: 2, name: 'Desire', affixes: 2, goldPct: 45, xpPct: 25, lootPct: 20 },
-  { level: 3, name: 'Avarice', affixes: 3, goldPct: 75, xpPct: 45, lootPct: 35 },
-  { level: 4, name: 'Obsession', affixes: 4, goldPct: 110, xpPct: 70, lootPct: 50 },
-  { level: 5, name: 'Insatiable', affixes: 5, goldPct: 150, xpPct: 100, lootPct: 75 },
+  { level: 0, name: 'Disabled', affixes: 0, goldPct: 0, xpPct: 0, lootPct: 0, populationPct: 0, championPct: 0 },
+  { level: 1, name: 'Temptation', affixes: 1, goldPct: 20, xpPct: 10, lootPct: 10, populationPct: 12, championPct: 7 },
+  { level: 2, name: 'Desire', affixes: 2, goldPct: 45, xpPct: 25, lootPct: 20, populationPct: 24, championPct: 14 },
+  { level: 3, name: 'Avarice', affixes: 3, goldPct: 75, xpPct: 45, lootPct: 35, populationPct: 36, championPct: 21 },
+  { level: 4, name: 'Obsession', affixes: 4, goldPct: 110, xpPct: 70, lootPct: 50, populationPct: 48, championPct: 28 },
+  { level: 5, name: 'Insatiable', affixes: 5, goldPct: 150, xpPct: 100, lootPct: 75, populationPct: 60, championPct: 35 },
 ]);
 
 export const greedOf = (c = G.char) => clamp(Math.floor(Number(c?.greedLevel ?? c?.greed) || 0), 0, GREED_MAX);
@@ -25,10 +25,33 @@ export function greedMods(level) {
     gold: row.goldPct / 100,
     xp: row.xpPct / 100,
     loot: row.lootPct / 100,
+    population: row.populationPct / 100,
+    populationPct: row.populationPct,
+    championPct: row.championPct,
     goldPct: row.goldPct,
     xpPct: row.xpPct,
     lootPct: row.lootPct,
   };
+}
+
+/** Restore the pre-redesign Greed pack-density and champion-leader rolls without changing enemy strength. */
+export function greedPacks(spawns, level, random = Math.random) {
+  const M = greedMods(level);
+  if (!M.level || !Array.isArray(spawns)) return spawns;
+  return spawns.map((spawn) => {
+    if (!spawn?.n || ['raid', 'boss'].includes(spawn.rank)) return spawn;
+    const n = spawn.n + Math.floor(spawn.n * M.population + random());
+    const champ = !!spawn.champ || (spawn.rank === 'normal' && random() < M.championPct / 100);
+    return { ...spawn, n, champ };
+  });
+}
+
+/** Stochastic rounding shared by live loot generators, so fractional quantity bonuses stay unbiased. */
+export function greedQuantity(count, bonusPct, random = Math.random) {
+  const exact = Math.max(0, Number(count) || 0) * (1 + (Number(bonusPct) || 0) / 100);
+  const whole = Math.floor(exact);
+  const fraction = exact - whole;
+  return whole + (fraction > 0 && random() < fraction ? 1 : 0);
 }
 
 /** Select exactly one implemented affix from a distinct category per Greed level. */
@@ -93,6 +116,8 @@ export function greedWorld(world, c = G.char) {
   world.greedGoldPct = M.goldPct;
   world.greedXpPct = M.xpPct;
   world.greedLootPct = M.lootPct;
+  world.greedPopulationPct = M.populationPct;
+  world.greedChampionPct = M.championPct;
   if (level) {
     world.xpBonusPct = (world.xpBonusPct || 0) + M.xpPct;
   }

@@ -5,7 +5,7 @@ import { ACTS, FINAL_DEPTH, MAX_DEPTH, MAX_LEVEL, SUPERBOSS_DEPTHS, endgameScali
 import { RAID_BOSSES } from '../../src/game/raid.js';
 import { RARITY, TIER_20_MIN_DEPTH, qualityAtDepth, sigilCap, RARITY_TIER_20 } from '../../src/data/items.js';
 import { DUNGEON_AFFIX_BY_ID } from '../../src/data/dungeonaffixes.js';
-import { GREED_LEVELS, greedMods, greedWorld, rollGreedAffixes, getGreedAffixPreview, setGreed } from '../../src/game/greed.js';
+import { GREED_LEVELS, greedMods, greedPacks, greedQuantity, greedWorld, rollGreedAffixes, getGreedAffixPreview, setGreed } from '../../src/game/greed.js';
 import { makeCovenant } from '../../src/data/relics.js';
 
 assert.equal(FINAL_DEPTH, 100);
@@ -37,6 +37,8 @@ assert.deepEqual(GREED_LEVELS.map(({ level, name, affixes, goldPct, xpPct, lootP
 const gameUiSource = await readFile(new URL('../../src/game/game.js', import.meta.url), 'utf8');
 assert.match(gameUiSource, /class="greed-inline"/, 'Greed settings are embedded in the Portal to the Depths');
 assert.match(gameUiSource, /class="greed-inline-range"/, 'the portal contains the 0-5 Greed selector');
+assert.match(gameUiSource, /greed-inline-population/, 'the portal shows the active enemy population bonus');
+assert.match(gameUiSource, /greed-inline-champions/, 'the portal shows the champion leader chance');
 assert.doesNotMatch(gameUiSource, /openGreedConfig|greed-open-config|greed-config-dialog/, 'the separate Greed popup is removed');
 for (let level = 0; level <= 5; level++) {
   const ids = rollGreedAffixes(level, () => 0.25);
@@ -45,9 +47,18 @@ for (let level = 0; level <= 5; level++) {
   assert.equal(new Set(ids.map((id) => DUNGEON_AFFIX_BY_ID[id].category)).size, ids.length, 'affixes use distinct compatible categories');
   assert.deepEqual(greedMods(level), {
     level, affixes: level, gold: GREED_LEVELS[level].goldPct / 100, xp: GREED_LEVELS[level].xpPct / 100, loot: GREED_LEVELS[level].lootPct / 100,
+    population: GREED_LEVELS[level].populationPct / 100, populationPct: GREED_LEVELS[level].populationPct, championPct: GREED_LEVELS[level].championPct,
     goldPct: GREED_LEVELS[level].goldPct, xpPct: GREED_LEVELS[level].xpPct, lootPct: GREED_LEVELS[level].lootPct,
   });
 }
+assert.deepEqual(GREED_LEVELS.map(({ populationPct, championPct }) => [populationPct, championPct]), [[0, 0], [12, 7], [24, 14], [36, 21], [48, 28], [60, 35]]);
+const unchangedSpawns = [{ rank: 'normal', n: 3 }, { rank: 'boss', n: 1 }, { rank: 'raid', n: 1 }];
+assert.equal(greedPacks(unchangedSpawns, 0), unchangedSpawns, 'Greed 0 leaves original spawn data untouched');
+const randomRolls = [0.5, 0.1];
+const scaledSpawns = greedPacks(unchangedSpawns, 5, () => randomRolls.shift() ?? 0.5);
+assert.deepEqual(scaledSpawns.map((s) => s.n), [5, 1, 1], 'Greed adds randomized members to packs but never multiplies bosses or raids');
+assert.equal(scaledSpawns[0].champ, true, 'Greed increases champion leaders using the restored chance');
+assert.equal(unchangedSpawns[0].n, 3, 'spawn templates are not mutated');
 const greedCharacter = { greedLevel: 5, greed: 0 };
 assert.deepEqual(rollGreedAffixes(0), []);
 assert.equal(setGreed(2, greedCharacter), 2);
@@ -67,6 +78,11 @@ for (let level = 0; level <= 5; level++) {
   assert.equal(world.greedGoldPct, GREED_LEVELS[level].goldPct);
   assert.equal(world.greedXpPct, GREED_LEVELS[level].xpPct);
   assert.equal(world.greedLootPct, GREED_LEVELS[level].lootPct);
+  assert.equal(world.greedPopulationPct, GREED_LEVELS[level].populationPct);
+  assert.equal(world.greedChampionPct, GREED_LEVELS[level].championPct);
+  assert.equal(world.xpBonusPct || 0, GREED_LEVELS[level].xpPct, 'the approved XP bonus is applied to live world progression exactly once');
+  assert.equal(Math.round(100 * (1 + world.greedGoldPct / 100)), 100 + world.greedGoldPct, 'the live gold dial produces the approved additive amount bonus');
+  assert.equal(Math.round(100 * (1 + (world.xpBonusPct || 0) / 100)), 100 + GREED_LEVELS[level].xpPct, 'the live XP dial produces the approved progression bonus');
   assert.equal(world.goldMul, 1, 'Greed does not multiply existing gold reward modifiers');
   const snapshot = { ...world };
   greedWorld(world, { greedLevel: level });
@@ -75,6 +91,7 @@ for (let level = 0; level <= 5; level++) {
 const campaignWorld = { kind: 'dungeon', depth: 100, goldMul: 1 };
 assert.equal(greedWorld(campaignWorld, { greedLevel: 5 }), false, 'Greed has no campaign effect');
 assert.equal(campaignWorld.greed, undefined);
+assert.equal(greedQuantity(4, 75, () => 0), 7, 'loot quantity bonus creates additional loot with unbiased fractional rounding');
 for (const d of [101, 125, 500, 10000, MAX_DEPTH]) {
   const s = endgameScaling(d);
   assert.ok(Number.isFinite(s.health) && s.health >= 1 && s.health <= 1e100);

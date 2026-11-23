@@ -31,9 +31,11 @@
 .greed-inline-count { color:#c1ae8e; font:12px var(--font-body); }
 .greed-inline-range { display:block; width:100%; margin:10px 0 3px; accent-color:#dcae54; }
 .greed-config-levels { display:flex; justify-content:space-between; color:#aa9a80; font-size:11px; }
-.greed-config-rewards { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:6px; margin:10px 0; }
+.greed-config-rewards { display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); gap:6px; margin:10px 0; }
 .greed-config-rewards span { padding:8px 5px; text-align:center; border:1px solid rgba(220,174,84,.3); background:rgba(15,10,8,.7); color:#bcae96; font-size:11px; }
 .greed-config-rewards b { display:block; margin-top:3px; color:#ffd880; font-size:14px; }
+.greed-inline-elites { margin-top:-3px; color:#bcae96; font-size:11px; text-align:right; }
+.greed-inline-elites b { color:#ffd880; }
 .greed-config-affixes { min-width:0; width:100%; display:grid; gap:5px; list-style:none; padding:0; margin:10px 0 0; }
 .greed-config-affixes li { display:flex; min-width:0; width:100%; gap:9px; align-items:flex-start; padding:7px 9px; border:1px solid rgba(255,255,255,.08); background:rgba(0,0,0,.25); overflow-wrap:anywhere; }
 .greed-config-affixes li > span:last-child { flex:1 1 0; min-width:0; overflow-wrap:anywhere; }
@@ -41,6 +43,7 @@
 .greed-config-affixes b { color:#f0d59a; }
 .greed-config-affixes small { display:block; max-width:100%; margin-top:2px; color:#b7ab98; line-height:1.35; overflow-wrap:anywhere; }
 .greed-inline-empty { color:#b7ab98; font-size:12px; text-align:center; }
+@media (max-width: 600px) { .greed-config-rewards { grid-template-columns:repeat(2,minmax(0,1fr)); } }
 * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; scrollbar-width: thin; scrollbar-color: #5c4424 rgba(12, 8, 6, 0.7); }
 /* Universal slim stylistic scrollbars matching gothic fantasy UI */
 *::-webkit-scrollbar { width: 6px; height: 6px; }
