@@ -71,6 +71,7 @@ import { warmSky } from '../gfx/skyship.js';
 import { createSkyBattle } from './skybattle.js';
 import { SKY_ALL } from '../data/skybattle.js';
 import { generateSeaship } from '../world/seaship.js';
+import { ensureAccessibleTargets, nearestReachableStand } from '../world/accessibility.js';
 import { createSeaBattle, useSea, pickSeaVariant } from './seabattle.js';
 import { loadFleet, sea3dReady } from '../gfx/seabattle3d.js';
 import { SEA_VARIANTS } from '../data/seabattle.js';
@@ -1382,17 +1383,101 @@ export const game = {
     const kept = biome.id === 'sea_of_sand' ? c.seaOfSandRuns[depth] : forest ? c.darkForestRuns[depth] : reg && reg.kept ? reg.kept(c, depth) : null;   // (a region may keep its map per depth: the mountains)
     const seed = kept ? kept.seed : (Math.random() * 1e9) | 0;
     const sky = biome.id === 'skyship', sea = !!biome.sea;
-    const gen = reg ? reg.generate(depth, biome, seed) : forest ? generateDarkForest(depth, biome, tileset, seed)
-      : sky ? generateSkyship(depth, biome, seed, castle3dState())
-      : sea ? generateSeaship(depth, biome, seed, SEA_VARIANTS.find((q) => q.id === (G.seaNext || c.seaVariant))?.size)
-      : biome.tower ? generateTower(depth, biome, seed, G.towerVariant)
-      : biome.cave ? generateCaverns(depth, biome, seed, G.caveVariant ?? G.caveNext)
-      : biome.id === 'scorpion_king_pyramid' && dunes3dReady() ? generateDunes(depth, biome, seed, DUNE_VARIANTS.findIndex((v) => v.id === 'red'))
-      : biome.id === 'sea_of_sand' && (G.sandVariant ?? G.sandNext) > 0 && dunes3dReady() ? generateDunes(depth, biome, seed, (G.sandVariant ?? G.sandNext) - 1)
-      : biome.overworld ? generateOverworld(depth, biome, seed, biome.id === 'castle' ? G.castleVariant ?? G.castleNext : null) : generateDungeon(depth, biome, tileset, seed, { practiceVelscour: practiceFinalBoss, unbound: !!G.unboundNext });
+    const generateAt = (layoutSeed) => reg ? reg.generate(depth, biome, layoutSeed) : forest ? generateDarkForest(depth, biome, tileset, layoutSeed)
+      : sky ? generateSkyship(depth, biome, layoutSeed, castle3dState())
+      : sea ? generateSeaship(depth, biome, layoutSeed, SEA_VARIANTS.find((q) => q.id === (G.seaNext || c.seaVariant))?.size)
+      : biome.tower ? generateTower(depth, biome, layoutSeed, G.towerVariant)
+      : biome.cave ? generateCaverns(depth, biome, layoutSeed, G.caveVariant ?? G.caveNext)
+      : biome.id === 'scorpion_king_pyramid' && dunes3dReady() ? generateDunes(depth, biome, layoutSeed, DUNE_VARIANTS.findIndex((v) => v.id === 'red'))
+      : biome.id === 'sea_of_sand' && (G.sandVariant ?? G.sandNext) > 0 && dunes3dReady() ? generateDunes(depth, biome, layoutSeed, (G.sandVariant ?? G.sandNext) - 1)
+      : biome.overworld ? generateOverworld(depth, biome, layoutSeed, biome.id === 'castle' ? G.castleVariant ?? G.castleNext : null) : generateDungeon(depth, biome, tileset, layoutSeed, { practiceVelscour: practiceFinalBoss, unbound: !!G.unboundNext });
+    let gen, accessibilityError = null, generationSeed = seed;
+    for (let attempt = 0; attempt <= 4; attempt++) {
+      generationSeed = attempt === 0 ? seed : ((seed + Math.imul(attempt, 0x9e3779b9)) >>> 0);
+      try { gen = generateAt(generationSeed); }
+      catch (error) {
+        if (!/accessibility|movement-access|unreachable/i.test(String(error?.message || error))) throw error;
+        accessibilityError = error; continue;
+      }
+      accessibilityError = null;
+      try {
+    // A common final guard for custom world generators. Castle and Breach already run
+    // progression-aware checks inside their generators; all other TileMap layouts get the
+    // same player-body walkability test for their entrance, exit and mandatory boss spawns.
+    if (!gen.accessibility?.validated && gen.map?.movementReachable && !gen.map.castleGateLocked && !gen.map.breach) {
+      const pointOf = (p) => Array.isArray(p) ? p : p?.at || p?.pos || (Number.isFinite(p?.x) && Number.isFinite(p?.y) ? [p.x, p.y] : null);
+      const required = [
+        { label: `${biome.name} exit`, at: gen.exit, approachRadius: 1.4, relocate: (x, y) => { gen.exit = [x, y]; } },
+        ...(Array.isArray(gen.boss) && gen.boss.length >= 2 ? [{ label: `${biome.name} boss`, at: gen.boss, approachRadius: 1.4, relocate: (x, y) => { gen.boss = [x, y]; } }] : []),
+        ...(Array.isArray(gen.summit) && gen.summit.length >= 2 ? [{ label: `${biome.name} summit encounter`, at: gen.summit, approachRadius: 1.4 }] : []),
+        ...(gen.tower ? [{ label: `${biome.name} rooftop boss arena`, at: [gen.tower.AX, gen.tower.AY], approachRadius: 1.4 }] : []),
+        ...(Array.isArray(gen.hunt?.lair) ? [{ label: 'hunt lair', at: gen.hunt.lair, approachRadius: 2 }] : []),
+        ...(gen.hunt?.grounds || []).map((p, i) => ({ label: `hunt ground ${i + 1}`, at: pointOf(p), approachRadius: 1.6 })),
+        ...(gen.camps || []).map((p, i) => ({ label: `${biome.name} route checkpoint ${i + 1}`, at: pointOf(p), approachRadius: 1.4 })),
+        ...(gen.braziers || []).map((p, i) => ({ label: `${biome.name} brazier ${i + 1}`, at: pointOf(p), approachRadius: 1.4 })),
+        ...(gen.spawnPts || []).map((p) => ({ label: `${biome.name} boss spawn`, at: Array.isArray(p) ? p : [p.x, p.y], approachRadius: 1.4 })),
+        ...(gen.spawns || []).filter((s) => s.rank === 'boss' || s.rank === 'raid').map((s) => ({
+          label: `${biome.name} boss`, at: [s.x, s.y], approachRadius: 1.2, relocate: (x, y) => { s.x = x; s.y = y; },
+        })),
+        ...(gen.requiredObjectives || []).map((o) => ({ label: o.label || `${biome.name} objective`, at: o.at || [o.x, o.y], approachRadius: o.approachRadius ?? 1.2, relocate: o.relocate })),
+      ];
+      if (gen.gates?.length) {
+        // Staged environments (for example Snowy Summit) intentionally seal later routes.
+        // Verify the full route after legitimate gate progression without carving through a gate.
+        const openGates = gen.map.block.slice();
+        if (gen.nodes?.length) {
+          const encounterNodes = gen.nodes.filter((n) => n.kind === 'plateau');
+          let progress = true;
+          for (let pass = 0; pass <= encounterNodes.length && progress; pass++) {
+            progress = false;
+            const stepReach = gen.map.movementReachable(gen.start, 0.24, openGates);
+            for (const node of encounterNodes) {
+              const at = [node.x, node.y];
+              if (!gen.map.movementCanReach(gen.start, at, 0.24, stepReach) && !nearestReachableStand(gen.map, stepReach, at, 1.4, 0.24)) continue;
+              for (const gate of gen.gates) if (gate.node === node.i && gate.role === 'out') {
+                const wasClosed = (gate.tiles || []).some((i) => openGates[i]);
+                for (const i of gate.tiles || []) openGates[i] = 0;
+                progress ||= wasClosed;
+              }
+            }
+          }
+          const finalStepReach = gen.map.movementReachable(gen.start, 0.24, openGates);
+          if (encounterNodes.some((node) => !gen.map.movementCanReach(gen.start, [node.x, node.y], 0.24, finalStepReach)
+              && !nearestReachableStand(gen.map, finalStepReach, [node.x, node.y], 1.4, 0.24))) {
+            throw new Error(`${biome.name} has a progression-isolated encounter`);
+          }
+        } else {
+          for (const gate of gen.gates) for (const i of gate.tiles || []) openGates[i] = 0;
+        }
+        const finalReach = gen.map.movementReachable(gen.start, 0.24, openGates);
+        for (const target of required) {
+          if (target.at && !gen.map.movementCanReach(gen.start, target.at, 0.24, finalReach)) {
+            throw new Error(`${biome.name} failed post-gate movement-access validation at seed ${generationSeed}: ${target.label}`);
+          }
+        }
+        const initialReach = gen.map.movementReachable(gen.start, 0.24);
+        if (!initialReach.some(Boolean)) throw new Error(`${biome.name} failed movement-access validation: no walkable starting area at seed ${generationSeed}`);
+        gen.accessibility = { validated: true, repairs: 0, movementRadius: 0.24, progressionGates: gen.gates.length };
+      } else {
+        const access = ensureAccessibleTargets(gen.map, gen.start, required);
+        if (!access.ok) throw new Error(`${biome.name} failed movement-access validation at seed ${generationSeed}: ${access.reason}`);
+        if (access.repairedCells?.size) gen.props = (gen.props || []).filter((p) => !access.repairedCells.has(gen.map.tileIdx(p.x, p.y)));
+        gen.accessibility = { validated: true, repairs: access.repaired, movementRadius: 0.24 };
+      }
+    }
+    if (!gen.accessibility?.validated) throw new Error(`${biome.name} has no compatible walk-collision validator at seed ${generationSeed}`);
+      } catch (error) {
+        if (!/accessibility|movement-access|unreachable|walk-collision validator/i.test(String(error?.message || error))) throw error;
+        accessibilityError = error;
+        continue;
+      }
+    if (!accessibilityError) break;
+    }
+    if (!gen || accessibilityError) throw new Error(`${biome.name} could not generate a walk-accessible layout after 5 attempts: ${accessibilityError?.message || 'unknown failure'}`);
+    const acceptedSeed = gen.seed ?? generationSeed;
     // Treasure Hunter is a deterministic extra procedural chest roll: rebuilding a kept
     // area with the same seed reproduces the same result rather than rerolling a free chest.
-    addMarkBonusChest(gen, seed, G.player?.st?.markChestSpawn || 0);
+    addMarkBonusChest(gen, acceptedSeed, G.player?.st?.markChestSpawn || 0);
     if (isStarterDepth) {
       const [sx, sy] = gen.start;
       let [cx, cy] = [sx - 1.25, sy];
@@ -1401,14 +1486,14 @@ export const game = {
       }
       gen.chests.push({ x: cx, y: cy, rare: false });
     }
-    if (biome.id === 'sea_of_sand') { c.lastSand = gen.dunes ? 1 + DUNE_VARIANTS.indexOf(gen.variant) : 0; if (gen.dunes) c.seaOfSandRuns[depth] = { seed, dunes: c.lastSand }; }
-    const world = new World('dungeon', { map: gen.map, tileset, biome, depth, props: gen.props, torches: gen.torches, wallHangings: gen.wallHangings, looks: gen.looks, townTiles: gen.townTiles || null, buildings: gen.buildings || [], environmentTrapSeed: seed, environmentVariant: gen.variant?.id || biome.id });
+    if (biome.id === 'sea_of_sand') { c.lastSand = gen.dunes ? 1 + DUNE_VARIANTS.indexOf(gen.variant) : 0; if (gen.dunes) c.seaOfSandRuns[depth] = { seed: acceptedSeed, dunes: c.lastSand }; }
+    const world = new World('dungeon', { map: gen.map, tileset, biome, depth, props: gen.props, torches: gen.torches, wallHangings: gen.wallHangings, looks: gen.looks, townTiles: gen.townTiles || null, buildings: gen.buildings || [], environmentTrapSeed: acceptedSeed, environmentVariant: gen.variant?.id || biome.id });
     world.startPos = gen.start;
     world.impAreaKey = `${biome.id}:${depth}${mix?.id ? `:${mix.id}` : ''}`;
     // Chest appearance uses the same generated environment context as the level.
     // This metadata is visual-only; chest type and loot rolls remain independent.
     world.chestEnvironmentVariant = gen.variant?.id || '';
-    world.chestSeed = seed;
+    world.chestSeed = acceptedSeed;
     world.dungeonAffixes = depth <= FINAL_DEPTH ? [] : normalizeDungeonAffixIds(c.nextAffixes ?? c.dungeonAffixes);
     if (world.dungeonAffixes.includes('bloodmoon')) {
       world.lootMul = (world.lootMul || 1) * DUNGEON_AFFIX_CONFIG.bloodmoon.lootMultiplier;

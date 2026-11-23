@@ -3,6 +3,7 @@
 import { readFileSync } from 'fs';
 import { generateBreach } from '../../src/world/breach.js';
 import { breachIslandPlan, breachMapSpan } from '../../src/data/breach.js';
+import { nearestReachableStand } from '../../src/world/accessibility.js';
 const N = +(process.argv[2] || 20), FLOORS = String(process.argv[3] || '1,6,11,16,21').split(',').map(Number);
 const meta = (p) => JSON.parse(readFileSync(new URL(`../../assets/tiles/${p}/pack.json`, import.meta.url)));
 function mockSet(pack, more) {
@@ -41,34 +42,29 @@ for (let s = 1; s <= N; s++) {
   // the exit portal stands on a clear tile of the Heart island with room to walk up to it
   { const m = g.map, [ex, ey] = g.exit, open = [[1, 0], [-1, 0], [0, 1], [0, -1]].filter(([dx, dy]) => m.walkable(ex + dx, ey + dy)).length;
     if (!m.walkable(ex, ey) || m.breach.own[m.tileIdx(ex, ey)] !== g.heart || open < 3) errs.push(`exit blocked (${open} open sides)`); }
-  // the same on the tiles: closed wards are blocked tiles; walk (hop rules), win every shrine reached, open its wards
+  // Re-run progression with the same radius, height-step and collision rules as player movement.
   {
-    const m = g.map, W = m.w, own = m.breach.own, blk = m.block.slice();
+    const m = g.map, W = m.w, blk = m.block.slice();
     for (const b of g.bridges) if (b.ward >= 0) for (const i of b.gate) blk[i] = 1;
-    const seen = new Uint8Array(W * m.h), won = new Set();
-    const s0 = m.tileIdx(g.start[0], g.start[1]); const q = [s0]; seen[s0] = 1;
-    for (let pass = 0; pass < 20; pass++) {
-      for (let k = 0; k < q.length; k++) {
-        const i = q[k], x = i % W, y = (i / W) | 0;
-        for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
-          const j = i + dx + dy * W;
-          if (x + dx < 0 || x + dx >= W || seen[j] || m.t[j] !== 1 || blk[j] || Math.abs(m.hgt[j] - m.hgt[i]) > m.climb) continue;
-          seen[j] = 1; q.push(j);
+    const won = new Set();
+    for (let pass = 0; pass <= plan.objectives; pass++) {
+      const seen = m.movementReachable(g.start, 0.24, blk); let more = false;
+      for (const o of I) if (o.shrine && !o.heart && !won.has(o.idx)) {
+        const at = [o.cx, o.cy];
+        if (m.movementCanReach(g.start, at, 0.24, seen) || nearestReachableStand(m, seen, at, 1.4, 0.24)) {
+          won.add(o.idx); more = true;
+          for (const b of g.bridges) if (b.ward === o.idx) for (const i of b.gate) blk[i] = 0;
         }
-      }
-      let more = false;
-      for (const o of I) if (o.shrine && !o.heart && !won.has(o.idx) && seen[m.tileIdx(o.cx, o.cy)]) {
-        won.add(o.idx); more = true;
-        for (const b of g.bridges) if (b.ward === o.idx) for (const i of b.gate) { blk[i] = 0; const x = i % W, y = (i / W) | 0; if ([[1, 0], [-1, 0], [0, 1], [0, -1]].some(([dx, dy]) => seen[i + dx + dy * W])) { seen[i] = 1; q.push(i); } }
       }
       if (!more) break;
     }
-    if (won.size !== plan.objectives) errs.push(`tiles: only ${won.size} of ${plan.objectives} shrines won`);
-    if (I.some((o) => !seen[m.tileIdx(o.cx, o.cy)])) errs.push('tiles: an island never reached');
-    // with no ward opened, the hero can't get past any (a walk round a ward means a leak)
-    const s2 = new Uint8Array(W * m.h), q2 = [s0]; s2[s0] = 1;
-    const blk2 = m.block.slice(); for (const b of g.bridges) if (b.ward >= 0) for (const i of b.gate) blk2[i] = 1;
-    for (let k = 0; k < q2.length; k++) { const i = q2[k], x = i % W; for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) { const j = i + dx + dy * W; if (x + dx < 0 || x + dx >= W || s2[j] || m.t[j] !== 1 || blk2[j] || Math.abs(m.hgt[j] - m.hgt[i]) > m.climb) continue; s2[j] = 1; q2.push(j); } }
+    if (won.size !== plan.objectives) errs.push(`collision check: only ${won.size} of ${plan.objectives} shrines reachable in progression`);
+    const finalReach = m.movementReachable(g.start, 0.24, blk);
+    if (I.some((o) => !finalReach[m.tileIdx(o.cx, o.cy)])) errs.push('collision check: an island never reached');
+    if (!m.movementCanReach(g.start, g.exit, 0.24, finalReach)) errs.push('collision check: exit cannot be walked to');
+    const closed = m.block.slice();
+    for (const b of g.bridges) if (b.ward >= 0) for (const i of b.gate) closed[i] = 1;
+    const s2 = m.movementReachable(g.start, 0.24, closed);
     for (const b of g.bridges) if (b.ward >= 0 && I[b.near].hops >= 0) {
       const farIn = I[b.far].tiles.some((i) => s2[i]), nearIn = I[b.near].tiles.some((i) => s2[i]);
       void farIn; void nearIn;

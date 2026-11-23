@@ -20,6 +20,7 @@ import { DUNE_VARIANTS, DUNE_ROSTER, DUNE_WAYSTONE_COUNT } from '../data/dunes.j
 import { ART_BY_ID } from '../data/bestiary.js';
 import { seaOfSandObject } from '../gfx/seaofsand.js';
 import { SAND_H } from './overworld.js';
+import { ensureAccessibleTargets } from './accessibility.js';
 
 const S = CAVE_S, LV = VZ / 4, KS = 16 / VZ, NV_ = DUNE_VARIANTS.length;
 const MIN_DUNE_SPAWN_GROUPS = 12;
@@ -547,13 +548,29 @@ export function generateDunes(depth, biome, seed, force = null) {
     W, H, S, VW, VH, hv, ceil, cls, surf, mat, vreg, vin, vd: Float32Array.from(dd, (q) => Math.sqrt(Math.min(q, 1e6)) / S), v, seed, H2,
     E, OXI, OYI, IS, inside: (x) => x >= OXI - 2, reg, zone, walk, wet, lvl, F,
     start, camps, route, oases, pyramid: { pc, half, top: half * PY.rise, base: hp, door, doorStep, plaza, plazaC, steps: PY.steps },
-    rooms, chamber, treasury, corridors, seals, arrive, torches, okTrek, okTomb, cut,
+    rooms, chamber, treasury, corridors, seals, arrive, torches, okTrek, okTomb, cut, pyramidOnly,
   };
   map.dunes = dv;
   // The standalone Scorpion King pyramid reuses the existing tomb layout, but enters at its
   // proper interior arrival point and does not populate the disconnected desert surface.
   const levelSpawns = spawns.filter((s) => (s.zone === 'tomb') === pyramidOnly);
   const levelChests = chests.filter((c) => (c.x >= OXI - 2) === pyramidOnly);
+  const exit = [chamber.cx, chamber.cy + 6], outerTargets = pyramidOnly ? [] : [
+    { label: 'pyramid entrance', at: doorStep, approachRadius: 1.2 },
+    ...camps.map((c) => ({ label: 'waystone camp', at: [c.x, c.y], approachRadius: 1.4 })),
+    ...levelSpawns.filter((s) => s.zone !== 'tomb' && (s.rank === 'boss' || s.rank === 'raid')).map((s) => ({ label: 'dune boss', at: [s.x, s.y], approachRadius: 1.4, relocate: (x, y) => { s.x = x; s.y = y; } })),
+  ];
+  // Dunes and the tomb are distinct streamed ground regions joined by the walkable pyramid
+  // threshold. Validate each side of that physical transition in its own collision space.
+  const outerAccess = pyramidOnly ? null : ensureAccessibleTargets(map, start, outerTargets);
+  const innerAccess = ensureAccessibleTargets(map, arrive, [
+    { label: 'burial chamber exit', at: exit, approachRadius: 1.4 },
+    ...levelSpawns.filter((s) => s.zone === 'tomb' && (s.rank === 'boss' || s.rank === 'raid')).map((s) => ({ label: 'tomb boss', at: [s.x, s.y], approachRadius: 1.4, relocate: (x, y) => { s.x = x; s.y = y; } })),
+  ]);
+  if ((!pyramidOnly && !outerAccess.ok) || !innerAccess.ok) throw new Error(`Dunes layout failed movement-access validation at seed ${seed}: ${outerAccess?.reason || innerAccess.reason}`);
+  const repairedCells = new Set([...(outerAccess?.repairedCells || []), ...(innerAccess.repairedCells || [])]);
+  if (repairedCells.size) for (let i = props.length - 1; i >= 0; i--) if (repairedCells.has(map.tileIdx(props[i].x, props[i].y))) props.splice(i, 1);
   return { map, props, buildings: [], wallHangings: [], torches: [], spawns: levelSpawns, chests: levelChests, looks,
-    start: pyramidOnly ? arrive : start, exit: [chamber.cx, chamber.cy + 6], dunes: dv, variant: v, seed };
+    start: pyramidOnly ? arrive : start, exit, dunes: dv, variant: v, seed,
+    accessibility: { validated: true, repairs: (outerAccess?.repaired || 0) + innerAccess.repaired, movementRadius: 0.24, transitions: pyramidOnly ? 0 : 1 } };
 }

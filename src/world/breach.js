@@ -622,19 +622,10 @@ function build(floor, biome, ts, ts2, seed) {
   {
     const blocked = map.block.slice(), won = new Set();
     for (const b of bridges) if (b.ward >= 0) for (const i of b.gate) blocked[i] = 1;
-    const startTile = id(Math.floor(start.cx), Math.floor(start.cy));
-    const flood = () => {
-      const seen = new Uint8Array(N), q = [startTile]; seen[startTile] = 1;
-      for (let k = 0; k < q.length; k++) {
-        const i = q[k], x = i % W, y = (i / W) | 0;
-        for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
-          const xx = x + dx, yy = y + dy, j = id(xx, yy);
-          if (!inb(xx, yy) || seen[j] || map.t[j] !== 1 || blocked[j] || Math.abs(hgt[j] - hgt[i]) > CLIMB) continue;
-          seen[j] = 1; q.push(j);
-        }
-      }
-      return seen;
-    };
+    const startAt = [Math.floor(start.cx) + 0.5, Math.floor(start.cy) + 1.5];
+    // Use the same player-sized collision and directional height-step checks as normal walking.
+    // The old tile-only flood could approve a one-tile choke or an edge that only fit a point.
+    const flood = () => map.movementReachable(startAt, 0.24, blocked);
     let seen;
     for (let pass = 0; pass <= plan.objectives; pass++) {
       seen = flood();
@@ -646,6 +637,8 @@ function build(floor, biome, ts, ts2, seed) {
       if (!opened) break;
     }
     if (won.size !== plan.objectives || isl.some((o) => !seen[id(Math.floor(o.cx), Math.floor(o.cy))])) return null;
+    const exitCheck = flood();
+    if (!map.movementCanReach(startAt, heart.exitAt, 0.24, exitCheck)) return null;
   }
   // an island's walkways (for sealing it during its fight)
   for (const o of isl) o.bridges = bridges.filter((b) => b.a === o.idx || b.b === o.idx).map((b) => b.idx);
@@ -664,5 +657,6 @@ function build(floor, biome, ts, ts2, seed) {
     map, props, buildings: [], wallHangings: [], torches: [], townTiles: null, looks, spawns, chests: chests.filter((c) => !c.drop),
     start: startAt, exit: exitAt, islands: isl, bridges, ruins, heart: heart.idx, startIsland: start.idx, seed,
     objectives: plan.objectives, loops: actualLoops, span,
+    accessibility: { validated: true, progressionGates: bridges.filter((b) => b.ward >= 0).length, movementRadius: 0.24 },
   };
 }

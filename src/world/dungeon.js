@@ -1,5 +1,6 @@
 // Procedural dungeon generation: a maze of rooms laid out on a chunk grid.
 import { TileMap } from './map.js';
+import { ensureAccessibleTargets } from './accessibility.js';
 import { RNG, clamp } from '../core/util.js';
 import { ARCH } from '../data/enemies.js';
 import { ENEMY_PROFILE_BY_ARCH, ENEMY_PROFILES } from '../data/enemyvariety.js';
@@ -273,7 +274,7 @@ function generateCastleKeepLayout(depth, biome, tileset, seed, layout) {
 }
 
 /** opts.raid: a BOSS ROOM arena whatever the depth; opts.small: a 4 x 4 chunk maze (Abyssal Rifts, docs/ENDGAME.md). */
-export function generateDungeon(depth, biome, tileset, seed, opts = {}) {
+function generateDungeonRaw(depth, biome, tileset, seed, opts = {}) {
   if (!opts.rift && (depth === FINAL_DEPTH || biome.id === 'throne')) return generateThrone(biome, tileset, seed, depth, !!opts.practiceVelscour, !!opts.unbound);
   const raid = opts.raid ?? isRaidDepth(depth);
   if (biome.id === 'castle_keep' && !raid) {
@@ -516,6 +517,50 @@ export function generateDungeon(depth, biome, tileset, seed, opts = {}) {
     bossRoom: arena || exitRoom,
     raid: arena,
   };
+}
+
+/** Generate a dungeon only after mandatory routes and encounters pass player-collision navigation checks. */
+export function generateDungeon(depth, biome, tileset, seed, opts = {}) {
+  const targetsFor = (gen) => {
+    const targets = [
+      { label: 'entrance', at: gen.start, approachRadius: 0 },
+      { label: 'exit portal', at: gen.exit, approachRadius: 1.4, relocate: (x, y) => { gen.exit = [x, y]; } },
+    ];
+    for (const spawn of gen.spawns || []) {
+      if (spawn.rank === 'raid' && gen.raid) {
+        targets.push({ label: 'raid arena boss', at: [gen.raid.cx, gen.raid.cy], approachRadius: 1.2, relocate: (x, y) => { gen.raid.cx = spawn.x = x; gen.raid.cy = spawn.y = y; } });
+      } else if (spawn.rank === 'boss') {
+        targets.push({ label: 'boss', at: [spawn.x, spawn.y], approachRadius: 1.2, relocate: (x, y) => { spawn.x = x; spawn.y = y; } });
+      }
+    }
+    for (const room of gen.rooms || []) if (room.shrineRoom || room.eventRoom || room.requiredObjective) {
+      targets.push({ label: room.eventRoom ? 'event objective' : 'shrine objective', at: [room.mx, room.my], approachRadius: 1.2 });
+    }
+    return targets;
+  };
+  const check = (gen) => {
+    if (!gen?.map || !gen.start || !gen.exit) return { ok: false, reason: 'missing generated navigation data' };
+    const result = ensureAccessibleTargets(gen.map, gen.start, targetsFor(gen));
+    if (result.repairedCells?.size) gen.props = (gen.props || []).filter((p) => !result.repairedCells.has(gen.map.tileIdx(p.x, p.y)));
+    if (result.ok) gen.accessibility = { validated: true, repairs: result.repaired, movementRadius: 0.24 };
+    return result;
+  };
+
+  const first = generateDungeonRaw(depth, biome, tileset, seed, opts);
+  let result = check(first);
+  if (result.ok) return first;
+  // A repaired layout that still fails is discarded; retries are deterministic for saved-seed compatibility.
+  for (let attempt = 1; attempt <= 4; attempt++) {
+    const retrySeed = typeof seed === 'number' ? (seed + Math.imul(attempt, 0x9e3779b9)) >>> 0 : `${seed}:accessibility-${attempt}`;
+    const gen = generateDungeonRaw(depth, biome, tileset, retrySeed, opts);
+    result = check(gen);
+    if (result.ok) {
+      gen.accessibility.regenerated = attempt;
+      gen.accessibility.sourceSeed = seed;
+      return gen;
+    }
+  }
+  throw new Error(`Dungeon accessibility validation failed at depth ${depth} (${biome.id}): ${result.reason}; seed ${seed}`);
 }
 
 /**

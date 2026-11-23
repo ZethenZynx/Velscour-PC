@@ -59,20 +59,55 @@ export class TileMap {
     const tx = Math.floor(x), ty = Math.floor(y);
     return tx >= 0 && ty >= 0 && tx < this.w && ty < this.h && this.t[ty * this.w + tx] === 1;
   }
-  walkableTile(tx, ty) {
-    return tx >= 0 && ty >= 0 && tx < this.w && ty < this.h && this.t[ty * this.w + tx] === 1 && !this.block[ty * this.w + tx];
+  walkableTile(tx, ty, blocked = this.block) {
+    return tx >= 0 && ty >= 0 && tx < this.w && ty < this.h && this.t[ty * this.w + tx] === 1 && !blocked[ty * this.w + tx];
   }
-  walkable(x, y) { return this.walkableTile(Math.floor(x), Math.floor(y)); }
+  walkable(x, y, blocked = this.block) { return this.walkableTile(Math.floor(x), Math.floor(y), blocked); }
 
   /** Is a circle at (x,y) radius r free of walls? On a height map its centre must be a hop or a drop from tile `from`
    * (default: the tile under it), and no corner may hang out over a drop too deep to take; brushing higher ground is
    * fine (the foot of a cliff, or the edge just dropped from). */
-  circleFree(x, y, r, from) {
-    if (!(this.walkable(x - r, y - r) && this.walkable(x + r, y - r) && this.walkable(x - r, y + r) && this.walkable(x + r, y + r))) return false;
+  circleFree(x, y, r, from, blocked = this.block) {
+    if (!(this.walkable(x - r, y - r, blocked) && this.walkable(x + r, y - r, blocked) && this.walkable(x - r, y + r, blocked) && this.walkable(x + r, y + r, blocked))) return false;
     if (!this.hgt) return true;
     const H = this.hgt, a = from ?? this.tileIdx(x, y), lo = H[a] - this.drop;
     if (from !== undefined && !this.stepOk(a, this.tileIdx(x, y))) return false;
     return H[this.tileIdx(x - r, y - r)] >= lo && H[this.tileIdx(x + r, y - r)] >= lo && H[this.tileIdx(x - r, y + r)] >= lo && H[this.tileIdx(x + r, y + r)] >= lo;
+  }
+
+  /**
+   * Flood walkable tile-centre positions using the player's body clearance and height-step rules.
+   * Each edge is a one-tile cardinal move, so its collision checks match move()'s axis-separated wall sliding.
+   * `blocked` can represent temporarily closed progression gates during generation validation.
+   */
+  movementReachable(start, radius = 0.24, blocked = this.block) {
+    const N = this.w * this.h, reachable = new Uint8Array(N), q = new Int32Array(N);
+    const sx = Math.floor(start?.[0]), sy = Math.floor(start?.[1]);
+    if (!this.inb(sx, sy) || !this.circleFree(start[0], start[1], radius, undefined, blocked)) return reachable;
+    const first = sy * this.w + sx;
+    if (!this.circleFree(sx + 0.5, sy + 0.5, radius, first, blocked)) return reachable;
+    reachable[first] = 1; q[0] = first;
+    let head = 0, tail = 1;
+    while (head < tail) {
+      const i = q[head++], x = i % this.w, y = (i / this.w) | 0;
+      for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
+        const nx = x + dx, ny = y + dy;
+        if (!this.inb(nx, ny)) continue;
+        const j = ny * this.w + nx;
+        if (reachable[j] || !this.walkableTile(nx, ny, blocked) || (this.hgt && !this.stepOk(i, j))) continue;
+        if (!this.circleFree(nx + 0.5, ny + 0.5, radius, i, blocked)) continue;
+        reachable[j] = 1; q[tail++] = j;
+      }
+    }
+    return reachable;
+  }
+
+  movementCanReach(start, target, radius = 0.24, reachable = undefined) {
+    if (!target || !this.circleFree(target[0], target[1], radius)) return false;
+    const tx = Math.floor(target[0]), ty = Math.floor(target[1]);
+    if (!this.inb(tx, ty)) return false;
+    const reach = reachable || this.movementReachable(start, radius);
+    return !!reach[ty * this.w + tx];
   }
 
   /** Move a circle with wall sliding. Returns true if moved at all. */
@@ -421,6 +456,7 @@ export class TileMap {
    * Fills this.segments (edges, for torches), this.walls (draw items) and this.doors.
    */
   buildWalls(tileset, rng = Math.random, openings = [], families = null) {
+    this._wallBuild = { tileset, rng, openings, families };
     const segs = [];
     for (let y = 0; y < this.h; y++) {
       for (let x = 0; x < this.w; x++) {
@@ -534,6 +570,14 @@ export class TileMap {
       }
     }
     this.indexWalls();
+  }
+
+  /** Rebuild static wall meshes after a generation-time corridor repair. */
+  rebuildWalls() {
+    const b = this._wallBuild;
+    if (!b) return false;
+    this.buildWalls(b.tileset, b.rng, b.openings, b.families);
+    return true;
   }
 
   indexWalls() {

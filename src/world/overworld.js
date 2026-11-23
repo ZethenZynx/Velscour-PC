@@ -2,6 +2,7 @@
 // Trees are collision walls, but the ground remains continuous; paths and quest landmarks are
 // protected before placing any trees. All randomness is based on a single seed for reproducibility.
 import { TileMap } from './map.js';
+import { ensureAccessibleTargets, nearestReachableStand } from './accessibility.js';
 import { wildScenario } from '../game/overworld.js';
 import { RNG } from '../core/util.js';
 import { A } from '../core/assets.js';
@@ -72,7 +73,19 @@ function liftWilds(map,rng,flags,seed,reserved) {
   Object.assign(map,{hgt,climb:4,drop:10,minLevel:lo,maxLevel:hi,baseLevel:lo-14,noSky:true,_terr:null});
 }
 export function generateOverworld(depth,biome,seed,variant=null) {
-  if (biome.id === 'castle') return generateCastle(depth,biome,seed,variant);
+  if (biome.id === 'castle') {
+    const gen = generateCastle(depth,biome,seed,variant), map = gen.map;
+    const afterGate = map.block.slice(), beforeGate = map.block.slice();
+    for (const i of map.castleGateTiles || []) { beforeGate[i] = 1; afterGate[i] = 0; }
+    const before = map.movementReachable(gen.start, 0.24, beforeGate), after = map.movementReachable(gen.start, 0.24, afterGate);
+    const pointReachable = (reach, at, radius = 0) => map.movementCanReach(gen.start, at, 0.24, reach)
+      || !!nearestReachableStand(map, reach, at, radius, 0.24);
+    const sideAreasReachable = (gen.castleObjectives || []).every((o) => pointReachable(before, [o.x, o.y], 1.4));
+    const keepReachableAfterUnlock = pointReachable(after, gen.boss, 1.4);
+    if (!sideAreasReachable || !keepReachableAfterUnlock) throw new Error(`Castle layout failed movement-access validation at seed ${seed}`);
+    gen.accessibility = { validated: true, movementRadius: 0.24, progressionGates: 1 };
+    return gen;
+  }
   if (biome.id === 'sea_of_sand') return generateSeaOfSand(depth,biome,seed);
   const rng=new RNG(seed), map=new TileMap(W,H), flags=new Uint8Array(W*H);
   map.t.fill(1);map.losBlocks=true;
@@ -261,9 +274,19 @@ export function generateOverworld(depth,biome,seed,variant=null) {
     if(targets.some(([x,y])=>!fwd[id(Math.floor(x),Math.floor(y))])||back.some(s=>!s[id(Math.floor(ENTRY[0]),Math.floor(ENTRY[1]))]))
       {map.hgt=null;map._terr=null;}
   }
+  const accessibilityTargets=[
+    { label: 'overworld exit', at: EXIT, approachRadius: 1.4 },
+    ...OVERWORLD_SITES.map((at) => ({ label: 'overworld objective', at, approachRadius: 1.2 })),
+    ...(biome.id === 'overworld' ? [{ label: 'guardian arena', at: SHRINE, approachRadius: 1.2 }] : []),
+  ];
+  const access = ensureAccessibleTargets(map, ENTRY, accessibilityTargets);
+  if (!access.ok) throw new Error(`Overworld movement-access validation failed at seed ${seed}: ${access.reason}`);
+  if (access.repairedCells?.size) {
+    for (let i = props.length - 1; i >= 0; i--) if (access.repairedCells.has(map.tileIdx(props[i].x, props[i].y))) props.splice(i, 1);
+  }
   return {map,props,buildings,wallHangings,townTiles,looks,spawns,chests,torches:[],
     start:ENTRY,exit:EXIT,shrine:SHRINE,sites:OVERWORLD_SITES,
-    scenarioId:wildScenario(((seed >>> 0) ^ depth) >>> 0),seed};
+    scenarioId:wildScenario(((seed >>> 0) ^ depth) >>> 0),seed,accessibility:{validated:true,repairs:access.repaired,movementRadius:0.24}};
 }
 
 
@@ -404,8 +427,17 @@ function generateSeaOfSand(depth,biome,seed) {
   const seen=new Uint8Array(W*H),q=[I(Math.floor(ENTRY[0]),Math.floor(ENTRY[1]))];seen[q[0]]=1;
   for(let a=0;a<q.length;a++){const i=q[a],x=i%W,y=(i/W)|0;for(const [dx,dy] of [[1,0],[-1,0],[0,1],[0,-1]]){const nx=x+dx,ny=y+dy,j=I(nx,ny);if(map.walkableTile(nx,ny)&&!seen[j]){seen[j]=1;q.push(j);}}}
   if([EXIT,...SAND_SITES].some(p=>!seen[I(Math.floor(p[0]),Math.floor(p[1]))]))throw new Error('Sea of Sand maze blocked an objective at seed '+seed);
+  const sandTargets=[
+    {label:'sand exit',at:EXIT,approachRadius:1.4},
+    ...SAND_SITES.map((at)=>({label:'waystone/objective site',at,approachRadius:1.2})),
+    ...scenarioSites.map((at)=>({label:'sand scenario objective',at,approachRadius:1.2})),
+    ...spawns.filter((spawn)=>spawn.rank==='boss').map((spawn)=>({label:'sand boss',at:[spawn.x,spawn.y],approachRadius:1.2,relocate:(x,y)=>{spawn.x=x;spawn.y=y;}})),
+  ];
+  const access=ensureAccessibleTargets(map,ENTRY,sandTargets);
+  if(!access.ok)throw new Error(`Sea of Sand movement-access validation failed at seed ${seed}: ${access.reason}`);
+  if(access.repairedCells?.size)for(let i=props.length-1;i>=0;i--)if(access.repairedCells.has(map.tileIdx(props[i].x,props[i].y)))props.splice(i,1);
   return {map,props,buildings:[],wallHangings:[],townTiles:floors,looks,spawns,chests,torches:[],
     start:ENTRY,exit:EXIT,shrine:scenarioSites[0],sites:Array.from({length:9},(_,i)=>{
       const [cx,cy]=scenarioSites[0];const a=i*Math.PI*2/8;return [cx+Math.cos(a)*7,cy+Math.sin(a)*6];
-    }),scenarioSites,scenarioCount,scenarioId:wildScenario(((seed>>>0)^depth)>>>0),seed};
+    }),scenarioSites,scenarioCount,scenarioId:wildScenario(((seed>>>0)^depth)>>>0),seed,accessibility:{validated:true,repairs:access.repaired,movementRadius:0.24}};
 }
