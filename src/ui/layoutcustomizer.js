@@ -2,8 +2,9 @@ import { G, saveSettings } from '../state.js';
 import { el, escapeHtml } from '../core/util.js';
 import { UI } from './ui.js';
 import {
-  activeLayoutMap, characterLayoutId, cloneLayoutValue, createDefaultLayoutState, snapUILayoutPosition,
+  activeLayoutMap, characterLayoutId, cloneLayoutValue, createDefaultLayoutState, effectiveLayoutEntry, snapUILayoutPosition,
   exportLayoutProfile, importLayoutProfile, migrateEnvironmentInfoLayout, migrateGroupedHudLayout, normalizeLayoutEntry, normalizeLayoutState,
+  writableLayoutEntry,
 } from './ui-layout.mjs';
 
 const DEFINITIONS = [
@@ -93,8 +94,8 @@ export const UILayoutCustomizer = {
   },
   hasElement(id) { return DEFAULTS.has(id); },
 
-  entry(id) { const map = this.map; return map[id] ||= normalizeLayoutEntry(); },
-  effective(id) { return this.map[id] || normalizeLayoutEntry(); },
+  entry(id) { const state = this.state; return writableLayoutEntry(state, id, characterLayoutId(G.char)); },
+  effective(id, state = this.state) { return effectiveLayoutEntry(state, id, characterLayoutId(G.char)) || normalizeLayoutEntry(); },
   node(id) { const def = DEFAULTS.get(id); return def?.selector ? document.querySelector(def.selector) : null; },
   trackElementNode(id, node) {
     if (!node) return false;
@@ -130,15 +131,15 @@ export const UILayoutCustomizer = {
     return rect;
   },
   applyElement(id, node = this.node(id)) {
-    const def = DEFAULTS.get(id), entry = this.map[id];
+    const state = this.state, def = DEFAULTS.get(id), entry = this.effective(id, state), configured = !!effectiveLayoutEntry(state, id, characterLayoutId(G.char));
     if (def.mode === 'canvas') {
-      G.settings.uiFloatingText = entry ? { scale: entry.scale, opacity: entry.opacity, visible: entry.visible } : null;
+      G.settings.uiFloatingText = configured ? { scale: entry.scale, opacity: entry.opacity, visible: entry.visible } : null;
       return;
     }
     if (!node) return;
     this.trackElementNode(id, node);
     nativeStyle(node);
-    node.classList.toggle('ui-layout-hidden', !!entry && !entry.visible);
+    node.classList.toggle('ui-layout-hidden', !entry.visible);
     if (id === 'environment-info') node.style.textAlign = entry?.textAlign || 'left';
     if (id === 'buff-icons' || id === 'debuff-icons') {
       const anchor = entry?.anchor || 'left';
@@ -154,13 +155,11 @@ export const UILayoutCustomizer = {
       }
       if (attached) {
         for (const prop of ['translate', 'scale', 'width', 'height', 'transform-origin']) setManagedStyle(node, prop, '', false);
-        if (!entry) return;
         const rect = this.baseRect(node);
         if (rect?.width && rect?.height) setManagedStyle(node, 'opacity', String(entry.opacity / 100), entry.opacity !== 100);
         return;
       }
     }
-    if (!entry) { for (const prop of managedStyles.get(node) || []) setManagedStyle(node, prop, '', false); return; }
     const rect = this.baseRect(node); if (!rect || !rect.width || !rect.height) return;
     const k = entry.scale / 100;
     let w = Math.min(entry.width || rect.width, innerWidth / k), h = Math.min(entry.height || rect.height, innerHeight / k);
@@ -507,19 +506,20 @@ export function applyUILayoutSettings() {
     initialized = true;
     window.addEventListener('resize', () => UILayoutCustomizer.applyAll());
     UILayoutCustomizer.visibilityObserver = new MutationObserver((records) => {
-      let addedContent = false;
+      const insertedNodes = [];
       for (const record of records) {
         if (record.type === 'attributes') {
           const id = DEFINITIONS.find(([, , selector]) => selector && record.target.matches(selector))?.[0];
           if (id) UILayoutCustomizer.applyElement(id, record.target);
           continue;
         }
-        if (record.addedNodes.length) addedContent = true;
+        for (const node of record.addedNodes) insertedNodes.push(node);
       }
-      if (addedContent) for (const [id, , selector] of DEFINITIONS) {
+      if (insertedNodes.length) for (const [id, , selector] of DEFINITIONS) {
         if (!selector) continue;
         const node = document.querySelector(selector);
-        if (node && UILayoutCustomizer.trackElementNode(id, node)) UILayoutCustomizer.applyElement(id, node);
+        const reinserted = node && insertedNodes.some((added) => added === node || (added.nodeType === 1 && added.contains(node)));
+        if (node && (UILayoutCustomizer.trackElementNode(id, node) || reinserted)) UILayoutCustomizer.applyElement(id, node);
       }
     });
     const app = document.querySelector('#app') || document.body;

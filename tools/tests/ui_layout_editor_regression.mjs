@@ -1,11 +1,12 @@
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 
-const [source, styles, html, gameSource] = await Promise.all([
+const [source, styles, html, gameSource, mainSource] = await Promise.all([
   readFile(new URL('../../src/ui/layoutcustomizer.js', import.meta.url), 'utf8'),
   readFile(new URL('../../css/style.css', import.meta.url), 'utf8'),
   readFile(new URL('../../index.html', import.meta.url), 'utf8'),
   readFile(new URL('../../src/game/game.js', import.meta.url), 'utf8'),
+  readFile(new URL('../../src/main.js', import.meta.url), 'utf8'),
 ]);
 
 const renderAll = source.match(/renderAll\(refresh = true\)\s*\{([\s\S]*?)\n  \},\n\n  renderGuides/);
@@ -30,8 +31,14 @@ assert.match(source, /data-custom-field="anchor"/, 'buff and debuff groups expos
 assert.match(source, /data-custom-field="textAlign"/, 'environment information exposes a persisted text alignment selector');
 assert.match(source, /node\.style\.textAlign = entry\?\.textAlign \|\| 'left'/, 'saved environment text alignment is applied to the complete grouped element');
 assert.match(source, /record\.type === 'attributes'/, 'the layout observer continues to restore visibility and class changes');
-assert.match(source, /if \(addedContent\) for \(const \[id, , selector\] of DEFINITIONS\)/, 'late-created customizable elements receive their saved layout');
+assert.match(source, /if \(insertedNodes\.length\) for \(const \[id, , selector\] of DEFINITIONS\)/, 'late-created customizable elements receive their saved layout');
+assert.match(source, /const reinserted = node && insertedNodes\.some\(\(added\) => added === node \|\| \(added\.nodeType === 1 && added\.contains\(node\)\)\)/, 'reused UI elements receive their layout again when moved back into the DOM');
 assert.match(source, /this\.visibilityObserver\?\.observe\(node, \{ attributes: true, attributeFilter: \['class'\] \}\)/, 'both startup and late-created elements track later visibility changes');
+assert.match(source, /effective\(id, state = this\.state\) \{ return effectiveLayoutEntry\(state, id, characterLayoutId\(G\.char\)\)/, 'customizable UI resolves the active character override with profile-wide fallback');
+assert.match(source, /entry\(id\) \{ const state = this\.state; return writableLayoutEntry\(state, id, characterLayoutId\(G\.char\)\)/, 'editing an inherited layout creates a character-specific copy without changing the account profile');
+assert.match(source, /const state = this\.state, def = DEFAULTS\.get\(id\), entry = this\.effective\(id, state\)/, 'startup and dynamic UI application use the same resolved saved entry');
+assert.match(source, /applyAll\(\) \{ for \(const \[id\] of DEFINITIONS\) this\.applyElement\(id\); \}/, 'every registered UI element is restored through the centralized manager');
+assert.ok(mainSource.indexOf('loadSettings();') < mainSource.indexOf('HUD.init();') && mainSource.indexOf('HUD.init();') < mainSource.indexOf('applyUILayoutSettings();'), 'saved settings load before HUD creation and initial layout application');
 assert.match(source, /data-custom-field="attachment"/, 'resource orbs expose their attachment selector');
 assert.match(source, /ui-layout-orb-attachment/, 'the HUD relayouts orb groups after attach/detach changes');
 assert.match(html, /id="life-orb-group"[\s\S]*id="life-cover"[\s\S]*id="life-text"/, 'health art and values are wrapped as one movable group');

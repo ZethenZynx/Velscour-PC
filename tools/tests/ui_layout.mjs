@@ -1,8 +1,8 @@
 import assert from 'node:assert/strict';
 import {
-  activeLayoutMap, characterLayoutId, cloneLayoutValue, createDefaultLayoutState,
+  activeLayoutMap, characterLayoutId, cloneLayoutValue, createDefaultLayoutState, effectiveLayoutEntry,
   exportLayoutProfile, importLayoutProfile, migrateEnvironmentInfoLayout, normalizeLayoutEntry, normalizeLayoutState,
-  snapUILayoutPosition,
+  snapUILayoutPosition, writableLayoutEntry,
 } from '../../src/ui/ui-layout.mjs';
 
 const defaults = normalizeLayoutEntry();
@@ -26,6 +26,46 @@ assert.equal(characterMap.minimap.visible, false);
 assert.equal(activeLayoutMap(state, 'hero-b').minimap, undefined, 'character overrides stay isolated');
 assert.equal(characterLayoutId({ id: 'hero-a', name: 'A' }), 'hero-a');
 assert.equal(normalizeLayoutState(state).activeProfile, 'default');
+
+const inheritedState = createDefaultLayoutState();
+inheritedState.profiles.default.layouts.minimap = {
+  x: .7, y: .08, width: 320, height: 240, scale: 125, opacity: 65,
+  visible: false, locked: true, anchor: 'right', textAlign: 'center', attachment: 'detached',
+};
+inheritedState.profiles.alternate = { name: 'Alternate', layouts: { minimap: { x: .2, y: .3 } }, characterOverrides: {} };
+inheritedState.characterSpecific = true;
+const inherited = effectiveLayoutEntry(inheritedState, 'minimap', 'hero-a');
+assert.equal(inherited.scale, 125, 'character layouts inherit account profile scale when they have no override');
+assert.equal(inherited.opacity, 65, 'character layouts inherit account profile opacity');
+assert.equal(inherited.visible, false, 'character layouts inherit account profile visibility');
+assert.equal(inherited.locked, true, 'character layouts inherit account profile lock state');
+assert.equal(inherited.anchor, 'right', 'character layouts inherit account profile anchoring');
+assert.equal(inherited.textAlign, 'center', 'character layouts inherit account profile alignment');
+assert.equal(inherited.attachment, 'detached', 'character layouts inherit account profile attachment');
+const characterEdit = writableLayoutEntry(inheritedState, 'minimap', 'hero-a');
+characterEdit.x = .4;
+assert.equal(inheritedState.profiles.default.layouts.minimap.x, .7, 'editing a character override does not mutate account layout');
+assert.equal(effectiveLayoutEntry(inheritedState, 'minimap', 'hero-b').x, .7, 'other characters continue inheriting the account layout');
+assert.equal(effectiveLayoutEntry(inheritedState, 'minimap', 'hero-a').x, .4, 'the active character override takes precedence');
+inheritedState.activeProfile = 'alternate';
+assert.equal(effectiveLayoutEntry(inheritedState, 'minimap', 'hero-a').x, .2, 'profile selection changes the inherited layout source');
+inheritedState.activeProfile = 'default';
+const persistedState = normalizeLayoutState(JSON.parse(JSON.stringify(inheritedState)));
+assert.deepEqual(persistedState.profiles.default.layouts.minimap, inheritedState.profiles.default.layouts.minimap, 'account layout properties survive serialization and normalization');
+assert.deepEqual(persistedState.profiles.default.characterOverrides['hero-a'].minimap, characterEdit, 'character override properties survive serialization and normalization');
+assert.equal(effectiveLayoutEntry(persistedState, 'minimap', 'hero-a').scale, 125, 'new character snapshots preserve inherited account settings');
+
+const legacyOverrideState = normalizeLayoutState({
+  characterSpecific: true,
+  profiles: { default: {
+    layouts: { minimap: { x: .7, y: .08, scale: 125, opacity: 65, visible: false, locked: true } },
+    characterOverrides: { 'hero-old': { minimap: { x: .35, y: .4 } } },
+  } },
+});
+assert.equal(effectiveLayoutEntry(legacyOverrideState, 'minimap', 'hero-old').x, .35, 'legacy character-specific positions remain selected');
+assert.equal(effectiveLayoutEntry(legacyOverrideState, 'minimap', 'hero-old').scale, 125, 'legacy default-filled overrides inherit customized account scale');
+assert.equal(effectiveLayoutEntry(legacyOverrideState, 'minimap', 'hero-old').opacity, 65, 'legacy default-filled overrides inherit customized account opacity');
+assert.equal(effectiveLayoutEntry(legacyOverrideState, 'minimap', 'hero-old').visible, false, 'legacy default-filled overrides inherit customized account visibility');
 
 const legacyState = createDefaultLayoutState();
 legacyState.profiles.default.layouts['area-affixes'] = { x: .35, y: .16, scale: 110 };

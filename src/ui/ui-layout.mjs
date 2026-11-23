@@ -2,6 +2,7 @@
 export const UI_LAYOUT_VERSION = 1;
 export const UI_LAYOUT_SCALE_MIN = 50;
 export const UI_LAYOUT_SCALE_MAX = 200;
+const LAYOUT_FIELDS = ['x', 'y', 'width', 'height', 'scale', 'opacity', 'visible', 'locked', 'anchor', 'textAlign', 'attachment'];
 
 export function cloneLayoutValue(value) {
   return JSON.parse(JSON.stringify(value));
@@ -26,11 +27,23 @@ export function normalizeProfile(profile = {}, key = 'default') {
   const layouts = {};
   for (const [id, entry] of Object.entries(profile.layouts || {})) layouts[id] = normalizeLayoutEntry(entry);
   const characterOverrides = {};
+  const characterOverrideFields = {};
+  const defaults = normalizeLayoutEntry();
   for (const [characterId, entries] of Object.entries(profile.characterOverrides || {})) {
     characterOverrides[characterId] = {};
-    for (const [id, entry] of Object.entries(entries || {})) characterOverrides[characterId][id] = normalizeLayoutEntry(entry);
+    characterOverrideFields[characterId] = {};
+    for (const [id, entry] of Object.entries(entries || {})) {
+      const normalized = normalizeLayoutEntry(entry);
+      characterOverrides[characterId][id] = normalized;
+      // Older saves stored a full default-filled entry even when a player changed only one
+      // setting. Infer those legacy overrides by treating default values as inherited.
+      const savedFields = profile.characterOverrideFields?.[characterId]?.[id];
+      characterOverrideFields[characterId][id] = Array.isArray(savedFields)
+        ? [...new Set(savedFields.filter((field) => LAYOUT_FIELDS.includes(field)))]
+        : LAYOUT_FIELDS.filter((field) => !Object.is(normalized[field], defaults[field]));
+    }
   }
-  return { name: String(profile.name || (key === 'default' ? 'Default' : key)).slice(0, 32), layouts, characterOverrides };
+  return { name: String(profile.name || (key === 'default' ? 'Default' : key)).slice(0, 32), layouts, characterOverrides, characterOverrideFields };
 }
 
 export function createDefaultLayoutState() {
@@ -52,13 +65,14 @@ export function normalizeLayoutState(value = {}) {
 export function migrateEnvironmentInfoLayout(state) {
   let changed = false;
   for (const profile of Object.values(state?.profiles || {})) {
-    const migrate = (layouts) => {
+    const migrate = (layouts, fields = null) => {
       if (!layouts || layouts['environment-info'] || !layouts['area-affixes']) return;
       layouts['environment-info'] = cloneLayoutValue(layouts['area-affixes']);
+      if (fields?.['area-affixes']) fields['environment-info'] = [...fields['area-affixes']];
       changed = true;
     };
     migrate(profile.layouts);
-    for (const layouts of Object.values(profile.characterOverrides || {})) migrate(layouts);
+    for (const [characterId, layouts] of Object.entries(profile.characterOverrides || {})) migrate(layouts, profile.characterOverrideFields?.[characterId]);
   }
   return changed;
 }
@@ -67,22 +81,29 @@ export function migrateEnvironmentInfoLayout(state) {
 export function migrateGroupedHudLayout(state) {
   let changed = false;
   for (const profile of Object.values(state?.profiles || {})) {
-    const migrate = (layouts) => {
+    const migrate = (layouts, fields = null) => {
       if (!layouts) return;
       if (!layouts['main-action-bar'] && (layouts['ability-hotbar'] || layouts.experience || layouts['experience-value'])) {
-        layouts['main-action-bar'] = cloneLayoutValue(layouts['ability-hotbar'] || layouts.experience || layouts['experience-value']); changed = true;
+        const source = layouts['ability-hotbar'] ? 'ability-hotbar' : layouts.experience ? 'experience' : 'experience-value';
+        layouts['main-action-bar'] = cloneLayoutValue(layouts[source]);
+        if (fields?.[source]) fields['main-action-bar'] = [...fields[source]];
+        changed = true;
       }
       for (const [newId, oldIds] of [['health-orb', ['health', 'health-value']], ['mana-orb', ['mana', 'mana-value']]]) {
         if (layouts[newId]) continue;
-        const old = oldIds.map((id) => layouts[id]).find(Boolean);
-        if (old) { layouts[newId] = { ...cloneLayoutValue(old), attachment: 'detached' }; changed = true; }
+        const source = oldIds.find((id) => layouts[id]);
+        if (source) {
+          layouts[newId] = { ...cloneLayoutValue(layouts[source]), attachment: 'detached' };
+          if (fields?.[source]) fields[newId] = [...fields[source], ...(fields[source].includes('attachment') ? [] : ['attachment'])];
+          changed = true;
+        }
       }
       for (const id of ['buff-icons', 'debuff-icons']) {
         if (layouts[id] && !['left', 'right', 'center'].includes(layouts[id].anchor)) { layouts[id].anchor = 'left'; changed = true; }
       }
     };
     migrate(profile.layouts);
-    for (const layouts of Object.values(profile.characterOverrides || {})) migrate(layouts);
+    for (const [characterId, layouts] of Object.entries(profile.characterOverrides || {})) migrate(layouts, profile.characterOverrideFields?.[characterId]);
   }
   return changed;
 }
@@ -97,6 +118,40 @@ export function activeLayoutMap(state, characterId = '') {
   return state.characterSpecific && characterId
     ? (profile.characterOverrides[characterId] ||= {})
     : profile.layouts;
+}
+
+/** Resolve an element from the active character override, then its profile-wide layout. */
+export function effectiveLayoutEntry(state, id, characterId = '') {
+  const profile = state.profiles[state.activeProfile] || state.profiles.default;
+  if (state.characterSpecific && characterId) {
+    const override = profile.characterOverrides?.[characterId]?.[id];
+    if (override) {
+      const base = profile.layouts?.[id];
+      if (!base) return override;
+      const fields = profile.characterOverrideFields?.[characterId]?.[id] || [];
+      return { ...base, ...Object.fromEntries(fields.map((field) => [field, override[field]])) };
+    }
+  }
+  return profile.layouts?.[id];
+}
+
+/** Create an editable entry without mutating the profile-wide value it inherits from. */
+export function writableLayoutEntry(state, id, characterId = '') {
+  const map = activeLayoutMap(state, characterId);
+  if (state.characterSpecific && characterId) {
+    const profile = state.profiles[state.activeProfile] || state.profiles.default;
+    profile.characterOverrideFields ||= {};
+    profile.characterOverrideFields[characterId] ||= {};
+    const fields = profile.characterOverrideFields[characterId][id] || [];
+    if (!map[id] || fields.length < LAYOUT_FIELDS.length) {
+      map[id] = normalizeLayoutEntry(effectiveLayoutEntry(state, id, characterId) || map[id] || {});
+    }
+    // Once edited, the character entry is a complete snapshot of the inherited layout.
+    profile.characterOverrideFields[characterId][id] = [...LAYOUT_FIELDS];
+  } else if (!map[id]) {
+    map[id] = normalizeLayoutEntry(effectiveLayoutEntry(state, id, characterId) || {});
+  }
+  return map[id];
 }
 
 /** Apply grid, edge, and sibling alignment snapping and keep a panel reachable on-screen. */

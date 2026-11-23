@@ -2,7 +2,7 @@
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 import {
-  activeLayoutMap, migrateGroupedHudLayout, normalizeLayoutEntry, normalizeLayoutState,
+  activeLayoutMap, effectiveLayoutEntry, migrateGroupedHudLayout, normalizeLayoutEntry, normalizeLayoutState,
 } from '../../src/ui/ui-layout.mjs';
 
 const normalized = normalizeLayoutEntry({ anchor: 'center', attachment: 'detached', scale: 135 });
@@ -38,6 +38,11 @@ assert.equal(global['buff-icons'].anchor, 'right');
 const character = state.profiles.default.characterOverrides.hero;
 assert.equal(character['main-action-bar'].x, 0.51);
 assert.equal(character['mana-orb'].attachment, 'detached');
+state.characterSpecific = true;
+assert.equal(effectiveLayoutEntry(state, 'main-action-bar', 'hero').x, 0.51, 'migrated grouped character positions remain applied');
+assert.equal(effectiveLayoutEntry(state, 'main-action-bar', 'hero').scale, 120, 'grouped character layouts inherit account-wide scale');
+assert.equal(effectiveLayoutEntry(state, 'mana-orb', 'hero').x, 0.8, 'migrated detached-orb position remains a character override');
+assert.equal(effectiveLayoutEntry(state, 'mana-orb', 'hero').attachment, 'detached', 'migrated detached-orb state remains explicit');
 assert.equal(migrateGroupedHudLayout(state), false, 'migration must be idempotent');
 
 const html = await readFile(new URL('../../index.html', import.meta.url), 'utf8');
