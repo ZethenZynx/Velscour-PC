@@ -1,5 +1,5 @@
 // Large non-browser loot simulation: verify final gear creation against each Rift tier's
-// progression cap, including rare Covenant conversion for high-depth characters.
+// progression cap, including repeatable Covenant conversion at every eligible tier.
 import assert from 'node:assert/strict';
 import { G } from '../../src/state.js';
 import { qualityAtDepth, RARITY, rollSigil, sigilCap } from '../../src/data/items.js';
@@ -27,11 +27,11 @@ try {
     let minimum = Infinity, maximum = -Infinity, tier20Count = 0;
     for (let n = 0; n < simulatedDropsPerTier; n++) {
       const rolled = rollGroundItem(100);
-      const item = maybeRelic(rolled, 100);
+      const item = maybeRelic(rolled, 100, []);
       assert.ok(item.rarity <= expectedCap,
         `tier ${tier}: final ${RARITY[item.rarity]?.name} exceeded ${RARITY[expectedCap]?.name}`);
-      assert.ok(!item.cset || tier >= 16, `tier ${tier}: Covenant gear appeared before Tier 20 eligibility`);
-      assert.ok(!item.cset || item.rarity === 19, `tier ${tier}: Covenant gear has unexpected rarity`);
+      assert.ok(!item.cset || item.rarity <= rolled.rarity, `tier ${tier}: Covenant quality exceeded its source drop`);
+      assert.ok(!item.cset || item.ilvl === rolled.ilvl, `tier ${tier}: Covenant item level differs from its source drop`);
       minimum = Math.min(minimum, item.rarity);
       maximum = Math.max(maximum, item.rarity);
       if (item.rarity === 19) tier20Count++;
@@ -50,15 +50,12 @@ try {
         `tier ${tier}: sigil rank ${sigil.tier} exceeded ${maxSigilTier}`);
     }
 
+    const covenant = makeCovenant(100, { maxRarity: expectedCap });
+    assert.ok(covenant, `tier ${tier}: repeatable Covenant items are available`);
+    assert.ok(covenant.rarity <= expectedCap, `tier ${tier}: Covenant quality exceeded its progression cap`);
     if (tier < 16) {
-      assert.equal(makeCovenant(100, { depth: char.depth }), null,
-        `tier ${tier}: explicit character progression cannot create a Covenant item`);
       assert.ok(maximum < 19, `tier ${tier}: Tier 20 must remain unavailable`);
       assert.equal(tier20Count, 0, `tier ${tier}: simulation generated Tier 20 gear`);
-    } else {
-      assert.equal(makeCovenant(100, { depth: char.depth })?.rarity, 19,
-        `tier ${tier}: explicit character progression cannot lower eligible Rift cap`);
-      assert.equal(makeCovenant(100)?.rarity, 19, `tier ${tier}: eligible Rift can create Tier 20 Covenant gear`);
     }
     results.push({ tier, effectiveDepth: lootDepth, cap: RARITY[expectedCap].name, min: RARITY[minimum].name, max: RARITY[maximum].name, tier20Count });
   }

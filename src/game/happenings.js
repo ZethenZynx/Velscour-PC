@@ -15,7 +15,7 @@ import { hit, aoe } from './combat.js';
 import { makeMonster, makeElite, monsterBase } from './monster.js';
 import { ambush } from './mayhem.js';
 import { GroundItem, dropChest, groundRewardDepth, rollGroundItem, rollGroundGem, rollOrbKind } from './loot.js';
-import { rollItem, rollGem, potionItem, itemName, itemColor, rarityAt, goldScale, rollSigil } from '../data/items.js';
+import { rollItem, rollGem, potionItem, itemName, itemColor, rarityAt, qualityAtDepth, goldScale, rollSigil } from '../data/items.js';
 import { depthLevel, FINAL_DEPTH } from '../data/depth.js';
 import { addToBag } from './player.js';
 import { UI } from '../ui/ui.js';
@@ -459,7 +459,9 @@ function grantImpReward(world, m, variant, options = {}) {
       impBlessing('arcane', 'Arcane Reserve', variant.color, { manaRegenPct: 75 }, 45); break;
     case 'set': {
       for (let i = 0; i < impQuantity(1, qty); i++) {
-        const item = makeCovenant(Math.min(100, Math.max(1, G.char?.level || lvl)), { depth: groundRewardDepth(world, world.depth || 1) });
+        const rewardDepth = groundRewardDepth(world, world.depth || 1);
+        const itemLevel = Math.max(1, Math.min(G.char?.level || lvl, lvl));
+        const item = makeCovenant(itemLevel, { maxRarity: qualityAtDepth(rewardDepth) });
         if (item) impDrop(world, m, 'item', { item });
       }
       break;

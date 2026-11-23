@@ -10,7 +10,6 @@ import { drawBiome } from '../data/biomes.js';
 import { migrateBar, BAR_SIZE } from '../data/bar.js';
 import { TAB_SLOTS } from '../data/tabs.js';
 import { newMacros, migrateMacros } from '../data/macros.js';
-import { migrateCovenantItem } from '../data/relics.js';
 import { reliquary } from './reliquary.js';
 import { refundStorageMarks } from './endgame.js';
 import { stashRaw, listRaw } from './herobackup.js';
@@ -586,11 +585,7 @@ export function migrate(c) {
   fixGemBag(c);
   fixStash(c);
   fixJewelBox(c);
-  // Legacy set items keep their identity, upgrades, socketed gems and other saved fields while gaining T20 stats.
-  if (!c.covenantTier20V1) {
-    eachGear(c, (it) => { if (it.relic === 'cov') migrateCovenantItem(it); });
-    c.covenantTier20V1 = true;
-  }
+  // Existing Covenant gear is left byte-for-byte intact; new drops use the current drop tier.
   // Migrate legacy gems from c.bag into c.gemBag (or overflow into c.jewelBox)
   for (let i = 0; i < c.bag.length; i++) {
     const it = c.bag[i];

@@ -1,22 +1,19 @@
-// Heirlooms, Covenants and Glyphwords: named items in the spirit of Diablo II's uniques, sets and runewords, under
-// their own names. They scale with item level like all gear here (a 500-depth game), so a find stays useful.
-// - Heirloom (HEIRLOOMS): a fixed name, slot and set of stat lines, and a power; two sockets. It drops about as often
-//   as a Legendary and is worth about as much (~13.5 item levels over a Common, tools/tests/relic_balance.js).
-// - Covenant (COVENANTS): six sets of five pieces, exclusive Tier 20 rewards. Wearing 2/3/4/5 pieces of one set adds a
-//   line each, then the set's power. Bonuses scale with the lowest-level piece worn.
+// Heirlooms, Covenants and Glyphwords: named equipment collections.
+// - Heirlooms are account-discovered names and appearances. Copies are ordinary Tier 1 gear with no powers.
+// - Covenant (COVENANTS): repeatable set pieces rolled at the drop's eligible level and quality. Wearing 2/3/4/5
+//   pieces of one set adds a line each, then the set's power. Bonuses scale with the lowest-level piece worn.
 // - Glyphword (GLYPHWORDS): Sigil Stones (data/items.js) set in the right order in a plain (Orange) item with exactly
 //   that many sockets. It keeps the stones' own stats and adds lines and (from three stones) a power. Recognised live
 //   (glyphOf), so prying the stones out makes it plain again.
 // Powers use the legendary flags the engine already runs (game/player.js, game/combat.js) and procs (game/relicprocs.js).
 import { chance, pick, clamp } from '../core/util.js';
-import { rollItem, affixValue, AFFIX_BY_STAT, GEMS, SIGILS, RELIC_HOOK, powerLevel, legendaryScale, LEGENDARY, RARITY_LEGENDARY, RARITY_MYTHIC, RARITY_TIER_20, TIER_20_MIN_DEPTH, tierOf } from './items.js';
-import { MAX_LEVEL } from './depth.js';
+import { rollItem, affixValue, AFFIX_BY_STAT, GEMS, SIGILS, RELIC_HOOK, powerLevel, legendaryScale, LEGENDARY, RARITY_COMMON, RARITY_MYTHIC, WEAPONS, OFFHANDS, ARMORS, qualityAtDepth } from './items.js';
 import { G } from '../state.js';
 import { riftLootDepth } from './rifts.js';
 
 // ---------------------------------------------------------------- line values
 const MYTHIC = RARITY_MYTHIC;
-/** Line strength per kind; Covenant's three curated lines use T20 affix scaling to stay comparable with a normal T20 item. */
+/** Line strength per kind; Covenant lines use the piece's actual rarity and item-level curve. */
 export const TUNE = { heir: 0.45, cov: 0.9, set: 0.9, glyph: 0.55 };
 /** A stat line of k core lines' worth at item level ilvl using the requested quality's affix curve. */
 export function lineValue(s, ilvl, k, rarity = MYTHIC) {
@@ -100,8 +97,8 @@ export const POWERS = {
 };
 
 // ---------------------------------------------------------------- Heirlooms
-// lines: [stat, k] (k core lines' worth; heirlooms sum to about 4.5); minIlvl: first item level it can drop at.
-// unbound: only Velscour Unbound drops it (makeHeirloom(ilvl, { unbound: true }); crown: only by its id), never maybeRelic.
+// Historical line/power metadata is retained for old item-name/art compatibility. New Heirloom copies do not apply it.
+// Every entry is eligible for account-first drops at any depth; Unbound still favors its themed subset.
 export const HEIRLOOMS = [
   { id: 'verdict', name: "Grandsire's Verdict", slot: 'weapon', base: 'mace', minIlvl: 15, power: 'verdict', lines: [['dmgPct', 1], ['holyPct', 1], ['critDmg', 0.9], ['lifeSteal', 0.8], ['str', 0.8]], flavor: 'Forged in the first crusade of the High Reliquary. Its weight judges the wicked before the blow lands.' },
   { id: 'emberwake', name: 'Emberwake', slot: 'weapon', base: 'sword', minIlvl: 15, power: 'kindled', lines: [['firePct', 1], ['dmgPct', 1], ['atkSpeed', 0.9], ['critChance', 0.8]], flavor: 'Tempered in the cinders of a fallen citadel; the steel still draws breath from the ash.' },
@@ -233,88 +230,78 @@ export function glyphOf(it) {
 // ---------------------------------------------------------------- making them
 const nameFor = (base) => base;
 function shapeRelic(it, kind, id, name, lines, maxSock) {
-  it.affixes = (it.affixes || []).filter((a) => a && a.implicit);
-  const lineRarity = kind === 'cov' ? RARITY_TIER_20 : MYTHIC;
-  for (const [s, k] of lines) it.affixes.push({ s, v: lineValue(s, it.ilvl, k * TUNE[kind], lineRarity), relic: true });
+  if (kind === 'cov') {
+    it.affixes = (it.affixes || []).filter((a) => a && a.implicit);
+    const lineRarity = it.rarity;
+    for (const [s, k] of lines) it.affixes.push({ s, v: lineValue(s, it.ilvl, k * TUNE[kind], lineRarity), relic: true });
+  }
   delete it.legendary; delete it.title; delete it.pre; delete it.suf; delete it.rname; delete it.art; delete it.artCls;
   it.relic = kind; it.rid = id; it.uname = nameFor(name);
-  it.maxSockets = maxSock;
-  it.sockets = Math.min(it.sockets, maxSock);
+  if (kind === 'cov') {
+    it.maxSockets = maxSock;
+    it.sockets = Math.min(it.sockets, maxSock);
+  }
   it.gems = it.gems.slice(0, it.sockets);
   return it;
 }
-/** A Heirloom at item level ilvl (one of id, or a random one that can drop for the slot at that level; null if none). */
+/** A static, ordinary Tier 1 copy. Discovery affects whether it can be obtained, never its stats. */
 export function makeHeirloom(ilvl, opts = {}) {
-  const pool = HEIRLOOMS.filter((h) => (opts.id ? h.id === opts.id : (!opts.slot || h.slot === opts.slot) && h.minIlvl <= ilvl && !h.crown && !h.unbound === !opts.unbound));
+  const pool = HEIRLOOMS.filter((h) => (opts.id ? h.id === opts.id : !opts.slot || h.slot === opts.slot));
   if (!pool.length) return null;
   const H = pick(pool);
-  const it = rollItem(ilvl, { slot: H.slot, rarity: RARITY_LEGENDARY, base: H.base, generic: true });
-  return shapeRelic(it, 'heir', H.id, H.name, H.lines, H.slot === 'ring' ? 1 : 2);
+  const icon = H.slot === 'weapon' ? WEAPONS[H.base || 'sword']?.icon || 'sword' : H.slot === 'offhand' ? OFFHANDS[H.base || 'shield']?.icon || 'shield' : H.slot === 'ring' ? 'ring' : ARMORS[H.slot]?.icon || H.slot;
+  const it = rollItem(1, { slot: H.slot, rarity: RARITY_COMMON, base: H.base, generic: true });
+  it.req = 1;
+  it.tier = 0;
+  it.rarity = RARITY_COMMON;
+  it.icon = icon;
+  return shapeRelic(it, 'heir', H.id, H.name, [], it.maxSockets);
 }
-/** A Covenant piece (pieceId, or a random piece of setId / of any set). */
+/** Stats-free Codex thumbnail data: rendering a locked/unlocked entry must not roll a physical item. */
+export function heirloomPreview(id) {
+  const H = HEIRLOOM_BY_ID[id];
+  if (!H) return null;
+  const icon = H.slot === 'weapon' ? WEAPONS[H.base || 'sword']?.icon || 'sword' : H.slot === 'offhand' ? OFFHANDS[H.base || 'shield']?.icon || 'shield' : H.slot === 'ring' ? 'ring' : ARMORS[H.slot]?.icon || H.slot;
+  return { type: 'gear', relic: 'heir', rid: H.id, uname: H.name, slot: H.slot, base: H.base || H.slot, icon, tier: 0, rarity: RARITY_COMMON, sockets: 0, maxSockets: 0, gems: [], aug: [] };
+}
+/** A repeatable Covenant piece rolled at the supplied drop level and eligible rarity. */
 export function makeCovenant(ilvl, opts = {}) {
-  const inRift = !!G.world?.rift;
-  const worldDepth = inRift ? riftLootDepth(G.world.rift.tier) : G.world?.depth || 0;
-  // Rifts are a self-contained progression lane. A character's saved campaign depth
-  // must not let a low-tier Rift produce Tier 20 Covenant equipment.
-  const depth = opts.preview ? (Number.isFinite(opts.depth) ? opts.depth : worldDepth) : inRift
-    ? worldDepth
-    : Number.isFinite(opts.depth) ? opts.depth : Math.max(worldDepth, G.char?.depth || 0, 1);
-  if (!opts.preview && depth < TIER_20_MIN_DEPTH) return null;
   const pool = Object.values(PIECE_BY_ID).filter((p) => (opts.pieceId ? p.id === opts.pieceId : !opts.setId || p.set === opts.setId) && (!opts.slot || p.slot === opts.slot));
   if (!pool.length) return null;
   const P = pick(pool);
-  const it = rollItem(ilvl, { slot: P.slot, rarity: RARITY_TIER_20, base: P.base, generic: true });
+  const world = G.world;
+  const activityDepth = world?.rift ? riftLootDepth(world.rift.tier) : Number(world?.depth) || ilvl;
+  const maxRarity = Number.isFinite(opts.maxRarity) ? opts.maxRarity : qualityAtDepth(Number.isFinite(opts.depth) ? opts.depth : activityDepth);
+  const it = rollItem(ilvl, { slot: P.slot, rarity: opts.rarity, maxRarity, base: P.base, generic: true });
   it.cset = P.set;
   return shapeRelic(it, 'cov', P.id, P.name, P.lines, P.slot === 'ring' ? 1 : 3);
 }
-/** Upgrade an owned legacy Covenant in place, preserving identity, upgrades, sockets, gems, and custom saved fields. */
+/** Compatibility no-op: existing saved Covenant gear is preserved exactly as stored. */
 export function migrateCovenantItem(item) {
-  if (!item || item.type !== 'gear' || item.relic !== 'cov') return false;
-  const P = PIECE_BY_ID[item.rid];
-  if (!P) return false;
-  const old = { ...item };
-  const ilvl = Math.max(1, Math.round(Number(item.ilvl) || 1));
-  const upgraded = shapeRelic(rollItem(ilvl, { slot: P.slot, rarity: RARITY_TIER_20, base: P.base, generic: true }), 'cov', P.id, P.name, P.lines, P.slot === 'ring' ? 1 : 3);
-  Object.assign(item, upgraded, old);
-  item.rarity = RARITY_TIER_20;
-  item.ilvl = ilvl;
-  item.tier = tierOf(ilvl);
-  item.req = Math.min(ilvl, MAX_LEVEL);
-  item.affixes = upgraded.affixes;
-  if (upgraded.dmg) item.dmg = upgraded.dmg;
-  if (upgraded.armor) item.armor = upgraded.armor;
-  item.maxSockets = Math.max(upgraded.maxSockets || 0, old.maxSockets || 0);
-  item.sockets = Math.min(item.maxSockets, Math.max(old.sockets || 0, upgraded.sockets || 0));
-  item.gems = Array.isArray(old.gems) ? old.gems : [];
-  item.uid = old.uid || upgraded.uid;
-  item.cset = P.set;
-  item.rid = P.id;
-  item.relic = 'cov';
-  item.uname = P.name;
-  delete item.legendary; delete item.title; delete item.pre; delete item.suf; delete item.rname; delete item.art; delete item.artCls;
-  return true;
+  return false;
 }
 /**
- * Maybe turn a fresh drop into a Heirloom or Covenant piece: a quarter of Legendary and Mythic drops and an eighth of
- * Epics become Heirlooms (when one exists for the slot at that level); one in twenty-five Rare-or-better drops becomes a
- * Covenant piece of its slot from depth 456 onward (boost: BOSS ROOMs and Velscour triple it).
+ * Maybe turn a fresh equipment drop into an account-first Heirloom or a repeatable Covenant piece. Heirlooms
+ * remain level-1 copies; Covenant conversion inherits the source item's level and eligible quality.
  */
-export function maybeRelic(it, boost = 1) {
+export function maybeRelic(it, boost = 1, eligibleHeirloomIds = []) {
   if (!it || it.type !== 'gear' || it.relic) return it;
-  if (it.rarity >= 3 && it.ilvl >= 20 && chance((it.rarity >= 4 ? 0.25 : 0.12))) {
-    const h = makeHeirloom(it.ilvl, { slot: it.slot });
+  const knownSet = new Set(eligibleHeirloomIds || []);
+  const heirloomAvailable = HEIRLOOMS.some((h) => knownSet.has(h.id) && h.slot === it.slot);
+  if (heirloomAvailable && chance(it.rarity >= 4 ? 0.25 : 0.12)) {
+    const pool = HEIRLOOMS.filter((h) => h.slot === it.slot && knownSet.has(h.id));
+    const h = pool.length ? makeHeirloom(1, { id: pick(pool).id, includeSpecial: true }) : null;
     if (h) return h;
   }
-  if (it.rarity >= 2 && it.ilvl >= 10 && chance(0.04 * boost)) {
-    const c = makeCovenant(it.ilvl, { slot: it.slot });
+  if (chance(0.04 * boost)) {
+    const c = makeCovenant(it.ilvl, { slot: it.slot, rarity: it.rarity, maxRarity: it.rarity });
     if (c) return c;
   }
   return it;
 }
 
 // ---------------------------------------------------------------- what they add to the hero
-const POW = (it) => (it.relic === 'heir' ? HEIRLOOM_BY_ID[it.rid] && POWERS[HEIRLOOM_BY_ID[it.rid].power] : null);
+const POW = () => null; // Heirlooms are named ordinary gear and carry no exclusive powers.
 /** Extra stats of one item (items.js itemStats calls this through RELIC_HOOK): a power's stats, a Glyphword's lines. */
 export function relicItemStats(it) {
   const out = [];

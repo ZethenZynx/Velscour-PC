@@ -10,12 +10,12 @@ import { rand, chance, pick, escapeHtml, fmtInt } from '../core/util.js';
 import { sfx } from '../core/audio.js';
 import { addEffect, Ring, glowSprite, sparkle, floatText } from '../gfx/vfx.js';
 import { isoX, isoY } from '../core/view.js';
-import { goldPile, rollSigil, itemName, itemColor } from '../data/items.js';
-import { makeHeirloom, makeCovenant } from '../data/relics.js';
+import { goldPile, rollSigil, itemName, itemColor, qualityAtDepth } from '../data/items.js';
+import { makeCovenant } from '../data/relics.js';
 import { depthLevel, FINAL_DEPTH } from '../data/depth.js';
 import { BIOME_BY_ID } from '../data/biomes.js';
 import { addToBag } from './player.js';
-import { noteLineDone } from './reliquary.js';
+import { noteLineDone, makeAccountHeirloom } from './reliquary.js';
 import { GroundItem } from './loot.js';
 
 export const LINES = [
@@ -173,11 +173,11 @@ function progress(e, k, what) {
   const gold = Math.round(goldPile(lvl) * 25);
   c.gold += gold;
   const gifts = [rollSigil(depth, 1), rollSigil(depth, 1)];
-  if (chance(0.4) || e.ch === L.chapters.length - 1) { const cov = makeCovenant(gearLvl + 1); if (cov) gifts.push(cov); }
+  if (chance(0.4) || e.ch === L.chapters.length - 1) { const cov = makeCovenant(gearLvl + 1, { maxRarity: qualityAtDepth(depth) }); if (cov) gifts.push(cov); }
   e.ch++; e.n = 0;
   const last = e.ch >= L.chapters.length;
   if (last) {
-    const h = makeHeirloom(gearLvl + 2) || makeCovenant(gearLvl + 2);
+    const h = makeAccountHeirloom(gearLvl + 2) || makeCovenant(gearLvl + 2, { maxRarity: qualityAtDepth(depth) });
     if (h) gifts.push(h);
     const s = commState(c);
     s.open = s.open.filter((x) => x !== e);

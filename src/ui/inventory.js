@@ -195,6 +195,7 @@ function handleDropOnBag(idx, data) {
   if (data.type === 'stash') return G.ui.stash && G.ui.stash.take(data.idx);
   if (data.type === 'jewelbox') return G.ui.jewelBox && G.ui.jewelBox.take(data.idx);
   if (data.type === 'vault') return G.ui.reliquary && G.ui.reliquary.take(data.idx, data.tab);
+  if (data.type === 'codex-heirloom') return G.ui.reliquary && G.ui.reliquary.withdrawHeirloom(data.id, idx);
   if (data.type !== 'item') return false;
   if (data.where === 'gemBag') {
     const a = c.gemBag ? c.gemBag[data.idx] : null;
@@ -326,7 +327,7 @@ function bagSlot(idx) {
     onRight: () => quickUse(idx, 'bag'),
     onDropWorld: (data) => (data.where === 'bag' ? dropFromBag(data.idx, 'bag') : false),
   });
-  droppable(d, (data) => handleDropOnBag(idx, data), (data) => data.type === 'item' || data.type === 'shop' || data.type === 'stash' || data.type === 'vault' || data.type === 'jewelbox');
+  droppable(d, (data) => handleDropOnBag(idx, data), (data) => data.type === 'item' || data.type === 'shop' || data.type === 'stash' || data.type === 'vault' || data.type === 'jewelbox' || data.type === 'codex-heirloom');
   if (it) UI.tip(d, () => bagTip(idx), { key: 'bag:' + idx, identity: () => c.bag[idx] || null });
   return d;
 }
@@ -337,7 +338,7 @@ function bagTip(idx) {
   const acts = getBagActions(idx);
   return {
     ...itemGearTip(it, {
-      price: G.ui.vendor && G.ui.vendor.active ? Math.max(1, Math.floor(itemValue(it) / 4)) : 0,
+      price: G.ui.vendor && G.ui.vendor.active && it.relic !== 'heir' ? Math.max(1, Math.floor(itemValue(it) / 4)) : 0,
       priceLabel: 'Sells for',
       hint: G.ui.vendor && G.ui.vendor.active
         ? 'Right-click or double-tap to sell'
@@ -604,7 +605,7 @@ function getBagActions(idx, where = 'bag') {
   if (it.type === 'sheet') {
     sheetButtons((lbl, fn, cls) => acts.push({ label: lbl, fn, cls }), { where: 'bag', idx }, it);
   }
-  if (G.ui.vendor && G.ui.vendor.active && !it.sealed) {
+  if (G.ui.vendor && G.ui.vendor.active && !it.sealed && !(it.type === 'gear' && it.relic === 'heir')) {
     acts.push({ label: `Sell (${fmtInt(Math.max(1, Math.floor(itemValue(it) / 4)))}g)`, fn: () => G.ui.vendor.sell({ where: 'bag', idx }) });
   }
   if (G.ui.stash && G.ui.stash.active) {

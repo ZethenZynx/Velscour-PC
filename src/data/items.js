@@ -778,6 +778,7 @@ export function itemDmg(item) {
 export function itemArmor(item) { return Math.round((item.armor || 0) * upgMult(item)); }
 
 export function itemValue(item) {
+  if (item?.type === 'gear' && item.relic === 'heir') return 0;
   if (item.type === 'sheet') return SHEET_PRICE;
   if (item.type === 'banner_kit') return BANNER_KIT_PRICE;
   if (item.type === 'gem') return GEMS[item.gem].sigil ? Math.round(goldPile(depthLevelOf(item.tier * 24 + 12)) * 8) : Math.round((GEMS[item.gem].special ? 400 : 60) * Math.pow(2.6, item.tier));
@@ -786,7 +787,7 @@ export function itemValue(item) {
 }
 
 /** Vendor payout for selling one item (or one unit of a stack). */
-export const itemSellValue = (item) => Math.max(1, Math.floor(itemValue(item) / 4));
+export const itemSellValue = (item) => item?.type === 'gear' && item.relic === 'heir' ? 0 : Math.max(1, Math.floor(itemValue(item) / 4));
 
 const EQUIPMENT_SLOT_ORDER = Object.freeze({ weapon: 0, offhand: 1, head: 2, body: 3, hands: 4, legs: 5, feet: 6, ring: 7 });
 function equipmentRarityRank(item) {

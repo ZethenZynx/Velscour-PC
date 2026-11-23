@@ -4,7 +4,7 @@
 // Tabs open by collecting (25% and 80% of the Codex) and by Town Commission lines finished (1 and 3; game/commissions.js).
 import { G } from '../state.js';
 import { GEMS, SIGILS, itemName, itemColor } from '../data/items.js';
-import { codexKey, CODEX_TOTAL, HEIRLOOMS, GLYPHWORDS, PIECE_BY_ID, migrateCovenantItem } from '../data/relics.js';
+import { codexKey, CODEX_TOTAL, HEIRLOOMS, GLYPHWORDS, PIECE_BY_ID, makeHeirloom, maybeRelic } from '../data/relics.js';
 
 const KEY = 'velscour_reliquary_v1';
 export const VAULT_TABS = 6, VAULT_SIZE = 96;
@@ -18,6 +18,37 @@ export const MILESTONES = [
 let R = null;
 
 function blank() { return { tabs: Array.from({ length: VAULT_TABS }, () => Array(VAULT_SIZE).fill(null)), codex: {}, lines: 0 }; }
+function collectLegacyHeirlooms(value, found, depth = 0) {
+  if (!value || typeof value !== 'object' || depth > 10) return;
+  if (value.type === 'gear' && value.relic === 'heir' && HEIRLOOMS.some((h) => h.id === value.rid)) found.add('h:' + value.rid);
+  for (const child of Object.values(value)) collectLegacyHeirlooms(child, found, depth + 1);
+}
+function migrateLegacyHeirloomDiscoveries(r) {
+  if (r.heirloomCodexMigrationV1) return;
+  const found = new Set();
+  let canFinish = true;
+  try {
+    const raw = localStorage.getItem('velscour_saves_v1');
+    if (raw) { try { collectLegacyHeirlooms(JSON.parse(raw), found); } catch { canFinish = false; } }
+    // Also preserve discoveries from recoverable save snapshots created by the game's own safety backups.
+    // A malformed unrelated backup must not prevent migration from the live save. If its
+    // save payload itself is unreadable, keep retrying so a later recovery can still count.
+    let backup = null;
+    try { backup = JSON.parse(localStorage.getItem('velscour_campaign_overhaul_backup_v1') || 'null'); } catch { /* ignore malformed wrapper */ }
+    if (typeof backup?.saves === 'string') { try { collectLegacyHeirlooms(JSON.parse(backup.saves), found); } catch { canFinish = false; } }
+    for (let i = 0; i < localStorage.length; i++) {
+      const key = localStorage.key(i);
+      if (!key?.startsWith('velscour_saves_v1_unreadable_')) continue;
+      try { collectLegacyHeirlooms(JSON.parse(localStorage.getItem(key) || 'null'), found); } catch { /* preserved unreadable text is not overwritten */ }
+    }
+  } catch { canFinish = false; }
+  for (const tab of r.tabs || []) collectLegacyHeirlooms(tab, found);
+  if (!canFinish) return; // Keep retrying rather than marking an unreadable character store migrated.
+  let changed = false;
+  for (const key of found) if (!r.codex[key]) { r.codex[key] = Date.now(); changed = true; }
+  r.heirloomCodexMigrationV1 = true;
+  if (changed || canFinish) saveReliquary();
+}
 /** The shared Reliquary (loaded once). */
 export function reliquary() {
   if (R) return R;
@@ -27,11 +58,7 @@ export function reliquary() {
   for (const t of R.tabs) while (t.length < VAULT_SIZE || t.length % 12 !== 0) t.push(null);
   R.codex = R.codex || {};
   R.lines = R.lines || 0;
-  if (!R.covenantTier20V1) {
-    for (const tab of R.tabs) for (const it of tab) if (it?.relic === 'cov') migrateCovenantItem(it);
-    R.covenantTier20V1 = true;
-    saveReliquary();
-  }
+  migrateLegacyHeirloomDiscoveries(R);
   return R;
 }
 export function saveReliquary() { try { localStorage.setItem(KEY, JSON.stringify(reliquary())); } catch (e) { /* storage full or blocked: the vault lives on for this visit */ } }
@@ -79,6 +106,33 @@ export function noteFind(it) {
   }
   if (G.player && codexMf() !== (G.player.codexMf || 0)) G.player.recompute();
   return true;
+}
+/** Undiscovered account Heirlooms eligible for a particular equipment slot. */
+export function undiscoveredHeirlooms(slot = null, unboundOnly = false) {
+  const known = reliquary().codex;
+  return HEIRLOOMS.filter((h) => (!slot || h.slot === slot) && (!unboundOnly || (h.unbound && !h.crown)) && !known['h:' + h.id]);
+}
+/** Create and account-unlock a one-time Heirloom drop. Ordinary loot can use this at any level/depth. */
+export function makeAccountHeirloom(ilvl, opts = {}) {
+  const pool = undiscoveredHeirlooms(opts.slot || null, !!opts.unboundOnly);
+  if (opts.id) {
+    const H = pool.find((h) => h.id === opts.id);
+    if (!H) return null;
+    const item = makeHeirloom(1, { id: H.id });
+    if (item) noteFind(item);
+    return item;
+  }
+  if (!pool.length) return null;
+  const item = makeHeirloom(1, { id: pool[Math.floor(Math.random() * pool.length)].id });
+  if (item) noteFind(item);
+  return item;
+}
+/** Apply the existing relic odds while ensuring a Heirloom can only be generated once account-wide. */
+export function maybeAccountRelic(item, boost = 1) {
+  const eligible = undiscoveredHeirlooms().map((h) => h.id);
+  const result = maybeRelic(item, boost, eligible);
+  if (result !== item && result?.relic === 'heir') noteFind(result);
+  return result;
 }
 /** A Town Commission line finished (by any hero): may open a vault. */
 export function noteLineDone() {
