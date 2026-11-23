@@ -54,7 +54,7 @@ export const Marks = {
         const pairedWindow = this.activePair;
         this.active = false; this.activePair = false; savePanel(p);
         if (pairedWindow && UI.isOpen('heresies')) UI.closePanel('heresies');
-      }, cls: 'marks-panel', width: 'min(1080px, 96vw)',
+      }, cls: 'marks-panel', width: 'min(1080px, 96vw)', layoutManaged: paired,
     });
     if (!paired) {
       p.root.style.width = `${Math.min(1080, Math.max(620, pref.w || defaultPanel.w), window.innerWidth * 0.96)}px`;

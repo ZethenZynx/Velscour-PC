@@ -34,7 +34,7 @@ export const Heresies = {
         const pairedWindow = Marks.activePair;
         this.active = false; Marks.activePair = false;
         if (pairedWindow && UI.isOpen('marks')) UI.closePanel('marks');
-      }, cls: 'heresy-panel', width: 'min(520px, 96vw)',
+      }, cls: 'heresy-panel', width: 'min(520px, 96vw)', layoutManaged: true,
     });
     Marks.open({ keepExisting: true, paired: true });
     return true;

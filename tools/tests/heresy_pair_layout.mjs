@@ -1,7 +1,7 @@
 // Non-browser checks for paired Altar/Marks positions and title-bar drag offsets.
 // Run: node tools/tests/heresy_pair_layout.mjs
 import assert from 'node:assert/strict';
-import { heresyPairLayout, panelDragPosition } from '../../src/ui/ui.js';
+import { heresyPairLayout, panelDragPosition, panelDragMovedFrom, isHeresyPairManagedPanel } from '../../src/ui/ui.js';
 
 const wide = heresyPairLayout(1920, 1080);
 assert.equal(wide.stacked, false);
@@ -29,5 +29,10 @@ assert.ok(clamped.panels.heresies.y >= 0, 'saved vertical positions clamp on res
 const host = { left: 120, top: 80 }, offset = { x: 26, y: 11 };
 assert.deepEqual(panelDragPosition(356, 241, host, offset), { x: 210, y: 150 }, 'a stationary title click preserves the exact window position');
 assert.deepEqual(panelDragPosition(376, 271, host, offset), { x: 230, y: 180 }, 'dragging moves the panel by the pointer delta without a jump');
+assert.equal(panelDragMovedFrom({ x: 210, y: 150 }, panelDragPosition(356, 241, host, offset)), false, 'clicking without pointer motion never starts a position update');
+assert.equal(panelDragMovedFrom({ x: 210, y: 150 }, panelDragPosition(376, 271, host, offset)), true, 'a real pointer delta starts a drag');
+assert.equal(isHeresyPairManagedPanel('panel-marks', true), true, 'the layout customizer cannot override the paired Marks window');
+assert.equal(isHeresyPairManagedPanel('panel-heresies', true), true, 'the layout customizer cannot override the paired Altar window');
+assert.equal(isHeresyPairManagedPanel('panel-vendor', true), false, 'vendor layout remains under normal customization');
 
-console.log('Altar/Marks layout defaults, responsive bounds, persisted coordinates, and drag offsets passed.');
+console.log('Altar/Marks layout defaults, responsive bounds, persisted coordinates, click-without-drag behavior, and drag offsets passed.');

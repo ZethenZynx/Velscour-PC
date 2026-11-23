@@ -1,6 +1,6 @@
 import { G, saveSettings } from '../state.js';
 import { el, escapeHtml } from '../core/util.js';
-import { UI } from './ui.js';
+import { UI, isHeresyPairManagedPanel } from './ui.js';
 import {
   activeLayoutMap, characterLayoutId, cloneLayoutValue, createDefaultLayoutState, effectiveLayoutEntry, snapUILayoutPosition,
   exportLayoutProfile, importLayoutProfile, migrateEnvironmentInfoLayout, migrateGroupedHudLayout, normalizeLayoutEntry, normalizeLayoutState,
@@ -132,6 +132,10 @@ export const UILayoutCustomizer = {
   },
   applyElement(id, node = this.node(id)) {
     const state = this.state, def = DEFAULTS.get(id), entry = this.effective(id, state), configured = !!effectiveLayoutEntry(state, id, characterLayoutId(G.char));
+    if (isHeresyPairManagedPanel(id, UI.panelsEl?.classList.contains('heresy-marks-pair'))) {
+      node?.classList.remove('ui-layout-hidden');
+      return;
+    }
     if (def.mode === 'canvas') {
       G.settings.uiFloatingText = configured ? { scale: entry.scale, opacity: entry.opacity, visible: entry.visible } : null;
       return;

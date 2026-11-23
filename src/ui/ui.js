@@ -32,6 +32,14 @@ export function panelDragPosition(clientX, clientY, host, offset) {
   return { x: clientX - host.left - offset.x, y: clientY - host.top - offset.y };
 }
 
+export function panelDragMovedFrom(start, point) {
+  return Math.abs(point.x - start.x) >= 0.5 || Math.abs(point.y - start.y) >= 0.5;
+}
+
+export function isHeresyPairManagedPanel(name, paired = true) {
+  return paired && (name === 'heresies' || name === 'marks' || name === 'panel-heresies' || name === 'panel-marks');
+}
+
 export const $ = (s, root = document) => root.querySelector(s);
 
 export const UI = {
@@ -147,11 +155,11 @@ export const UI = {
     this.layoutPanels();
     this.onPanelsChanged();
     const layoutId = `panel-${name}`;
-    if (G.uiLayoutCustomizer && !G.uiLayoutCustomizer.hasElement?.(layoutId)) {
+    if (!opts.layoutManaged && G.uiLayoutCustomizer && !G.uiLayoutCustomizer.hasElement?.(layoutId)) {
       const escaped = typeof CSS !== 'undefined' && CSS.escape ? CSS.escape(name) : String(name).replace(/["\\]/g, '\\$&');
       G.uiLayoutCustomizer.registerElement({ id: layoutId, label: `${title} window`, selector: `[data-panel="${escaped}"]`, x: .5, y: .5 });
     }
-    G.uiLayoutCustomizer?.applyElement?.(layoutId, p.root);
+    if (!opts.layoutManaged) G.uiLayoutCustomizer?.applyElement?.(layoutId, p.root);
     return p;
   },
   closePanel(name) {
@@ -297,7 +305,10 @@ export const UI = {
           panel.root.style.setProperty('min-height', '0', 'important');
           panel.root.style.setProperty('max-width', 'none', 'important');
           panel.root.style.setProperty('max-height', `${viewH}px`, 'important');
+          panel.root.style.setProperty('translate', 'none', 'important');
+          panel.root.style.setProperty('scale', 'none', 'important');
           panel.root.style.setProperty('transform', 'none', 'important');
+          panel.root.classList.remove('ui-layout-hidden');
         }
       } else {
         for (const panel of [altar, marks]) {
@@ -311,7 +322,10 @@ export const UI = {
           panel.root.style.setProperty('max-height', 'min(42vh, 390px)', 'important');
           panel.root.style.setProperty('min-width', '0', 'important');
           panel.root.style.setProperty('min-height', '0', 'important');
+          panel.root.style.setProperty('translate', 'none', 'important');
+          panel.root.style.setProperty('scale', 'none', 'important');
           panel.root.style.setProperty('transform', 'none', 'important');
+          panel.root.classList.remove('ui-layout-hidden');
         }
       }
       return;
@@ -407,14 +421,17 @@ export const UI = {
     const host = this.panelsEl.getBoundingClientRect();
     const r = p.root.getBoundingClientRect();
     const dx = e.clientX - r.left, dy = e.clientY - r.top;
+    const startX = r.left - host.left, startY = r.top - host.top;
     const pointerId = e.pointerId;
     p.head.setPointerCapture(e.pointerId);
     p.root.classList.add('moving');
-    let ended = false;
+    let ended = false, moved = false;
     const move = (ev) => {
       if (ev.pointerId !== pointerId) return;
       if (ev.buttons !== undefined && (ev.buttons & 1) === 0) return end();
       const point = panelDragPosition(ev.clientX, ev.clientY, host, { x: dx, y: dy });
+      if (!panelDragMovedFrom({ x: startX, y: startY }, point)) return;
+      moved = true;
       this.placePanel(name, point.x, point.y);
     };
     const end = (ev) => {
@@ -426,8 +443,12 @@ export const UI = {
       document.removeEventListener('pointercancel', end);
       p.head.removeEventListener('lostpointercapture', end);
       window.removeEventListener('blur', end);
-      this.savePairedPanelPosition(name);
-      G.uiLayoutCustomizer?.recordPosition?.(`panel-${name}`, p.root);
+      if (moved) {
+        this.savePairedPanelPosition(name);
+        if (!isHeresyPairManagedPanel(name, this.panelsEl?.classList.contains('heresy-marks-pair'))) {
+          G.uiLayoutCustomizer?.recordPosition?.(`panel-${name}`, p.root);
+        }
+      }
     };
     p.head.addEventListener('pointermove', move);
     document.addEventListener('pointerup', end);
