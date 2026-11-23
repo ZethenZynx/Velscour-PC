@@ -654,7 +654,7 @@ export function floatText(x, y, z, text, color = '#fff', size = 14, opts = {}) {
     for (const t of texts) if (!t.dmg && t.max - t.life < 0.5 && Math.abs(t.x - x) + Math.abs(t.y - y) < 1.5 && typeof t.text === 'string' && t.text.replace(/[\d.%]+/g, '#') === key) { t.text = text; return; }
   }
   if (texts.length > 120) texts.shift();
-  texts.push({ x, y, z, text, color, size, life: opts.life || 0.9, max: opts.life || 0.9, vz: opts.vz ?? 45, dx: rand(-10, 10), crit: opts.crit, dmg: opts.dmg });
+  texts.push({ x, y, z, text, color, gradient: Array.isArray(opts.gradient) ? opts.gradient : null, size, life: opts.life || 0.9, max: opts.life || 0.9, vz: opts.vz ?? 45, dx: rand(-10, 10), crit: opts.crit, dmg: opts.dmg });
 }
 
 // --------------------------------------------------------- damage numbers
@@ -1130,6 +1130,14 @@ export function drawTexts(ctx) {
     const pop = t.crit ? 1 + Math.max(0, (k - 0.75)) * 3 : 1;
     ctx.globalAlpha = Math.min(1, k * 2.5) * uiOpacity;
     const font = `${t.crit ? 900 : 700} ${Math.round(t.size * pop * uiScale * G.dpr)}px Cinzel, Georgia, serif`;
+    if (t.gradient?.length && pop === 1) {
+      const tx = (sx + t.dx) * G.dpr, ty = sy * G.dpr;
+      ctx.font = font; ctx.lineWidth = 3 * G.dpr; ctx.strokeStyle = '#1b0706'; ctx.strokeText(t.text, tx, ty);
+      const width = ctx.measureText(t.text).width, grad = ctx.createLinearGradient(tx - width / 2, 0, tx + width / 2, 0);
+      t.gradient.forEach(([stop, color]) => grad.addColorStop(clamp(Number(stop) || 0, 0, 1), color));
+      ctx.fillStyle = grad; ctx.fillText(t.text, tx, ty);
+      continue;
+    }
     if (pop === 1) {
       const c = outlinedText(t.text, font, t.color, 3 * G.dpr);
       ctx.drawImage(c, Math.round((sx + t.dx) * G.dpr - c._ox), Math.round(sy * G.dpr - c._oy));

@@ -3,8 +3,8 @@ import { G } from '../state.js';
 import { endgame, saveEndgame, MARK_CATS, canEarnInfernalMarks } from './endgame.js';
 import { INFERNAL_UPGRADES, INFERNAL_UPGRADE_BY_ID, MARK_CATEGORIES, bonusFor, purchaseCost, maxPurchasable } from '../data/infernalupgrades.js';
 import { xpToNext, MAX_LEVEL } from './player.js';
-import { sfx } from '../core/audio.js';
-import { floatText, addEffect, Ring } from '../gfx/vfx.js';
+import { sfx, infernalMarkRewardSfx } from '../core/audio.js';
+import { floatText, addEffect, Ring, Sigil, Column, sparkle } from '../gfx/vfx.js';
 
 export {
   INFERNAL_UPGRADES, INFERNAL_UPGRADE_BY_ID, MARK_CATEGORIES,
@@ -209,8 +209,21 @@ export function grantMarksWithBonus(n, why = '', world = G.world, bonusPct = 0) 
 function announce(n, why, fx) {
   const p = G.player;
   if (p && G.world) {
-    floatText(p.x, p.y, 96, `+${n} INFERNAL MARK${n > 1 ? 'S' : ''}`, '#ff9050', 18, { life: 2.6, vz: 22 });
-    if (fx) { addEffect(new Ring(p.x, p.y, 0.3, 2.6, 0.9, '#ff6a20', 4)); sfx('levelup', 0.5); }
+    if (fx) {
+      addEffect(new Sigil(p.x, p.y, 1.05, 1.8, '#68121d', '#dda44f'), 'ground');
+      addEffect(new Ring(p.x, p.y, 0.18, 1.9, 0.92, '#d39b47', 2), 'ground');
+      if (!G.settings?.reduceFlashing) {
+        addEffect(new Column(p.x, p.y, '#922630', 0.42, 11, 112), 'top');
+        sparkle(p.x, p.y, 9, '#e7b45e', 6, 0.28);
+        sparkle(p.x, p.y, 14, '#b72e32', 4, 0.34);
+      }
+      floatText(p.x, p.y, 96, `+${n} Infernal Mark${n === 1 ? '' : 's'}`, '#e7b45e', 18, {
+        life: 1.85, vz: 28, gradient: [[0, '#c33b3d'], [0.48, '#f4cb75'], [1, '#b52c32']],
+      });
+      infernalMarkRewardSfx();
+    } else {
+      floatText(p.x, p.y, 96, `+${n} INFERNAL MARK${n > 1 ? 'S' : ''}`, '#ff9050', 18, { life: 2.6, vz: 22 });
+    }
   }
   G.ui?.log?.(`<b style="color:#ff9050">+${n} Infernal Mark${n > 1 ? 's' : ''}</b>${why ? ` ${why}` : ''} <span class="dim">(${marksFree()} to spend)</span>`, '#ffc0a0');
 }

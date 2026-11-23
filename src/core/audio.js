@@ -244,6 +244,14 @@ const SOUNDS = {
   orb: (t) => { tone(t, 0.18, { f0: 400, f1: 900, vol: 0.1 }); },
   potion: (t) => { for (let i = 0; i < 4; i++) tone(t + i * 0.06, 0.08, { f0: R(300, 600), f1: R(150, 300), vol: 0.12 }); },
   levelup: (t) => { [392, 523, 659, 784, 1046].forEach((f, i) => tone(t + i * 0.09, 0.5, { f0: f, vol: 0.12, wave: 'triangle' })); },
+  infernal_mark: (t, p) => {
+    // A compact reward chime: a restrained low resonance, warm bell partials and one brief metallic shimmer.
+    tone(t, 0.82, { f0: 82, f1: 62, vol: 0.16, wave: 'triangle', a: 0.012 });
+    tone(t, 0.78, { f0: 196 * p, f1: 192 * p, vol: 0.105, wave: 'sine', a: 0.004 });
+    tone(t + 0.045, 0.68, { f0: 293.7 * p, f1: 290 * p, vol: 0.065, wave: 'sine', a: 0.004 });
+    tone(t + 0.09, 0.54, { f0: 587.3 * p, f1: 580 * p, vol: 0.035, wave: 'sine', a: 0.003 });
+    noise(t + 0.035, 0.16, { type: 'highpass', f0: 6800, f1: 3200, vol: 0.025, a: 0.003 });
+  },
   thunder: (t, p) => { SOUNDS.light(t, p); noise(t, 2.4, { f0: 1400 * p, f1: 60, vol: 0.35, a: 0.004 }); tone(t, 1.8, { f0: 55, f1: 28, vol: 0.25 }); }, // until the sample loads
   portal: (t) => { noise(t, 1.0, { type: 'bandpass', f0: 200, f1: 2400, q: 3, vol: 0.4, a: 0.2 }); tone(t, 1.0, { f0: 200, f1: 800, vol: 0.08, a: 0.2 }); },
   ui: (t) => tone(t, 0.05, { wave: 'triangle', f0: 900, f1: 700, vol: 0.1 }),
@@ -266,6 +274,15 @@ const SOUNDS = {
   bell: (t, p) => { [[1, 0.16, 2.4], [2.0, 0.09, 1.6], [2.76, 0.07, 1.2], [5.4, 0.04, 0.7], [0.5, 0.06, 2.8]].forEach(([k, v, d]) => tone(t, d, { wave: 'sine', f0: 392 * k * p, f1: 392 * k * p * 0.995, vol: v, a: 0.004 })); },
   note: (t, p) => { const f = [523, 587, 659, 784, 880][Math.floor(Math.random() * 5)]; tone(t, 0.3, { wave: 'triangle', f0: f * p, vol: 0.12 }); },
 };
+
+let infernalMarkChimeUntil = 0;
+/** Play one short, non-overlapping chime for post-cap XP Mark awards. */
+export function infernalMarkRewardSfx() {
+  if (!ac || G.settings.sfx <= 0 || ac.currentTime < infernalMarkChimeUntil) return false;
+  infernalMarkChimeUntil = ac.currentTime + 0.9;
+  sfx('infernal_mark', 0.72, 1, { source: 'post-cap XP Infernal Mark reward', sourceActive: false });
+  return true;
+}
 
 export function sfx(name, vol = 1, pitch = 1, context = null) {
   const diagnostic = beginDiagnostic(name, context);
