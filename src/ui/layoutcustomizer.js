@@ -14,7 +14,7 @@ const DEFINITIONS = [
   ['mana-orb', 'Mana orb', '#mana-orb-group', .72, .85],
   ['class-resource', 'Class resource', '#gauge-box', .5, .75],
   ['special-actions', 'Special ability buttons', '#special-actions', .5, .68],
-  ['buff-icons', 'Buff Icons', '#buff-row', .02, .53], ['debuff-icons', 'Debuff Icons', '#debuff-row', .02, .53], ['statistics', 'Character stats and damage meter', '#hero-stats', .02, .19],
+  ['buff-icons', 'Buff Icons', '#buff-row', .02, .53], ['debuff-icons', 'Debuff Icons', '#debuff-row', .02, .59], ['statistics', 'Character stats and damage meter', '#hero-stats', .02, .19],
   ['current-enemy', 'Current / previous enemy', '#target-box', .02, .36], ['minimap', 'Minimap and markers', '#minimap-row', .84, .03],
   ['boss-health', 'Boss health bar', '#boss-bar', .5, .03], ['quest-tracker', 'Objective and event tracker', '#sand-objective', .77, .28],
   ['rift-tracker', 'Rift tracker', '#rift-bar', .76, .2],
@@ -75,7 +75,7 @@ function fileName(name) { return String(name || 'velscour-ui-layout').toLowerCas
 
 export const UILayoutCustomizer = {
   dialog: null, stage: null, toolbox: null, working: null, original: null, selected: 'character-portrait', visibilityObserver: null,
-  undoStack: [], redoStack: [], overlayNodes: new Map(), guides: null, pointer: null, toolboxDrag: null, pauseScreen: null,
+  undoStack: [], redoStack: [], overlayNodes: new Map(), observedElements: new Map(), guides: null, pointer: null, toolboxDrag: null, pauseScreen: null,
   get state() { return this.working || layoutState(); },
   get map() { return activeLayoutMap(this.state, characterLayoutId(G.char)); },
 
@@ -87,7 +87,7 @@ export const UILayoutCustomizer = {
     const tuple = [descriptor.id, descriptor.label, descriptor.selector, descriptor.x, descriptor.y, descriptor.mode];
     if (index < 0) DEFINITIONS.push(tuple); else DEFINITIONS[index] = tuple;
     const node = selector ? document.querySelector(selector) : null;
-    if (node && this.visibilityObserver) this.visibilityObserver.observe(node, { attributes: true, attributeFilter: ['class'] });
+    if (node) { this.trackElementNode(descriptor.id, node); this.applyElement(descriptor.id, node); }
     if (this.dialog) { this.renderAll(); this.renderSelection(); }
     return descriptor.id;
   },
@@ -96,6 +96,13 @@ export const UILayoutCustomizer = {
   entry(id) { const map = this.map; return map[id] ||= normalizeLayoutEntry(); },
   effective(id) { return this.map[id] || normalizeLayoutEntry(); },
   node(id) { const def = DEFAULTS.get(id); return def?.selector ? document.querySelector(def.selector) : null; },
+  trackElementNode(id, node) {
+    if (!node) return false;
+    const changed = this.observedElements.get(id) !== node;
+    this.observedElements.set(id, node);
+    this.visibilityObserver?.observe(node, { attributes: true, attributeFilter: ['class'] });
+    return changed;
+  },
   recordPosition(id, node = this.node(id), includeSize = false) {
     if (!node || this.working) return;
     const rect = node.getBoundingClientRect(); if (!rect || !rect.width || !rect.height) return;
@@ -129,9 +136,10 @@ export const UILayoutCustomizer = {
       return;
     }
     if (!node) return;
-    this.visibilityObserver?.observe(node, { attributes: true, attributeFilter: ['class'] });
+    this.trackElementNode(id, node);
     nativeStyle(node);
     node.classList.toggle('ui-layout-hidden', !!entry && !entry.visible);
+    if (id === 'environment-info') node.style.textAlign = entry?.textAlign || 'left';
     if (id === 'buff-icons' || id === 'debuff-icons') {
       const anchor = entry?.anchor || 'left';
       node.dataset.anchor = anchor;
@@ -388,6 +396,7 @@ export const UILayoutCustomizer = {
       <label class="ui-layout-check"><input type="checkbox" data-character ${this.state.characterSpecific ? 'checked' : ''}> Character-specific override</label>
       <label>Element<select data-element>${DEFINITIONS.map(([id, name]) => `<option value="${id}" ${id === this.selected ? 'selected' : ''}>${escapeHtml(name)}</option>`).join('')}</select></label>
       <div class="ui-layout-selected">${escapeHtml(selected?.label || this.selected)}</div>
+      ${this.selected === 'environment-info' ? `<label>Text alignment<select data-custom-field="textAlign"><option value="left" ${entry.textAlign === 'left' ? 'selected' : ''}>Left aligned</option><option value="center" ${entry.textAlign === 'center' ? 'selected' : ''}>Center aligned</option><option value="right" ${entry.textAlign === 'right' ? 'selected' : ''}>Right aligned</option></select></label>` : ''}
       ${this.selected === 'buff-icons' || this.selected === 'debuff-icons' ? `<label>Icon anchor<select data-custom-field="anchor"><option value="left" ${entry.anchor === 'left' ? 'selected' : ''}>Left — grow right</option><option value="right" ${entry.anchor === 'right' ? 'selected' : ''}>Right — grow left</option><option value="center" ${entry.anchor === 'center' ? 'selected' : ''}>Center — expand outward</option></select></label>` : ''}
       ${this.selected === 'health-orb' || this.selected === 'mana-orb' ? `<label>Attachment<select data-custom-field="attachment"><option value="attached" ${entry.attachment !== 'detached' ? 'selected' : ''}>Attached to Main Action Bar</option><option value="detached" ${entry.attachment === 'detached' ? 'selected' : ''}>Detached — Independent Position</option></select></label>${entry.attachment !== 'detached' ? '<small>The orb follows the Main Action Bar. Detach it to position, scale or resize it independently.</small>' : ''}` : ''}
       <label>Scale <output data-out="scale">${entry.scale}%</output><input type="range" data-field="scale" min="50" max="200" step="5" value="${entry.scale}" ${attachedOrb ? 'disabled' : ''}></label>
@@ -428,6 +437,8 @@ export const UILayoutCustomizer = {
       if (field === 'anchor') {
         const node = this.node(this.selected);
         if (node) { node.dataset.anchor = control.value; node.style.justifyContent = ({ left: 'flex-start', right: 'flex-end', center: 'center' })[control.value]; }
+      } else if (field === 'textAlign' && this.selected === 'environment-info') {
+        const node = this.node(this.selected); if (node) node.style.textAlign = control.value;
       }
       this.applyElement(this.selected); this.renderAll(); this.renderSelection();
     });
@@ -496,14 +507,26 @@ export function applyUILayoutSettings() {
     initialized = true;
     window.addEventListener('resize', () => UILayoutCustomizer.applyAll());
     UILayoutCustomizer.visibilityObserver = new MutationObserver((records) => {
+      let addedContent = false;
       for (const record of records) {
-        const id = DEFINITIONS.find(([, , selector]) => selector && record.target.matches(selector))?.[0];
-        if (id) UILayoutCustomizer.applyElement(id, record.target);
+        if (record.type === 'attributes') {
+          const id = DEFINITIONS.find(([, , selector]) => selector && record.target.matches(selector))?.[0];
+          if (id) UILayoutCustomizer.applyElement(id, record.target);
+          continue;
+        }
+        if (record.addedNodes.length) addedContent = true;
+      }
+      if (addedContent) for (const [id, , selector] of DEFINITIONS) {
+        if (!selector) continue;
+        const node = document.querySelector(selector);
+        if (node && UILayoutCustomizer.trackElementNode(id, node)) UILayoutCustomizer.applyElement(id, node);
       }
     });
-    for (const [, , selector] of DEFINITIONS) {
+    const app = document.querySelector('#app') || document.body;
+    UILayoutCustomizer.visibilityObserver.observe(app, { childList: true, subtree: true });
+    for (const [id, , selector] of DEFINITIONS) {
       const node = selector ? document.querySelector(selector) : null;
-      if (node) UILayoutCustomizer.visibilityObserver.observe(node, { attributes: true, attributeFilter: ['class'] });
+      if (node) UILayoutCustomizer.trackElementNode(id, node);
     }
   }
 }

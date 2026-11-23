@@ -725,28 +725,91 @@ export const HUD = {
       if (G.settings.minionCounts !== false && w) for (const m of w.creatures) if (m.summon && !m.dead && m.owner === p && m.skillId && SKILLS[m.skillId]) mins.set(m.skillId, (mins.get(m.skillId) || 0) + 1);
       const isDebuff = (b) => !!(b.debuff || b.curse || Object.values(b.stats || {}).some((v) => Number(v) < 0));
       const buffs = p.buffs.filter((b) => !b.hidden && !isDebuff(b)), debuffs = p.buffs.filter((b) => !b.hidden && isDebuff(b));
-      const iconKey = (b) => `${b.id}:${b.name || ''}:${b.iconKey || ''}:${b.iconSkill || ''}:${b.iconItem?.type || ''}:${b.iconItem?.kind || ''}:${b.iconItem?.icon || ''}:${b.iconItem?.base || ''}:${Math.ceil(b.t)}`;
-      const key = extra.map((x) => x.name).join('|') + '|' + [...mins].join('|') + '|' + buffs.map(iconKey).join('|') + '|' + debuffs.map(iconKey).join('|');
-      if (key !== this.last.buffs) {
-        this.last.buffs = key;
-        const render = (target, entries) => {
-          target.innerHTML = '';
-          for (const x of entries) {
-            const d = el('div', `buff${x.minion ? ' minion' : ''}`);
-            const im = new Image(); im.src = x.icon; im.style.width = '100%'; im.style.height = '100%'; d.appendChild(im);
-            d.title = x.title;
-            if (x.count != null) d.appendChild(el('span', '', x.count));
-            target.appendChild(d);
-          }
-        };
-        const helpful = [
-          ...extra.map((x) => ({ icon: buffIconURL(x), title: x.name, count: x.n })),
-          ...[...mins].map(([id, n]) => ({ icon: skillIconURL(SKILLS[id]), title: `${SKILLS[id].name}: ${n} out`, count: n, minion: true })),
-          ...buffs.map((b) => ({ icon: buffIconURL(b), title: `${b.description ? `${b.name}: ${b.description}` : b.name} · ${Math.ceil(b.t)}s remaining`, count: Math.ceil(b.t) })),
-        ];
-        render(row, helpful);
-        render(debuffRow, debuffs.map((b) => ({ icon: buffIconURL(b), title: `${b.description ? `${b.name}: ${b.description}` : b.name} · ${Math.ceil(b.t)}s remaining`, count: Math.ceil(b.t) })));
+      // Healing and mana potions use a short regen queue rather than Player.buffs;
+      // expose those timed effects here so their actual potion icons are visible.
+      const regen = new Map();
+      for (const r of p.potionRegen || []) {
+        const kind = r.kind || (r.hp > 0 ? 'hp' : r.mp > 0 ? 'mp' : '');
+        if (!kind || r.t <= 0) continue;
+        const current = regen.get(kind) || { t: 0, max: 0, stacks: 0 };
+        current.t = Math.max(current.t, r.t); current.max = Math.max(current.max, r.max || r.t); current.stacks++;
+        regen.set(kind, current);
       }
+      const potionEffects = [...regen].map(([kind, timer]) => ({
+        id: `potion-${kind}-regen`, iconItem: { type: 'potion', kind }, name: kind === 'hp' ? 'Healing Potion' : 'Mana Potion',
+        description: kind === 'hp' ? 'Gradually restores health.' : 'Gradually restores mana.', ...timer,
+      }));
+      const statusNames = { burn: ['Burning', 'fire', '#ff8b3d', 'Burn damage over time.'], poison: ['Poisoned', 'poison', '#8bd64b', 'Poison damage over time.'], bleed: ['Bleeding', 'blood', '#c83e48', 'Bleed damage over time.'], chill: ['Chilled', 'cold', '#9feaff', 'Movement is slowed by chill.'], slow: ['Slowed', 'shadow', '#b79ae8', 'Movement speed is reduced.'], freeze: ['Frozen', 'cold', '#8be4ff', 'Unable to act while frozen.'], stun: ['Stunned', 'light', '#ffe08a', 'Unable to act while stunned.'], fear: ['Feared', 'shadow', '#c394ef', 'Fleeing under fear.'], confuse: ['Confused', 'arcane', '#df9cff', 'Control is disrupted by confusion.'], shred: ['Shredded', 'blood', '#e27972', 'Defenses are reduced.'] };
+      const statusEffects = Object.entries(p.status || {}).filter(([, effect]) => effect && effect.t > 0).map(([id, effect]) => {
+        const [name, el, color, fallback] = statusNames[id] || [id[0]?.toUpperCase() + id.slice(1), 'shadow', '#bd8bd8', 'A temporary status effect.'];
+        const detail = id === 'slow' || id === 'chill' ? `${fallback}${Number.isFinite(effect.amt) ? ` Strength: ${Math.round(effect.amt * 100)}%.` : ''}` : fallback;
+        return { id: `status-${id}`, iconKey: `status:${id}`, name, description: effect.description || detail, el, color, curse: true, t: effect.t, max: effect.max };
+      });
+      const curseNames = { amp: ['Amplified', 'Damage taken is increased.'], weaken: ['Weakened', 'Damage dealt is reduced.'], leech: ['Life Drained', 'Striking attackers recover health.'], thorns: ['Cursed Thorns', 'A curse retaliates against attackers.'], decay: ['Decaying', 'Suffering periodic curse damage.'], mark: ['Marked', 'Marked to suffer additional damage.'], bomb: ['Cursed Bomb', 'A delayed explosive curse is active.'], doom: ['Doomed', 'A delayed shadow curse is active.'], slow: ['Cursed Slow', 'Movement speed is reduced.'], confuse: ['Confused', 'Control is disrupted by confusion.'], charm: ['Charmed', 'Temporarily under an enemy charm.'] };
+      const curseEffects = Object.entries(p.curses || {}).filter(([, effect]) => effect && effect.t > 0).map(([id, effect]) => {
+        const [name, description] = curseNames[id] || [id[0]?.toUpperCase() + id.slice(1), 'A temporary curse is active.'];
+        return { id: `curse-${id}`, iconKey: `status:curse-${id}`, name, description, el: 'shadow', color: '#c15a83', curse: true, t: effect.t, max: effect.max };
+      });
+      const stackCount = (b) => {
+        const n = Number(b.stacks ?? b.stackCount ?? b.count);
+        return Number.isFinite(n) && n > 1 ? Math.floor(n) : null;
+      };
+      const buffDescription = (b) => {
+        if (b.description) return b.description;
+        const names = { dmg: 'damage', as: 'attack speed', speed: 'movement speed', armor: 'armor', res: 'resistances', regen: 'health regeneration', crit: 'critical chance', critDmg: 'critical damage', thorns: 'thorns', leech: 'life steal', block: 'block chance', life: 'maximum health', cdr: 'cooldown recovery', proj: 'projectile count', reduce: 'damage reduction', damageTakenPct: 'damage taken', mf: 'magic find', gf: 'gold find', xpPct: 'experience gain', area: 'area of effect', echo: 'echo chance', manaRegenPct: 'mana regeneration' };
+        const effects = Object.entries(b.stats || {}).filter(([, value]) => typeof value === 'number' && value !== 0).map(([key, value]) => `${value < 0 ? 'reduced ' : 'increased '}${names[key] || key}`);
+        return effects.length ? effects.join(', ') : 'Temporary effect.';
+      };
+      const timedEntry = (b, index) => {
+        const source = b.iconItem || b.sourceItem || b.equipmentItem || {};
+        const maximum = Number.isFinite(Number(b.max)) && Number(b.max) > 0 ? Number(b.max) : null;
+        return {
+          key: `${b.id || b.name || 'effect'}:${index}:${b.iconKey || ''}:${b.iconSkill || ''}:${source.type || ''}:${source.kind || ''}:${source.icon || ''}:${source.base || ''}:${source.art || ''}`,
+          icon: buffIconURL(b), name: b.name || 'Effect', description: buffDescription(b),
+          t: Math.max(0, Number(b.t) || 0), max: maximum, stack: stackCount(b),
+        };
+      };
+      const simpleEntry = (key, icon, title, count, minion = false) => ({ key, icon, title, count, minion });
+      const buffsShown = [...buffs, ...potionEffects];
+      const toTimed = (arr) => arr.map(timedEntry);
+      const helpful = [
+        ...extra.map((x) => simpleEntry(`extra:${x.id}`, buffIconURL(x), x.name, x.n)),
+        ...[...mins].map(([id, n]) => simpleEntry(`minion:${id}`, skillIconURL(SKILLS[id]), `${SKILLS[id].name}: ${n} out`, n, true)),
+      ];
+      const helpfulTimed = toTimed(buffsShown), harmfulTimed = toTimed([...debuffs, ...statusEffects, ...curseEffects]);
+      const updateRow = (target, entries, rowKey) => {
+        if (target.dataset.renderKey !== rowKey) {
+          target.replaceChildren(...entries.map((x) => {
+            const d = el('div', `buff${x.minion ? ' minion' : ''}`);
+            const im = new Image(); im.draggable = false; im.alt = ''; im.src = x.icon; im.style.width = '100%'; im.style.height = '100%'; d.appendChild(im);
+            const time = el('span', 'buff-time'); d.appendChild(time);
+            const stack = el('span', 'buff-stack'); d.appendChild(stack);
+            return d;
+          }));
+          target.dataset.renderKey = rowKey;
+        }
+        for (let i = 0; i < entries.length; i++) {
+          const x = entries[i], node = target.children[i];
+          const title = x.t != null ? `${x.name}: ${x.description} · ${Math.ceil(x.t)}s remaining` : x.title;
+          if (node.title !== title) node.title = title;
+          const time = node.querySelector('.buff-time'), stack = node.querySelector('.buff-stack');
+          const seconds = x.t != null ? String(Math.ceil(x.t)) : '';
+          if (time.textContent !== seconds) time.textContent = seconds;
+          time.hidden = !seconds;
+          const stacks = x.stack ?? x.count;
+          const stackText = stacks != null ? String(stacks) : '';
+          if (stack.textContent !== stackText) stack.textContent = stackText;
+          stack.hidden = !stackText;
+          node.style.setProperty('--buff-progress', x.t != null && x.max ? String(Math.max(0, Math.min(1, x.t / x.max))) : '1');
+          node.classList.toggle('no-duration-progress', x.t != null && !x.max);
+          node.classList.toggle('minion', !!x.minion);
+        }
+      };
+      // Only rebuild icons when their membership or source changes. Timers update in place,
+      // so the changing duration cannot tear down layout or move a customized window.
+      const structureKey = (entries) => entries.map((x) => `${x.key}:${x.stack ?? x.count ?? ''}`).join('|');
+      updateRow(row, [...helpful, ...helpfulTimed], structureKey([...helpful, ...helpfulTimed]));
+      updateRow(debuffRow, harmfulTimed, structureKey(harmfulTimed));
       // the message log grows up from the skill bar: keep it below the buff row (phones in landscape are short);
       // measured only when the row's size or the layout changed, since reading rects forces a layout mid frame
       // (below the whole left column, which includes the target window and buff row)

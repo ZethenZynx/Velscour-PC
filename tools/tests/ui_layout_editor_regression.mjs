@@ -27,6 +27,11 @@ assert.match(source, /migrateGroupedHudLayout\(state\)/, 'legacy HUD layout entr
 assert.match(source, /\['main-action-bar', 'Main Action Bar', '#hud-bar'/, 'the actual action bar is customized as one grouped element');
 assert.doesNotMatch(source, /\['(?:ability-hotbar|experience|experience-value|health-value|mana-value)'/, 'grouped child elements are no longer independently registered');
 assert.match(source, /data-custom-field="anchor"/, 'buff and debuff groups expose their own anchor selector');
+assert.match(source, /data-custom-field="textAlign"/, 'environment information exposes a persisted text alignment selector');
+assert.match(source, /node\.style\.textAlign = entry\?\.textAlign \|\| 'left'/, 'saved environment text alignment is applied to the complete grouped element');
+assert.match(source, /record\.type === 'attributes'/, 'the layout observer continues to restore visibility and class changes');
+assert.match(source, /if \(addedContent\) for \(const \[id, , selector\] of DEFINITIONS\)/, 'late-created customizable elements receive their saved layout');
+assert.match(source, /this\.visibilityObserver\?\.observe\(node, \{ attributes: true, attributeFilter: \['class'\] \}\)/, 'both startup and late-created elements track later visibility changes');
 assert.match(source, /data-custom-field="attachment"/, 'resource orbs expose their attachment selector');
 assert.match(source, /ui-layout-orb-attachment/, 'the HUD relayouts orb groups after attach/detach changes');
 assert.match(html, /id="life-orb-group"[\s\S]*id="life-cover"[\s\S]*id="life-text"/, 'health art and values are wrapped as one movable group');

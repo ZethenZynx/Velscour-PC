@@ -10,6 +10,7 @@ export function cloneLayoutValue(value) {
 export function normalizeLayoutEntry(value = {}) {
   const number = (v, fallback, min, max) => v === null || v === undefined || v === '' ? fallback : Number.isFinite(Number(v)) ? Math.max(min, Math.min(max, Number(v))) : fallback;
   const anchor = ['left', 'right', 'center'].includes(value.anchor) ? value.anchor : 'left';
+  const textAlign = ['left', 'center', 'right'].includes(value.textAlign) ? value.textAlign : 'left';
   const attachment = value.attachment === 'detached' ? 'detached' : 'attached';
   return {
     x: number(value.x, null, 0, 1), y: number(value.y, null, 0, 1),
@@ -17,7 +18,7 @@ export function normalizeLayoutEntry(value = {}) {
     scale: number(value.scale, 100, UI_LAYOUT_SCALE_MIN, UI_LAYOUT_SCALE_MAX),
     opacity: number(value.opacity, 100, 10, 100),
     visible: value.visible !== false, locked: !!value.locked,
-    anchor, attachment,
+    anchor, textAlign, attachment,
   };
 }
 

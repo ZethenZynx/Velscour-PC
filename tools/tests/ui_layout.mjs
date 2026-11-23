@@ -6,14 +6,19 @@ import {
 } from '../../src/ui/ui-layout.mjs';
 
 const defaults = normalizeLayoutEntry();
-assert.deepEqual(defaults, { x: null, y: null, width: null, height: null, scale: 100, opacity: 100, visible: true, locked: false, anchor: 'left', attachment: 'attached' });
+assert.deepEqual(defaults, { x: null, y: null, width: null, height: null, scale: 100, opacity: 100, visible: true, locked: false, anchor: 'left', textAlign: 'left', attachment: 'attached' });
 assert.equal(normalizeLayoutEntry({ scale: 1000, opacity: -10 }).scale, 200);
 assert.equal(normalizeLayoutEntry({ scale: 1000, opacity: -10 }).opacity, 10);
+assert.equal(normalizeLayoutEntry({ textAlign: 'center' }).textAlign, 'center');
+assert.equal(normalizeLayoutEntry({ textAlign: 'right' }).textAlign, 'right');
+assert.equal(normalizeLayoutEntry({ textAlign: 'justify' }).textAlign, 'left', 'invalid alignment safely falls back to left');
 
 const state = createDefaultLayoutState();
 state.profiles.default.layouts.minimap = { x: .8, y: .05, scale: 125, opacity: 80 };
+state.profiles.default.layouts['environment-info'] = { x: .24, y: .12, textAlign: 'center', scale: 110, opacity: 85 };
 const accountMap = activeLayoutMap(state, 'hero-a');
 assert.equal(accountMap.minimap.scale, 125);
+assert.equal(accountMap['environment-info'].textAlign, 'center', 'environment text alignment persists in the active layout');
 state.characterSpecific = true;
 const characterMap = activeLayoutMap(state, 'hero-a');
 characterMap.minimap = { x: .3, y: .4, scale: 75, visible: false };
@@ -33,6 +38,7 @@ assert.equal(migrateEnvironmentInfoLayout(legacyState), false, 'existing migrate
 const exported = exportLayoutProfile(state);
 const imported = importLayoutProfile(exported);
 assert.equal(imported.layouts.minimap.scale, 125);
+assert.equal(imported.layouts['environment-info'].textAlign, 'center', 'environment alignment survives profile export and import');
 assert.equal(imported.characterOverrides['hero-a'].minimap.scale, 75);
 assert.throws(() => importLayoutProfile({ format: 'other', version: 1, profile: {} }), /supported Velscour/);
 assert.deepEqual(importLayoutProfile(JSON.stringify(exported)), imported, 'JSON export/import round trips');
