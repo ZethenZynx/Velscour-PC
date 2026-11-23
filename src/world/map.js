@@ -149,7 +149,70 @@ export class TileMap {
     return moved;
   }
 
-  /** Move along one fixed vector without wall sliding. Used by dash/charge so collision never steers the actor sideways. */
+  /**
+   * Move a cursor-directed dash in small collision-safe steps. Unlike moveStraight,
+   * a blocked diagonal step may continue along its clear axis so the actor slides
+   * along walls and around corners. Returns the distance actually travelled.
+   */
+  dashPositionFree(e, x, y, from, r) {
+    if (this.castleGateLocked && e.isPlayer && this.castleGateTiles?.length) {
+      for (const i of this.castleGateTiles) {
+        const tx = i % this.w, ty = (i / this.w) | 0;
+        if (x + r > tx && x - r < tx + 1 && y + r > ty && y - r < ty + 1) return false;
+      }
+    }
+    return this.circleFree(x, y, r, from);
+  }
+  dashStep(e, dx, dy, r) {
+    if (!dx && !dy) return 0;
+    const from = this.hgt ? this.tileIdx(e.x, e.y) : undefined;
+    if (!this.dashPositionFree(e, e.x + dx, e.y + dy, from, r)) return 0;
+    e.x += dx; e.y += dy;
+    return Math.hypot(dx, dy);
+  }
+  moveDash(e, dx, dy) {
+    const distance = Math.hypot(dx, dy);
+    if (!distance) return 0;
+    const steps = Math.max(1, Math.ceil(distance / 0.1));
+    const sx = dx / steps, sy = dy / steps, r = bodyR(e);
+    let travelled = 0;
+
+    for (let i = 0; i < steps; i++) {
+      const ox = e.x, oy = e.y;
+      const moved = this.dashStep(e, sx, sy, r);
+      if (moved) { travelled += moved; continue; }
+
+      // The intended diagonal is blocked. Try its dominant axis first, then the
+      // remaining axis; each tested position uses the same body and height rules.
+      const xFirst = Math.abs(sx) >= Math.abs(sy);
+      const first = xFirst ? this.dashStep(e, sx, 0, r) : this.dashStep(e, 0, sy, r);
+      const second = xFirst ? this.dashStep(e, 0, sy, r) : this.dashStep(e, sx, 0, r);
+      if (first || second) {
+        travelled += Math.hypot(e.x - ox, e.y - oy);
+        continue;
+      }
+
+      // Approach a hard wall to the closest valid point rather than stopping one
+      // full substep early. This remains bounded to the current substep.
+      let lo = 0, hi = 1;
+      const from = this.hgt ? this.tileIdx(e.x, e.y) : undefined;
+      for (let j = 0; j < 8; j++) {
+        const mid = (lo + hi) * 0.5;
+        if (this.dashPositionFree(e, ox + sx * mid, oy + sy * mid, from, r)) lo = mid;
+        else hi = mid;
+      }
+      if (lo > 0.02) {
+        e.x = ox + sx * lo; e.y = oy + sy * lo;
+        travelled += Math.hypot(e.x - ox, e.y - oy);
+      }
+      // No collision-free position remains in this direction; later substeps
+      // would repeat the same blocked work and are intentionally skipped.
+      break;
+    }
+    return travelled;
+  }
+
+  /** Move along one fixed vector without wall sliding. Cursor-directed Dash uses moveDash above; this preserves fixed-vector movement for other callers. */
   moveStraight(e, dx, dy, ghost = false) {
     const d = Math.hypot(dx, dy);
     if (!d) return false;

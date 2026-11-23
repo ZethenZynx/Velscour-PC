@@ -69,16 +69,15 @@ assert.equal(cursorDashLength(1, 1, 3, 1, 6), 2, 'near cursor stops at cursor di
 assert.equal(cursorDashLength(1, 1, 20, 1, 6), 6, 'far cursor is clamped to the skill maximum');
 assert.equal(cursorDashLength(1, 1, NaN, 1, 6), 0, 'invalid aim cannot produce runaway travel');
 
-function makeDash({ tx, ty, maxDistance = 4, n = 1, blocked = false }) {
+function makeDash({ tx, ty, maxDistance = 4, n = 1 }) {
   const player = { x: 0.5, y: 0.5, r: 0.2, team: 'player', isPlayer: true, face(a) { this.facing = a; } };
   const world = {
     creatures: [{ x: -2, y: 0.5, team: 'enemy' }],
     hostiles() { return []; },
     nearestHostile() { throw new Error('directional Dash must not search for an enemy target'); },
-    map: { moveStraight(entity, dx, dy) {
+    map: { moveDash(entity, dx, dy) {
       const nx = entity.x + dx, ny = entity.y + dy;
-      if (blocked && nx > 2) return false;
-      entity.x = nx; entity.y = ny; return true;
+      entity.x = nx; entity.y = ny; return Math.hypot(dx, dy);
     } },
   };
   const dash = new Dash({ world, src: player, ang: Math.atan2(ty - player.y, tx - player.x),
@@ -97,14 +96,44 @@ for (const [tx, ty] of [[4, 0.5], [-3, 0.5], [0.5, 5], [4, 4]]) {
 }
 const multi = makeDash({ tx: 8, ty: 0.5, maxDistance: 4, n: 3 });
 assert.ok(Math.abs(multi.player.x - 4.5) < 1e-6, 'multi-segment dash keeps the intended total range instead of tripling it');
-const wall = makeDash({ tx: 8, ty: 0.5, maxDistance: 6, blocked: true });
-assert.ok(wall.player.x <= 2 && wall.player.y === 0.5, 'walls stop the dash without sideways collision sliding');
-assert.equal(wall.player.channel, null, 'blocked dashes release the movement channel');
+
+function runTileDash(map, [x, y], [tx, ty], maxDistance = 10) {
+  const player = { x, y, r: 0.2, team: 'player', isPlayer: true, face(a) { this.facing = a; } };
+  const world = { map, hostiles() { return []; } };
+  const dash = new Dash({ world, src: player, ang: Math.atan2(ty - y, tx - x),
+    len: cursorDashLength(x, y, tx, ty, maxDistance), dmg: [1, 1], el: 'phys', speed: 10 });
+  let steps = 0;
+  while (dash.update(0.05)) assert.ok(++steps < 200, 'collision-limited dash always terminates');
+  return { player, dash };
+}
+
 const tileMap = new TileMap(7, 5);
 tileMap.t.fill(1); tileMap.block[2 * tileMap.w + 3] = 1;
 const blockedPlayer = { x: 1.5, y: 2.5, r: 0.25, isPlayer: true };
 assert.equal(tileMap.moveStraight(blockedPlayer, 2, 0.8), false, 'actual map collision stops at a wall');
 assert.deepEqual([blockedPlayer.x, blockedPlayer.y], [1.5, 2.5], 'a blocked straight move does not wall-slide sideways');
+assert.match(mapSource, /moveDash\(e, dx, dy\)/, 'cursor dashes use the dedicated collision-safe sliding movement');
+
+// Direct walls stop at the last valid body position; diagonal movement projects onto a
+// wall and can follow its edge, pass around an open end, fit a corridor, and respect bounds.
+const directWallMap = new TileMap(10, 7); directWallMap.t.fill(1);
+for (let y = 0; y < directWallMap.h; y++) directWallMap.block[y * directWallMap.w + 4] = 1;
+const direct = runTileDash(directWallMap, [2.5, 3.5], [9, 3.5]);
+assert.ok(direct.player.x <= 3.84 && direct.player.x > 3.7, 'direct wall dash stops at the nearest valid body position');
+assert.equal(direct.player.channel, null, 'wall contact immediately releases the dash channel');
+const sliding = runTileDash(directWallMap, [2.5, 1.5], [8, 6]);
+assert.ok(sliding.player.x <= 3.84 && sliding.player.y > 2, 'angled dash slides along a wall without crossing it');
+const cornerMap = new TileMap(10, 9); cornerMap.t.fill(1);
+for (let y = 0; y < 3; y++) cornerMap.block[y * cornerMap.w + 4] = 1;
+const corner = runTileDash(cornerMap, [2.5, 1.5], [8, 7]);
+assert.ok(corner.player.x > 4 && corner.player.y > 3.16, 'dash can continue around an open wall corner after sliding');
+const corridorMap = new TileMap(10, 5);
+for (let x = 1; x < 9; x++) corridorMap.t[2 * corridorMap.w + x] = 1;
+const corridor = runTileDash(corridorMap, [1.5, 2.5], [8.5, 2.5]);
+assert.ok(corridor.player.x > 7.5, 'dash traverses a one-tile corridor with correct body clearance');
+const boundaryMap = new TileMap(8, 6); boundaryMap.t.fill(1);
+const boundary = runTileDash(boundaryMap, [1.5, 2.5], [-8, 2.5]);
+assert.ok(boundary.player.x >= 0.16 && boundary.player.x < 0.3, 'dash stops at map boundaries instead of leaving the map');
 
 // Mouse target selection keeps the cursor tile for movement skills; ordinary movement kinds
 // are centralized, while special skills still inspect the same cursor coordinates.

@@ -833,9 +833,10 @@ export class Dash {
     if (s.dead) { if (s.channel === this) s.channel = null; return false; }
     this.t += dt;
     const step = Math.min(this.left, this.speed * dt);
-    const moved = step > 0 && this.world.map.moveStraight(s, Math.cos(this.ang) * step, Math.sin(this.ang) * step, false);
+    const travelled = step > 0 ? this.world.map.moveDash(s, Math.cos(this.ang) * step, Math.sin(this.ang) * step) : 0;
+    const moved = travelled > 1e-5;
     if (moved) {
-      this.left -= step;
+      this.left = Math.max(0, this.left - travelled);
       s.moving = true;
       spawn({ type: 'glow', x: s.x, y: s.y, z: 24, life: 0.3, size: 7, size1: 0, color: this.E.glow, add: true });
       if (this.fx === 'fire') burst(s.x, s.y, 10, 'fire', 2, 1);
@@ -850,7 +851,7 @@ export class Dash {
       if (this.exp) explode(this.world, s, s.x, s.y, 1.5, this.dmg, this.el, this.o, 'explosion');
       // Multi-part dashes share one total cursor-directed distance. Walls end the sequence;
       // do not acquire enemies or introduce a random replacement vector.
-      if (moved && --this.segments > 0) {
+      if (this.left <= 0.01 && moved && --this.segments > 0) {
         this.hitSet.clear();
         this.start(this.ang, this.segmentLen);
         return true;
