@@ -7,10 +7,8 @@ import { sfx } from '../core/audio.js';
 import { UI } from './ui.js';
 import { HERESIES, HERESY_MILESTONES, HERESY_MAX_RANK, heresyMods } from '../data/heresies.js';
 import { heresiesOf, heresyRankOf, setHeresy, worldRank } from '../game/heresies.js';
-import { endgameUnlocked, campaignVictoryRecorded } from '../game/endgame.js';
-import { keysOf, UNBOUND_KEYS, unboundReady } from '../game/unbound.js';
-import { marksTotal, marksFree } from '../game/marks.js';
-import { riftOpen } from '../game/rifts.js';
+import { campaignVictoryRecorded } from '../game/endgame.js';
+import { Marks } from './marks.js';
 
 /** The rank's rewards as chips: drops, magic find, gold, XP, Sigils, relics. */
 function rewardChips(rank) {
@@ -28,14 +26,22 @@ export const Heresies = {
       return false;
     }
     UI.closeAll();
+    Marks.activePair = true;
     this.active = true;
     sfx('ui');
-    UI.openPanel('heresies', 'Altar of Heresy', (b) => this.render(b), { onClose: () => { this.active = false; }, cls: 'heresy-panel', width: 'min(680px, 96vw)' });
+    UI.openPanel('heresies', 'Altar of Heresy', (b) => this.render(b), {
+      onClose: () => {
+        const pairedWindow = Marks.activePair;
+        this.active = false; Marks.activePair = false;
+        if (pairedWindow && UI.isOpen('marks')) UI.closePanel('marks');
+      }, cls: 'heresy-panel', width: 'min(520px, 96vw)',
+    });
+    Marks.open({ keepExisting: true, paired: true });
     return true;
   },
   close() { UI.closePanel('heresies'); },
   render(body) {
-    const c = G.char, on = heresiesOf(c), rank = heresyRankOf(c), endgameOpen = endgameUnlocked(c), w = G.world;
+    const c = G.char, on = heresiesOf(c), rank = heresyRankOf(c), w = G.world;
     const scroll = body.scrollTop;
     body.innerHTML = '';
     // the rank, its bar and what it pays
@@ -73,13 +79,6 @@ export const Heresies = {
       foot.appendChild(off);
     }
     body.appendChild(foot);
-    // the Endgame's other doors
-    const doors = el('div', 'hx-doors');
-    const btn = (cls, label, sub, fn, dis) => { const b = el('button', 'btn hx-door ' + cls, `<b>${label}</b><span>${sub}</span>`); b.disabled = !!dis; b.onclick = () => { sfx('ui'); this.close(); fn(); }; return b; };
-    doors.appendChild(btn('hx-rift', 'Abyssal Rift', endgameOpen ? `Tier ${riftOpen(c)} open` : 'sealed', () => G.game.confirmRift(), !endgameOpen));
-    doors.appendChild(btn('hx-unbound', 'Unbound Exploration', `${Math.min(UNBOUND_KEYS, keysOf(c))}/${UNBOUND_KEYS} Abyssal Keys`, () => G.game.confirmDungeon('unbound'), !unboundReady(c)));
-    doors.appendChild(btn('hx-marks', 'Infernal Marks', `${marksTotal()} (${marksFree()} free)`, () => G.ui.marks.open(), false));
-    body.appendChild(doors);
     body.scrollTop = scroll;
   },
 };

@@ -24,7 +24,6 @@ import { glyphOf } from '../data/relics.js';
 import { noteFind, openTabs } from '../game/reliquary.js';
 import { marksTotal, marksFree, capXp } from '../game/marks.js';
 import { heresyRankOf } from '../game/heresies.js';
-import { endgameUnlocked } from '../game/endgame.js';
 import { sparkle } from '../gfx/vfx.js';
 import { bagRows, nextRowCost, buyBagRow, BAG_MAX_ROWS, gemBagRows, nextGemBagRowCost, canBuyGemBagRow, buyGemBagRow, GEM_BAG_MAX_ROWS } from '../data/bag.js';
 import { Stash } from './stash.js';
@@ -755,7 +754,6 @@ function statsBlock() {
   more.appendChild(extra);
   box.appendChild(more);
   box.appendChild(el('div', 'character-history', `Kills ${fmtInt(c.kills || 0)} · Deaths ${c.deaths || 0} · Deepest ${c.deepest || 0}`));
-  if (endgameUnlocked(c)) { const mb = el('button', 'btn small', 'Infernal Marks'); mb.onclick = () => { sfx('ui'); G.ui.marks.open(); }; box.appendChild(mb); }
   return box;
 }
 

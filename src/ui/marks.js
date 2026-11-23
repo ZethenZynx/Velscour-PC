@@ -4,7 +4,7 @@ import { el, escapeHtml, fmtInt } from '../core/util.js';
 import { sfx } from '../core/audio.js';
 import { UI } from './ui.js';
 import { endgame, MARK_CATS } from '../game/endgame.js';
-import { CATS, INFERNAL_UPGRADES, MARK_CATEGORIES, INFERNAL_UPGRADE_BY_ID, bonusFor, purchaseCost, maxPurchasable, marksTotal, marksFree, marksIn, purchaseUpgrade, resetMarks, autoSpend, markXp } from '../game/marks.js';
+import { CATS, INFERNAL_UPGRADES, MARK_CATEGORIES, INFERNAL_UPGRADE_BY_ID, bonusFor, purchaseCost, maxPurchasable, marksTotal, marksFree, marksIn, purchaseUpgrade, refundCost, refundUpgrade, resetMarks, autoSpend, markXp } from '../game/marks.js';
 import { MAX_LEVEL } from '../game/player.js';
 import { SKILLS } from '../data/skills.js';
 import { skillIconURL } from './icons.js';
@@ -15,7 +15,7 @@ const defaultPanel = { x: null, y: null, w: 1080, h: 700, category: 'offensive',
 const panelSettings = () => G.settings.markPanel ||= { ...defaultPanel };
 function savePanel(p) {
   const s = panelSettings();
-  if (p?.root) {
+  if (p?.root?.isConnected && !Marks.activePair) {
     const r = p.root.getBoundingClientRect(), host = UI.panelsEl.getBoundingClientRect();
     if (UI.desktopPanels()) { s.x = Math.max(0, r.left - host.left); s.y = Math.max(0, r.top - host.top); }
     s.w = Math.round(r.width); s.h = Math.round(r.height);
@@ -40,19 +40,28 @@ export const Marks = {
   category: 'offensive',
   selected: 'might',
   quantity: 1,
-  open() {
-    UI.closeAll();
+  refundQuantity: 1,
+  activePair: false,
+  open({ keepExisting = false, paired = false } = {}) {
+    if (!keepExisting) UI.closeAll();
+    this.activePair = paired;
     const pref = panelSettings();
     this.category = MARK_CATEGORIES.some((x) => x.id === pref.category) ? pref.category : 'offensive';
     this.selected = INFERNAL_UPGRADE_BY_ID[pref.selected] ? pref.selected : INFERNAL_UPGRADES[0].id;
-    this.quantity = 1; this.active = true; sfx('ui');
+    this.quantity = 1; this.refundQuantity = 1; this.active = true; sfx('ui');
     const p = UI.openPanel('marks', 'Infernal Marks', (body, panel) => this.render(body, panel), {
-      onClose: () => { this.active = false; savePanel(p); }, cls: 'marks-panel', width: 'min(1080px, 96vw)',
+      onClose: () => {
+        const pairedWindow = this.activePair;
+        this.active = false; this.activePair = false; savePanel(p);
+        if (pairedWindow && UI.isOpen('heresies')) UI.closePanel('heresies');
+      }, cls: 'marks-panel', width: 'min(1080px, 96vw)',
     });
-    p.root.style.width = `${Math.min(1080, Math.max(620, pref.w || defaultPanel.w), window.innerWidth * 0.96)}px`;
-    p.root.style.height = `${Math.min(820, Math.max(500, pref.h || defaultPanel.h), window.innerHeight * 0.88)}px`;
-    p.root.style.maxHeight = '88vh';
-    if (Number.isFinite(pref.x) && Number.isFinite(pref.y) && UI.desktopPanels()) UI.placePanel('marks', pref.x, pref.y);
+    if (!paired) {
+      p.root.style.width = `${Math.min(1080, Math.max(620, pref.w || defaultPanel.w), window.innerWidth * 0.96)}px`;
+      p.root.style.height = `${Math.min(820, Math.max(500, pref.h || defaultPanel.h), window.innerHeight * 0.88)}px`;
+      p.root.style.maxHeight = '88vh';
+      if (Number.isFinite(pref.x) && Number.isFinite(pref.y) && UI.desktopPanels()) UI.placePanel('marks', pref.x, pref.y);
+    }
     p.head.title = 'Drag to move · resize from the lower-right corner';
     if (!p._marksPersist) {
       p._marksPersist = true;
@@ -63,6 +72,7 @@ export const Marks = {
         p._marksResize.observe(p.root);
       }
     }
+    if (paired) UI.layoutPanels();
     return p;
   },
   selectCategory(category) {
@@ -106,7 +116,8 @@ export const Marks = {
       const rank = marksIn(u.id), nextRank = rank + 1, cap = u.maxRank > 0;
       const current = totalBonus(u, rank), next = totalBonus(u, nextRank), cost = purchaseCost(u.id, rank, 1);
       const maxed = cap && rank >= u.maxRank, affordable = !maxed && cost <= marksFree();
-      const card = el('button', `mk-card${u.id === this.selected ? ' selected' : ''}${maxed ? ' maxed' : ''}`, `${iconFor(u, 44)}<span class="mk-card-main"><b>${escapeHtml(u.name)}</b><small>Rank ${rank}${cap ? ` / ${u.maxRank}` : ''}</small><small>${maxed ? 'MAX RANK' : `${fmtInt(cost)} Mark${cost === 1 ? '' : 's'}`}</small></span><span class="mk-afford">${maxed ? '✓' : affordable ? '◆' : '·'}</span>`);
+      const rankText = cap ? `${rank} / ${u.maxRank}` : `Rank ${rank}`;
+      const card = el('button', `mk-card${u.id === this.selected ? ' selected' : ''}${maxed ? ' maxed' : ''}`, `${iconFor(u, 44)}<span class="mk-card-main"><b>${escapeHtml(u.name)}</b><small>${maxed ? 'MAX RANK' : `Cost: ${fmtInt(cost)} Mark${cost === 1 ? '' : 's'}`}</small></span><span class="mk-rank-indicator">${rankText}</span>`);
       card.type = 'button'; card.title = `${u.name}: ${displayBonus(u, current)}${!maxed ? ` · Next: ${displayBonus(u, next)}` : ''}`;
       card.onclick = () => { this.selected = u.id; pref.selected = u.id; saveSettings(); UI.refresh(); };
       grid.appendChild(card);
@@ -120,15 +131,25 @@ export const Marks = {
     const maxCount = maxPurchasable(u.id, rank, marksFree());
     const selectedQty = this.quantity === 'max' ? maxCount : Math.min(Number(this.quantity) || 1, maxCount);
     const cost = selectedQty ? purchaseCost(u.id, rank, selectedQty) : 0;
+    const refundCount = this.refundQuantity === 'max' ? rank : Math.min(rank, Math.max(0, Number(this.refundQuantity) || 0));
+    const refund = refundCount ? refundCost(u.id, refundCount) : 0;
     const detail = el('aside', 'mk-detail');
-    detail.innerHTML = `<div class="mk-detail-icon" style="--mk-color:${CATS[u.id].color}">${iconFor(u, 74)}</div><h3>${escapeHtml(u.name)}</h3><div class="mk-rank">Rank <b>${rank}</b>${u.maxRank > 0 ? ` / ${u.maxRank}` : ' · uncapped'}</div><p class="mk-desc">${escapeHtml(u.description)}</p><div class="mk-total"><span>Current bonus</span><b>${displayBonus(u, now)}</b></div>${u.maxRank > 0 ? `<div class="mk-total"><span>Maximum bonus</span><b>${displayBonus(u, maximumBonus)}</b></div>` : ''}${maxed ? '<div class="mk-max">Maximum rank reached</div>' : `<div class="mk-total mk-next-total"><span>Next rank total</span><b>${displayBonus(u, after)}</b></div><div class="mk-gain">Next rank adds ${fmt(rankDelta)} ${escapeHtml(u.unit)}</div>`}<div class="mk-buy-qty"><span>Buy ranks</span>${[1,5,10,'max'].map((q) => `<button type="button" class="btn small${this.quantity === q ? ' active' : ''}" data-q="${q}">${q === 'max' ? 'Max' : q}</button>`).join('')}</div><div class="mk-price">${selectedQty ? `Total cost: <b>${fmtInt(cost)} Mark${cost === 1 ? '' : 's'}</b>` : 'No affordable ranks available'}</div><button class="btn red mk-purchase" ${!selectedQty || maxed ? 'disabled' : ''}>Purchase ${selectedQty || ''} rank${selectedQty === 1 ? '' : 's'}</button>`;
+    detail.innerHTML = `<div class="mk-detail-icon" style="--mk-color:${CATS[u.id].color}">${iconFor(u, 74)}</div><h3>${escapeHtml(u.name)}</h3><div class="mk-rank">${u.maxRank > 0 ? `${rank} / ${u.maxRank}` : `Rank ${rank}`}</div><p class="mk-desc">${escapeHtml(u.description)}</p><div class="mk-total"><span>Current bonus</span><b>${displayBonus(u, now)}</b></div>${u.maxRank > 0 ? `<div class="mk-total"><span>Maximum bonus</span><b>${displayBonus(u, maximumBonus)}</b></div>` : ''}${maxed ? '<div class="mk-max">Maximum rank reached</div>' : `<div class="mk-total mk-next-total"><span>Next rank total</span><b>${displayBonus(u, after)}</b></div><div class="mk-gain">Next rank adds ${fmt(rankDelta)} ${escapeHtml(u.unit)}</div>`}<div class="mk-buy-qty"><span>Buy ranks</span>${[1,5,10,'max'].map((q) => `<button type="button" class="btn small${this.quantity === q ? ' active' : ''}" data-q="${q}">${q === 'max' ? 'Max' : q}</button>`).join('')}</div><div class="mk-price">${selectedQty ? `Total cost: <b>${fmtInt(cost)} Mark${cost === 1 ? '' : 's'}</b>` : 'No affordable ranks available'}</div><button class="btn red mk-purchase" ${!selectedQty || maxed ? 'disabled' : ''}>Purchase ${selectedQty || ''} rank${selectedQty === 1 ? '' : 's'}</button><section class="mk-refund"><div class="mk-refund-title">Refund ranks</div><div class="mk-refund-qty">${[1,5,10,'max'].map((q) => `<button type="button" class="btn small${this.refundQuantity === q ? ' active' : ''}" data-refund-q="${q}">${q === 'max' ? 'MAX' : q}</button>`).join('')}</div><div class="mk-refund-total">Refund: <b>${fmtInt(refund)} Mark${refund === 1 ? '' : 's'}</b></div><button class="btn small mk-refund-button" ${!refundCount ? 'disabled' : ''}>Refund Ranks</button></section>`;
     detail.querySelectorAll('[data-q]').forEach((b) => b.addEventListener('click', () => { this.quantity = b.dataset.q === 'max' ? 'max' : Number(b.dataset.q); UI.refresh(); }));
+    detail.querySelectorAll('[data-refund-q]').forEach((b) => b.addEventListener('click', () => { this.refundQuantity = b.dataset.refundQ === 'max' ? 'max' : Number(b.dataset.refundQ); UI.refresh(); }));
     const buy = detail.querySelector('.mk-purchase');
     buy?.addEventListener('click', () => {
       const n = this.quantity === 'max' ? maxPurchasable(u.id, marksIn(u.id), marksFree()) : Math.min(Number(this.quantity) || 1, maxPurchasable(u.id, marksIn(u.id), marksFree()));
       const price = purchaseCost(u.id, marksIn(u.id), n);
       if (!n || price > marksFree()) return;
       UI.dialog({ title: 'Confirm Infernal Mark purchase', html: `Purchase <b>${n}</b> rank${n === 1 ? '' : 's'} of <b>${escapeHtml(u.name)}</b> for <b>${fmtInt(price)} Infernal Marks</b>?<br><span class="dim">${fmtInt(marksFree() - price)} Marks will remain.</span>`, buttons: [{ label: 'Purchase', cls: 'red', fn: () => { const done = purchaseUpgrade(u.id, n); if (done) { sfx('levelup', 0.5); this.quantity = 1; UI.refresh(); } } }, { label: 'Cancel' }] });
+    });
+    detail.querySelector('.mk-refund-button')?.addEventListener('click', () => {
+      const currentRank = marksIn(u.id);
+      const n = this.refundQuantity === 'max' ? currentRank : Math.min(currentRank, Math.max(0, Number(this.refundQuantity) || 0));
+      const amount = refundCost(u.id, n);
+      if (!n || !amount) return;
+      UI.dialog({ title: 'Confirm rank refund', html: `Refund <b>${n}</b> rank${n === 1 ? '' : 's'} of <b>${escapeHtml(u.name)}</b> for <b>${fmtInt(amount)} Infernal Marks</b>?<br><span class="dim">The full amount originally spent on these ranks will be returned to your available Marks.</span>`, buttons: [{ label: 'Refund Ranks', cls: 'red', fn: () => { const result = refundUpgrade(u.id, n); if (result) { this.refundQuantity = 1; sfx('ui'); UI.refresh(); } } }, { label: 'Cancel' }] });
     });
     work.appendChild(detail);
     body.appendChild(work);

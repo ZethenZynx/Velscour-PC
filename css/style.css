@@ -1309,6 +1309,7 @@ body.touch .hx-clear { min-height: 40px; }
 body.touch .hx-doors { grid-template-columns: 1fr; }
 body.touch .hx-door { min-height: 48px; }
 .marks-panel { resize: both; min-width: min(620px, 96vw); min-height: min(500px, 82vh); overflow: hidden; }
+.heresy-panel { min-width: 0; overflow: hidden; }
 .marks-panel .panel-body { display: flex; flex: 1 1 auto; flex-direction: column; gap: 8px; min-height: 0; overflow: hidden; padding: 10px; }
 .mk-shell { outline: none; }
 .mk-head { flex: 0 0 auto; }
@@ -1334,12 +1335,11 @@ body.touch .hx-door { min-height: 48px; }
 .mk-icon { flex: 0 0 auto; width: 42px; height: 42px; object-fit: contain; filter: drop-shadow(0 2px 3px #000); }
 .mk-icon-glyph { display: grid; flex: 0 0 42px; width: 42px; height: 42px; place-items: center; color: #e8bd68; font-size: 27px; text-shadow: 0 1px 5px #000; }
 .mk-card-main { display: flex; flex: 1 1 auto; min-width: 0; flex-direction: column; gap: 2px; }
-.mk-card-main b { overflow: hidden; color: #f0d29a; font: 700 12px var(--font-head); text-overflow: ellipsis; white-space: nowrap; }
-.mk-card-main small { color: #ae9b7e; font: 10px var(--font-body); }
+.mk-card-main b { overflow: hidden; color: #f0d29a; font: 700 15px var(--font-head); text-overflow: ellipsis; white-space: nowrap; }
+.mk-card-main small { color: #ae9b7e; font: 12px var(--font-body); }
 .mk-card-main small:last-child { color: #e7c36d; }
-.mk-afford { flex: 0 0 auto; color: #6b5840; font-size: 13px; }
-.mk-card.selected .mk-afford, .mk-card:hover .mk-afford { color: #e8be67; }
-.mk-card.maxed .mk-afford { color: #84c78c; }
+.mk-rank-indicator { flex: 0 0 auto; min-width: 54px; padding-left: 4px; color: #ffd56d; text-align: right; white-space: nowrap; font: 700 20px/1 var(--font-head); text-shadow: 0 1px 3px #000; }
+.mk-card.maxed .mk-rank-indicator { color: #84d891; }
 .mk-detail { display: flex; min-width: 0; flex-direction: column; align-items: stretch; gap: 6px; overflow-y: auto; padding: 10px; border: 1px solid #63472a; border-radius: 5px; background: radial-gradient(ellipse at 50% 0%, rgba(93,59,24,.27), rgba(12,8,6,.9) 58%); }
 .mk-detail-icon { display: grid; flex: 0 0 auto; width: 76px; height: 76px; place-items: center; align-self: center; border: 1px solid color-mix(in srgb, var(--mk-color) 55%, #392719); border-radius: 7px; background: radial-gradient(circle, color-mix(in srgb, var(--mk-color) 22%, transparent), rgba(0,0,0,.3)); box-shadow: 0 0 16px color-mix(in srgb, var(--mk-color) 14%, transparent); }
 .mk-detail-icon .mk-icon { width: 68px; height: 68px; }
@@ -1359,6 +1359,15 @@ body.touch .hx-door { min-height: 48px; }
 .mk-price b { color: #ffd860; }
 .mk-purchase { width: 100%; min-height: 36px; }
 .mk-purchase:disabled { opacity: .45; cursor: not-allowed; }
+.mk-refund { display: flex; flex: 0 0 auto; flex-direction: column; gap: 5px; margin-top: 4px; padding-top: 8px; border-top: 1px solid rgba(128,94,53,.55); }
+.mk-refund-title { color: #d7c094; font: 700 12px var(--font-head); letter-spacing: .5px; text-transform: uppercase; }
+.mk-refund-qty { display: flex; justify-content: flex-end; gap: 5px; }
+.mk-refund-qty .btn { min-width: 38px; padding: 4px 7px; }
+.mk-refund-qty .btn.active { border-color: #ffd860; color: #ffe18d; }
+.mk-refund-total { color: #b8a384; text-align: right; font-size: 12px; }
+.mk-refund-total b { color: #ffd860; }
+.mk-refund-button { width: 100%; }
+.mk-refund-button:disabled { opacity: .45; cursor: not-allowed; }
 .mk-foot { display: flex; flex: 0 0 auto; flex-wrap: wrap; align-items: center; gap: 7px; border-top: 1px solid rgba(128,94,53,.45); padding-top: 7px; }
 .mk-foot-note { margin-left: auto; font-size: 10px; }
 @media (max-width: 760px) {
@@ -1373,9 +1382,19 @@ body.touch .hx-door { min-height: 48px; }
   .mk-detail-icon { grid-row: span 3; width: 56px; height: 56px; }
   .mk-detail-icon .mk-icon { width: 50px; height: 50px; }
   .mk-detail h3, .mk-rank { text-align: left; }
-  .mk-desc, .mk-total, .mk-gain, .mk-buy-qty, .mk-price, .mk-purchase, .mk-max { grid-column: 1 / -1; }
+  .mk-desc, .mk-total, .mk-gain, .mk-buy-qty, .mk-price, .mk-purchase, .mk-max, .mk-refund { grid-column: 1 / -1; }
   .mk-buy-qty { margin-top: 0; }
+  .mk-rank-indicator { font-size: 16px; }
   .mk-foot-note { display: none; }
+}
+/* The Altar and Marks library open as one centered endgame workspace. */
+#panels.heresy-marks-pair { overflow: visible; }
+#panels.heresy-marks-pair > [data-panel="heresies"],
+#panels.heresy-marks-pair > [data-panel="marks"] { max-width: none; }
+@media (max-width: 760px), (orientation: portrait) {
+  #panels.heresy-marks-pair { display: flex !important; flex-direction: column; align-items: center; justify-content: flex-start; gap: 8px; overflow-y: auto; overflow-x: hidden; padding: 8px; }
+  #panels.heresy-marks-pair > [data-panel="heresies"],
+  #panels.heresy-marks-pair > [data-panel="marks"] { position: relative !important; inset: auto !important; transform: none !important; width: min(96vw, 620px) !important; max-width: 96vw !important; height: min(42vh, 390px) !important; min-height: 0 !important; }
 }
 .macros-panel .mc-why { font-size: 12px; margin-bottom: 8px; }
 .mc-row { padding: 6px 8px; margin-bottom: 6px; border: 1px solid #3a2e22; border-left: 3px solid var(--gold-dim); border-radius: 6px; background: rgba(16,10,6,.55); }

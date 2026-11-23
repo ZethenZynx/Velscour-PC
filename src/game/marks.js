@@ -120,6 +120,27 @@ export function purchaseUpgrade(id, count = 1) {
   changed();
   return count;
 }
+/** Cost of refunding the most recently purchased `count` ranks of one upgrade. */
+export function refundCost(id, count = 1) {
+  const rank = marksIn(id);
+  const requested = count === 'max' ? rank : Math.max(0, Math.floor(Number(count) || 0));
+  const n = Math.min(rank, requested);
+  return n ? purchaseCost(id, rank - n, n) : 0;
+}
+/** Refund only the selected upgrade's latest ranks; rank and wallet update atomically. */
+export function refundUpgrade(id, count = 1) {
+  const def = INFERNAL_UPGRADE_BY_ID[id], m = endgame().marks;
+  if (!def || (count !== 'max' && (!Number.isFinite(count) || count < 1))) return null;
+  const rank = Math.max(0, Math.floor(Number(m.spent[id]) || 0));
+  const n = count === 'max' ? rank : Math.min(rank, Math.floor(count));
+  if (!n) return null;
+  const refund = purchaseCost(id, rank - n, n);
+  if (!Number.isFinite(refund) || refund <= 0 || (m.spentValue || 0) < refund) return null;
+  m.spent[id] = rank - n;
+  m.spentValue = Math.max(0, m.spentValue - refund);
+  changed();
+  return { ranks: n, marks: refund };
+}
 /** Compatibility call: rank purchases now use the registry's escalating price formula. */
 export function spendMark(k, n = 1) { return purchaseUpgrade(k, n); }
 

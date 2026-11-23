@@ -213,6 +213,58 @@ export const UI = {
     const trio = ['vendor', 'character', 'inventory'].every((name) => this.panels.has(name));
     const wasTrio = this.panelsEl.classList.contains('vendor-trio');
     const host = this.panelsEl.getBoundingClientRect();
+    const paired = this.panels.size === 2 && this.panels.has('heresies') && this.panels.has('marks');
+    const wasPaired = this.panelsEl.classList.contains('heresy-marks-pair');
+    this.panelsEl.classList.toggle('heresy-marks-pair', paired);
+    if (wasPaired && !paired) {
+      for (const [, p] of this.panels) {
+        for (const prop of ['position', 'left', 'top', 'right', 'bottom', 'width', 'height', 'max-width', 'max-height', 'min-width', 'min-height', 'transform', 'transform-origin']) p.root.style.removeProperty(prop);
+        if (p.opts.width) p.root.style.width = p.opts.width;
+      }
+    }
+    if (paired) {
+      const altar = this.panels.get('heresies'), marks = this.panels.get('marks');
+      if (this.desktopPanels()) {
+        const widths = [520, 1080], heights = [720, 740], gap = 12;
+        const viewW = Math.max(1, Math.min(host.width, window.innerWidth - host.left));
+        const viewH = Math.max(1, Math.min(host.height, window.innerHeight - host.top));
+        const scale = Math.min(1, Math.max(0.1, (viewW - 24) / (widths[0] + widths[1] + gap)), Math.max(0.1, (viewH - 24) / Math.max(...heights)));
+        const groupW = (widths[0] + widths[1]) * scale + gap;
+        let x = Math.max(12, (viewW - groupW) / 2);
+        const y = Math.max(12, (viewH - Math.max(...heights) * scale) / 2);
+        for (const [panel, width, height] of [[altar, widths[0], heights[0]], [marks, widths[1], heights[1]]]) {
+          panel.root.style.setProperty('position', 'absolute', 'important');
+          panel.root.style.setProperty('left', `${x}px`, 'important');
+          panel.root.style.setProperty('top', `${y}px`, 'important');
+          panel.root.style.setProperty('right', 'auto', 'important');
+          panel.root.style.setProperty('bottom', 'auto', 'important');
+          panel.root.style.setProperty('width', `${width}px`, 'important');
+          panel.root.style.setProperty('height', `${height}px`, 'important');
+          panel.root.style.setProperty('min-width', '0', 'important');
+          panel.root.style.setProperty('min-height', '0', 'important');
+          panel.root.style.setProperty('max-width', 'none', 'important');
+          panel.root.style.setProperty('max-height', `${viewH / scale}px`, 'important');
+          panel.root.style.setProperty('transform-origin', 'top left', 'important');
+          panel.root.style.setProperty('transform', `scale(${scale})`, 'important');
+          x += width * scale + gap;
+        }
+      } else {
+        for (const panel of [altar, marks]) {
+          panel.root.style.setProperty('position', 'relative', 'important');
+          panel.root.style.setProperty('left', 'auto', 'important');
+          panel.root.style.setProperty('top', 'auto', 'important');
+          panel.root.style.setProperty('right', 'auto', 'important');
+          panel.root.style.setProperty('bottom', 'auto', 'important');
+          panel.root.style.setProperty('width', 'min(96vw, 620px)', 'important');
+          panel.root.style.setProperty('height', '42vh', 'important');
+          panel.root.style.setProperty('max-height', '42vh', 'important');
+          panel.root.style.setProperty('min-width', '0', 'important');
+          panel.root.style.setProperty('min-height', '0', 'important');
+          panel.root.style.setProperty('transform', 'none', 'important');
+        }
+      }
+      return;
+    }
     this.panelsEl.classList.toggle('vendor-trio', trio);
     this.panelsEl.classList.toggle('vendor-trio-uniform', trio);
     if (wasTrio && !trio) {
