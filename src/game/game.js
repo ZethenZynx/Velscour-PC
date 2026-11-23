@@ -37,7 +37,7 @@ import { toggleSmite, getUltimate, executeUltimate } from './smite.js';
 import { hearthTick, useHearth, hearthPortalActive, closeHearthPortals, getActiveHearth, returnFromHearth } from './hearth.js';
 import { generateTown, makeTownTiles, rollTownWeather } from '../world/town.js';
 import { generateAct2Town, makeAct2TownTiles, ACT2_TOWN_NAME } from '../world/act2town.js';
-import { actSelectionRows } from './actselection.js';
+import { actSelectionRows, shouldAutoTravelToAct2 } from './actselection.js';
 import { generateOverworld } from '../world/overworld.js';
 import { createOverworldScenario } from './overworld.js';
 import { addWanderers } from './wanderers.js';
@@ -640,12 +640,12 @@ export const game = {
     if (!c) return;
     const currentAct = getActForDepth(Math.min(FINAL_DEPTH, Math.max(1, Number(c.depth) || 1))).act;
     const rows = actSelectionRows(c);
-    const html = `<p class="dim">Choose an unlocked act town. Travel is free and does not spend currency.</p>
-      <div class="act-selection-list">${rows.map((act) => `<section class="act-selection-card${act.act === currentAct ? ' current' : ''}${act.unlocked ? '' : ' locked'}">
-        <div class="act-selection-heading"><strong>ACT ${act.act} — ${escapeHtml(act.name)}</strong><span class="act-selection-status">${act.act === currentAct ? 'Current Act' : act.unlocked ? 'Unlocked' : 'Locked'}</span></div>
-        <div class="act-selection-details"><span>Depths ${act.start}–${act.end}</span><span>Town: ${escapeHtml(act.town)}</span></div>
+    const html = `<p class="dim">Travel freely between available act towns. Act 2 opens after its campaign milestone.</p>
+      <div class="act-selection-list">${rows.map((act) => `<section class="act-selection-card${act.act === currentAct ? ' current' : ''}${act.unlocked ? '' : ' locked'}${act.implemented ? '' : ' coming-soon'}">
+        <div class="act-selection-heading"><strong>ACT ${act.act} — ${escapeHtml(act.name)}</strong><span class="act-selection-status">${act.status}${act.act === currentAct && act.unlocked ? ' · Current Act' : ''}</span></div>
+        <div class="act-selection-details"><span>Depths ${act.start}–${act.end}</span>${act.town ? `<span>Town: ${escapeHtml(act.town)}</span>` : ''}</div>
         ${act.unlocked ? '' : `<div class="act-selection-requirement">${escapeHtml(act.requirement)}</div>`}
-        <button type="button" class="btn act-selection-travel" data-act="${act.act}" ${act.unlocked ? '' : 'disabled'}>${act.act === currentAct ? 'Travel to Current Town' : 'Travel'}</button>
+        <button type="button" class="btn act-selection-travel" data-act="${act.act}" ${act.unlocked ? '' : 'disabled'}>${act.implemented ? (act.unlocked ? 'Travel' : 'Locked') : 'Coming Soon'}</button>
       </section>`).join('')}</div>`;
     const dialog = UI.dialog({
       title: 'PORTAL TO THE ACTS',
@@ -656,7 +656,7 @@ export const game = {
     dialog.box.querySelectorAll('.act-selection-travel:not(:disabled)').forEach((button) => {
       button.addEventListener('click', () => {
         const act = rows.find((row) => row.act === Number(button.dataset.act));
-        if (!act?.unlocked) return;
+        if (!act?.implemented || !act.unlocked) return;
         dialog.close();
         sfx('portal');
         if (act.act === 2) this.enterAct2Town();
@@ -1669,11 +1669,13 @@ export const game = {
         return;
       }
       const first = !c.cleared[depth];
+      const autoTravelToAct2 = shouldAutoTravelToAct2(c, depth, first);
       if (m.isVelscour && !world.practice && !c.townVictoryFireworksDone && !c.townVictoryFireworksPending) {
         c.townVictoryFireworksPending = true;
       }
       c.cleared[depth] = true;
       c.deepest = Math.max(c.deepest || 0, depth);
+      if (autoTravelToAct2) c.act2AutoTravelDone = true;
       this.brokeThrough(depth);
       if (first) {
         this.awardFloorClear(depth);
@@ -1685,6 +1687,12 @@ export const game = {
       sfx('gate');
       UI.refresh();
       this.autosave();
+      if (autoTravelToAct2) {
+        UI.log('<b style="color:#ffd860">Act 2 is now available.</b> Your journey continues in Sunscorch Oasis.', '#ffd860');
+        sfx('portal');
+        void this.enterAct2Town();
+        return;
+      }
       if (m.isVelscour && !world.practice) {
         // Defeating Velscour is the sole campaign clear and opens all existing endgame activities.
         if (unlockEndgame()) UI.log('<b style="color:#20e0ff">The Endgame opens.</b> The Altar of Heresy and Abyssal Rifts in the Portal to the Depths answer to every hero now.', '#a0f0ff');

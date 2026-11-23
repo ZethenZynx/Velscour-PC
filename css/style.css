@@ -317,9 +317,11 @@ body.touch .rv-btns { margin-top: 6px; }
 .act-selection-card { display: grid; grid-template-columns: 1fr auto; gap: 5px 12px; align-items: center; padding: 9px 11px; border: 1px solid rgba(205,169,103,.38); border-radius: 5px; background: rgba(24,17,14,.82); }
 .act-selection-card.current { border-color: #68aaff; box-shadow: inset 0 0 0 1px rgba(58,138,255,.23); background: rgba(32,57,88,.35); }
 .act-selection-card.locked { opacity: .72; }
+.act-selection-card.coming-soon { opacity: .48; filter: grayscale(.8); }
 .act-selection-heading { display: flex; flex-wrap: wrap; align-items: baseline; gap: 6px 10px; color: var(--gold-bright); }
 .act-selection-status { color: #9fc7ff; font-size: 12px; }
 .act-selection-card.locked .act-selection-status { color: #b5a89a; }
+.act-selection-card.coming-soon .act-selection-status { color: #99918b; }
 .act-selection-details { display: flex; flex-wrap: wrap; gap: 3px 14px; color: #d0c2ad; font-size: 13px; }
 .act-selection-requirement { grid-column: 1 / -1; color: #e0b978; font-size: 12px; }
 .act-selection-travel { grid-column: 2; grid-row: 1 / span 2; min-width: 100px; }
