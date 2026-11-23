@@ -259,11 +259,13 @@ export function createTowerRun(world, gen, biome, onSuccess) {
     // log says where the rest came from: a pile waiting on the roof looked like items left over from an earlier visit
     let gold = 0;
     const loot = world.loot.filter((l) => {
+      if (l._lootRemoved) return false;
       if (l.x < g.XR) return false;
       if (l.kind === 'gold' && l.amount > 0) { gold += l.amount; return false; }
       return true;
     });
-    world.loot = world.loot.filter((l) => l.x < g.XR || loot.includes(l));
+    world.loot = world.loot.filter((l) => !l._lootRemoved && (l.x < g.XR || loot.includes(l)));
+    world.rebuildLootIndex?.();
     if (gold) { G.char.gold += gold; UI.log(`You gather ${fmtInt(gold)} gold left on the stair.`, '#ffd34a'); }
     const items = loot.filter((l) => l.kind === 'item').length;
     if (items) UI.log(`${items} item${items > 1 ? 's' : ''} you left on the stair ${items > 1 ? 'were' : 'was'} carried up to the roof.`, '#c8b890');
@@ -277,6 +279,7 @@ export function createTowerRun(world, gen, biome, onSuccess) {
     [p.x, p.y] = g.roofDoor; p.path = null; p.moveTarget = null; p.attackTarget = null; p.interact = null; p.lootTarget = null;
     for (const s of pets) { [s.x, s.y] = map.randomNear(p.x, p.y, 1.6); s.aggro = null; s.foe = null; s.nav = null; s.fol = null; }
     loot.forEach((l, i) => { [l.x, l.y] = map.randomNear(g.roofDoor[0] + 1, g.roofDoor[1] + 2, 1.5 + Math.min(3.5, i * 0.08)); });
+    world.rebuildLootIndex?.();
     for (const ch of world.chests) if (ch.x >= g.XR && !ch.opened && g.s(ch.x) > g.sEnd - 6) [ch.x, ch.y] = map.randomNear(g.roofDoor[0] - 2.5, g.roofDoor[1] + 1, 1.5);
     map.flowFrom = [-9, -9];
     tw.frame(0);

@@ -177,7 +177,11 @@ export class GroundItem {
     return '#fff';
   }
   update(dt, world) {
-    this.t += dt;
+    if (this._lootRemoved) return false;
+    // Items outside the active pickup/movement area may be asleep for many frames.
+    // Derive their age from world time when they wake so expiry stays exact.
+    if (Number.isFinite(this._lootBornAt) && Number.isFinite(world.time)) this.t = Math.max(this.t || 0, world.time - this._lootBornAt);
+    else this.t += dt;
     if (this.z > 0 || this.vz > 0) {
       this.vz -= 420 * dt; this.z += this.vz * dt;
       const nx = this.x + this.vx * dt, ny = this.y + this.vy * dt;
@@ -501,14 +505,19 @@ function drawLabel(ctx, spr, sx, sy, w, h, hover) {
 }
 
 export function drawLootLabels(ctx, world, mouse) {
-  const boxes = [], silent = [], cand = [], placed = [];
+  const boxes = [], silent = [], cand = [], labelGrid = new Map();
   const p = world.player, S = G.settings, all = S.allItemNames && !S.hideItemNames;
   const font = `${Math.round(12 * G.dpr)}px "Alegreya Sans", sans-serif`;
   const h = 16;
-  for (const l of world.loot) {
+  const candidates = p && world.queryLootRect
+    ? world.queryLootRect(p.x - 14, p.y - 14, p.x + 14, p.y + 14, world._labelLootBuffer || (world._labelLootBuffer = []))
+    : world.loot;
+  for (const l of candidates) {
+    if (l._lootRemoved) continue;
     if (l.kind !== 'item' && l.kind !== 'potion' && l.kind !== 'key' && !(l.kind === 'gold' && l.amount > 0)) continue;
-    const d = p ? Math.hypot(p.x - l.x, p.y - l.y) : 0;
-    if (d > 14) continue;
+    const dx = p ? p.x - l.x : 0, dy = p ? p.y - l.y : 0, d2 = dx * dx + dy * dy;
+    if (d2 > 196) continue;
+    const d = Math.sqrt(d2);
     if (l.kind === 'gold' && !S.showGoldLabels) continue;
     const r = labelRank(l);
     if (S.hideItemNames || r < 0 || (!all && d > labelReach(r))) { l.named = false; silent.push(l); continue; }
@@ -517,6 +526,13 @@ export function drawLootLabels(ctx, world, mouse) {
   }
   const budget = all ? Infinity : labelBudget(ctx.canvas.height / G.dpr);
   const keep = cand.length > budget ? new Set([...cand].sort((a, b) => b.nameScore - a.nameScore).slice(0, budget)) : null;
+  let labelCheckId = 0;
+  const eachLabelCell = (x, y, w, visit) => {
+    const x0 = Math.floor((x - w / 2) / 48), x1 = Math.floor((x + w / 2) / 48);
+    const y0 = Math.floor((y - h / 2) / 24), y1 = Math.floor((y + h / 2) / 24);
+    for (let cy = y0; cy <= y1; cy++) for (let cx = x0; cx <= x1; cx++) if (visit(`${cx},${cy}`) === false) return false;
+    return true;
+  };
   for (const l of cand) { // (in ground order, so the stacks hold still as the hero walks)
     if (keep && !keep.has(l)) { l.named = false; silent.push(l); continue; }
     const [sx, sy0] = camera.tileToScreen(l.x, l.y, 26);
@@ -524,13 +540,30 @@ export function drawLootLabels(ctx, world, mouse) {
     const spr = labelSprite(l.label, l.color, font), w = spr.tw / G.dpr + 10;
     // avoid overlapping labels
     for (let k = 0; k < 8; k++) {
-      if ((free = !placed.some((b) => Math.abs(b.x - sx) < (b.w + w) / 2 && Math.abs(b.y - sy) < h))) break;
+      const id = ++labelCheckId;
+      free = true;
+      eachLabelCell(sx, sy, w, (cellKey) => {
+        const bucket = labelGrid.get(cellKey);
+        if (!bucket) return true;
+        for (const b of bucket) {
+          if (b._checkId === id) continue;
+          b._checkId = id;
+          if (Math.abs(b.x - sx) < (b.w + w) / 2 && Math.abs(b.y - sy) < h) { free = false; return false; }
+        }
+        return true;
+      });
+      if (free) break;
       sy -= h + 1;
     }
     if (!free && !all) { l.named = false; silent.push(l); continue; } // a wall of names reads as nothing: no room, no name
     l.named = true;
     const box = { x: sx, y: sy, w, h, loot: l };
-    placed.push(box);
+    eachLabelCell(sx, sy, w, (cellKey) => {
+      let bucket = labelGrid.get(cellKey);
+      if (!bucket) labelGrid.set(cellKey, (bucket = []));
+      bucket.push(box);
+      return true;
+    });
     drawLabel(ctx, spr, sx, sy, w, h, mouse && Math.abs(mouse.x - sx) < w / 2 && Math.abs(mouse.y - sy) < h / 2);
     boxes.push(box);
   }

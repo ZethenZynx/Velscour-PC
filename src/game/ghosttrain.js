@@ -221,7 +221,8 @@ export function createGhostTrainRun(world, gen, biome, depth, onSuccess) {
       c.x = to[0]; c.y = to[1]; c.path = null; c.moveTarget = null;
       if (c === pl) { UI.log('You leap for the train as she pulls out.', '#ffd8a0'); smoke(c.x, c.y, 4, '#6a5a4a', 3, 9); }
     }
-    for (const l of world.loot) if (onPlatform(l.x, l.y)) { const to = aboardSpot(map, l.x + rand(-1, 1)); l.x = to[0]; l.y = to[1]; }
+    for (const l of world.loot) if (!l._lootRemoved && onPlatform(l.x, l.y)) { const to = aboardSpot(map, l.x + rand(-1, 1)); l.x = to[0]; l.y = to[1]; }
+    world.rebuildLootIndex?.();
     for (const ch of S.chests) { const i = world.chests.indexOf(ch); if (i >= 0) world.chests.splice(i, 1); }
     platformOff(map);
     sfx('bell', 0.6);

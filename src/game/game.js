@@ -1221,7 +1221,7 @@ export const game = {
     const c = G.char, old = G.world, biome = BIOME_BY_ID[id];
     if (!c || !old || !biome || this._continuing) return;
     this._continuing = true;
-    const p = G.player, depth = old.depth, carry = p && Array.isArray(old.loot) ? old.loot.filter((l) => Math.hypot(l.x - p.x, l.y - p.y) < 14) : [];
+    const p = G.player, depth = old.depth, carry = p && Array.isArray(old.loot) ? old.loot.filter((l) => !l._lootRemoved && Math.hypot(l.x - p.x, l.y - p.y) < 14) : [];
     c.nextBiome = id;
     if (id === 'snowy_summit' && c.summitRuns) delete c.summitRuns[depth];   // a fresh range above a fresh summit
     LoadingScreen.show({

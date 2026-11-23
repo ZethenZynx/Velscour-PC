@@ -1191,7 +1191,10 @@ export function renderWorld(ctx, world) {
     if (!closeEnough(n.x,n.y)) { n.sbox=null; continue; }
     enqueue(n.x + n.y, 7, n);
   }
-  for (const l of world.loot) if (closeEnough(l.x,l.y,50,75)) { enqueue(l.x + l.y - 0.2, 8, l); if (tall) occludeStatic(l, null, l.x, l.y, true); }
+  const visibleLoot = world.queryLootRect && !world.tower && !world.cave
+    ? world.queryLootRect(tx0 - 2, ty0 - 2, tx1 + 2, ty1 + 2, world._renderLootBuffer || (world._renderLootBuffer = []))
+    : world.loot;
+  for (const l of visibleLoot) if (!l._lootRemoved && closeEnough(l.x,l.y,50,75)) { enqueue(l.x + l.y - 0.2, 8, l); if (tall) occludeStatic(l, null, l.x, l.y, true); }
   for (const c of world.chests) if (closeEnough(c.x,c.y,70,80)) { enqueue(c.x + c.y, 9, c); if (tall) occludeStatic(c, null); }
   for (const po of world.portals) if (closeEnough(po.x,po.y,95,150)) { enqueue(po.x + po.y, 10, po); if (tall) occludeStatic(po, null); }
   if (map.hgt) {

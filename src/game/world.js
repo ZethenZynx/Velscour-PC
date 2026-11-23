@@ -10,8 +10,26 @@ import { spawn, updateVfx, addLight, sparkle, smoke, lights } from '../gfx/vfx.j
 import { bodyR } from '../world/map.js';
 
 const CELL = 2;
+const LOOT_CELL = 8;
 
 const LOOT_CAP = 240;
+
+function heapPush(heap, node) {
+  let i = heap.length; heap.push(node);
+  while (i > 0) { const parent = (i - 1) >> 1; if (heap[parent].at <= node.at) break; heap[i] = heap[parent]; i = parent; }
+  heap[i] = node;
+}
+function heapPop(heap) {
+  if (!heap.length) return null;
+  const first = heap[0], last = heap.pop();
+  if (heap.length) {
+    let i = 0;
+    while (true) { let child = i * 2 + 1; if (child >= heap.length) break; if (child + 1 < heap.length && heap[child + 1].at < heap[child].at) child++;
+      if (heap[child].at >= last.at) break; heap[i] = heap[child]; i = child; }
+    heap[i] = last;
+  }
+  return first;
+}
 export class World {
   constructor(kind, opts) {
     this.kind = kind; // 'town' | 'dungeon'
@@ -19,6 +37,17 @@ export class World {
     this.creatures = [];
     this.hazards = [];
     this.loot = [];
+    this.lootCells = new Map();
+    this.lootCellByItem = new WeakMap();
+    this.movingLoot = new Set();
+    this.fadingLoot = new Set();
+    this.fadingLootOrder = [];
+    this.lootExpiry = [];
+    this.lootNearBuffer = [];
+    this._lootUpdateSerial = 0;
+    this._lootRegistered = 0;
+    this.unindexedLoot = new Set();
+    this._lootTimerStale = 0;
     this.corpses = [];
     this.fallen = []; // dead summons' last poses (core/petart.js)
     this.props = this.props || [];
@@ -86,13 +115,115 @@ export class World {
   }
   addHazard(h) { h.world = this; this.hazards.push(h); return h; }
   addLoot(l) {
+    l._lootRemoved = false;
+    l._lootBornAt = this.time;
+    const life = l.fades || (l.kind !== 'item' && l.kind !== 'key' ? 120 : 0);
+    l._lootExpiryAt = life ? this.time + Math.max(0, life - (l.t || 0)) : Infinity;
     this.loot.push(l);
-    if (this.loot.length > LOOT_CAP) { // the shortest-lived fading drop goes first, oldest first (game/loot.js FADE)
-      let v = -1;
-      this.loot.forEach((g, i) => { if (g.fades && (v < 0 || g.fades < this.loot[v].fades) && (!this.player || this.player.lootTarget !== g)) v = i; });
-      if (v >= 0) this.loot.splice(v, 1);
+    this._lootRegistered++;
+    this._indexLoot(l);
+    if (l.z > 0 || l.vz > 0) this.movingLoot.add(l);
+    l._lootTimerToken = (l._lootTimerToken || 0) + 1;
+    if (l.fades) { this.fadingLoot.add(l); heapPush(this.fadingLootOrder, { at: l.fades, ref: new WeakRef(l), token: l._lootTimerToken }); }
+    if (!Number.isFinite(l.x) || !Number.isFinite(l.y)) this.unindexedLoot.add(l);
+    if (Number.isFinite(l._lootExpiryAt)) heapPush(this.lootExpiry, { at: l._lootExpiryAt, ref: new WeakRef(l), token: l._lootTimerToken });
+    // Keep the legacy cap for short-lived drops without scanning the permanent loot pile.
+    // A cap overflow containing only persistent items must never evict collectible gear.
+    if (this.loot.length > LOOT_CAP && this.fadingLoot.size) {
+      const held = []; let oldest = null;
+      while (this.fadingLootOrder.length) {
+        const entry = heapPop(this.fadingLootOrder), g = entry.ref.deref();
+        if (!g || g._lootRemoved || !this.fadingLoot.has(g) || g._lootTimerToken !== entry.token || g.fades !== entry.at) continue;
+        if (this.player && this.player.lootTarget === g) { held.push(entry); continue; }
+        oldest = g; break;
+      }
+      for (const entry of held) heapPush(this.fadingLootOrder, entry);
+      if (oldest) this.removeLoot(oldest);
     }
     return l;
+  }
+
+  _lootKey(x, y) { return `${Math.floor(x / LOOT_CELL)},${Math.floor(y / LOOT_CELL)}`; }
+  _indexLoot(l) {
+    if (!l || l._lootRemoved || !Number.isFinite(l.x) || !Number.isFinite(l.y)) return;
+    const key = this._lootKey(l.x, l.y), prev = this.lootCellByItem.get(l);
+    if (prev === key) return;
+    if (prev !== undefined) {
+      const old = this.lootCells.get(prev);
+      if (old) { old.delete(l); if (!old.size) this.lootCells.delete(prev); }
+    }
+    let cell = this.lootCells.get(key);
+    if (!cell) this.lootCells.set(key, (cell = new Set()));
+    cell.add(l); this.lootCellByItem.set(l, key);
+  }
+  updateLootPosition(l) { this._indexLoot(l); }
+  queryLootRect(x0, y0, x1, y1, out = []) {
+    out.length = 0;
+    const cx0 = Math.floor(x0 / LOOT_CELL), cy0 = Math.floor(y0 / LOOT_CELL);
+    const cx1 = Math.floor(x1 / LOOT_CELL), cy1 = Math.floor(y1 / LOOT_CELL);
+    for (let cy = cy0; cy <= cy1; cy++) for (let cx = cx0; cx <= cx1; cx++) {
+      const cell = this.lootCells.get(`${cx},${cy}`);
+      if (!cell) continue;
+      for (const l of cell) if (!l._lootRemoved && l.x >= x0 && l.x <= x1 && l.y >= y0 && l.y <= y1) out.push(l);
+    }
+    return out;
+  }
+  removeLoot(l) {
+    if (!l || l._lootRemoved) return false;
+    l._lootRemoved = true;
+    l._lootTimerToken = (l._lootTimerToken || 0) + 1;
+    if (l.fades) this._lootTimerStale++;
+    if (Number.isFinite(l._lootExpiryAt)) this._lootTimerStale++;
+    this.movingLoot.delete(l); this.fadingLoot.delete(l);
+    this.unindexedLoot.delete(l);
+    const key = this.lootCellByItem.get(l), cell = key === undefined ? null : this.lootCells.get(key);
+    if (cell) { cell.delete(l); if (!cell.size) this.lootCells.delete(key); }
+    this.lootCellByItem.delete(l);
+    if (this.player && this.player.lootTarget === l) this.player.lootTarget = null;
+    this._lootTombstones = (this._lootTombstones || 0) + 1;
+    this._lootRegistered = Math.max(0, (this._lootRegistered || 0) - 1);
+    return true;
+  }
+  rebuildLootIndex() {
+    this.lootCells.clear(); this.lootCellByItem = new WeakMap(); this.movingLoot.clear(); this.fadingLoot.clear(); this.unindexedLoot.clear(); this.lootExpiry.length = 0; this.fadingLootOrder.length = 0;
+    this._lootRegistered = 0; this._lootTimerStale = 0;
+    for (const l of this.loot) {
+      if (l._lootRemoved) continue;
+      this._lootRegistered++;
+      if (!Number.isFinite(l._lootBornAt)) l._lootBornAt = this.time - (l.t || 0);
+      if (!Number.isFinite(l._lootExpiryAt)) {
+        const life = l.fades || (l.kind !== 'item' && l.kind !== 'key' ? 120 : 0);
+        l._lootExpiryAt = life ? l._lootBornAt + Math.max(0, life - (l.t || 0)) : Infinity;
+      }
+      l._lootTimerToken = (l._lootTimerToken || 0) + 1;
+      this._indexLoot(l);
+      if (!Number.isFinite(l.x) || !Number.isFinite(l.y)) this.unindexedLoot.add(l);
+      if (l.z > 0 || l.vz > 0) this.movingLoot.add(l);
+      if (l.fades) { this.fadingLoot.add(l); heapPush(this.fadingLootOrder, { at: l.fades, ref: new WeakRef(l), token: l._lootTimerToken }); }
+      if (Number.isFinite(l._lootExpiryAt)) heapPush(this.lootExpiry, { at: l._lootExpiryAt, ref: new WeakRef(l), token: l._lootTimerToken });
+    }
+    this._lootTombstones = 0;
+    return this;
+  }
+  _compactLoot() {
+    if ((this._lootTombstones || 0) < 32 && (this._lootTombstones || 0) * 10 < this.loot.length) return;
+    let write = 0;
+    for (let read = 0; read < this.loot.length; read++) if (!this.loot[read]._lootRemoved) this.loot[write++] = this.loot[read];
+    this.loot.length = write; this._lootTombstones = 0;
+  }
+  _compactLootTimers() {
+    const total = this.lootExpiry.length + this.fadingLootOrder.length;
+    if (this._lootTimerStale < 64 || this._lootTimerStale * 2 <= total) return;
+    const keep = (heap) => {
+      const live = [];
+      for (const entry of heap) {
+        const l = entry.ref.deref();
+        if (l && !l._lootRemoved && l._lootTimerToken === entry.token) live.push(entry);
+      }
+      heap.length = 0;
+      for (const entry of live) heapPush(heap, entry);
+    };
+    keep(this.lootExpiry); keep(this.fadingLootOrder); this._lootTimerStale = 0;
   }
 
   rebuildGrid() {
@@ -263,9 +394,36 @@ export class World {
       const c = this.creatures[i];
       if (c.dead && c !== p && (c.removeT = (c.removeT || 0) + dt) > 0.05) this.creatures.splice(i, 1);
     }
-    for (let i = this.loot.length - 1; i >= 0; i--) {
-      if (this.loot[i].update(dt, this) === false) this.loot.splice(i, 1);
+    // Loot may stay on the floor indefinitely, so only airborne loot, nearby loot, and
+    // the player's explicit target need per-frame simulation. A time heap handles expiry
+    // for distant drops without waking every item on every frame.
+    if (this.loot.length - (this._lootTombstones || 0) !== (this._lootRegistered || 0)) this.rebuildLootIndex();
+    while (this.lootExpiry.length && this.lootExpiry[0].at <= this.time) {
+      const entry = heapPop(this.lootExpiry), l = entry.ref.deref();
+      if (!l || l._lootRemoved || l._lootTimerToken !== entry.token || l._lootExpiryAt !== entry.at) continue;
+      if (p && p.lootTarget === l) {
+        l._lootExpiryAt = this.time + 0.5;
+        heapPush(this.lootExpiry, { at: l._lootExpiryAt, ref: new WeakRef(l), token: l._lootTimerToken });
+      } else this.removeLoot(l);
     }
+    const serial = ++this._lootUpdateSerial;
+    const updateLoot = (l) => {
+      if (!l || l._lootRemoved || l._lootUpdateSerial === serial) return;
+      l._lootUpdateSerial = serial;
+      if (l.update(dt, this) === false) { this.removeLoot(l); return; }
+      this.updateLootPosition(l);
+      if (l.z <= 0 && l.vz <= 0) this.movingLoot.delete(l);
+    };
+    for (const l of this.movingLoot) updateLoot(l);
+    for (const l of this.unindexedLoot) updateLoot(l);
+    if (p && !p.dead) {
+      const radius = Math.max(4, p.st?.markPickupRadius || 0);
+      const near = this.queryLootRect(p.x - radius, p.y - radius, p.x + radius, p.y + radius, this.lootNearBuffer);
+      for (const l of near) updateLoot(l);
+      if (p.lootTarget && !p.lootTarget._lootRemoved) updateLoot(p.lootTarget);
+    }
+    this._compactLoot();
+    this._compactLootTimers();
     for (let i = this.corpses.length - 1; i >= 0; i--) {
       const c = this.corpses[i];
       c.t += dt;
