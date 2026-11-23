@@ -40,9 +40,11 @@ test('diagnostic identifies the Fist of the Heavens sound path and verifies one 
   const strikeEnd = skillrun.indexOf("    case 'fissure': {", strikeStart);
   const strike = skillrun.slice(strikeStart, strikeEnd);
   assert.match(strike, /p\.classId === 'paladin' && fx === 'lightning'/);
-  assert.match(strike, /if \(paladinLightningStrikes\) playCastSfx\('light', 0\.6\)/);
+  assert.match(strike, /if \(paladinLightningStrikes\) playCastSfx\('light', 0\.6, \{/);
+  assert.match(strike, /source: `Paladin\/\$\{baseSk\.name\}`/);
+  assert.match(strike, /sourceActive: \(\) => pendingStrikes > 0/);
   assert.match(strike, /strikeFx\(x, y, fx, E, !paladinLightningStrikes\)/);
-  assert.match(strike, /if \(p\.dead \|\| p\.world !== w\) return/);
+  assert.match(strike, /if \(p\.dead \|\| p\.world !== w\) \{ pendingStrikes--; return; \}/);
   const lightningFx = skillrun.slice(skillrun.indexOf('function strikeFx('));
   assert.match(lightningFx, /if \(playSfx\) sfx\('light', 0\.6\)/);
   assert.match(audio, /o\.stop\(t \+ 0\.25\)/, 'the shared procedural lightning cue has a finite 0.25-second source');

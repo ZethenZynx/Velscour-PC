@@ -7,7 +7,7 @@ import { camera } from '../core/view.js';
 import { GroundItem } from './loot.js';
 import { explosionFx } from '../gfx/shapes.js';
 import { hit, aoe, chainHit } from './combat.js';
-import { Projectile, Delayed, Area, makeWall, Orbit, Whirl, Leap, Dash, NovaWave, BeamCh, Trap, Rain, Fissure, AuraFx, explode, coneTargets } from './hazards.js';
+import { Projectile, Delayed, Area, makeWall, Orbit, Whirl, Leap, Dash, cursorDashLength, NovaWave, BeamCh, Trap, Rain, Fissure, AuraFx, explode, coneTargets } from './hazards.js';
 import { buffAmount, curseAmount, skillDuration, skillDurationLimit, spearBarrageAreas, ricochetCount, RICOCHET_BLAST, whirlwindRageRate } from '../data/skills.js';
 import { createSummon } from './monster.js';
 import { lanceLeap, lanceSpearBarrage } from '../gfx/lancefx.js';
@@ -84,7 +84,8 @@ export function castSkill(p, sk, L, tx, ty, opts = {}) {
 
   const w = p.world, m = sk.m, st = p.st;
   const castSfx = p.classId === 'paladin' ? PALADIN_SKILL_SFX[baseSk.name] : null;
-  const playCastSfx = (fallback, volume = 1) => sfx(castSfx || fallback, volume);
+  const playCastSfx = (fallback, volume = 1, diagnosticContext = null) => sfx(castSfx || fallback, volume, 1,
+    diagnosticContext || (castSfx ? { source: `Paladin/${baseSk.name}`, sourceActive: false } : null));
   const astro = sk.classId === ASTRONOMER;
   const el = astro && sk.el === 'arcane' ? 'astral' : sk.el, E = elem(el); // the Astronomer's arcane flies as blue starlight
   let fx = sk.fx;
@@ -330,7 +331,7 @@ export function castSkill(p, sk, L, tx, ty, opts = {}) {
       break;
     }
     case 'dash':
-      w.addHazard(new Dash({ world: w, src: p, ang, len: Math.min(5 * (m.range ?? 1), Math.max(2, dist(p.x, p.y, tx, ty) + 0.5)), dmg, el, fx, o, n: m.n || 1, exp: m.exp || !!(morph && (morph.trail || morph.novaOnCast || morph.stun)) }));
+      w.addHazard(new Dash({ world: w, src: p, ang, len: cursorDashLength(p.x, p.y, tx, ty, 5 * (m.range ?? 1)), dmg, el, fx, o, n: m.n || 1, exp: m.exp || !!(morph && (morph.trail || morph.novaOnCast || morph.stun)) }));
       if (m.lance) energyLance(p, ang, 2.2 + Math.min(20, L) * 0.05, el, 0.45 * (m.n || 1) + 0.2, L, m.prism).ride = true; // couched lance rides the charge
       sfx('swing');
       break;
@@ -421,18 +422,24 @@ export function castSkill(p, sk, L, tx, ty, opts = {}) {
       // each delayed impact stacked several copies after the cast had ended,
       // especially for Fist of the Heavens (four strikes at 90 ms intervals).
       const paladinLightningStrikes = p.classId === 'paladin' && fx === 'lightning';
-      if (paladinLightningStrikes) playCastSfx('light', 0.6);
+      let pendingStrikes = n;
+      if (paladinLightningStrikes) playCastSfx('light', 0.6, {
+        source: `Paladin/${baseSk.name}`,
+        sourceActive: () => pendingStrikes > 0 && !p.dead && p.world === w,
+      });
       for (let i = 0; i < n; i++) {
         later(w, i * 0.09, () => {
           // A queued impact belongs to the world where it was cast. Do not let
           // stale timers emit visuals or audio after a transition or logout.
-          if (p.dead || p.world !== w) return;
+          if (p.dead || p.world !== w) { pendingStrikes--; return; }
           let x, y;
           const t = pool.length ? pool[i % pool.length] : null;
           if (t && !t.dead) { x = t.x; y = t.y; } else { const a = rand(TAU), d = rand(0, 3); x = cx + Math.cos(a) * d; y = cy + Math.sin(a) * d; }
-          if (!w.map.isFloor(x, y)) return;
-          strikeFx(x, y, fx, E, !paladinLightningStrikes);
-          aoe(w, p, x, y, 0.95 * area, roll(dmg), el, o);
+          try {
+            if (!w.map.isFloor(x, y)) return;
+            strikeFx(x, y, fx, E, !paladinLightningStrikes);
+            aoe(w, p, x, y, 0.95 * area, roll(dmg), el, o);
+          } finally { pendingStrikes--; }
         });
       }
       break;

@@ -407,7 +407,7 @@ export class Player extends Creature {
     const { x, y } = this;
     G.hitStop = Math.max(G.hitStop, 0.08);
     camera.shake(7);
-    sfx('thunder');
+    sfx('thunder', 1, 1, { source: 'Player.levelUpFx', sourceActive: false });
     const sig = addEffect(new Sigil(x, y, 2.6, 3.4, '#8a0a06', '#3a0000'), 'ground');
     addEffect(new SigilFlames(sig), 'ground');
     addEffect(new Column(x, y, '#7a0804', 1.6, 60, 520));
@@ -582,6 +582,7 @@ export class Player extends Creature {
   tryUseSkill(skOrId, tx, ty, target = null) {
     const sk = typeof skOrId === 'string' ? SKILLS[skOrId] : skOrId;
     if (this.dead || !sk) return false;
+    if (sk.kind === 'dash' && (!Number.isFinite(tx) || !Number.isFinite(ty) || dist(this.x, this.y, tx, ty) <= 0.05)) return false;
     const L = this.skillLevel(sk);
     if (sk.classId === 'barbarian' && ((sk.kind === 'whirl' && this.rage < whirlwindRageCost(L)) || this.rage < rageCost(sk, L))) {
       if ((this.noRageT || 0) <= 0) { floatText(this.x, this.y, 60, 'Need Rage', '#ff9933', 12); this.noRageT = 0.8; }

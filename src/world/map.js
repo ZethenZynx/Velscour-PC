@@ -149,6 +149,35 @@ export class TileMap {
     return moved;
   }
 
+  /** Move along one fixed vector without wall sliding. Used by dash/charge so collision never steers the actor sideways. */
+  moveStraight(e, dx, dy, ghost = false) {
+    const d = Math.hypot(dx, dy);
+    if (!d) return false;
+    const r = bodyR(e), steps = Math.max(1, Math.ceil(d / 0.12));
+    if (this.castleGateLocked && e.isPlayer && this.castleGateTiles?.length) {
+      for (let k = 1; k <= steps; k++) {
+        const x = e.x + dx * k / steps, y = e.y + dy * k / steps;
+        for (const i of this.castleGateTiles) {
+          const tx = i % this.w, ty = (i / this.w) | 0;
+          if (x + r > tx && x - r < tx + 1 && y + r > ty && y - r < ty + 1) return false;
+        }
+      }
+    }
+    const from = this.hgt ? this.tileIdx(e.x, e.y) : undefined;
+    if (!this.circleFree(e.x, e.y, r, from)) {
+      const nx = e.x + dx, ny = e.y + dy;
+      if (this.walkable(nx, ny) && (!this.hgt || this.stepOk(from, this.tileIdx(nx, ny)))) { e.x = nx; e.y = ny; return true; }
+      return false;
+    }
+    // Sample the line so a large frame step cannot cross a thin wall or a closed gate.
+    for (let k = 1; k <= steps; k++) {
+      const x = e.x + dx * k / steps, y = e.y + dy * k / steps;
+      if (ghost ? !this.isFloor(x, y) : !this.circleFree(x, y, r, from)) return false;
+    }
+    e.x += dx; e.y += dy;
+    return true;
+  }
+
   /** Grid ray-march line of sight. */
   los(x0, y0, x1, y1) {
     const dx = x1 - x0, dy = y1 - y0;

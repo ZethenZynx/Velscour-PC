@@ -806,28 +806,40 @@ export class Leap {
 }
 
 // ===================================================================== Dash
+/** Distance a cursor-directed dash may travel; nearby enemies never affect this value. */
+export function cursorDashLength(x, y, tx, ty, maxDistance) {
+  if (![x, y, tx, ty, maxDistance].every(Number.isFinite)) return 0;
+  return Math.min(Math.max(0, maxDistance), Math.hypot(tx - x, ty - y));
+}
 export class Dash {
   constructor(o) {
     Object.assign(this, { t: 0, speed: 16, w: 0.9, n: 1, o: {} }, o);
     this.E = elem(this.el);
     this.src.channel = this;
     this.hitSet = new Set();
-    this.start(this.ang, this.len);
+    this.ang = Number.isFinite(this.ang) ? this.ang : (this.src.facing || 0);
+    this.segments = Math.max(1, Math.floor(Number(this.n) || 1));
+    this.segmentLen = Math.max(0, Number(this.len) || 0) / this.segments;
+    this.start(this.ang, this.segmentLen, true);
   }
-  start(ang, len) {
-    this.ang = ang; this.left = len; this.src.face(ang);
-    this.src.invuln = Math.max(this.src.invuln || 0, len / this.speed + 0.05);
+  start(ang, len, initial = false) {
+    // Lock the activation vector for the whole dash. A moving enemy cannot steer it mid-flight.
+    if (initial) this.ang = ang;
+    this.left = len; this.src.face(this.ang);
+    if (initial) this.src.invuln = Math.max(this.src.invuln || 0, (this.segmentLen * this.segments) / this.speed + 0.05);
   }
   update(dt) {
     const s = this.src;
-    if (s.dead) return false;
+    if (s.dead) { if (s.channel === this) s.channel = null; return false; }
     this.t += dt;
     const step = Math.min(this.left, this.speed * dt);
-    const moved = this.world.map.move(s, Math.cos(this.ang) * step, Math.sin(this.ang) * step, false);
-    this.left -= step;
-    s.moving = true;
-    spawn({ type: 'glow', x: s.x, y: s.y, z: 24, life: 0.3, size: 7, size1: 0, color: this.E.glow, add: true });
-    if (this.fx === 'fire') burst(s.x, s.y, 10, 'fire', 2, 1);
+    const moved = step > 0 && this.world.map.moveStraight(s, Math.cos(this.ang) * step, Math.sin(this.ang) * step, false);
+    if (moved) {
+      this.left -= step;
+      s.moving = true;
+      spawn({ type: 'glow', x: s.x, y: s.y, z: 24, life: 0.3, size: 7, size1: 0, color: this.E.glow, add: true });
+      if (this.fx === 'fire') burst(s.x, s.y, 10, 'fire', 2, 1);
+    }
     for (const c of this.world.hostiles(s.team, s.x, s.y, this.w)) {
       if (this.hitSet.has(c.id)) continue;
       this.hitSet.add(c.id);
@@ -836,14 +848,15 @@ export class Dash {
     }
     if (this.left <= 0.01 || !moved) {
       if (this.exp) explode(this.world, s, s.x, s.y, 1.5, this.dmg, this.el, this.o, 'explosion');
-      if (--this.n > 0) {
-        const t = this.world.nearestHostile(s.team, s.x, s.y, 6);
-        const a = t ? angleTo(s.x, s.y, t.x, t.y) : this.ang + rand(-2, 2);
+      // Multi-part dashes share one total cursor-directed distance. Walls end the sequence;
+      // do not acquire enemies or introduce a random replacement vector.
+      if (moved && --this.segments > 0) {
         this.hitSet.clear();
-        this.start(a, t ? Math.min(6, dist(s.x, s.y, t.x, t.y) + 1.2) : 3);
+        this.start(this.ang, this.segmentLen);
         return true;
       }
       s.channel = null;
+      s.moving = false;
       return false;
     }
     return true;

@@ -4,7 +4,7 @@
 // (p.relicDmg, a running average) for kills, casts and hurts.
 import { G } from '../state.js';
 import { rand, chance, TAU, dist } from '../core/util.js';
-import { sfx } from '../core/audio.js';
+import { sfx, audioDiagnosticsEnabled } from '../core/audio.js';
 import { addEffect, Column, Ring, Bolt, Telegraph, burst, sparkle, smoke, elem, glowSprite } from '../gfx/vfx.js';
 import { isoX, isoY } from '../core/view.js';
 import { explode, Delayed } from './hazards.js';
@@ -62,7 +62,15 @@ function fire(p, pr, tgt, base) {
         hit(p, next, amt, el, { ...PROC });
         from = next;
       }
-      sfx('thunder', 0.35); return; }
+      // A chain proc can fire repeatedly during a dense fight. Thunder is a long,
+      // rolling six-second sample (2.4s procedural fallback), so the last hit could
+      // ring well after combat and sound like a Fist of the Heavens cast. Keep the lightning snap, not the
+      // extended thunder bed; the player's level-up thunder remains unchanged.
+      const firedAt = w.time;
+      const audioTrace = audioDiagnosticsEnabled()
+        ? { source: 'relicProc:chain', sourceActive: () => !p.dead && p.world === w && w.time - firedAt < CAP_CD }
+        : null;
+      sfx('light', 0.35, 1, audioTrace); return; }
     case 'consecrate': if (!at) return; w.addHazard(new Consecration(w, p, at.x, at.y, pr.r || 2, Math.max(1, amt), el)); return;
     case 'void': { const t = at || nearest(p, 8); if (!t) return; // the Abyssal Edge: a rift tears open where the blow fell
       addEffect(new Ring(t.x, t.y, 0.2, pr.r || 2.2, 0.5, '#a040ff', 5)); burst(t.x, t.y, 24, el, 14, 2);

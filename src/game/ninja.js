@@ -12,7 +12,7 @@ import { sfx } from '../core/audio.js';
 import { camera, isoX, isoY } from '../core/view.js';
 import { addEffect, Ring, Slash, Bolt, burst, smoke, sparkle, floatText, addDecal } from '../gfx/vfx.js';
 import { hit, aoe } from './combat.js';
-import { explode, lineTargets, Projectile, Area } from './hazards.js';
+import { explode, lineTargets, Projectile, Area, cursorDashLength } from './hazards.js';
 import { later } from './sigs/common.js';
 import { drawBlade3D, preloadBlades3D } from '../gfx/blades3d.js';
 import { AfterImage, shadowTrail, CutLine, cutBetween, Crescent, Rope, drawGhost, bloodCut, SHADE, CYAN } from '../gfx/shadowfx.js';
@@ -65,7 +65,7 @@ export function ninjaCast(p, sk, L, tx, ty, C) {
       return undefined;
     }
     case 'swallow': { // a leaping cut clean through them
-      const len = Math.min(5 * (m.range ?? 1), Math.max(2, dist(p.x, p.y, tx, ty) + 0.5)), dur = len / 16 + 0.06, x0 = p.x, y0 = p.y;
+      const len = cursorDashLength(p.x, p.y, tx, ty, 5 * (m.range ?? 1)), dur = len / 16 + 0.06, x0 = p.x, y0 = p.y;
       flip(p, dur, 1, 26); shadowTrail(p, dur, { a: 0.5, glow: el === 'light' ? '#a8ccff' : null });
       later(w, dur, () => { cutBetween(x0, y0, p.x, p.y, { width: 6, dur: 0.4, color: el === 'light' ? '#cfe2ff' : CYAN }); addEffect(new Crescent(p.x, p.y, ang + Math.PI, { r: 1.2, arc: 2.4 })); });
       o.cut = true;

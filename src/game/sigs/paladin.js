@@ -49,7 +49,7 @@ function impact(p, x, y) {
   const w = p.world;
   if (!w || p.dead) return;
   // Start the dedicated impact cue in the same update as the visual strike and damage.
-  sfx('judgement_impact', 0.9);
+  sfx('judgement_impact', 0.9, 1, { source: 'Paladin/Judgement impact', sourceActive: false });
   const P = power(p);
   addEffect(new Column(x, y, GOLD, 0.7, 60, 420));
   for (let i = 0; i < 3; i++) addEffect(new Ring(x, y, 0.2, 2.6 + i * 0.7, 0.45 + i * 0.15, i ? WHITE : GOLD, 8 - i * 2, { fill: !i }));
@@ -129,7 +129,7 @@ export default {
     s.runes = 0; s.ready = false; s.flash = 1;
     p.world.addHazard(new Hammer(p, x, y));
     floatText(p.x, p.y, 100, 'JUDGEMENT', GOLD, 20, { life: 1.8, vz: 16 });
-    sfx('judgement_cast', 0.78);
+    sfx('judgement_cast', 0.78, 1, { source: 'Paladin/Judgement cast', sourceActive: () => !p.dead && !!p.world });
     stat('paladin', 'fire');
     later(p.world, 0.05, () => addEffect(new Ring(p.x, p.y, 0.1, 1.6, 0.4, WHITE, 3)));
   },

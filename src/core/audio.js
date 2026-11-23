@@ -8,6 +8,8 @@ import { G } from '../state.js';
 
 let ac = null, master, sfxBus, musicBus, ambBus, noiseBuf, pulseWave;
 let fanfareEnd = 0;
+let audioDiagnosticSink = null, currentDiagnostic = null, nextDiagnosticId = 0;
+const activeDiagnostics = new Map();
 const last = {};
 const AUDIO = 'assets/audio/';
 let manifest = null;               // assets/audio/audio.json
@@ -57,6 +59,54 @@ export const audioOut = () => sfxBus;
 /** For tests: what's loaded and playing. */
 export const audioStats = () => ({ samples: Object.keys(buffers).length, music: music && music.kind, song: music && music.song, amb: amb && amb.bed });
 
+/** Optional, disabled-by-default one-shot tracing for audio investigations. */
+export function setAudioDiagnosticSink(sink) {
+  audioDiagnosticSink = typeof sink === 'function' ? sink : null;
+  if (!audioDiagnosticSink) activeDiagnostics.clear();
+  return () => { if (audioDiagnosticSink === sink) setAudioDiagnosticSink(null); };
+}
+export const audioDiagnosticsEnabled = () => !!audioDiagnosticSink;
+export function audioDiagnosticStats() {
+  return { enabled: !!audioDiagnosticSink, active: activeDiagnostics.size,
+    sounds: [...activeDiagnostics.values()].map(({ id, sound, asset, source, sources }) => ({ id, sound, asset, source, activeSources: sources })) };
+}
+function diagnosticEvent(type, record, details = {}) {
+  if (!audioDiagnosticSink || !record) return;
+  try { audioDiagnosticSink({ type, id: record.id, sound: record.sound, asset: record.asset,
+    source: record.source, stack: record.stack, activeInstances: activeDiagnostics.size,
+    activeSources: record.sources, ...details }); } catch { /* diagnostics must never affect sound playback */ }
+}
+function diagnosticSourceActive(record) {
+  if (typeof record?.sourceActive !== 'function') return record?.sourceActive ?? null;
+  try { return !!record.sourceActive(); } catch { return null; }
+}
+function beginDiagnostic(sound, context) {
+  if (!audioDiagnosticSink) return null;
+  const record = { id: ++nextDiagnosticId, sound, asset: `procedural:${sound}`, source: context?.source || 'unattributed',
+    sourceActive: context?.sourceActive, stack: new Error().stack, sources: 0, sealed: false };
+  activeDiagnostics.set(record.id, record);
+  diagnosticEvent('play', record, { sourceActive: diagnosticSourceActive(record) });
+  return record;
+}
+function finishDiagnostic(record, reason = 'ended') {
+  if (!audioDiagnosticSink || !record || !activeDiagnostics.has(record.id)) return;
+  activeDiagnostics.delete(record.id);
+  diagnosticEvent('stop', record, { reason, sourceActive: diagnosticSourceActive(record) });
+}
+function trackDiagnosticSource(source, record = currentDiagnostic) {
+  if (!audioDiagnosticSink || !record || !source) return;
+  record.sources++;
+  diagnosticEvent('source-start', record);
+  const previous = source.onended;
+  source.onended = (event) => {
+    try { previous?.call(source, event); } finally {
+      record.sources = Math.max(0, record.sources - 1);
+      diagnosticEvent('source-stop', record);
+      if (record.sealed && record.sources === 0) finishDiagnostic(record);
+    }
+  };
+}
+
 export function applyVolumes() {
   if (!ac) return;
   sfxBus.gain.value = G.settings.sfx;
@@ -77,7 +127,7 @@ function noise(t, dur, { type = 'lowpass', f0 = 1000, f1 = f0, q = 1, vol = 0.5,
   filt.frequency.setValueAtTime(f0, t); filt.frequency.exponentialRampToValueAtTime(Math.max(20, f1), t + dur);
   const g = ac.createGain(); env(g, t, a, vol, dur);
   src.connect(filt); filt.connect(g); g.connect(sfxBus);
-  src.start(t, Math.random() * 0.5); src.stop(t + dur + 0.05);
+  trackDiagnosticSource(src); src.start(t, Math.random() * 0.5); src.stop(t + dur + 0.05);
 }
 
 function tone(t, dur, { wave = 'sine', f0 = 440, f1 = f0, vol = 0.3, a = 0.005, detune = 0 } = {}) {
@@ -86,7 +136,7 @@ function tone(t, dur, { wave = 'sine', f0 = 440, f1 = f0, vol = 0.3, a = 0.005, 
   o.frequency.setValueAtTime(f0, t); o.frequency.exponentialRampToValueAtTime(Math.max(20, f1), t + dur);
   const g = ac.createGain(); env(g, t, a, vol, dur);
   o.connect(g); g.connect(sfxBus);
-  o.start(t); o.stop(t + dur + 0.05);
+  trackDiagnosticSource(o); o.start(t); o.stop(t + dur + 0.05);
 }
 
 const R = (a, b) => a + Math.random() * (b - a);
@@ -217,19 +267,26 @@ const SOUNDS = {
   note: (t, p) => { const f = [523, 587, 659, 784, 880][Math.floor(Math.random() * 5)]; tone(t, 0.3, { wave: 'triangle', f0: f * p, vol: 0.12 }); },
 };
 
-export function sfx(name, vol = 1, pitch = 1) {
-  if (!ac || G.settings.sfx <= 0) return;
+export function sfx(name, vol = 1, pitch = 1, context = null) {
+  const diagnostic = beginDiagnostic(name, context);
+  if (!ac || G.settings.sfx <= 0) { if (diagnostic) { diagnostic.sealed = true; finishDiagnostic(diagnostic, 'unavailable'); } return; }
   const fn = SOUNDS[name];
-  if (!fn) return;
+  if (!fn) { if (diagnostic) { diagnostic.sealed = true; finishDiagnostic(diagnostic, 'unknown-sound'); } return; }
   const now = ac.currentTime;
   const l = last[name] || (last[name] = { t: 0, n: 0 });
-  if (now - l.t < 0.045) { if (++l.n > 2) return; } else { l.n = 0; }
+  if (now - l.t < 0.045) { if (++l.n > 2) { if (diagnostic) { diagnostic.sealed = true; finishDiagnostic(diagnostic, 'rate-limited'); } return; } } else { l.n = 0; }
   l.t = now;
+  const previousDiagnostic = currentDiagnostic;
+  currentDiagnostic = diagnostic;
   try {
     const p = pitch * (0.92 + Math.random() * 0.16);
     if (playSample(name, vol, p, now)) return;
     voice(vol, () => fn(now, p));
-  } catch (e) { /* audio errors are never fatal */ }
+  } catch (e) { if (diagnostic) diagnosticEvent('error', diagnostic, { message: String(e?.message || e) }); /* audio errors are never fatal */ }
+  finally {
+    currentDiagnostic = previousDiagnostic;
+    if (diagnostic) { diagnostic.sealed = true; if (!diagnostic.sources) finishDiagnostic(diagnostic); }
+  }
 }
 // A procedural sound's oscillators, filters and gains go through a gain of their own that is unplugged once the sound
 // is over (the longest is ~2.5 s): left wired into the mix, a long session piles up thousands of finished nodes, which
@@ -342,6 +399,8 @@ function playSample(name, vol, p, now) {
   const g = ac.createGain(); g.gain.value = d.v * vol;
   src.connect(g); g.connect(sfxBus); src.start(now);
   src.onended = () => { src.disconnect(); g.disconnect(); };
+  if (currentDiagnostic) currentDiagnostic.asset = `sample:${buf}`;
+  trackDiagnosticSource(src);
   live.push(now + buffers[buf].duration / p);
   if (d.layer) voice(vol * 0.6, () => SOUNDS[d.layer](now, p));
   return true;

@@ -173,6 +173,12 @@ export const controls = {
     const sk = id && SKILLS[id];
     p.interact = null; p.moveTarget = null; p.path = null;
     if (!sk) return;
+    if (isMovementSkill(sk)) {
+      // A direct enemy click still means "move toward this cursor point" for directional skills.
+      // Keep the sampled cursor coordinates and never pass the hovered enemy as a steering target.
+      p.tryUseSkill(sk, tx, ty, null);
+      return;
+    }
     if (sk.kind === 'melee') p.tryUseSkill(sk, target.x, target.y, target);
     else p.tryUseSkill(sk, target ? target.x : tx, target ? target.y : ty, target);
     p.face(angleTo(p.x, p.y, target.x, target.y));
