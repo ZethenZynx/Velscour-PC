@@ -333,21 +333,27 @@ export function wornSets(equip) {
 }
 /** Everything worn relics add on top of item stats: {stats: [[stat, v]], legs: {flag: true}, procs: [...]}. */
 export function relicBonuses(equip) {
-  const stats = [], legs = {}, procs = [];
+  const stats = [], legs = {}, procs = [], sets = [], itemPowers = [];
   const power = (P) => { if (!P) return; for (const l of P.legs || []) legs[l] = true; for (const pr of P.procs || []) procs.push({ ...pr, name: P.name }); };
-  for (const it of Object.values(equip || {})) {
+  for (const [slot, it] of Object.entries(equip || {})) {
     if (!it) continue;
     power(POW(it));
     const gw = glyphOf(it);
-    if (gw && gw.power) power(POWERS[gw.power]);
+    if (gw && gw.power) { power(POWERS[gw.power]); itemPowers.push({ slot, glyph: gw.name, power: gw.power, ilvl: it.ilvl, rarity: it.rarity }); }
   }
   for (const [id, w] of Object.entries(wornSets(equip))) {
     const C = COVENANT_BY_ID[id];
     if (!C) continue;
-    C.bonus.forEach(([s, k], i) => { if (w.n >= i + 2) stats.push([s, lineValue(s, w.ilvl, k * TUNE.set)]); });
-    if (w.n >= 5) { const P = POWERS[C.power]; power(P); stats.push(...powerStats(P, powerLevel(w.ilvl, 3))); }
+    const source = { id, name: C.name, pieces: w.n, ilvl: w.ilvl, power: w.n >= 5 ? C.power : null, stats: [] };
+    C.bonus.forEach(([s, k], i) => { if (w.n >= i + 2) { const line = [s, lineValue(s, w.ilvl, k * TUNE.set)]; stats.push(line); source.stats.push(line); } });
+    if (w.n >= 5) {
+      const P = POWERS[C.power]; power(P);
+      const powerLines = powerStats(P, powerLevel(w.ilvl, 3));
+      stats.push(...powerLines); source.stats.push(...powerLines);
+    }
+    if (source.stats.length || source.power) sets.push(source);
   }
-  return { stats, legs, procs };
+  return { stats, legs, procs, sets, itemPowers };
 }
 /** A power's text with its numbers at this item's level. */
 export function powerText(P, pl) {

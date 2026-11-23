@@ -9,7 +9,10 @@ import {
   SLOTS, SLOT_NAMES, VANITY_SLOTS, shownEquip, itemName, itemColor, GEMS, gemName,
   itemValue, fitsSlot, slotFor, unsocketCost, makeGem, canWearVanity, itemBaseDisplayName, compareEquipmentForStorage,
   itemReqStat, charEffectiveStat, canEquipItem, BASE_REQ_STAT, STAT_NAMES,
+  legendaryDesc, augTarget, powerLevel,
 } from '../data/items.js';
+import { AUGMENTS } from '../data/rings.js';
+import { buildEquipmentStatReport } from '../game/statbreakdown.mjs';
 import { CLASSES, ATTRS } from '../data/classes.js';
 import { allocateAttrs } from '../game/attrs.js';
 import { xpToNext, CRIT_OVER, addToBag } from '../game/player.js';
@@ -20,7 +23,7 @@ import { heldPortraitArgs } from '../gfx/heldart.js';
 import { tabRow, sheetButtons, useSheet, unloadTab } from './sheets.js';
 import { openBannerCustomizer } from './bannercustomizer.js';
 import { openSeal } from './sealed.js';
-import { glyphOf } from '../data/relics.js';
+import { glyphOf, COVENANT_BY_ID, POWERS, powerText } from '../data/relics.js';
 import { noteFind, openTabs } from '../game/reliquary.js';
 import { marksTotal, marksFree, capXp } from '../game/marks.js';
 import { heresyRankOf } from '../game/heresies.js';
@@ -754,6 +757,75 @@ function statsBlock() {
   for (const [k, v, tip] of rows.filter(([k]) => !primary.has(k))) extra.innerHTML += `<span class="dim"${tip ? ` title="${escapeHtml(tip)}"` : ''}>${k}</span><span class="v"${tip ? ` title="${escapeHtml(tip)}"` : ''}>${v}</span>`;
   more.appendChild(extra);
   box.appendChild(more);
+  const breakdown = buildEquipmentStatReport(p, c);
+  const auditDetails = el('details', 'character-equipment-breakdown');
+  auditDetails.dataset.statDetails = 'equipment-root';
+  auditDetails.innerHTML = '<summary>Equipment bonus breakdown</summary><p class="character-breakdown-note">Values come from the live player stat calculation. Item totals include affixes (including enchant changes), socketed gems and item powers; Covenant set lines are listed by set. No stat uses a diminishing-return curve. Armor mitigation is calculated against attacker level, as explained in its tooltip.</p>';
+  const metrics = el('details', 'character-breakdown-section');
+  metrics.dataset.statDetails = 'effective-values';
+  metrics.innerHTML = '<summary>Effective character and combat values</summary>';
+  const metricTable = el('div', 'character-breakdown-table');
+  metricTable.innerHTML = '<div class="character-breakdown-head"><span>Stat</span><span>Raw gear</span><span>Combined</span><span>Formula / DR stage</span><span>Effective</span><span>Cap</span><span>Over cap</span></div>';
+  for (const row of breakdown.rows) {
+    const cap = row.cap == null ? 'No Cap' : `${row.cap}${row.unit}`;
+    const effective = row.effectiveText || `${Math.round(row.effective * 10) / 10}${row.unit}`;
+    const excess = row.excess <= 0 ? '<span class="dim">—</span>' : row.overCapText
+      ? `<span title="${escapeHtml(row.note)}">${escapeHtml(row.overCapText.split(';')[0])}<br><span class="dim">${escapeHtml(row.overCapText.split(';')[1] || '')}</span>${row.wasted > 0 ? `<br><b class="character-over-cap">${Math.round(row.wasted * 10) / 10}% wasted</b>` : ''}</span>`
+      : `<b class="character-over-cap">+${Math.round(row.excess * 10) / 10}${row.unit}</b>`;
+    const title = escapeHtml(row.note || 'No additional formula notes.');
+    metricTable.innerHTML += `<div class="character-breakdown-row" title="${title}"><span class="character-breakdown-stat">${escapeHtml(row.label)}</span><span>${escapeHtml(row.rawEquipmentText || `${Math.round(row.rawEquipment * 10) / 10}${row.unit}`)}</span><span>${Math.round(row.combined * 10) / 10}${row.unit}</span><span>${escapeHtml(row.diminishing || 'None')}</span><span class="character-breakdown-effective">${escapeHtml(effective)}</span><span>${escapeHtml(cap)}</span>${excess}</div>`;
+  }
+  metrics.appendChild(metricTable);
+  auditDetails.appendChild(metrics);
+  const modifierRoot = el('div', 'character-modifier-categories');
+  for (const group of breakdown.affixRows) {
+    const section = el('details', 'character-breakdown-section');
+    section.dataset.statDetails = `modifiers-${group.id}`;
+    section.innerHTML = `<summary>${escapeHtml(group.name)} — ${group.rows.length} modifiers</summary>`;
+    const table = el('div', 'character-modifier-table');
+    for (const row of group.rows) {
+      const amount = `${Math.round(row.raw * 10) / 10}${row.unit}`;
+      const sourceText = row.sources.length
+        ? row.sources.map((source) => {
+          const equipped = source.slot === 'set' ? null : c.equip[source.slot];
+          const sourceName = equipped ? itemName(equipped) : source.name;
+          return `${source.slot === 'set' || source.slot === 'bonus' ? source.name : `${source.slot}: ${sourceName}`} ${source.value > 0 ? '+' : ''}${Math.round(source.value * 10) / 10}${row.unit}`;
+        }).join(' · ')
+        : 'No equipped item currently grants this modifier.';
+      const combined = `${Math.round(row.combined * 10) / 10}${row.unit}`;
+      table.innerHTML += `<div class="character-modifier-row" title="${escapeHtml(sourceText)}"><span>${escapeHtml(row.label)}</span><b>${amount}</b><small>All equipped item and set bonuses: ${combined}</small><small class="character-modifier-sources">${escapeHtml(sourceText)}</small></div>`;
+    }
+    section.appendChild(table);
+    modifierRoot.appendChild(section);
+  }
+  auditDetails.appendChild(modifierRoot);
+  const itemPowers = breakdown.audit.itemPowers || [];
+  const powerItems = Object.entries(breakdown.audit.bySlot || {}).filter(([slot, item]) => item.legendary || (item.augments || []).length || itemPowers.some((power) => power.slot === slot));
+  const setPowers = breakdown.audit.setSources || [];
+  if (powerItems.length || setPowers.length) {
+    const powers = el('details', 'character-breakdown-section');
+    powers.dataset.statDetails = 'equipment-powers';
+    powers.innerHTML = '<summary>Equipment powers and skill augments</summary>';
+    for (const [slot, item] of powerItems) {
+      const equipped = c.equip[slot], descriptions = [];
+      if (equipped?.legendary) descriptions.push(legendaryDesc(equipped));
+      const glyphPower = itemPowers.find((power) => power.slot === slot);
+      if (glyphPower && POWERS[glyphPower.power]) descriptions.push(`${glyphPower.glyph}: ${powerText(POWERS[glyphPower.power], powerLevel(glyphPower.ilvl, 5))}`);
+      for (const aug of item.augments || []) {
+        const A = AUGMENTS[aug.id];
+        if (A) descriptions.push(`${A.name} (${augTarget(aug)}): ${A.desc(aug.pow || 1)}`);
+      }
+      powers.appendChild(el('div', 'character-power-source', `<b>${escapeHtml(SLOT_NAMES[slot] || slot)}: ${escapeHtml(itemName(equipped))}</b><span>${escapeHtml(descriptions.join(' '))}</span>`));
+    }
+    for (const set of setPowers) {
+      const power = set.power && POWERS[set.power];
+      const desc = power ? powerText(power, powerLevel(set.ilvl, 3)) : '';
+      const bonuses = set.stats.map(([key, value]) => `${key} ${value > 0 ? '+' : ''}${Math.round(value * 10) / 10}`).join(' · ');
+      powers.appendChild(el('div', 'character-power-source', `<b>${escapeHtml(set.name)} (${set.pieces} pieces)</b><span>${escapeHtml([desc, bonuses].filter(Boolean).join(' · '))}</span>`));
+    }
+    auditDetails.appendChild(powers);
+  }
+  box.appendChild(auditDetails);
   box.appendChild(el('div', 'character-history', `Kills ${fmtInt(c.kills || 0)} · Deaths ${c.deaths || 0} · Deepest ${c.deepest || 0}`));
   return box;
 }

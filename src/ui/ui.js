@@ -193,9 +193,11 @@ export const UI = {
       if (p) {
         const st = p.body.scrollTop;
         const expanded = p.body.querySelector('.character-more')?.open;
+        const statDetails = new Map([...p.body.querySelectorAll('[data-stat-details]')].map((node) => [node.dataset.statDetails, node.open]));
         r(p.body, p);
         p.body.scrollTop = st;
         if (expanded) p.body.querySelector('.character-more')?.setAttribute('open', '');
+        for (const node of p.body.querySelectorAll('[data-stat-details]')) if (statDetails.has(node.dataset.statDetails)) node.open = statDetails.get(node.dataset.statDetails);
       }
     }
     if (this.tipEl && !this.tipEl.classList.contains('hidden') && this.tipKey && this.tipRefreshFn) {

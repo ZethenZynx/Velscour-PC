@@ -32,6 +32,7 @@ import { bladeOnBack } from './sigs/deathknight.js';
 import { rogueHit, rogueUpdate } from './rogue.js';
 import { ninjaHit, ninjaUpdate } from './ninja.js';
 import { ninjaGearLayer } from '../gfx/ninjagear.js';
+import { CRIT_OVER } from '../data/statformulas.mjs';
 
 const FREE_CAST = new Set(['buff', 'summon']);
 import { relicBonuses } from '../data/relics.js';
@@ -53,7 +54,7 @@ export function classTune(cls, level) {
 }
 
 /** Critical damage for each 1% of crit chance past the 75% cap. */
-export const CRIT_OVER = 2;
+export { CRIT_OVER };
 
 const ELEM_KEYS = ['fire', 'cold', 'light', 'poison', 'arcane', 'holy', 'shadow', 'blood', 'acid'];
 
@@ -99,17 +100,25 @@ export class Player extends Creature {
     let itemArmorSum = 0;
     let weapon = null;
     const legendary = {};
+    const equipmentBySlot = {};
+    const equipmentStats = {};
+    const equipmentSets = {};
+    const equipmentSpecialSources = [];
+    const addEquipment = (target, key, value) => { target[key] = (target[key] || 0) + value; };
     for (const slot of SLOTS) {
       const it = c.equip[slot];
       if (!it) continue;
-      for (const [k, v] of itemStats(it)) put(k, v);
-      itemArmorSum += itemArmor(it);
+      const source = equipmentBySlot[slot] = { stats: {}, armor: itemArmor(it), weapon: null, name: it.uname || it.rname || it.baseName || it.slot, legendary: it.legendary || null, augments: (Array.isArray(it.aug) ? it.aug : []).map((a) => ({ ...a })) };
+      for (const [k, v] of itemStats(it)) { put(k, v); addEquipment(source.stats, k, v); addEquipment(equipmentStats, k, v); }
+      itemArmorSum += source.armor;
+      if (source.armor) { addEquipment(source.stats, 'baseArmor', source.armor); addEquipment(equipmentStats, 'baseArmor', source.armor); }
+      if (it.slot === 'weapon' && it.dmg) source.weapon = itemDmg(it);
       if (slot === 'weapon') weapon = it;
       if (it.legendary) legendary[it.legendary] = true;
     }
     // Heirloom, Covenant and Glyphword powers and set bonuses (data/relics.js)
     const rb = relicBonuses(c.equip);
-    for (const [k, v] of rb.stats) put(k, v);
+    for (const [k, v] of rb.stats) { put(k, v); addEquipment(equipmentSets, k, v); addEquipment(equipmentStats, k, v); }
     Object.assign(legendary, rb.legs);
     // Passive Talent Tree bonuses (data/talents.js)
     const tb = computeTalentBonuses(c);
@@ -147,6 +156,12 @@ export class Player extends Creature {
     // Mark Crit is chance-only. Preserve the game's normal overflow conversion for
     // gear/buffs, but do not turn excess Mark chance into critical damage.
     const critOver = Math.max(0, baseCritRaw - 75);
+    const rawAtkSpeed = dex * 0.3 + (add.atkSpeed || 0) + buffAs;
+    const rawCastSpeed = int * 0.1 + (add.castSpeed || 0) + buffAs + mk.castSpeed;
+    const rawMoveSpeed = (add.moveSpeed || 0) + buffSpeed * 0.6 + mk.moveSpeed;
+    const rawBlock = (add.block || 0) + buffBlock / 2;
+    const rawReduce = (add.reduce || 0) + buffReduce + mk.reduce;
+    const rawCdr = (add.cdr || 0) + buffCdr / 2 + mk.cdr;
     const st = {
       str, dex, vit, int, legendary, procs: rb.procs,
       armor: Math.round((itemArmorSum + (add.armor || 0) + str + (c.level - 1) * 1.5) * (1 + ((add.armorPct || 0) + buffArmor) / 100)),
@@ -214,6 +229,9 @@ export class Player extends Creature {
       markBreachRewards: mk.breachRewards, markHeretic: mk.heretic,
       markAffixReduce: mk.affixReduce, markUnboundDamage: mk.unboundDamage,
       markEfficiency: mk.manaCost, markGemMastery: mk.gemTier,
+      // These are the exact pre-cap inputs used immediately below. Keeping them beside
+      // the live stats lets the Character & Stats sheet explain caps without reimplementing them.
+      rawCritChance: critRaw, rawAtkSpeed, rawCastSpeed, rawMoveSpeed, rawBlock, rawReduce, rawCdr,
     };
     for (const k of ELEM_KEYS) st.elemPct[k] = (add[k + 'Pct'] || 0) + int + (buffElemental[k] || 0);
     st.weapon = weapon ? itemDmg(weapon) : [Math.round(1 + (c.level - 1) * 0.4), Math.round(3 + (c.level - 1) * 0.8)];
@@ -223,8 +241,22 @@ export class Player extends Creature {
       const pair = itemDmg(second);
       st.weapon = st.weapon.map((v, i) => (v + pair[i]) * 0.6);
       st.atkSpeed = Math.min(150, st.atkSpeed + 12);
+      st.rawAtkSpeed += 12;
+      addEquipment(equipmentStats, 'atkSpeed', 12);
+      equipmentSpecialSources.push({ name: 'Dual-wielding two weapons', stats: [['atkSpeed', 12]] });
     }
     if (weapon) { const fd = add.flatDmg || 0; st.weapon = [st.weapon[0] + fd, st.weapon[1] + fd]; }
+    st.equipmentAudit = {
+      bySlot: equipmentBySlot,
+      stats: equipmentStats,
+      setStats: equipmentSets,
+      setSources: (rb.sets || []).map((set) => ({ ...set, stats: set.stats.map(([key, value]) => [key, value]) })),
+      itemPowers: (rb.itemPowers || []).map((power) => ({ ...power })),
+      specialSources: equipmentSpecialSources,
+      armor: itemArmorSum,
+      combinedInputs: { ...add },
+      formulaInputs: { critChance: { raw: critRaw, convertedOverflow: critOver }, atkSpeed: st.rawAtkSpeed, castSpeed: rawCastSpeed, moveSpeed: rawMoveSpeed, block: rawBlock, reduce: rawReduce, cdr: rawCdr },
+    };
     const lifePct = (add.lifePct || 0) + buffLife;
     const baseHp = C.life + (c.level - 1) * C.lifeLvl + Math.round(Math.pow(c.level - 1, 2) * 0.45) + vit * 6 + (add.life || 0);
     this.maxHp = Math.round(baseHp * (1 + lifePct / 100) * st.fortitude * (1 + mk.vitality / 100));
