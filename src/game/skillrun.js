@@ -417,13 +417,21 @@ export function castSkill(p, sk, L, tx, ty, opts = {}) {
       const n = m.n || 1;
       const [cx, cy] = clampTarget(w, p, tx, ty, 10);
       const pool = w.hostiles(p.team, cx, cy, 5 * (m.r ?? 1));
+      // Paladin lightning strikes share one cast cue. Playing the sound from
+      // each delayed impact stacked several copies after the cast had ended,
+      // especially for Fist of the Heavens (four strikes at 90 ms intervals).
+      const paladinLightningStrikes = p.classId === 'paladin' && fx === 'lightning';
+      if (paladinLightningStrikes) playCastSfx('light', 0.6);
       for (let i = 0; i < n; i++) {
         later(w, i * 0.09, () => {
+          // A queued impact belongs to the world where it was cast. Do not let
+          // stale timers emit visuals or audio after a transition or logout.
+          if (p.dead || p.world !== w) return;
           let x, y;
           const t = pool.length ? pool[i % pool.length] : null;
           if (t && !t.dead) { x = t.x; y = t.y; } else { const a = rand(TAU), d = rand(0, 3); x = cx + Math.cos(a) * d; y = cy + Math.sin(a) * d; }
           if (!w.map.isFloor(x, y)) return;
-          strikeFx(x, y, fx, E);
+          strikeFx(x, y, fx, E, !paladinLightningStrikes);
           aoe(w, p, x, y, 0.95 * area, roll(dmg), el, o);
         });
       }
@@ -546,13 +554,13 @@ function sigil(x, y, r, E) {
   }
 }
 
-function strikeFx(x, y, fx, E) {
+function strikeFx(x, y, fx, E, playSfx = true) {
   switch (fx) {
     case 'lightning': case 'spirit': case 'crow':
       addEffect(Bolt(x - 0.8, y - 0.8, 320, x, y, 0, E.glow, 0.3, 3.5));
       addEffect(new Ring(x, y, 0.1, 1, 0.3, E.glow, 3));
       burst(x, y, 4, 'light', 10, 2.5);
-      sfx('light', 0.6);
+      if (playSfx) sfx('light', 0.6);
       break;
     case 'meteor':
       explosionFx(x, y, 1.1, 'fire', 'meteor', { sound: chance(0.5), shakeMul: 0.4 });
