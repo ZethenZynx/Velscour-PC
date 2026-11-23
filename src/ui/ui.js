@@ -1,9 +1,36 @@
 // UI core: panels, dialogs, tooltips, drag & drop, message log.
 import { onArtLoad } from '../core/classart.js';
 import { onSkillSheetLoad } from './icons.js';
-import { G } from '../state.js';
+import { G, saveSettings } from '../state.js';
 import { el, escapeHtml } from '../core/util.js';
 import { sfx } from '../core/audio.js';
+
+/** Calculate a responsive, untransformed default for the paired Altar/Marks windows. */
+export function heresyPairLayout(viewW, viewH, saved = {}) {
+  const margin = 12, gap = 12, maxW = Math.max(1, viewW - margin * 2), maxH = Math.max(1, viewH - margin * 2);
+  const scale = Math.min(1, (maxW - gap) / 1600);
+  if (scale < 0.5 || maxW < 780) return { stacked: true, margin, gap };
+  const altarW = 520 * scale, marksW = 1080 * scale;
+  const altarH = Math.min(720, maxH), marksH = Math.min(740, maxH);
+  const groupW = altarW + gap + marksW, groupH = Math.max(altarH, marksH);
+  const defaults = {
+    heresies: { x: (viewW - groupW) / 2, y: (viewH - groupH) / 2, w: altarW, h: altarH },
+    marks: { x: (viewW - groupW) / 2 + altarW + gap, y: (viewH - groupH) / 2, w: marksW, h: marksH },
+  };
+  for (const [name, panel] of Object.entries(defaults)) {
+    const position = saved[name];
+    if (Number.isFinite(position?.x) && Number.isFinite(position?.y)) {
+      panel.x = Math.max(0, Math.min(position.x, 1) * Math.max(0, viewW - panel.w));
+      panel.y = Math.max(0, Math.min(position.y, 1) * Math.max(0, viewH - panel.h));
+    }
+  }
+  return { stacked: false, margin, gap, panels: defaults };
+}
+
+/** Convert a screen pointer position and its preserved title-bar offset to host-relative panel coordinates. */
+export function panelDragPosition(clientX, clientY, host, offset) {
+  return { x: clientX - host.left - offset.x, y: clientY - host.top - offset.y };
+}
 
 export const $ = (s, root = document) => root.querySelector(s);
 
@@ -207,6 +234,30 @@ export const UI = {
     p.root.style.top = `${top}px`;
     this.windowPositions.set(name, { x: left, y: top, moved: true });
   },
+  savePairedPanelPosition(name) {
+    if (!this.panelsEl?.classList.contains('heresy-marks-pair')) return;
+    const p = this.panels.get(name);
+    if (!p) return;
+    const host = this.panelsEl.getBoundingClientRect(), rect = p.root.getBoundingClientRect();
+    const maxX = Math.max(1, host.width - rect.width), maxY = Math.max(1, host.height - rect.height);
+    G.settings.panelPositions ||= {};
+    G.settings.panelPositions[name] = {
+      x: Math.max(0, Math.min(1, (rect.left - host.left) / maxX)),
+      y: Math.max(0, Math.min(1, (rect.top - host.top) / maxY)),
+    };
+    saveSettings();
+  },
+  resetPairedPanelPositions() {
+    if (G.settings.panelPositions) {
+      delete G.settings.panelPositions.heresies;
+      delete G.settings.panelPositions.marks;
+      if (!Object.keys(G.settings.panelPositions).length) delete G.settings.panelPositions;
+    }
+    this.windowPositions.delete('heresies');
+    this.windowPositions.delete('marks');
+    saveSettings();
+    this.layoutPanels();
+  },
   layoutPanels() {
     if (!this.panelsEl) return;
     const isPortrait = document.body.classList.contains('portrait') || window.innerHeight > window.innerWidth;
@@ -216,7 +267,10 @@ export const UI = {
     const paired = this.panels.size === 2 && this.panels.has('heresies') && this.panels.has('marks');
     const wasPaired = this.panelsEl.classList.contains('heresy-marks-pair');
     this.panelsEl.classList.toggle('heresy-marks-pair', paired);
+    this.panelsEl.classList.toggle('heresy-marks-stacked', false);
     if (wasPaired && !paired) {
+      this.windowPositions.delete('heresies');
+      this.windowPositions.delete('marks');
       for (const [, p] of this.panels) {
         for (const prop of ['position', 'left', 'top', 'right', 'bottom', 'width', 'height', 'max-width', 'max-height', 'min-width', 'min-height', 'transform', 'transform-origin']) p.root.style.removeProperty(prop);
         if (p.opts.width) p.root.style.width = p.opts.width;
@@ -224,29 +278,26 @@ export const UI = {
     }
     if (paired) {
       const altar = this.panels.get('heresies'), marks = this.panels.get('marks');
-      if (this.desktopPanels()) {
-        const widths = [520, 1080], heights = [720, 740], gap = 12;
-        const viewW = Math.max(1, Math.min(host.width, window.innerWidth - host.left));
-        const viewH = Math.max(1, Math.min(host.height, window.innerHeight - host.top));
-        const scale = Math.min(1, Math.max(0.1, (viewW - 24) / (widths[0] + widths[1] + gap)), Math.max(0.1, (viewH - 24) / Math.max(...heights)));
-        const groupW = (widths[0] + widths[1]) * scale + gap;
-        let x = Math.max(12, (viewW - groupW) / 2);
-        const y = Math.max(12, (viewH - Math.max(...heights) * scale) / 2);
-        for (const [panel, width, height] of [[altar, widths[0], heights[0]], [marks, widths[1], heights[1]]]) {
+      const desktop = this.desktopPanels();
+      const viewW = Math.max(1, Math.min(host.width, window.innerWidth - host.left));
+      const viewH = Math.max(1, Math.min(host.height, window.innerHeight - host.top));
+      const layout = desktop ? heresyPairLayout(viewW, viewH, G.settings.panelPositions || {}) : { stacked: true };
+      this.panelsEl.classList.toggle('heresy-marks-stacked', layout.stacked);
+      if (desktop && !layout.stacked) {
+        for (const [name, panel] of [['heresies', altar], ['marks', marks]]) {
+          const { x, y, w, h } = layout.panels[name];
           panel.root.style.setProperty('position', 'absolute', 'important');
           panel.root.style.setProperty('left', `${x}px`, 'important');
           panel.root.style.setProperty('top', `${y}px`, 'important');
           panel.root.style.setProperty('right', 'auto', 'important');
           panel.root.style.setProperty('bottom', 'auto', 'important');
-          panel.root.style.setProperty('width', `${width}px`, 'important');
-          panel.root.style.setProperty('height', `${height}px`, 'important');
+          panel.root.style.setProperty('width', `${w}px`, 'important');
+          panel.root.style.setProperty('height', `${h}px`, 'important');
           panel.root.style.setProperty('min-width', '0', 'important');
           panel.root.style.setProperty('min-height', '0', 'important');
           panel.root.style.setProperty('max-width', 'none', 'important');
-          panel.root.style.setProperty('max-height', `${viewH / scale}px`, 'important');
-          panel.root.style.setProperty('transform-origin', 'top left', 'important');
-          panel.root.style.setProperty('transform', `scale(${scale})`, 'important');
-          x += width * scale + gap;
+          panel.root.style.setProperty('max-height', `${viewH}px`, 'important');
+          panel.root.style.setProperty('transform', 'none', 'important');
         }
       } else {
         for (const panel of [altar, marks]) {
@@ -255,9 +306,9 @@ export const UI = {
           panel.root.style.setProperty('top', 'auto', 'important');
           panel.root.style.setProperty('right', 'auto', 'important');
           panel.root.style.setProperty('bottom', 'auto', 'important');
-          panel.root.style.setProperty('width', 'min(96vw, 620px)', 'important');
-          panel.root.style.setProperty('height', '42vh', 'important');
-          panel.root.style.setProperty('max-height', '42vh', 'important');
+          panel.root.style.setProperty('width', 'min(96vw, 680px)', 'important');
+          panel.root.style.setProperty('height', 'min(42vh, 390px)', 'important');
+          panel.root.style.setProperty('max-height', 'min(42vh, 390px)', 'important');
           panel.root.style.setProperty('min-width', '0', 'important');
           panel.root.style.setProperty('min-height', '0', 'important');
           panel.root.style.setProperty('transform', 'none', 'important');
@@ -348,7 +399,7 @@ export const UI = {
     }
   },
   startPanelMove(e, name) {
-    if (!this.desktopPanels() || e.button !== 0 || e.target.closest('button, input, select')) return;
+    if (!this.desktopPanels() || this.panelsEl?.classList.contains('heresy-marks-stacked') || e.button !== 0 || e.target.closest('button, input, select')) return;
     const p = this.panels.get(name);
     if (!p) return;
     e.preventDefault();
@@ -363,7 +414,8 @@ export const UI = {
     const move = (ev) => {
       if (ev.pointerId !== pointerId) return;
       if (ev.buttons !== undefined && (ev.buttons & 1) === 0) return end();
-      this.placePanel(name, ev.clientX - host.left - dx, ev.clientY - host.top - dy);
+      const point = panelDragPosition(ev.clientX, ev.clientY, host, { x: dx, y: dy });
+      this.placePanel(name, point.x, point.y);
     };
     const end = (ev) => {
       if (ended || (ev?.pointerId != null && ev.pointerId !== pointerId)) return;
@@ -374,6 +426,7 @@ export const UI = {
       document.removeEventListener('pointercancel', end);
       p.head.removeEventListener('lostpointercapture', end);
       window.removeEventListener('blur', end);
+      this.savePairedPanelPosition(name);
       G.uiLayoutCustomizer?.recordPosition?.(`panel-${name}`, p.root);
     };
     p.head.addEventListener('pointermove', move);

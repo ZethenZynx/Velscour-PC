@@ -158,6 +158,11 @@ export const Marks = {
     const spend = el('button', 'btn small', 'Spend all (best value)'); spend.disabled = marksFree() < 1; spend.onclick = () => { autoSpend(); sfx('levelup', 0.4); UI.refresh(); };
     const reset = el('button', 'btn small', 'Reset upgrades'); reset.disabled = !MARK_CATS.some((id) => marksIn(id)); reset.onclick = () => UI.dialog({ title: 'Reset Infernal Mark upgrades?', html: 'All purchased upgrade ranks will be refunded to your available Marks. This does not remove earned Marks.', buttons: [{ label: 'Reset upgrades', cls: 'red', fn: () => { resetMarks(); sfx('ui'); UI.refresh(); } }, { label: 'Cancel' }] });
     foot.append(spend, reset, el('span', 'dim mk-foot-note', 'Upgrade costs rise with each rank. Effects use their normal gameplay caps and eligibility.'));
+    if (this.activePair) {
+      const resetWindows = el('button', 'btn small', 'Reset window positions');
+      resetWindows.onclick = () => { UI.resetPairedPanelPositions(); sfx('ui'); };
+      foot.insertBefore(resetWindows, foot.lastChild);
+    }
     body.appendChild(foot);
     savePanel(panel);
   },

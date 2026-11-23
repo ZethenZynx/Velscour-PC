@@ -1391,11 +1391,9 @@ body.touch .hx-door { min-height: 48px; }
 #panels.heresy-marks-pair { overflow: visible; }
 #panels.heresy-marks-pair > [data-panel="heresies"],
 #panels.heresy-marks-pair > [data-panel="marks"] { max-width: none; }
-@media (max-width: 760px), (orientation: portrait) {
-  #panels.heresy-marks-pair { display: flex !important; flex-direction: column; align-items: center; justify-content: flex-start; gap: 8px; overflow-y: auto; overflow-x: hidden; padding: 8px; }
-  #panels.heresy-marks-pair > [data-panel="heresies"],
-  #panels.heresy-marks-pair > [data-panel="marks"] { position: relative !important; inset: auto !important; transform: none !important; width: min(96vw, 620px) !important; max-width: 96vw !important; height: min(42vh, 390px) !important; min-height: 0 !important; }
-}
+#panels.heresy-marks-stacked { display: flex !important; flex-direction: column; align-items: center; justify-content: flex-start; gap: 8px; overflow-y: auto; overflow-x: hidden; padding: 8px; }
+#panels.heresy-marks-stacked > [data-panel="heresies"],
+#panels.heresy-marks-stacked > [data-panel="marks"] { position: relative !important; inset: auto !important; transform: none !important; width: min(96vw, 680px) !important; max-width: 96vw !important; height: min(42vh, 390px) !important; max-height: min(42vh, 390px) !important; min-height: 0 !important; }
 .macros-panel .mc-why { font-size: 12px; margin-bottom: 8px; }
 .mc-row { padding: 6px 8px; margin-bottom: 6px; border: 1px solid #3a2e22; border-left: 3px solid var(--gold-dim); border-radius: 6px; background: rgba(16,10,6,.55); }
 .mc-head { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
