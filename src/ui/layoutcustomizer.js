@@ -132,10 +132,7 @@ export const UILayoutCustomizer = {
   },
   applyElement(id, node = this.node(id)) {
     const state = this.state, def = DEFAULTS.get(id), entry = this.effective(id, state), configured = !!effectiveLayoutEntry(state, id, characterLayoutId(G.char));
-    if (isHeresyPairManagedPanel(id, UI.panelsEl?.classList.contains('heresy-marks-pair'))) {
-      node?.classList.remove('ui-layout-hidden');
-      return;
-    }
+    if (isHeresyPairManagedPanel(id, UI.panelsEl?.classList.contains('heresy-marks-pair'))) return;
     if (def.mode === 'canvas') {
       G.settings.uiFloatingText = configured ? { scale: entry.scale, opacity: entry.opacity, visible: entry.visible } : null;
       return;

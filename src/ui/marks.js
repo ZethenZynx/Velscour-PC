@@ -14,12 +14,11 @@ const fmt = (v) => Number(v || 0).toLocaleString(undefined, { maximumFractionDig
 const defaultPanel = { x: null, y: null, w: 1080, h: 700, category: 'offensive', selected: 'might' };
 const panelSettings = () => G.settings.markPanel ||= { ...defaultPanel };
 function savePanel(p) {
+  if (!p?.root?.isConnected || Marks.activePair) return;
   const s = panelSettings();
-  if (p?.root?.isConnected && !Marks.activePair) {
-    const r = p.root.getBoundingClientRect(), host = UI.panelsEl.getBoundingClientRect();
-    if (UI.desktopPanels()) { s.x = Math.max(0, r.left - host.left); s.y = Math.max(0, r.top - host.top); }
-    s.w = Math.round(r.width); s.h = Math.round(r.height);
-  }
+  const r = p.root.getBoundingClientRect(), host = UI.panelsEl.getBoundingClientRect();
+  if (UI.desktopPanels()) { s.x = Math.max(0, r.left - host.left); s.y = Math.max(0, r.top - host.top); }
+  s.w = Math.round(r.width); s.h = Math.round(r.height);
   saveSettings();
 }
 function iconFor(u, size = 54) {
@@ -68,11 +67,10 @@ export const Marks = {
       p.head.addEventListener('pointerup', () => savePanel(p));
       p.head.addEventListener('pointercancel', () => savePanel(p));
       if (typeof ResizeObserver !== 'undefined') {
-        p._marksResize = new ResizeObserver(() => { if (this.active && UI.panels.get('marks') === p) savePanel(p); });
+        p._marksResize = new ResizeObserver(() => { if (this.active && !this.activePair && UI.panels.get('marks') === p) savePanel(p); });
         p._marksResize.observe(p.root);
       }
     }
-    if (paired) UI.layoutPanels();
     return p;
   },
   selectCategory(category) {

@@ -308,7 +308,7 @@ export const UI = {
           panel.root.style.setProperty('translate', 'none', 'important');
           panel.root.style.setProperty('scale', 'none', 'important');
           panel.root.style.setProperty('transform', 'none', 'important');
-          panel.root.classList.remove('ui-layout-hidden');
+          if (panel.root.classList.contains('ui-layout-hidden')) panel.root.classList.remove('ui-layout-hidden');
         }
       } else {
         for (const panel of [altar, marks]) {
@@ -325,7 +325,7 @@ export const UI = {
           panel.root.style.setProperty('translate', 'none', 'important');
           panel.root.style.setProperty('scale', 'none', 'important');
           panel.root.style.setProperty('transform', 'none', 'important');
-          panel.root.classList.remove('ui-layout-hidden');
+          if (panel.root.classList.contains('ui-layout-hidden')) panel.root.classList.remove('ui-layout-hidden');
         }
       }
       return;

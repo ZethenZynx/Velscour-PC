@@ -25,6 +25,7 @@ export const Heresies = {
       sfx('error');
       return false;
     }
+    if (this.active && UI.isOpen('heresies') && UI.isOpen('marks')) return true;
     UI.closeAll();
     Marks.activePair = true;
     this.active = true;
