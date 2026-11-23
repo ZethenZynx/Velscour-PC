@@ -3,6 +3,7 @@
 import assert from 'node:assert/strict';
 import { performance } from 'node:perf_hooks';
 import { World } from '../../src/game/world.js';
+import { GroundItem } from '../../src/game/loot.js';
 import { G } from '../../src/state.js';
 import { clearVfx } from '../../src/gfx/vfx.js';
 
@@ -102,11 +103,32 @@ try {
   indexed.update(1 / 60);
   assert.equal(indexed.loot.reduce((n, item) => n + item.updateCalls, 0), 0, 'a cleared area does not update distant settled drops');
 
+  // Exercise the production GroundItem logic as well as the synthetic call counter.
+  const liveWorld = new World('town', { map: emptyMap, biome: {}, props: [], torches: [], portals: [], creatures: [] });
+  const livePlayer = { x: 0, y: 0, team: 'player', isPlayer: true, dead: false, r: 0.35, st: {}, lootTarget: null, update() {} };
+  liveWorld.player = livePlayer; liveWorld.add(livePlayer); G.world = liveWorld; G.player = livePlayer;
+  G.settings = { ...G.settings, autoLoot: false };
+  for (let i = 0; i < 10000; i++) {
+    const item = new GroundItem(50 + (i % 500), 50 + Math.floor(i / 500), 'item', { item: { type: 'gem', rarity: 0 } });
+    item.z = 0; item.vz = 0; item.vx = 0; item.vy = 0; liveWorld.addLoot(item);
+  }
+  const liveSamples = (fn) => {
+    const out = [];
+    for (let i = 0; i < 70; i++) { const t = performance.now(); fn(); out.push(performance.now() - t); }
+    out.sort((a, b) => a - b);
+    const at = (p) => out[Math.floor((out.length - 1) * p)];
+    return { p50: at(0.5), p95: at(0.95), p99: at(0.99), worst: out.at(-1) };
+  };
+  const legacyItemUpdate = liveSamples(() => { for (const item of liveWorld.loot) item.update(1 / 60, liveWorld); });
+  const indexedWorldUpdate = liveSamples(() => liveWorld.update(1 / 60));
+  assert.ok(indexedWorldUpdate.p50 < legacyItemUpdate.p50, 'production world update avoids per-frame work on distant settled items');
+
   console.log('Persistent loot insertion (legacy full scan vs indexed implementation):');
   for (const row of measurements) console.log(`  ${row.count.toLocaleString()} drops: ${row.oldMs.toFixed(2)} ms -> ${row.newMs.toFixed(2)} ms (${((row.oldMs - row.newMs) / row.oldMs * 100).toFixed(1)}% faster in this run)`);
   console.log('Dungeon clear simulation: retained loot scanning vs indexed local query (60 samples per stage):');
   for (const phase of phaseTimes) console.log(`  ${String(phase.count).padStart(5)} retained (${Math.round(phase.count / 200)}%): scan p50/p95/p99/max ${phase.scan.p50.toFixed(4)}/${phase.scan.p95.toFixed(4)}/${phase.scan.p99.toFixed(4)}/${phase.scan.worst.toFixed(4)} ms; query ${phase.query.p50.toFixed(4)}/${phase.query.p95.toFixed(4)}/${phase.query.p99.toFixed(4)}/${phase.query.worst.toFixed(4)} ms`);
   console.log('With 20,000 settled drops outside the player radius, world update called 0 loot updates (the former full-list loop called 20,000).');
+  console.log(`Production GroundItem workload, 10,000 distant settled items: former per-item update p50/p95/p99/max ${legacyItemUpdate.p50.toFixed(4)}/${legacyItemUpdate.p95.toFixed(4)}/${legacyItemUpdate.p99.toFixed(4)}/${legacyItemUpdate.worst.toFixed(4)} ms; indexed World.update ${indexedWorldUpdate.p50.toFixed(4)}/${indexedWorldUpdate.p95.toFixed(4)}/${indexedWorldUpdate.p99.toFixed(4)}/${indexedWorldUpdate.worst.toFixed(4)} ms.`);
   console.log('Dungeon retained-loot lifecycle and performance regressions passed. These are Node simulation timings, not graphical frame-time measurements.');
 } finally {
   G.world = old.world; G.player = old.player; G.settings = old.settings; clearVfx();
