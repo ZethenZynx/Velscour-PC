@@ -7,10 +7,9 @@ import {
 
 const normalized = normalizeLayoutEntry({ anchor: 'center', attachment: 'detached', scale: 135 });
 assert.equal(normalized.anchor, 'center');
-assert.equal(normalized.attachment, 'detached');
+assert.equal('attachment' in normalized, false, 'orb attachment is no longer independently configurable');
 assert.equal(normalized.scale, 135);
 assert.equal(normalizeLayoutEntry({ anchor: 'diagonal', attachment: 'loose' }).anchor, 'left');
-assert.equal(normalizeLayoutEntry({ anchor: 'diagonal', attachment: 'loose' }).attachment, 'attached');
 
 const state = normalizeLayoutState({
   activeProfile: 'default',
@@ -20,6 +19,7 @@ const state = normalizeLayoutState({
         'ability-hotbar': { x: 0.43, y: 0.82, scale: 120 },
         experience: { x: 0.5, y: 0.91 },
         health: { x: 0.12, y: 0.68, scale: 90 },
+        'health-orb': { x: 0.11, y: 0.67, scale: 80 },
         'mana-value': { x: 0.74, y: 0.69 },
         'buff-icons': { anchor: 'right' },
       },
@@ -32,17 +32,15 @@ const state = normalizeLayoutState({
 assert.equal(migrateGroupedHudLayout(state), true);
 const global = activeLayoutMap(state);
 assert.deepEqual([global['main-action-bar'].x, global['main-action-bar'].y, global['main-action-bar'].scale], [0.43, 0.82, 120]);
-assert.equal(global['health-orb'].attachment, 'detached', 'legacy independent orb layout should stay independently placed');
-assert.equal(global['mana-orb'].attachment, 'detached');
+for (const id of ['health', 'health-orb', 'mana', 'mana-value', 'health-value', 'mana-orb']) assert.equal(id in global, false, `${id} legacy orb positioning is removed`);
 assert.equal(global['buff-icons'].anchor, 'right');
 const character = state.profiles.default.characterOverrides.hero;
 assert.equal(character['main-action-bar'].x, 0.51);
-assert.equal(character['mana-orb'].attachment, 'detached');
+assert.equal('mana-orb' in character, false, 'legacy independent character orb positioning is removed');
 state.characterSpecific = true;
 assert.equal(effectiveLayoutEntry(state, 'main-action-bar', 'hero').x, 0.51, 'migrated grouped character positions remain applied');
 assert.equal(effectiveLayoutEntry(state, 'main-action-bar', 'hero').scale, 120, 'grouped character layouts inherit account-wide scale');
-assert.equal(effectiveLayoutEntry(state, 'mana-orb', 'hero').x, 0.8, 'migrated detached-orb position remains a character override');
-assert.equal(effectiveLayoutEntry(state, 'mana-orb', 'hero').attachment, 'detached', 'migrated detached-orb state remains explicit');
+assert.equal(effectiveLayoutEntry(state, 'mana-orb', 'hero'), undefined, 'orbs can no longer resolve as independent layout elements');
 assert.equal(migrateGroupedHudLayout(state), false, 'migration must be idempotent');
 
 const html = await readFile(new URL('../../index.html', import.meta.url), 'utf8');

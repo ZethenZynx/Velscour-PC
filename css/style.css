@@ -862,7 +862,7 @@ body.touch .reliquary-panel .codex-cell { width: 34px; height: 34px; }
 .ui-layout-dialog > h2 { display: none; }
 .ui-layout-dialog > .dlg-body { position: absolute; inset: 0; padding: 0; overflow: visible; pointer-events: none; }
 .ui-layout-stage { position: absolute; inset: 0; pointer-events: none; }
-.ui-layout-item { position: absolute; z-index: 1; display: block; min-width: 0; min-height: 0; padding: 2px; overflow: visible; border: 1px dashed rgba(207,190,155,.9); border-radius: 3px; background: rgba(42,36,29,.16); color: #eee0c7; font: 700 11px/1.25 var(--font-head); text-align: center; text-shadow: 0 1px 3px #000,0 0 5px #000; touch-action: none; pointer-events: auto; cursor: move; }
+.ui-layout-item { position: absolute; z-index: 1; display: block; box-sizing: border-box; min-width: 0; min-height: 0; padding: 2px; overflow: visible; border: 1px dashed rgba(207,190,155,.9); border-radius: 3px; background: rgba(42,36,29,.16); color: #eee0c7; font: 700 11px/1.25 var(--font-head); text-align: center; text-shadow: 0 1px 3px #000,0 0 5px #000; touch-action: none; pointer-events: auto; cursor: move; }
 .ui-layout-item span { display: inline-block; max-width: 100%; padding: 2px 4px; border-radius: 2px; background: rgba(10,7,5,.76); }
 .ui-layout-item.selected { z-index: 2; border: 2px solid #f0c66f; background: rgba(213,168,62,.18); box-shadow: 0 0 9px rgba(255,207,106,.62), inset 0 0 0 1px rgba(0,0,0,.8); }
 .ui-layout-item.locked { cursor: default; }

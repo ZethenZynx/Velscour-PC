@@ -2,7 +2,7 @@
 export const UI_LAYOUT_VERSION = 1;
 export const UI_LAYOUT_SCALE_MIN = 50;
 export const UI_LAYOUT_SCALE_MAX = 200;
-const LAYOUT_FIELDS = ['x', 'y', 'width', 'height', 'scale', 'opacity', 'visible', 'locked', 'anchor', 'textAlign', 'attachment'];
+const LAYOUT_FIELDS = ['x', 'y', 'width', 'height', 'scale', 'opacity', 'visible', 'locked', 'anchor', 'textAlign'];
 
 export function cloneLayoutValue(value) {
   return JSON.parse(JSON.stringify(value));
@@ -12,14 +12,13 @@ export function normalizeLayoutEntry(value = {}) {
   const number = (v, fallback, min, max) => v === null || v === undefined || v === '' ? fallback : Number.isFinite(Number(v)) ? Math.max(min, Math.min(max, Number(v))) : fallback;
   const anchor = ['left', 'right', 'center'].includes(value.anchor) ? value.anchor : 'left';
   const textAlign = ['left', 'center', 'right'].includes(value.textAlign) ? value.textAlign : 'left';
-  const attachment = value.attachment === 'detached' ? 'detached' : 'attached';
   return {
     x: number(value.x, null, 0, 1), y: number(value.y, null, 0, 1),
     width: number(value.width, null, 80, 2400), height: number(value.height, null, 28, 1600),
     scale: number(value.scale, 100, UI_LAYOUT_SCALE_MIN, UI_LAYOUT_SCALE_MAX),
     opacity: number(value.opacity, 100, 10, 100),
     visible: value.visible !== false, locked: !!value.locked,
-    anchor, textAlign, attachment,
+    anchor, textAlign,
   };
 }
 
@@ -77,7 +76,7 @@ export function migrateEnvironmentInfoLayout(state) {
   return changed;
 }
 
-/** Keep legacy HUD preferences while the formerly independent hotbar and orb pieces join their visual groups. */
+/** Keep legacy action-bar placement while folding every old orb control into that single group. */
 export function migrateGroupedHudLayout(state) {
   let changed = false;
   for (const profile of Object.values(state?.profiles || {})) {
@@ -89,14 +88,9 @@ export function migrateGroupedHudLayout(state) {
         if (fields?.[source]) fields['main-action-bar'] = [...fields[source]];
         changed = true;
       }
-      for (const [newId, oldIds] of [['health-orb', ['health', 'health-value']], ['mana-orb', ['mana', 'mana-value']]]) {
-        if (layouts[newId]) continue;
-        const source = oldIds.find((id) => layouts[id]);
-        if (source) {
-          layouts[newId] = { ...cloneLayoutValue(layouts[source]), attachment: 'detached' };
-          if (fields?.[source]) fields[newId] = [...fields[source], ...(fields[source].includes('attachment') ? [] : ['attachment'])];
-          changed = true;
-        }
+      for (const id of ['ability-hotbar', 'experience', 'experience-value', 'health-orb', 'mana-orb', 'health', 'health-value', 'mana', 'mana-value']) {
+        if (Object.hasOwn(layouts, id)) { delete layouts[id]; changed = true; }
+        if (fields && Object.hasOwn(fields, id)) { delete fields[id]; changed = true; }
       }
       for (const id of ['buff-icons', 'debuff-icons']) {
         if (layouts[id] && !['left', 'right', 'center'].includes(layouts[id].anchor)) { layouts[id].anchor = 'left'; changed = true; }
@@ -106,6 +100,18 @@ export function migrateGroupedHudLayout(state) {
     for (const [characterId, layouts] of Object.entries(profile.characterOverrides || {})) migrate(layouts, profile.characterOverrideFields?.[characterId]);
   }
   return changed;
+}
+
+/** Convert a live element's viewport box directly to the editor's screen-pixel coordinates. */
+export function layoutEditorRect(rect) {
+  if (!rect || !Number.isFinite(rect.left) || !Number.isFinite(rect.top) || !Number.isFinite(rect.width) || !Number.isFinite(rect.height) || rect.width <= 0 || rect.height <= 0) return null;
+  return { left: rect.left, top: rect.top, width: rect.width, height: rect.height };
+}
+
+/** Resolve the viewport scale affecting a child before converting screen-pixel edits to CSS pixels. */
+export function layoutParentScale(rect, localWidth, localHeight) {
+  const scale = (screen, local) => Number.isFinite(screen) && screen > 0 && Number.isFinite(local) && local > 0 ? screen / local : 1;
+  return { x: scale(rect?.width, localWidth), y: scale(rect?.height, localHeight) };
 }
 
 export function characterLayoutId(character) {

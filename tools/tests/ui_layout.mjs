@@ -1,12 +1,12 @@
 import assert from 'node:assert/strict';
 import {
-  activeLayoutMap, characterLayoutId, cloneLayoutValue, createDefaultLayoutState, effectiveLayoutEntry,
-  exportLayoutProfile, importLayoutProfile, migrateEnvironmentInfoLayout, normalizeLayoutEntry, normalizeLayoutState,
+  activeLayoutMap, characterLayoutId, cloneLayoutValue, createDefaultLayoutState, effectiveLayoutEntry, layoutEditorRect, layoutParentScale,
+  exportLayoutProfile, importLayoutProfile, migrateEnvironmentInfoLayout, migrateGroupedHudLayout, normalizeLayoutEntry, normalizeLayoutState,
   snapUILayoutPosition, writableLayoutEntry,
 } from '../../src/ui/ui-layout.mjs';
 
 const defaults = normalizeLayoutEntry();
-assert.deepEqual(defaults, { x: null, y: null, width: null, height: null, scale: 100, opacity: 100, visible: true, locked: false, anchor: 'left', textAlign: 'left', attachment: 'attached' });
+assert.deepEqual(defaults, { x: null, y: null, width: null, height: null, scale: 100, opacity: 100, visible: true, locked: false, anchor: 'left', textAlign: 'left' });
 assert.equal(normalizeLayoutEntry({ scale: 1000, opacity: -10 }).scale, 200);
 assert.equal(normalizeLayoutEntry({ scale: 1000, opacity: -10 }).opacity, 10);
 assert.equal(normalizeLayoutEntry({ textAlign: 'center' }).textAlign, 'center');
@@ -34,7 +34,7 @@ inheritedState.profiles.default.layouts['buff-icons'] = { x: .18, y: .41, scale:
 inheritedState.profiles.default.layouts['debuff-icons'] = { x: .62, y: .57, scale: 90, opacity: 70, anchor: 'center', visible: true, locked: false };
 inheritedState.profiles.default.layouts.minimap = {
   x: .7, y: .08, width: 320, height: 240, scale: 125, opacity: 65,
-  visible: false, locked: true, anchor: 'right', textAlign: 'center', attachment: 'detached',
+  visible: false, locked: true, anchor: 'right', textAlign: 'center',
 };
 inheritedState.profiles.alternate = { name: 'Alternate', layouts: { minimap: { x: .2, y: .3 } }, characterOverrides: {} };
 inheritedState.characterSpecific = true;
@@ -45,7 +45,7 @@ assert.equal(inherited.visible, false, 'character layouts inherit account profil
 assert.equal(inherited.locked, true, 'character layouts inherit account profile lock state');
 assert.equal(inherited.anchor, 'right', 'character layouts inherit account profile anchoring');
 assert.equal(inherited.textAlign, 'center', 'character layouts inherit account profile alignment');
-assert.equal(inherited.attachment, 'detached', 'character layouts inherit account profile attachment');
+assert.equal('attachment' in inherited, false, 'obsolete orb attachment preferences are no longer part of layout entries');
 const characterEdit = writableLayoutEntry(inheritedState, 'minimap', 'hero-a');
 characterEdit.x = .4;
 assert.equal(inheritedState.profiles.default.layouts.minimap.x, .7, 'editing a character override does not mutate account layout');
@@ -89,6 +89,28 @@ assert.equal(migrateEnvironmentInfoLayout(legacyState), true, 'legacy environmen
 assert.deepEqual(legacyState.profiles.default.layouts['environment-info'], legacyState.profiles.default.layouts['area-affixes']);
 assert.deepEqual(legacyState.profiles.default.characterOverrides['hero-a']['environment-info'], legacyState.profiles.default.characterOverrides['hero-a']['area-affixes']);
 assert.equal(migrateEnvironmentInfoLayout(legacyState), false, 'existing migrated positions are not overwritten');
+
+const groupedLegacy = normalizeLayoutState({ profiles: { default: {
+  layouts: {
+    'main-action-bar': { x: .42, y: .88, scale: 125 }, 'ability-hotbar': { x: .7, y: .8, scale: 90 },
+    'health-orb': { x: .1, y: .2, scale: 80 }, mana: { x: .9, y: .3, scale: 75 },
+  },
+  characterOverrides: { hero: { 'mana-orb': { x: .8, y: .4 }, health: { x: .2, y: .5 } } },
+  characterOverrideFields: { hero: { 'mana-orb': ['x', 'y', 'attachment'], health: ['x', 'y'] } },
+} } });
+assert.equal(migrateGroupedHudLayout(groupedLegacy), true, 'legacy separately positioned orb settings are migrated out');
+const grouped = groupedLegacy.profiles.default;
+assert.deepEqual([grouped.layouts['main-action-bar'].x, grouped.layouts['main-action-bar'].y, grouped.layouts['main-action-bar'].scale], [.42, .88, 125], 'existing action bar placement and scale take priority');
+for (const obsolete of ['health-orb', 'mana-orb', 'health', 'mana', 'ability-hotbar']) assert.equal(obsolete in grouped.layouts, false, `${obsolete} legacy layout is removed`);
+for (const obsolete of ['mana-orb', 'health']) assert.equal(obsolete in grouped.characterOverrides.hero, false, `${obsolete} character override is removed`);
+assert.equal('attachment' in grouped.characterOverrideFields.hero, false, 'legacy attachment field metadata is removed');
+assert.equal(migrateGroupedHudLayout(groupedLegacy), false, 'grouped HUD migration is idempotent');
+
+const actualBox = { left: 123.5, top: 46.25, width: 386.75, height: 91.5 };
+assert.deepEqual(layoutEditorRect(actualBox), actualBox, 'editor outline uses the live transformed viewport box without scaling or offset approximations');
+assert.equal(layoutEditorRect({ left: 0, top: 0, width: 0, height: 20 }), null, 'unmeasurable elements do not receive guessed placeholder dimensions');
+assert.deepEqual(layoutParentScale({ width: 300, height: 75 }, 200, 50), { x: 1.5, y: 1.5 }, 'nested editing converts between CSS and viewport dimensions through parent scaling');
+assert.deepEqual(layoutParentScale({ width: 300, height: 50 }, 200, 50), { x: 1.5, y: 1 }, 'nonuniform parent scaling is preserved per axis');
 
 const exported = exportLayoutProfile(state);
 const imported = importLayoutProfile(exported);

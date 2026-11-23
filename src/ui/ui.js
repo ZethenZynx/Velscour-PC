@@ -154,12 +154,6 @@ export const UI = {
     this.focusPanel(name);
     this.layoutPanels();
     this.onPanelsChanged();
-    const layoutId = `panel-${name}`;
-    if (!opts.layoutManaged && G.uiLayoutCustomizer && !G.uiLayoutCustomizer.hasElement?.(layoutId)) {
-      const escaped = typeof CSS !== 'undefined' && CSS.escape ? CSS.escape(name) : String(name).replace(/["\\]/g, '\\$&');
-      G.uiLayoutCustomizer.registerElement({ id: layoutId, label: `${title} window`, selector: `[data-panel="${escaped}"]`, x: .5, y: .5 });
-    }
-    if (!opts.layoutManaged) G.uiLayoutCustomizer?.applyElement?.(layoutId, p.root);
     return p;
   },
   closePanel(name) {
@@ -447,9 +441,6 @@ export const UI = {
       window.removeEventListener('blur', end);
       if (moved) {
         this.savePairedPanelPosition(name);
-        if (!isHeresyPairManagedPanel(name, this.panelsEl?.classList.contains('heresy-marks-pair'))) {
-          G.uiLayoutCustomizer?.recordPosition?.(`panel-${name}`, p.root);
-        }
       }
     };
     p.head.addEventListener('pointermove', move);

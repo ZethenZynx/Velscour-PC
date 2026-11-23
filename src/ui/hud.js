@@ -86,7 +86,6 @@ export const HUD = {
   enemyHistoryImages: new Map(),
   init() {
     UI.hud = this;
-    window.addEventListener('ui-layout-orb-attachment', () => this.layoutMobile());
     CharacterPortrait.init($('#hud'));
     const geo = A.hudGeo;
     // the bar's aspect (and how much room it takes at the bottom) comes from the art's geometry

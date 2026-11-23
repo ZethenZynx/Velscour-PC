@@ -1,9 +1,9 @@
 import { G, saveSettings } from '../state.js';
 import { el, escapeHtml } from '../core/util.js';
-import { UI, isHeresyPairManagedPanel } from './ui.js';
+import { UI } from './ui.js';
 import {
   activeLayoutMap, characterLayoutId, cloneLayoutValue, createDefaultLayoutState, effectiveLayoutEntry, snapUILayoutPosition,
-  exportLayoutProfile, importLayoutProfile, migrateEnvironmentInfoLayout, migrateGroupedHudLayout, normalizeLayoutEntry, normalizeLayoutState,
+  exportLayoutProfile, importLayoutProfile, layoutEditorRect, layoutParentScale, migrateEnvironmentInfoLayout, migrateGroupedHudLayout, normalizeLayoutEntry, normalizeLayoutState,
   writableLayoutEntry,
 } from './ui-layout.mjs';
 
@@ -11,8 +11,6 @@ const DEFINITIONS = [
   ['environment-info', 'Environment Information', '.hud-environment-info', .02, .04],
   ['character-portrait', 'Character portrait', '.character-portrait-hud', .02, .04],
   ['main-action-bar', 'Main Action Bar', '#hud-bar', .5, .84],
-  ['health-orb', 'Health orb', '#life-orb-group', .25, .85],
-  ['mana-orb', 'Mana orb', '#mana-orb-group', .72, .85],
   ['class-resource', 'Class resource', '#gauge-box', .5, .75],
   ['special-actions', 'Special ability buttons', '#special-actions', .5, .68],
   ['buff-icons', 'Buff Icons', '#buff-row', .02, .53], ['debuff-icons', 'Debuff Icons', '#debuff-row', .02, .59], ['statistics', 'Character stats and damage meter', '#hero-stats', .02, .19],
@@ -23,13 +21,6 @@ const DEFINITIONS = [
   ['game-log', 'Combat and loot messages', '#log', .02, .69], ['hud-buttons', 'HUD menu buttons', '#hud-buttons', .96, .62],
   ['sealed-loot', 'Sealed loot indicator', '#sealed-btn', .9, .58],
   ['damage-numbers', 'Floating damage numbers', null, .5, .5, 'canvas'],
-  ['panel-vendor', 'Vendor window', '[data-panel="vendor"]', .18, .12], ['panel-character', 'Character & Stats window', '[data-panel="character"]', .22, .16],
-  ['panel-inventory', 'Backpack window', '[data-panel="inventory"]', .58, .14], ['panel-quest', 'Quest Log window', '[data-panel="quest"]', .06, .16],
-  ['panel-tree', 'Skill Tree window', '[data-panel="tree"]', .18, .12], ['panel-book', 'Skill Book window', '[data-panel="book"]', .2, .15],
-  ['panel-talents', 'Passive Talents window', '[data-panel="talents"]', .2, .12], ['panel-macros', 'Macros window', '[data-panel="macros"]', .2, .15],
-  ['panel-stash', 'Storage Chest window', '[data-panel="stash"]', .14, .12], ['panel-jewelbox', 'Jewel Box window', '[data-panel="jewelbox"]', .14, .12],
-  ['panel-reliquary', 'Reliquary window', '[data-panel="reliquary"]', .14, .12], ['panel-heresies', 'Altar of Heresy window', '[data-panel="heresies"]', .18, .12],
-  ['panel-marks', 'Infernal Marks window', '[data-panel="marks"]', .18, .12],
 ];
 const DEFAULTS = new Map(DEFINITIONS.map(([id, label, selector, x, y, mode]) => [id, { id, label, selector, x, y, mode }]));
 const clone = cloneLayoutValue;
@@ -108,7 +99,10 @@ export const UILayoutCustomizer = {
     if (!node || this.working) return;
     const rect = node.getBoundingClientRect(); if (!rect || !rect.width || !rect.height) return;
     const entry = this.entry(id); entry.x = clamp(rect.left / innerWidth, 0, 1); entry.y = clamp(rect.top / innerHeight, 0, 1);
-    if (includeSize) { const scale = entry.scale / 100; entry.width = rect.width / scale; entry.height = rect.height / scale; }
+    if (includeSize) {
+      const scale = entry.scale / 100, parentScale = this.parentScale(node);
+      entry.width = rect.width / scale / parentScale.x; entry.height = rect.height / scale / parentScale.y;
+    }
     saveSettings(); this.applyElement(id, node);
   },
   resetElementPosition(id) {
@@ -130,9 +124,35 @@ export const UILayoutCustomizer = {
     for (const prop of STYLE_PROPS) restoreStyle(node, prop, saved[prop]);
     return rect;
   },
+  parentScale(node) {
+    const parent = node?.parentElement;
+    if (!parent) return { x: 1, y: 1 };
+    return layoutParentScale(parent.getBoundingClientRect(), parent.offsetWidth, parent.offsetHeight);
+  },
+  editorRect(node) {
+    if (!node) return null;
+    let rect = layoutEditorRect(node.getBoundingClientRect());
+    if (rect) return rect;
+    // Persistent HUD elements can be intentionally hidden while their editor outline is
+    // still useful. Reveal only for this synchronous measurement, then restore every bit
+    // of the element's state before the browser can paint.
+    const hadHidden = node.classList.contains('hidden'), hadLayoutHidden = node.classList.contains('ui-layout-hidden');
+    const display = { value: node.style.getPropertyValue('display'), priority: node.style.getPropertyPriority('display') };
+    const visibility = { value: node.style.getPropertyValue('visibility'), priority: node.style.getPropertyPriority('visibility') };
+    node.classList.remove('hidden', 'ui-layout-hidden');
+    if (display.value === 'none') node.style.removeProperty('display');
+    node.style.setProperty('visibility', 'hidden', 'important');
+    if (getComputedStyle(node).display === 'none') node.style.setProperty('display', 'block', 'important');
+    rect = layoutEditorRect(node.getBoundingClientRect());
+    if (hadHidden) node.classList.add('hidden');
+    if (hadLayoutHidden) node.classList.add('ui-layout-hidden');
+    if (display.value) node.style.setProperty('display', display.value, display.priority); else node.style.removeProperty('display');
+    if (visibility.value) node.style.setProperty('visibility', visibility.value, visibility.priority); else node.style.removeProperty('visibility');
+    return rect;
+  },
   applyElement(id, node = this.node(id)) {
     const state = this.state, def = DEFAULTS.get(id), entry = this.effective(id, state), configured = !!effectiveLayoutEntry(state, id, characterLayoutId(G.char));
-    if (isHeresyPairManagedPanel(id, UI.panelsEl?.classList.contains('heresy-marks-pair'))) return;
+    if (!def) return;
     if (def.mode === 'canvas') {
       G.settings.uiFloatingText = configured ? { scale: entry.scale, opacity: entry.opacity, visible: entry.visible } : null;
       return;
@@ -147,33 +167,20 @@ export const UILayoutCustomizer = {
       node.dataset.anchor = anchor;
       node.style.justifyContent = ({ left: 'flex-start', right: 'flex-end', center: 'center' })[anchor];
     }
-    if (id === 'health-orb' || id === 'mana-orb') {
-      const attached = entry?.attachment !== 'detached';
-      const parent = document.querySelector(attached ? '#hud-bar' : '#hud');
-      if (parent && node.parentElement !== parent) {
-        parent.appendChild(node);
-        window.dispatchEvent(new Event('ui-layout-orb-attachment'));
-      }
-      if (attached) {
-        for (const prop of ['translate', 'scale', 'width', 'height', 'transform-origin']) setManagedStyle(node, prop, '', false);
-        const rect = this.baseRect(node);
-        if (rect?.width && rect?.height) setManagedStyle(node, 'opacity', String(entry.opacity / 100), entry.opacity !== 100);
-        return;
-      }
-    }
     const rect = this.baseRect(node); if (!rect || !rect.width || !rect.height) return;
-    const k = entry.scale / 100;
-    let w = Math.min(entry.width || rect.width, innerWidth / k), h = Math.min(entry.height || rect.height, innerHeight / k);
+    const k = entry.scale / 100, parentScale = this.parentScale(node);
+    let w = Math.min(entry.width || rect.width / parentScale.x, innerWidth / (k * parentScale.x));
+    let h = Math.min(entry.height || rect.height / parentScale.y, innerHeight / (k * parentScale.y));
     if (id === 'main-action-bar') {
-      const ratio = rect.width / rect.height;
+      const ratio = (rect.width / parentScale.x) / (rect.height / parentScale.y);
       if (entry.width && !entry.height) h = w / ratio;
       else if (entry.height && !entry.width) w = h * ratio;
       else if (entry.width && entry.height) h = w / ratio;
     }
-    const targetX = clamp(entry.x == null ? rect.left : entry.x * innerWidth, 0, Math.max(0, innerWidth - w * k));
-    const targetY = clamp(entry.y == null ? rect.top : entry.y * innerHeight, 0, Math.max(0, innerHeight - h * k));
+    const targetX = clamp(entry.x == null ? rect.left : entry.x * innerWidth, 0, Math.max(0, innerWidth - w * k * parentScale.x));
+    const targetY = clamp(entry.y == null ? rect.top : entry.y * innerHeight, 0, Math.max(0, innerHeight - h * k * parentScale.y));
     const ox = w * (1 - k) / 2, oy = h * (1 - k) / 2;
-    setManagedStyle(node, 'translate', `${targetX - rect.left - ox}px ${targetY - rect.top - oy}px`, entry.x != null || entry.y != null);
+    setManagedStyle(node, 'translate', `${(targetX - rect.left) / parentScale.x - ox}px ${(targetY - rect.top) / parentScale.y - oy}px`, entry.x != null || entry.y != null);
     setManagedStyle(node, 'scale', String(k), entry.scale !== 100);
     setManagedStyle(node, 'opacity', String(entry.opacity / 100), entry.opacity !== 100);
     setManagedStyle(node, 'transform-origin', 'center center', entry.scale !== 100);
@@ -198,10 +205,10 @@ export const UILayoutCustomizer = {
     const actions = { save: () => this.save(), cancel: () => this.cancel(), undo: () => this.undo(), redo: () => this.redo(), 'reset-selected': () => this.resetSelected(), 'reset-all': () => this.confirmResetAll() };
     this.toolbox.querySelectorAll('[data-editor-action]').forEach((button) => { button.onclick = actions[button.dataset.editorAction]; });
     this.guides = el('div', 'ui-layout-guides'); this.stage.appendChild(this.guides);
-    this.bind(); this.renderAll(); this.applyAll(); this.renderSelection(); this.restoreToolboxPosition();
+    this.bind(); this.applyAll(); this.renderAll(); this.renderSelection(); this.restoreToolboxPosition();
     const escape = (e) => { if (e.key !== 'Escape') return; e.preventDefault(); e.stopImmediatePropagation(); this.cancel(); };
     d.wrap.addEventListener('keydown', escape, true); d.box.tabIndex = -1; d.box.focus(); this.escapeHandler = escape;
-    this.resizeHandler = () => { this.renderAll(); this.applyAll(); this.clampToolbox(); };
+    this.resizeHandler = () => { this.applyAll(); this.renderAll(); this.clampToolbox(); };
     window.addEventListener('resize', this.resizeHandler);
     this.toolboxPointerMove = (event) => this.moveToolbox(event);
     this.toolboxPointerEnd = (event) => this.endToolboxDrag(event);
@@ -243,11 +250,10 @@ export const UILayoutCustomizer = {
       const id = item.dataset.layoutId; this.selected = id; this.renderSelection();
       for (const [otherId, box] of this.overlayNodes) box.classList.toggle('selected', otherId === id);
       if (DEFAULTS.get(id)?.mode === 'canvas') return;
-      if ((id === 'health-orb' || id === 'mana-orb') && this.effective(id).attachment !== 'detached') return;
       if (this.effective(id).locked) { this.renderAll(); this.renderSelection(); return; }
       if (event.target.closest('.ui-layout-resize')) {
-        const r = item.getBoundingClientRect(), entry = this.entry(id), scale = entry.scale / 100;
-        this.pointer = { id, mode: 'resize', pointerId: event.pointerId, x: event.clientX, y: event.clientY, width: r.width / scale, height: r.height / scale, before: clone(this.state), changed: false };
+        const r = item.getBoundingClientRect(), entry = this.entry(id), scale = entry.scale / 100, parentScale = this.parentScale(this.node(id));
+        this.pointer = { id, mode: 'resize', pointerId: event.pointerId, x: event.clientX, y: event.clientY, width: r.width / scale / parentScale.x, height: r.height / scale / parentScale.y, parentScale, before: clone(this.state), changed: false };
       } else {
         const r = item.getBoundingClientRect();
         this.pointer = { id, mode: 'move', pointerId: event.pointerId, x: event.clientX, y: event.clientY, left: r.left, top: r.top, before: clone(this.state), changed: false };
@@ -267,8 +273,8 @@ export const UILayoutCustomizer = {
         entry.x = clamp(x / innerWidth, 0, Math.max(0, innerWidth - Math.min(width, innerWidth)) / innerWidth);
         entry.y = clamp(y / innerHeight, 0, Math.max(0, innerHeight - Math.min(height, innerHeight)) / innerHeight);
       } else {
-        let width = clamp(p.width + event.clientX - p.x, 80, innerWidth / (entry.scale / 100));
-        let height = clamp(p.height + event.clientY - p.y, 28, innerHeight / (entry.scale / 100));
+        let width = clamp(p.width + (event.clientX - p.x) / p.parentScale.x, 80, innerWidth / (entry.scale / 100) / p.parentScale.x);
+        let height = clamp(p.height + (event.clientY - p.y) / p.parentScale.y, 28, innerHeight / (entry.scale / 100) / p.parentScale.y);
         if (p.id === 'main-action-bar') {
           const ratio = p.width / p.height;
           if (Math.abs(event.clientX - p.x) >= Math.abs(event.clientY - p.y)) height = width / ratio;
@@ -342,10 +348,13 @@ export const UILayoutCustomizer = {
   updateOverlay(id, refresh = false) {
     if (!this.stage) return null;
     const tuple = DEFINITIONS.find((entry) => entry[0] === id); if (!tuple) return null;
-    const [, label, selector, dx, dy, mode] = tuple;
-    const node = selector ? document.querySelector(selector) : null, rect = node && this.baseRect(node), entry = this.effective(id);
-    const present = !!(rect && rect.width > 0 && rect.height > 0 && !node.classList.contains('hidden') && getComputedStyle(node).display !== 'none');
+    const [, label, selector, , , mode] = tuple;
+    const node = selector ? document.querySelector(selector) : null, entry = this.effective(id);
+    if (refresh && node) this.applyElement(id, node);
+    const rect = node && this.editorRect(node);
+    const present = !!(rect && !node.classList.contains('hidden') && !node.classList.contains('ui-layout-hidden') && entry.visible && getComputedStyle(node).display !== 'none');
     let box = this.overlayNodes.get(id);
+    if ((!node && mode !== 'canvas') || (mode === 'canvas' && !node) || !rect) { box?.remove(); this.overlayNodes.delete(id); return null; }
     if (!this.state.showHidden && !present) { box?.remove(); this.overlayNodes.delete(id); return null; }
     if (!box) {
       box = el('button', 'ui-layout-item'); box.type = 'button'; box.dataset.layoutId = id;
@@ -358,14 +367,7 @@ export const UILayoutCustomizer = {
       box.innerHTML = `<span>${escapeHtml(label)}${mode === 'canvas' ? ' (world-positioned)' : present ? '' : ' (placeholder)'}</span>${entry.locked ? '<b class="ui-layout-lock-mark">LOCK</b>' : ''}${mode === 'canvas' ? '' : '<i class="ui-layout-resize" aria-label="Resize"></i>'}`;
       box.dataset.contentKey = contentKey;
     }
-    const banner = id === 'notifications', attachedOrb = (id === 'health-orb' || id === 'mana-orb') && entry.attachment !== 'detached', scale = attachedOrb ? 1 : entry.scale / 100;
-    const width = Math.min(entry.width || (banner ? 360 : present ? rect.width : 156), innerWidth / scale);
-    const height = Math.min(entry.height || (banner ? 58 : present ? rect.height : 38), innerHeight / scale);
-    const defaultLeft = banner ? innerWidth / 2 - width / 2 : present ? rect.left : innerWidth * dx;
-    const left = clamp(attachedOrb || entry.x == null ? defaultLeft : entry.x * innerWidth, 0, Math.max(0, innerWidth - width * scale));
-    const top = clamp(attachedOrb || entry.y == null ? present ? rect.top : innerHeight * dy : entry.y * innerHeight, 0, Math.max(0, innerHeight - height * scale));
-    Object.assign(box.style, { left: `${left}px`, top: `${top}px`, width: `${Math.max(68, width * scale)}px`, height: `${Math.max(26, height * scale)}px`, opacity: String(entry.opacity / 100) });
-    if (refresh && present) this.applyElement(id, node);
+    Object.assign(box.style, { left: `${rect.left}px`, top: `${rect.top}px`, width: `${rect.width}px`, height: `${rect.height}px`, opacity: String(entry.opacity / 100) });
     return box;
   },
 
@@ -387,7 +389,6 @@ export const UILayoutCustomizer = {
   renderSelection() {
     if (!this.toolboxContent) return;
     const entry = this.effective(this.selected), selected = DEFAULTS.get(this.selected), profile = this.state.profiles[this.state.activeProfile];
-    const attachedOrb = (this.selected === 'health-orb' || this.selected === 'mana-orb') && entry.attachment !== 'detached';
     const options = Object.entries(this.state.profiles).map(([key, p]) => `<option value="${escapeHtml(key)}" ${key === this.state.activeProfile ? 'selected' : ''}>${escapeHtml(p.name)}</option>`).join('');
     this.toolboxContent.innerHTML = `
       <header class="ui-layout-toolbox-title"><b>Customize UI</b><button type="button" data-layout-close aria-label="Close">×</button></header>
@@ -398,10 +399,9 @@ export const UILayoutCustomizer = {
       <div class="ui-layout-selected">${escapeHtml(selected?.label || this.selected)}</div>
       ${this.selected === 'environment-info' ? `<label>Text alignment<select data-custom-field="textAlign"><option value="left" ${entry.textAlign === 'left' ? 'selected' : ''}>Left aligned</option><option value="center" ${entry.textAlign === 'center' ? 'selected' : ''}>Center aligned</option><option value="right" ${entry.textAlign === 'right' ? 'selected' : ''}>Right aligned</option></select></label>` : ''}
       ${this.selected === 'buff-icons' || this.selected === 'debuff-icons' ? `<label>Icon anchor<select data-custom-field="anchor"><option value="left" ${entry.anchor === 'left' ? 'selected' : ''}>Left — grow right</option><option value="right" ${entry.anchor === 'right' ? 'selected' : ''}>Right — grow left</option><option value="center" ${entry.anchor === 'center' ? 'selected' : ''}>Center — expand outward</option></select></label>` : ''}
-      ${this.selected === 'health-orb' || this.selected === 'mana-orb' ? `<label>Attachment<select data-custom-field="attachment"><option value="attached" ${entry.attachment !== 'detached' ? 'selected' : ''}>Attached to Main Action Bar</option><option value="detached" ${entry.attachment === 'detached' ? 'selected' : ''}>Detached — Independent Position</option></select></label>${entry.attachment !== 'detached' ? '<small>The orb follows the Main Action Bar. Detach it to position, scale or resize it independently.</small>' : ''}` : ''}
-      <label>Scale <output data-out="scale">${entry.scale}%</output><input type="range" data-field="scale" min="50" max="200" step="5" value="${entry.scale}" ${attachedOrb ? 'disabled' : ''}></label>
+      <label>Scale <output data-out="scale">${entry.scale}%</output><input type="range" data-field="scale" min="50" max="200" step="5" value="${entry.scale}"></label>
       <label>Opacity <output data-out="opacity">${entry.opacity}%</output><input type="range" data-field="opacity" min="10" max="100" step="5" value="${entry.opacity}"></label>
-      ${selected?.mode === 'canvas' ? '<p class="ui-layout-world-note">World-positioned text follows its target. Its scale, opacity and visibility are customizable here.</p>' : `<div class="ui-layout-dimensions"><label>Width <input type="number" data-field="width" min="80" max="2400" value="${entry.width || ''}" placeholder="Auto" ${attachedOrb ? 'disabled' : ''}></label><label>Height <input type="number" data-field="height" min="28" max="1600" value="${entry.height || ''}" placeholder="Auto" ${attachedOrb ? 'disabled' : ''}></label></div>`}
+      ${selected?.mode === 'canvas' ? '<p class="ui-layout-world-note">World-positioned text follows its target. Its scale, opacity and visibility are customizable here.</p>' : `<div class="ui-layout-dimensions"><label>Width <input type="number" data-field="width" min="80" max="2400" value="${entry.width || ''}" placeholder="Auto"></label><label>Height <input type="number" data-field="height" min="28" max="1600" value="${entry.height || ''}" placeholder="Auto"></label></div>`}
       <label class="ui-layout-check"><input type="checkbox" data-field="visible" ${entry.visible ? 'checked' : ''}> Show element</label>
       <label class="ui-layout-check"><input type="checkbox" data-field="locked" ${entry.locked ? 'checked' : ''}> Lock position</label>
       <hr><label class="ui-layout-check"><input type="checkbox" data-setting="snapGrid" ${this.state.snapGrid ? 'checked' : ''}> Snap to grid</label>
