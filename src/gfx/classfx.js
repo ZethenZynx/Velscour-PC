@@ -94,10 +94,24 @@ export const CLASS_THEMES = THEMES;
 /** Glow that hugs the hero for a moment after each cast, brighter and bigger at higher skill ranks. */
 class HeroGlow {
   constructor(p, c, k, dur) { Object.assign(this, { p, c, k, t: 0, dur }); }
-  update(dt) { this.t += dt; if (this.p.dead) return false; if (chance(dt * 30 * this.k)) rise(this.p.x, this.p.y, 6, chance(0.5) ? this.c[0] : this.c[1], this.k * 0.7, 0.35); return this.t < this.dur; }
+  update(dt) {
+    this.t += dt;
+    if (this.p.dead) return false;
+    // Paladin's charge runes and each cast already make their own holy particles.
+    // A second high-rate emitter at the hero repeatedly filled the head glow into
+    // the reported white orb during ordinary rapid casting.
+    if (this.p.classId === 'paladin') {
+      if (chance(dt * 2 * this.k)) P({ type: 'glow', x: this.p.x + rand(-0.2, 0.2), y: this.p.y + rand(-0.2, 0.2), z: 6, vz: rand(24, 44), life: rand(0.2, 0.35), size: rand(1.3, 2.1), size1: 0, color: chance(0.5) ? this.c[0] : this.c[1], add: true });
+    } else if (chance(dt * 30 * this.k)) {
+      rise(this.p.x, this.p.y, 6, chance(0.5) ? this.c[0] : this.c[1], this.k * 0.7, 0.35);
+    }
+    return this.t < this.dur;
+  }
   draw(ctx) {
-    const f = 1 - this.t / this.dur, px = isoX(this.p.x, this.p.y), py = isoY(this.p.x, this.p.y) - 26, s = 26 * this.k * (1 + Math.sin(G.time * 12) * 0.08);
-    ctx.globalCompositeOperation = 'lighter'; ctx.globalAlpha = Math.min(1, f * 1.4) * 0.55;
+    const paladin = this.p.classId === 'paladin';
+    const f = 1 - this.t / this.dur, px = isoX(this.p.x, this.p.y), py = isoY(this.p.x, this.p.y) - 26;
+    const s = 26 * this.k * (paladin ? 0.55 : 1) * (1 + Math.sin(G.time * 12) * 0.08);
+    ctx.globalCompositeOperation = 'lighter'; ctx.globalAlpha = Math.min(1, f * 1.4) * (paladin ? 0.2 : 0.55);
     ctx.drawImage(glowSprite(this.c[0]), px - s, py - s * 1.3, s * 2, s * 2.6);
     ctx.globalAlpha = 1; ctx.globalCompositeOperation = 'source-over';
   }
@@ -112,7 +126,10 @@ export function classCastFx(p, sk, L, tx, ty) {
   const T = THEMES[p.classId] || DEF, tier = tierOf(L), k = 1 + tier * 0.22;
   const E = T.el ? elem(sk.el) : { glow: T.c[0], core: T.c[1], dark: T.c[2] };
   const n = Math.round((6 + L * 0.9) * (G.touch ? 0.55 : 1));
-  T.fx(p.x, p.y, n, k, 'cast', E);
+  // The Paladin already has a separate seven-rune signature and bespoke skill
+  // particles. Keep this shared cast flourish from stacking a cloud at high ranks.
+  const castN = p.classId === 'paladin' ? Math.min(n, 8) : n;
+  T.fx(p.x, p.y, castN, k, 'cast', E);
   const g = p._classGlow;
   if (g && g.t < g.dur) { g.t = 0; g.k = Math.max(g.k, k); } else addEffect(p._classGlow = new HeroGlow(p, T.c, k, 0.45 + tier * 0.12));
   if (tier >= 1) addEffect(new Ring(p.x, p.y, 0.1, 0.9 + tier * 0.3, 0.45, T.c[0], 2 + tier));

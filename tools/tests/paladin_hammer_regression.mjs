@@ -2,8 +2,11 @@ import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 
 const paladin = await readFile(new URL('../../src/game/sigs/paladin.js', import.meta.url), 'utf8');
+const classfx = await readFile(new URL('../../src/gfx/classfx.js', import.meta.url), 'utf8');
+const audio = await readFile(new URL('../../src/core/audio.js', import.meta.url), 'utf8');
 const hazards = await readFile(new URL('../../src/game/hazards.js', import.meta.url), 'utf8');
 const skillrun = await readFile(new URL('../../src/game/skillrun.js', import.meta.url), 'utf8');
+const augments = await readFile(new URL('../../src/game/augments.js', import.meta.url), 'utf8');
 const world = await readFile(new URL('../../src/game/world.js', import.meta.url), 'utf8');
 const skills = await readFile(new URL('../../src/data/skilldata.js', import.meta.url), 'utf8');
 
@@ -20,6 +23,36 @@ assert.match(haloDraw, /ctx\.ellipse\(cx, cy, RX, RY/, 'the Paladin keeps the re
 assert.match(haloDraw, /rune\(ctx, x, y, i/, 'individual rune charge indicators remain visible');
 assert.doesNotMatch(haloDraw, /glow\(ctx, GOLD, x, y/, 'overlapping per-rune glow halos cannot bloom into a white orb');
 
+const glowStart = classfx.indexOf('class HeroGlow {');
+const glowEnd = classfx.indexOf('const tierOf', glowStart);
+const heroGlow = classfx.slice(glowStart, glowEnd);
+assert.match(heroGlow, /this\.p\.classId === 'paladin'/, 'Paladin cast glow uses the specifically bounded particle path');
+assert.match(heroGlow, /chance\(dt \* 2 \* this\.k\)/, 'Paladin head-glow particles use a low finite emission rate');
+assert.match(heroGlow, /paladin \? 0\.55 : 1/, 'Paladin radial glow is smaller while other classes retain their original size');
+assert.match(heroGlow, /paladin \? 0\.2 : 0\.55/, 'Paladin radial glow intensity is bounded while other classes remain unchanged');
+assert.match(classfx, /const castN = p\.classId === 'paladin' \? Math\.min\(n, 8\) : n/, 'Paladin cast particles are bounded without changing other classes');
+
+const impactStart = paladin.indexOf('function impact(');
+const impactEnd = paladin.indexOf('class Consecration', impactStart);
+const judgementImpact = paladin.slice(impactStart, impactEnd);
+assert.equal((judgementImpact.match(/sfx\(/g) || []).length, 1, 'Judgement impact plays one dedicated sound');
+assert.match(judgementImpact, /noHitSound: true/, 'Judgement damage paths suppress per-target generic hit sounds');
+const consecrationStart = paladin.indexOf('class Consecration');
+const consecrationEnd = paladin.indexOf('/** A rune of the halo', consecrationStart);
+assert.ok(consecrationStart >= 0 && consecrationEnd > consecrationStart, 'Consecration boundaries are present');
+assert.doesNotMatch(paladin.slice(consecrationStart, consecrationEnd), /sfx\(/, 'Consecration ticks do not replay impact audio');
+assert.match(paladin, /if \(!this\.done && this\.t >= this\.fall\) \{ this\.done = true; impact\(/, 'the impact cue can trigger only once per falling hammer');
+assert.match(paladin, /sfx\('judgement_cast'/, 'Judgement retains its separate cast cue');
+assert.match(audio, /noise\(t, 0\.36,[\s\S]*?tone\(t \+ 0\.06, 0\.3/, 'Judgement cast cue ends before the 0.55-second hammer impact');
+assert.match(audio, /noise\(t, 0\.5, \{ type: 'lowpass'/, 'Judgement impact has a finite audio envelope');
+assert.doesNotMatch(audio.slice(audio.indexOf('judgement_cast:'), audio.indexOf('sanctuary:', audio.indexOf('judgement_impact:'))), /\.loop\s*=\s*true|setInterval/, 'Judgement cues are not configured as looping audio');
+assert.match(audio, /src\.stop\(t \+ dur \+ 0\.05\)/, 'procedural one-shot audio sources receive a finite stop time');
+const castMapStart = skillrun.indexOf('const PALADIN_SKILL_SFX = {');
+const castMapEnd = skillrun.indexOf('};', castMapStart);
+const paladinCastSfx = skillrun.slice(castMapStart, castMapEnd);
+assert.ok(castMapStart >= 0 && castMapEnd > castMapStart, 'Paladin ability sound map is present');
+for (const [, name] of paladinCastSfx.matchAll(/:\s*'([^']+)'/g)) assert.match(audio, new RegExp(`\\b${name}:`), `${name} has an audio definition`);
+
 const orbitStart = hazards.indexOf('export class Orbit {');
 const orbitEnd = hazards.indexOf('// ===================================================================== Whirlwind', orbitStart);
 assert.ok(orbitStart >= 0 && orbitEnd > orbitStart, 'Orbit class boundaries are present');
@@ -27,8 +60,13 @@ const orbit = hazards.slice(orbitStart, orbitEnd);
 assert.match(orbit, /if \(this\.src\.dead\) return false;/, 'orbit hammers end when their source is removed');
 assert.match(orbit, /if \(this\.t > this\.dur\) return false;/, 'orbit hammers end at their configured duration');
 assert.doesNotMatch(orbit, /sfx\(/, 'the orbit update/draw path does not replay cast audio');
+const tetherStart = augments.indexOf('function tether(');
+const tetherEnd = augments.indexOf('function tetherArc(', tetherStart);
+assert.ok(tetherStart >= 0 && tetherEnd > tetherStart, 'Storm Tether function boundaries are present');
+assert.doesNotMatch(augments.slice(tetherStart, tetherEnd), /sfx\(/, 'Storm Tether damage processing does not emit sounds per connection');
+assert.match(augments.slice(tetherStart, tetherEnd), /silent: true/, 'Storm Tether damage is marked silent');
 assert.match(world, /if \(h\.update\(dt\) === false \|\| h\.dead\) this\.hazards\.splice\(i, 1\);/, 'expired hazards are removed from the world');
 
 const orbitCast = skillrun.slice(skillrun.indexOf("case 'orbit':"), skillrun.indexOf("case 'cyclone':"));
 assert.match(orbitCast, /sfx\('swing'\);/, 'Blessed Hammer retains its cast sound');
-console.log('Paladin hammer visual, finite lifetime, cleanup, and cast-only sound checks passed.');
+console.log('Paladin Judgement audio lifecycle, bounded glow, hammer cleanup, and Blessed Hammer sound checks passed.');
