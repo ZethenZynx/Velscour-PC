@@ -38,6 +38,21 @@ export const depthLevel = (depth) => {
   return Math.min(300, MAX_LEVEL + Math.floor(Math.log1p((d - FINAL_DEPTH) / 100) * 10));
 };
 
+/**
+ * Keep endgame enemy HP/damage anchored to the Depth 100 baseline. Retain any
+ * intentional per-archetype level offset (for example a boss at base level +2)
+ * while removing the slow level drift that otherwise stacks on top of the
+ * continuous endgame multipliers. The displayed/XP level can still progress.
+ */
+export function endgameBaseLevel(level, depth) {
+  const d = Number(depth);
+  const n = Number(level);
+  if (!(d > FINAL_DEPTH) || !Number.isFinite(n)) return n;
+  const generatedLevel = depthLevel(d);
+  const rankOffset = Math.max(0, n - generatedLevel);
+  return Math.min(n, MAX_LEVEL + rankOffset);
+}
+
 // About +17% health and +2.3% damage per 25 depths, compounded. Log space prevents overflow
 // even if a save reaches the largest safely representable JavaScript depth.
 const MAX_SCALE_LOG = Math.log(1e100);

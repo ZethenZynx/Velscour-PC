@@ -17,7 +17,7 @@ import { ARCH } from '../data/enemies.js';
 import { ART_BY_ID } from '../data/bestiary.js';
 import { bodyR } from '../world/map.js';
 import { makeMonster, monsterBase, Monster } from './monster.js';
-import { riftHold, isSuperbossDepth, isActFinaleDepth, endgameScaling, FINAL_DEPTH } from '../data/depth.js';
+import { riftHold, isSuperbossDepth, isActFinaleDepth, endgameScaling, endgameBaseLevel, FINAL_DEPTH } from '../data/depth.js';
 import { dropLoot } from './loot.js';
 import { UI } from '../ui/ui.js';
 import { madnessReady } from './mayhem.js';
@@ -559,16 +559,15 @@ function rollMods(depth) {
 const ENRAGE_T = 180, EXECUTE_T = 300; // seconds from waking until the boss enrages / executes the hero (fights run ~2 min)
 
 /**
- * A BOSS ROOM boss's life in normal monsters of its level (before the 26 x 1.3 and modifiers). It keeps growing from
- * depth 150 to 500 (+1 a depth): hero damage outgrows monster life deep down, and a flat 105 had depth-450 bosses
- * dying in 2-12 s while depth-40 ones took 20-60 s. In the Endless Torment it holds (hero damage falls behind there
- * on its own; tools/tests/endgame.js).
+ * A BOSS ROOM boss's life in normal monsters of its level (before the 26 x 1.3 and modifiers). This ratio grows over
+ * the campaign, then holds at the depth-100 baseline in infinite endgame, where endgameScaling drives the increase.
  */
 // a BOSS ROOM boss is 26 x 1.3 x this many normals of its level (monsterBase's toughness keeps a normal at ~3 s of hero
 // damage at every depth): ~25 normals at depth 5, ~42 by depth 500. Its wards, adds and mechanics stretch that ~3.5x,
 // so fights run ~45-90 seconds of active mechanical engagement.
 export const raidHpMul = (depth) => 0.22 + Math.pow(Math.min(depth, 500) / 500, 0.75) * 0.85;
 // a BOSS ROOM boss hits for this many normals of its level: smoothly scales so early raid bosses are survivable.
+// Endgame raid bosses hold their depth-100 ratio; endgameScaling supplies the continuing depth growth.
 export const raidHitMul = (depth) => 1.35 + 1.15 * Math.pow(Math.min(depth, 500) / 500, 0.6);
 /** opts.tpl / opts.art: a given template (copied, maybe renamed) and look instead of a random one (game/tower.js).
  *  opts.court: one of Velscour Unbound's court (game/unbound.js): it never seals the arena or announces a BOSS ROOM.
@@ -588,10 +587,15 @@ export function makeRaidBoss(world, arena, depth, level, opts = {}) {
   const B = monsterBase(level);
   if (world.riftHold) B.hp *= riftHold(level);
   const endgame = depth > FINAL_DEPTH ? endgameScaling(depth) : { health: 1, damage: 1 };
+  const statBase = depth > FINAL_DEPTH ? monsterBase(endgameBaseLevel(level, depth)) : B;
+  if (depth > FINAL_DEPTH && world.riftHold) statBase.hp *= riftHold(level);
+  // Raid-specific pressure is part of the depth-100 boss baseline. Above the
+  // campaign, the continuous health/damage curves are the sole depth multiplier.
+  const raidDepth = depth > FINAL_DEPTH ? FINAL_DEPTH : depth;
   Object.assign(m, {
     ai: 'raid', el: tpl.el, res: { [tpl.el]: 0.4, ...(m.undead ? { poison: 0.5, shadow: 0.3 } : null) },
     scale: has('colossal') ? 2.75 : 2.4, r: 1.05, atkReach: 0.35, speed: 2.4 * (tpl.spd || 1) * (has('colossal') ? 0.88 : 1), atkCd: 1.3,
-    maxHp: B.hp * 26 * raidHpMul(depth) * endgame.health * (has('colossal') ? 1.35 : 1) * (tpl.hp || 1) * 1.3 * (opts.hp || 1), dmg: raidHitMul(depth) * B.dmg * endgame.damage * (has('empowered') ? 1.25 : 1) * (opts.dmg || 1), xp: B.xp * 60,
+    maxHp: statBase.hp * 26 * raidHpMul(raidDepth) * endgame.health * (has('colossal') ? 1.35 : 1) * (tpl.hp || 1) * 1.3 * (opts.hp || 1), dmg: raidHitMul(raidDepth) * statBase.dmg * endgame.damage * (has('empowered') ? 1.25 : 1) * (opts.dmg || 1), xp: B.xp * 60,
     name: tpl.name.toUpperCase(), title: tpl.title, aura: elem(tpl.el).glow, affixes: [],
     moves: null, patterns: [], isRaid: true, ward: 1, aggroRange: 0,
   });
