@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 import { normalizeTemporaryBuff, MAX_TEMPORARY_BUFF_SECONDS } from '../../src/game/buffduration.mjs';
+import { effectRemainingSeconds, formatEffectDuration } from '../../src/ui/buff-state.mjs';
 
 assert.equal(MAX_TEMPORARY_BUFF_SECONDS, 120);
 assert.equal(normalizeTemporaryBuff({ id: 'finite', t: 15, max: 15 }).t, 15);
@@ -26,7 +27,10 @@ assert.equal(buffSpecs.length, 78, 'the audited class buff catalog still contain
 assert.ok(skillModule.includes('Math.min(skillDurationLimit(sk)'), 'rank-scaled skill buffs use a finite category cap');
 assert.ok(skillModule.includes('Math.min(60, (d ?? 6)'), 'rank-scaled skill curses also have a finite cap');
 const hud = await readFile(new URL('../../src/ui/hud.js', import.meta.url), 'utf8');
-assert.ok(hud.includes('s remaining'), 'buff tooltips show remaining duration');
+assert.ok(hud.includes('formatEffectDuration(x.t)') && hud.includes('remaining'), 'buff tooltips show the formatted live remaining duration');
 assert.ok(!hud.includes('b.aura ? null'), 'aura buffs no longer suppress their countdown');
+assert.equal(effectRemainingSeconds({ t: 1.1 }), 1.1, 'temporary effects read the active gameplay timer');
+assert.equal(effectRemainingSeconds({ t: null }), null, 'permanent effects have no timer');
+assert.equal(formatEffectDuration(125.2), '2:06', 'long effects display minutes and seconds');
 
 console.log('Temporary buff duration and chest reward regressions passed.');

@@ -71,6 +71,7 @@ export class Player extends Creature {
     this.channel = null;
     this.potionCd = 0;
     this.potionRegen = [];
+    this.potionRegenSequence = 0;
     this.buffs = [];
     this.moveVec = [0, 0];
     this.moveTarget = null;
@@ -520,8 +521,8 @@ export class Player extends Creature {
     this.potionCd = 0.9;
     sfx('potion');
     switch (kind) {
-      case 'hp': { const t = 2 * (1 + (this.st.markPotionDuration || 0) / 100); this.potionRegen.push({ kind: 'hp', hp: this.maxHp * 0.45 / t, mp: 0, t, max: t }); break; }
-      case 'mp': { const t = 2 * (1 + (this.st.markPotionDuration || 0) / 100); this.potionRegen.push({ kind: 'mp', hp: 0, mp: this.maxMana * 0.5 / t, t, max: t }); break; }
+      case 'hp': { const t = 2 * (1 + (this.st.markPotionDuration || 0) / 100); this.potionRegen.push({ id: ++this.potionRegenSequence, kind: 'hp', hp: this.maxHp * 0.45 / t, mp: 0, t, max: t }); break; }
+      case 'mp': { const t = 2 * (1 + (this.st.markPotionDuration || 0) / 100); this.potionRegen.push({ id: ++this.potionRegenSequence, kind: 'mp', hp: 0, mp: this.maxMana * 0.5 / t, t, max: t }); break; }
       case 'rejuv': this.applyRejuvenation(); break;
       case 'fury': this.applyFury(); break;
     }

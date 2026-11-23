@@ -16,6 +16,8 @@ assert.equal(normalizeLayoutEntry({ textAlign: 'justify' }).textAlign, 'left', '
 const state = createDefaultLayoutState();
 state.profiles.default.layouts.minimap = { x: .8, y: .05, scale: 125, opacity: 80 };
 state.profiles.default.layouts['environment-info'] = { x: .24, y: .12, textAlign: 'center', scale: 110, opacity: 85 };
+state.profiles.default.layouts['buff-icons'] = { x: .18, y: .41, scale: 125, opacity: 80, anchor: 'right', visible: true, locked: true };
+state.profiles.default.layouts['debuff-icons'] = { x: .62, y: .57, scale: 90, opacity: 70, anchor: 'center', visible: true, locked: false };
 const accountMap = activeLayoutMap(state, 'hero-a');
 assert.equal(accountMap.minimap.scale, 125);
 assert.equal(accountMap['environment-info'].textAlign, 'center', 'environment text alignment persists in the active layout');
@@ -28,6 +30,8 @@ assert.equal(characterLayoutId({ id: 'hero-a', name: 'A' }), 'hero-a');
 assert.equal(normalizeLayoutState(state).activeProfile, 'default');
 
 const inheritedState = createDefaultLayoutState();
+inheritedState.profiles.default.layouts['buff-icons'] = { x: .18, y: .41, scale: 125, opacity: 80, anchor: 'right', visible: true, locked: true };
+inheritedState.profiles.default.layouts['debuff-icons'] = { x: .62, y: .57, scale: 90, opacity: 70, anchor: 'center', visible: true, locked: false };
 inheritedState.profiles.default.layouts.minimap = {
   x: .7, y: .08, width: 320, height: 240, scale: 125, opacity: 65,
   visible: false, locked: true, anchor: 'right', textAlign: 'center', attachment: 'detached',
@@ -52,6 +56,17 @@ assert.equal(effectiveLayoutEntry(inheritedState, 'minimap', 'hero-a').x, .2, 'p
 inheritedState.activeProfile = 'default';
 const persistedState = normalizeLayoutState(JSON.parse(JSON.stringify(inheritedState)));
 assert.deepEqual(persistedState.profiles.default.layouts.minimap, inheritedState.profiles.default.layouts.minimap, 'account layout properties survive serialization and normalization');
+assert.deepEqual(
+  Object.fromEntries(['x', 'y', 'scale', 'opacity', 'anchor', 'visible', 'locked'].map((key) => [key, persistedState.profiles.default.layouts['buff-icons'][key]])),
+  { x: .18, y: .41, scale: 125, opacity: 80, anchor: 'right', visible: true, locked: true },
+  'buff position and display preferences survive save/load normalization',
+);
+assert.deepEqual(
+  Object.fromEntries(['x', 'y', 'scale', 'opacity', 'anchor', 'visible', 'locked'].map((key) => [key, persistedState.profiles.default.layouts['debuff-icons'][key]])),
+  { x: .62, y: .57, scale: 90, opacity: 70, anchor: 'center', visible: true, locked: false },
+  'debuff preferences persist independently from buff preferences',
+);
+assert.notEqual(persistedState.profiles.default.layouts['buff-icons'].x, persistedState.profiles.default.layouts['debuff-icons'].x, 'buff and debuff positions never share one saved coordinate');
 assert.deepEqual(persistedState.profiles.default.characterOverrides['hero-a'].minimap, characterEdit, 'character override properties survive serialization and normalization');
 assert.equal(effectiveLayoutEntry(persistedState, 'minimap', 'hero-a').scale, 125, 'new character snapshots preserve inherited account settings');
 

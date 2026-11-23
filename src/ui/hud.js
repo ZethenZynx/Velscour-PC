@@ -30,6 +30,7 @@ import { sealedCount, openNextSeal } from './sealed.js';
 import { defianceText } from '../game/defiance.js';
 import { capXp } from '../game/marks.js';
 import { CharacterPortrait } from './characterportrait.js';
+import { effectRemainingSeconds, formatEffectDuration, potionRegenBuffs } from './buff-state.mjs';
 
 const POTIONS = ['hp', 'mp', 'rejuv', 'fury'];
 // HUD art index -> bar index (skills) or potion kind: LMB, 1-9 0 - =, potions, RMB.
@@ -724,21 +725,11 @@ export const HUD = {
       const mins = new Map();
       if (G.settings.minionCounts !== false && w) for (const m of w.creatures) if (m.summon && !m.dead && m.owner === p && m.skillId && SKILLS[m.skillId]) mins.set(m.skillId, (mins.get(m.skillId) || 0) + 1);
       const isDebuff = (b) => !!(b.debuff || b.curse || Object.values(b.stats || {}).some((v) => Number(v) < 0));
-      const buffs = p.buffs.filter((b) => !b.hidden && !isDebuff(b)), debuffs = p.buffs.filter((b) => !b.hidden && isDebuff(b));
-      // Healing and mana potions use a short regen queue rather than Player.buffs;
-      // expose those timed effects here so their actual potion icons are visible.
-      const regen = new Map();
-      for (const r of p.potionRegen || []) {
-        const kind = r.kind || (r.hp > 0 ? 'hp' : r.mp > 0 ? 'mp' : '');
-        if (!kind || r.t <= 0) continue;
-        const current = regen.get(kind) || { t: 0, max: 0, stacks: 0 };
-        current.t = Math.max(current.t, r.t); current.max = Math.max(current.max, r.max || r.t); current.stacks++;
-        regen.set(kind, current);
-      }
-      const potionEffects = [...regen].map(([kind, timer]) => ({
-        id: `potion-${kind}-regen`, iconItem: { type: 'potion', kind }, name: kind === 'hp' ? 'Healing Potion' : 'Mana Potion',
-        description: kind === 'hp' ? 'Gradually restores health.' : 'Gradually restores mana.', ...timer,
-      }));
+      const activeBuffs = p.buffs.filter((b) => !b.hidden && (b.t == null || effectRemainingSeconds(b) != null));
+      const buffs = activeBuffs.filter((b) => !isDebuff(b)), debuffs = activeBuffs.filter(isDebuff);
+      // Potion regeneration is stored separately from Player.buffs. Map each live gameplay
+      // timer independently so simultaneous uses cannot hide one another or share a timer.
+      const potionEffects = potionRegenBuffs(p.potionRegen);
       const statusNames = { burn: ['Burning', 'fire', '#ff8b3d', 'Burn damage over time.'], poison: ['Poisoned', 'poison', '#8bd64b', 'Poison damage over time.'], bleed: ['Bleeding', 'blood', '#c83e48', 'Bleed damage over time.'], chill: ['Chilled', 'cold', '#9feaff', 'Movement is slowed by chill.'], slow: ['Slowed', 'shadow', '#b79ae8', 'Movement speed is reduced.'], freeze: ['Frozen', 'cold', '#8be4ff', 'Unable to act while frozen.'], stun: ['Stunned', 'light', '#ffe08a', 'Unable to act while stunned.'], fear: ['Feared', 'shadow', '#c394ef', 'Fleeing under fear.'], confuse: ['Confused', 'arcane', '#df9cff', 'Control is disrupted by confusion.'], shred: ['Shredded', 'blood', '#e27972', 'Defenses are reduced.'] };
       const statusEffects = Object.entries(p.status || {}).filter(([, effect]) => effect && effect.t > 0).map(([id, effect]) => {
         const [name, el, color, fallback] = statusNames[id] || [id[0]?.toUpperCase() + id.slice(1), 'shadow', '#bd8bd8', 'A temporary status effect.'];
@@ -766,7 +757,7 @@ export const HUD = {
         return {
           key: `${b.id || b.name || 'effect'}:${index}:${b.iconKey || ''}:${b.iconSkill || ''}:${source.type || ''}:${source.kind || ''}:${source.icon || ''}:${source.base || ''}:${source.art || ''}`,
           icon: buffIconURL(b), name: b.name || 'Effect', description: buffDescription(b),
-          t: Math.max(0, Number(b.t) || 0), max: maximum, stack: stackCount(b),
+          t: effectRemainingSeconds(b), max: maximum, stack: stackCount(b),
         };
       };
       const simpleEntry = (key, icon, title, count, minion = false) => ({ key, icon, title, count, minion });
@@ -790,12 +781,12 @@ export const HUD = {
         }
         for (let i = 0; i < entries.length; i++) {
           const x = entries[i], node = target.children[i];
-          const title = x.t != null ? `${x.name}: ${x.description} · ${Math.ceil(x.t)}s remaining` : x.title;
+          const title = x.t != null ? `${x.name}: ${x.description} · ${formatEffectDuration(x.t)} remaining` : x.title;
           if (node.title !== title) node.title = title;
           const time = node.querySelector('.buff-time'), stack = node.querySelector('.buff-stack');
-          const seconds = x.t != null ? String(Math.ceil(x.t)) : '';
-          if (time.textContent !== seconds) time.textContent = seconds;
-          time.hidden = !seconds;
+          const duration = x.t != null ? formatEffectDuration(x.t) : '';
+          if (time.textContent !== duration) time.textContent = duration;
+          time.hidden = !duration;
           const stacks = x.stack ?? x.count;
           const stackText = stacks != null ? String(stacks) : '';
           if (stack.textContent !== stackText) stack.textContent = stackText;

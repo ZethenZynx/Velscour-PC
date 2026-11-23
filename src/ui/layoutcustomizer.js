@@ -508,14 +508,21 @@ export function applyUILayoutSettings() {
     window.addEventListener('resize', () => UILayoutCustomizer.applyAll());
     UILayoutCustomizer.visibilityObserver = new MutationObserver((records) => {
       const insertedNodes = [];
+      const changedRows = new Set();
       for (const record of records) {
         if (record.type === 'attributes') {
           const id = DEFINITIONS.find(([, , selector]) => selector && record.target.matches(selector))?.[0];
           if (id) UILayoutCustomizer.applyElement(id, record.target);
           continue;
         }
+        if (record.type === 'childList' && (record.target?.id === 'buff-row' || record.target?.id === 'debuff-row')) {
+          changedRows.add(record.target.id === 'buff-row' ? 'buff-icons' : 'debuff-icons');
+        }
         for (const node of record.addedNodes) insertedNodes.push(node);
       }
+      // These persistent HUD roots can be empty during startup. Reapply their saved
+      // coordinates when their first/last icon changes, without replacing the roots.
+      for (const id of changedRows) UILayoutCustomizer.applyElement(id);
       if (insertedNodes.length) for (const [id, , selector] of DEFINITIONS) {
         if (!selector) continue;
         const node = document.querySelector(selector);
