@@ -2,6 +2,11 @@
 // Run: node tools/tests/heresy_pair_layout.mjs
 import assert from 'node:assert/strict';
 import { heresyPairLayout, panelDragPosition, panelDragMovedFrom, isHeresyPairManagedPanel } from '../../src/ui/ui.js';
+import { heresyModifierColumns } from '../../src/ui/heresies.js';
+
+const columns = heresyModifierColumns();
+assert.deepEqual(columns.map((column) => column.length), [10, 10, 10], 'all 30 modifiers occupy three columns of ten');
+assert.equal(new Set(columns.flat().map((modifier) => modifier.id)).size, 30, 'each modifier appears exactly once');
 
 const wide = heresyPairLayout(1920, 1080);
 assert.equal(wide.stacked, false);
@@ -18,10 +23,17 @@ for (const panel of Object.values(compact.panels)) {
 }
 assert.equal(heresyPairLayout(700, 900).stacked, true, 'narrow layouts stack instead of overflowing');
 
-const saved = heresyPairLayout(1920, 1080, { marks: { x: 0.75, y: 0.25 } });
-assert.equal(saved.panels.heresies.x, wide.panels.heresies.x, 'an untouched window keeps the default position');
-assert.equal(saved.panels.marks.x, 0.75 * (1920 - saved.panels.marks.w), 'saved coordinates restore proportionally');
-assert.equal(saved.panels.marks.y, 0.25 * (1080 - saved.panels.marks.h));
+assert.ok(wide.panels.heresies.w >= 900, 'the Altar uses the available horizontal space');
+assert.ok(wide.panels.marks.w >= 840, 'the Marks panel retains a comfortable desktop width');
+assert.equal(wide.panels.heresies.h, 1040, 'the Altar receives its expanded desktop height');
+const saved = heresyPairLayout(1920, 1080, { heresies: { x: 0, y: 0.1 }, marks: { x: 0.99, y: 0.1 } });
+assert.equal(saved.panels.heresies.x, 0, 'valid saved Altar coordinates restore');
+assert.equal(saved.panels.marks.x, 0.99 * (1920 - saved.panels.marks.w), 'saved Marks coordinates restore proportionally');
+assert.equal(saved.panels.marks.y, 0.1 * (1080 - saved.panels.marks.h));
+assert.ok(saved.panels.heresies.x + saved.panels.heresies.w <= saved.panels.marks.x, 'valid saved windows remain side by side');
+const obsolete = heresyPairLayout(1920, 1080, { heresies: { x: 0.4, y: 0.2 }, marks: { x: 0.42, y: 0.2 } });
+assert.equal(obsolete.resetSavedPositions, true, 'overlapping legacy positions reset to the expanded defaults');
+assert.equal(obsolete.panels.marks.x - obsolete.panels.heresies.x - obsolete.panels.heresies.w, obsolete.gap, 'legacy reset restores the default gap');
 const clamped = heresyPairLayout(1366, 768, { heresies: { x: 2, y: -1 } });
 assert.ok(clamped.panels.heresies.x + clamped.panels.heresies.w <= 1366, 'saved horizontal positions clamp on resize');
 assert.ok(clamped.panels.heresies.y >= 0, 'saved vertical positions clamp on resize');

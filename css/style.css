@@ -1274,30 +1274,31 @@ body.touch.portrait #hud-top-left > #sand-objective { width: min(214px, calc(100
 .hx-tick b { display: block; color: inherit; font: 700 8px/9px var(--font-body); text-shadow: 0 1px 2px #100806; }
 .hx-tick.done { color: #ffd860; filter: drop-shadow(0 0 3px #ffd860); }
 .hx-tick.next { color: #fff0a0; transform: scale(1.3); }
-.hx-chips { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 4px; }
+.hx-chips { display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 4px; }
 .hx-chip { display: flex; justify-content: space-between; gap: 4px; align-items: baseline; min-width: 0; padding: 2px 7px; border: 1px solid #4a2a20; border-radius: 5px; background: rgba(40,12,6,.6); font-size: 12px; }
 .hx-chip i { font-style: normal; color: #a08070; }
 .hx-chip b { color: #ffd0a0; }
 .hx-chips.dim .hx-chip b { color: #8a7060; }
 .hx-note { margin: 0 0 8px; font-size: 12px; color: #b0a090; }
 .hx-warn { color: #ffb060; }
-.hx-scroll { flex: 1 1 auto; min-height: 0; max-height: calc(82vh - 205px); overflow: auto; overscroll-behavior: contain; scrollbar-width: thin; scrollbar-color: #77523a #180d0b; }
-.hx-list { display: grid; grid-template-columns: 1fr 1fr; gap: 6px 10px; }
-.hx-row { display: flex; align-items: flex-start; gap: 9px; padding: 7px 8px; border: 1px solid #3a2a2a; border-radius: 6px; background: rgba(20,8,6,.5); cursor: pointer; user-select: none; -webkit-tap-highlight-color: transparent; }
+.hx-content { flex: 0 0 auto; min-height: 0; }
+.hx-list { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); align-items: start; gap: 0 8px; }
+.hx-column { display: flex; min-width: 0; flex-direction: column; gap: 4px; }
+.hx-row { display: flex; align-items: flex-start; gap: 7px; min-width: 0; padding: 5px 6px; border: 1px solid #3a2a2a; border-radius: 6px; background: rgba(20,8,6,.5); cursor: pointer; user-select: none; -webkit-tap-highlight-color: transparent; }
 .hx-row:hover { border-color: #6a3a2a; }
 .hx-row.on { border-color: var(--hc, #ff6040); background: rgba(50,12,6,.6); box-shadow: inset 0 0 14px rgba(255,80,40,.22); }
 .hx-row.locked { opacity: .5; cursor: default; filter: grayscale(.6); }
 .hx-row input { position: absolute; opacity: 0; width: 0; height: 0; pointer-events: none; }
-.hx-sw { position: relative; flex: none; width: 34px; height: 18px; margin-top: 1px; border-radius: 9px; border: 1px solid #5a3a30; background: #20100c; transition: background .15s, border-color .15s; }
+.hx-sw { position: relative; flex: none; width: 30px; height: 18px; margin-top: 1px; border-radius: 9px; border: 1px solid #5a3a30; background: #20100c; transition: background .15s, border-color .15s; }
 .hx-sw::after { content: ''; position: absolute; top: 2px; left: 2px; width: 12px; height: 12px; border-radius: 50%; background: #806858; transition: left .15s, background .15s; }
 .hx-row input:checked + .hx-sw { background: var(--hc, #ff6040); border-color: var(--hc, #ff6040); }
-.hx-row input:checked + .hx-sw::after { left: 18px; background: #fff4e0; }
+.hx-row input:checked + .hx-sw::after { left: 14px; background: #fff4e0; }
 .hx-row input:focus-visible + .hx-sw { outline: 2px solid #ffd860; outline-offset: 1px; }
 .hx-text { display: flex; flex-direction: column; min-width: 0; flex: 1; }
 .hx-name { display: flex; align-items: center; gap: 8px; color: var(--hc, #ffd0a0); }
 .hx-pips { display: inline-flex; gap: 2px; margin-left: auto; }
 .hx-pips i { width: 7px; height: 7px; border-radius: 50%; background: var(--hc, #ff6040); box-shadow: 0 0 4px var(--hc, #ff6040); }
-.hx-desc { font-size: 12px; margin-top: 2px; color: #a89888; }
+.hx-desc { font-size: 12px; line-height: 1.18; margin-top: 2px; color: #a89888; overflow-wrap: anywhere; }
 .hx-row.on .hx-desc { color: #d8c8b8; }
 .hx-foot { display: flex; align-items: center; gap: 8px; margin: 5px 0 0; flex: 0 0 auto; }
 .hx-mile { display: flex; gap: 8px; align-items: flex-start; padding: 5px 6px; color: #b0a090; border-bottom: 1px solid rgba(120,80,55,.2); }
@@ -1321,6 +1322,7 @@ body.touch.portrait #hud-top-left > #sand-objective { width: min(214px, calc(100
 .hx-door.hx-unbound:not(:disabled) b { color: #ff7050; }
 .hx-door.hx-marks b { color: #ff9050; }
 body.touch .hx-list { grid-template-columns: 1fr; gap: 6px; }
+body.touch .hx-content { max-height: calc(100dvh - 310px); overflow: auto; overscroll-behavior: contain; scrollbar-width: thin; scrollbar-color: #77523a #180d0b; }
 body.touch .hx-row { min-height: 50px; padding: 9px 10px; align-items: center; gap: 12px; }
 body.touch .hx-sw { width: 50px; height: 28px; border-radius: 14px; }
 body.touch .hx-sw::after { width: 22px; height: 22px; top: 2px; left: 2px; }
@@ -1329,12 +1331,12 @@ body.touch .hx-name { font-size: 15px; }
 body.touch .hx-desc { font-size: 13px; }
 body.touch .hx-foot { flex-direction: column; align-items: stretch; }
 body.touch .hx-chips { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-body.touch .hx-scroll { max-height: calc(100dvh - 310px); }
 body.touch .hx-clear { min-height: 40px; }
 body.touch .hx-doors { grid-template-columns: 1fr; }
 body.touch .hx-door { min-height: 48px; }
 .marks-panel { resize: both; min-width: min(620px, 96vw); min-height: min(500px, 82vh); overflow: hidden; }
 .heresy-panel { min-width: 0; overflow: hidden; }
+.heresy-panel .panel-body { overflow-x: hidden; overflow-y: auto; }
 .marks-panel .panel-body { display: flex; flex: 1 1 auto; flex-direction: column; gap: 8px; min-height: 0; overflow: hidden; padding: 10px; }
 .mk-shell { outline: none; }
 .mk-head { flex: 0 0 auto; }
@@ -1413,12 +1415,12 @@ body.touch .hx-door { min-height: 48px; }
   .mk-foot-note { display: none; }
 }
 /* The Altar and Marks library open as one centered endgame workspace. */
-#panels.heresy-marks-pair { overflow: visible; }
+#panels.heresy-marks-pair { bottom: 0; overflow: visible; }
 #panels.heresy-marks-pair > [data-panel="heresies"],
 #panels.heresy-marks-pair > [data-panel="marks"] { max-width: none; translate: none !important; scale: none !important; transform: none !important; }
 #panels.heresy-marks-stacked { display: flex !important; flex-direction: column; align-items: center; justify-content: flex-start; gap: 8px; overflow-y: auto; overflow-x: hidden; padding: 8px; }
-#panels.heresy-marks-stacked > [data-panel="heresies"],
-#panels.heresy-marks-stacked > [data-panel="marks"] { position: relative !important; inset: auto !important; transform: none !important; width: min(96vw, 680px) !important; max-width: 96vw !important; height: min(42vh, 390px) !important; max-height: min(42vh, 390px) !important; min-height: 0 !important; }
+#panels.heresy-marks-stacked > [data-panel="marks"] { position: relative !important; inset: auto !important; transform: none !important; width: min(96vw, 920px) !important; max-width: 96vw !important; height: min(48vh, 480px) !important; max-height: min(48vh, 480px) !important; min-height: 0 !important; }
+#panels.heresy-marks-stacked > [data-panel="heresies"] { position: relative !important; inset: auto !important; transform: none !important; width: min(96vw, 1040px) !important; max-width: 96vw !important; height: min(68vh, 760px) !important; max-height: min(68vh, 760px) !important; min-height: 0 !important; }
 .macros-panel .mc-why { font-size: 12px; margin-bottom: 8px; }
 .mc-row { padding: 6px 8px; margin-bottom: 6px; border: 1px solid #3a2e22; border-left: 3px solid var(--gold-dim); border-radius: 6px; background: rgba(16,10,6,.55); }
 .mc-head { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }

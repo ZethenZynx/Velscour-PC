@@ -10,6 +10,10 @@ import { heresiesOf, heresyRankOf, setHeresy, worldRank } from '../game/heresies
 import { campaignVictoryRecorded, endgameUnlocked } from '../game/endgame.js';
 import { Marks } from './marks.js';
 
+export function heresyModifierColumns(modifiers = HERESIES) {
+  return [0, 1, 2].map((column) => modifiers.slice(column * 10, (column + 1) * 10));
+}
+
 /** The rank's rewards as chips: drops, magic find, gold, XP, Sigils, relics. */
 function rewardChips(rank) {
   const M = heresyMods(rank);
@@ -35,7 +39,7 @@ export const Heresies = {
         const pairedWindow = Marks.activePair;
         this.active = false; Marks.activePair = false;
         if (pairedWindow && UI.isOpen('marks')) UI.closePanel('marks');
-      }, cls: 'heresy-panel', width: 'min(660px, 96vw)', layoutManaged: true,
+      }, cls: 'heresy-panel', width: 'min(1040px, 96vw)', layoutManaged: true,
     });
     Marks.open({ keepExisting: true, paired: true });
     return true;
@@ -44,7 +48,6 @@ export const Heresies = {
   render(body) {
     const c = G.char, on = heresiesOf(c), rank = heresyRankOf(c), w = G.world;
     const milestoneIcons = { 10: '\u2691', 20: '\u2726', 30: '\u269c', 40: '\u2694', 50: '\u25c8', 60: '\u2620' };
-    const scroll = body.querySelector('.hx-scroll')?.scrollTop || 0;
     body.innerHTML = '';
     // the rank, its bar and what it pays
     const head = el('div', 'hx-head');
@@ -56,10 +59,12 @@ export const Heresies = {
     const here = w && w.kind === 'dungeon' && !w.rift && !w.unbound ? worldRank(w) : null;
     const built = here !== null && (w.heresy ? w.heresy.ids : []).join() !== on.join();
     body.appendChild(el('div', 'hx-note', `Your choices take hold from the <b>next level</b> you enter (every depth, the Endless Torment and the Eternal Breach), never in Abyssal Rifts or Velscour Unbound.${built ? ` <span class="hx-warn">This level was built at Heresy ${here}: your changes wait for the next one.</span>` : ''}`));
-    const scrollArea = el('div', 'hx-scroll');
-    // one row per Heresy: the whole row is the toggle
+    // Three fixed columns keep all thirty modifier toggles visible together.
+    const scrollArea = el('div', 'hx-content');
     const list = el('div', 'hx-list');
-    for (const H of HERESIES) {
+    for (const columnData of heresyModifierColumns()) {
+      const column = el('div', 'hx-column');
+      for (const H of columnData) {
       const isOn = on.includes(H.id);
       const row = el('label', 'hx-row' + (isOn ? ' on' : ''));
       row.style.setProperty('--hc', H.color);
@@ -72,7 +77,9 @@ export const Heresies = {
         UI.refresh();
       });
       row.querySelector('.hx-pips').title = `Adds ${H.rank} Heresy ranks`;
-      list.appendChild(row);
+      column.appendChild(row);
+      }
+      list.appendChild(column);
     }
     scrollArea.appendChild(list);
     const milestoneRows = HERESY_MILESTONES.map((m) => `<div class="hx-mile${rank >= m.rank ? ' done' : ''}${m.rank === HERESY_MILESTONES.find((q) => q.rank > rank)?.rank ? ' next' : ''}"><span class="hx-mile-icon" title="${escapeHtml(m.name)}">${milestoneIcons[m.rank] || (m.rank === HERESY_MAX_RANK ? '\u265b' : m.icon)}</span><span><b>Rank ${m.rank} · ${escapeHtml(m.name)}</b><small>${escapeHtml(m.text)}</small></span></div>`).join('');
@@ -93,6 +100,5 @@ export const Heresies = {
     throne.onclick = () => { if (throneReady) G.game?.enterHeresyThrone?.(); };
     foot.appendChild(throne);
     body.appendChild(foot);
-    const restored = body.querySelector('.hx-scroll'); if (restored) restored.scrollTop = scroll;
   },
 };
