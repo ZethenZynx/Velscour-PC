@@ -895,6 +895,11 @@ body.touch .reliquary-panel .codex-cell { width: 34px; height: 34px; }
 .developer-warning p { margin: 0; color: #e3c392; font-size: 12px; line-height: 1.45; }
 .developer-settings-group { margin: 10px 0 14px; padding: 9px 10px 11px; border: 1px solid rgba(141,103,48,.48); border-radius: 4px; background: rgba(0,0,0,.18); }
 .developer-settings-group h3 { margin: 0 0 9px; color: var(--gold-bright); font: 700 13px var(--font-head); }
+.developer-settings-group > summary { display: flex; align-items: center; gap: 7px; color: var(--gold-bright); font: 700 13px var(--font-head); cursor: pointer; list-style: none; }
+.developer-settings-group > summary::-webkit-details-marker { display: none; }
+.developer-settings-group > summary::before { content: '▸'; color: #c59b54; font: 700 13px var(--font-head); }
+.developer-settings-group[open] > summary { margin-bottom: 9px; }
+.developer-settings-group[open] > summary::before { content: '▾'; }
 .developer-settings-note { grid-column: 1 / -1; margin: 0; color: var(--text-dim); font-size: 11px; line-height: 1.4; }
 .developer-reset { margin-top: 2px; border-color: #9b6426; color: #ffd080; }
 .developer-settings-group button:disabled { opacity: .48; cursor: not-allowed; }

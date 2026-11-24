@@ -578,12 +578,14 @@ function audioSettingsMarkup(settings) {
       <label title="Temporarily lowers music and ambience during rare item and achievement notifications">Audio Ducking for Important Notifications</label><input type="checkbox" data-audio-setting="notificationDucking"${audio.notificationDucking ? ' checked' : ''}>
       <label>Notification Duck Amount <output data-audio-duck-output>${audio.duckAmount}%</output></label><input type="range" min="0" max="80" step="5" value="${audio.duckAmount}" data-audio-setting="duckAmount">
     </div></details>
-    <details class="audio-settings-section" data-audio-diagnostics><summary>Audio Diagnostics</summary><p class="dim">Optional event recording can add processing overhead. Sound channel limits discard excess sounds immediately and never build a playback queue.</p>
-      <div class="audio-diagnostic-controls"><button type="button" class="btn small" data-audio-record-start>Start Recording</button><button type="button" class="btn small" data-audio-record-stop disabled>Stop</button><button type="button" class="btn small" data-audio-record-clear>Clear</button><button type="button" class="btn small" data-audio-record-export>Export Report</button></div>
-      <div class="audio-diagnostic-controls"><input type="text" maxlength="120" data-audio-marker placeholder="Add a diagnostic marker"><button type="button" class="btn small" data-audio-record-marker>Add Marker</button><span class="dim" data-audio-diagnostic-status role="status">Recording is off.</span></div>
-      <div class="audio-diagnostic-summary" data-audio-diagnostic-summary></div>
-    </details>
   </div>`;
+}
+
+function audioDiagnosticsMarkup() {
+  return `<p class="dim">Optional event recording can add processing overhead. Sound channel limits discard excess sounds immediately and never build a playback queue.</p>
+    <div class="audio-diagnostic-controls"><button type="button" class="btn small" data-audio-record-start>Start Recording</button><button type="button" class="btn small" data-audio-record-stop disabled>Stop</button><button type="button" class="btn small" data-audio-record-clear>Clear</button><button type="button" class="btn small" data-audio-record-export>Export Report</button></div>
+    <div class="audio-diagnostic-controls"><input type="text" maxlength="120" data-audio-marker placeholder="Add a diagnostic marker"><button type="button" class="btn small" data-audio-record-marker>Add Marker</button><span class="dim" data-audio-diagnostic-status role="status">Recording is off.</span></div>
+    <div class="audio-diagnostic-summary" data-audio-diagnostic-summary></div>`;
 }
 
 export function settingsDialog() {
@@ -647,16 +649,20 @@ export function settingsDialog() {
   </div>
   <div class="settings-tab-pane" data-pane="developer">
     <div class="developer-warning" role="note"><strong>WARNING — DEVELOPER SETTINGS</strong><p>These settings are intended for debugging, diagnostics and performance troubleshooting. Enabling certain options may reduce performance, display technical information or interfere with normal gameplay. Leave these options disabled during regular gameplay unless troubleshooting an issue.</p></div>
-    <section class="developer-settings-group"><h3>Performance Diagnostics</h3><div class="settings-grid">
+    <details class="developer-settings-group" data-developer-section="performance" open><summary>Performance Diagnostics</summary><div class="settings-grid">
       <label title="Records an opt-in rolling performance history of up to three minutes and shows the diagnostics overlay">Enable Performance Profiler</label><input type="checkbox" data-developer-profiler ${st.performanceProfiler ? 'checked' : ''}>
-      <div class="developer-settings-note">Includes a live FPS counter, frame-time graph, detailed processing times, memory (when supported), entity counts, rendering time, AI and collision workload, and active audio instances.</div>
+      <div class="developer-settings-note">The opt-in profiler provides FPS and frame-time history, subsystem processing, and the supported rendering, entity, memory, AI, collision, and audio measurements below.</div>
       <label>Export Performance Report</label><button type="button" class="btn small" data-export-performance>Export report</button>
       <label>Reset Performance Statistics</label><button type="button" class="btn small" data-reset-performance>Reset statistics</button>
-    </div></section>
-    <section class="developer-settings-group"><h3>Debug Event Logging</h3><div class="settings-grid">
+    </div></details>
+    <details class="developer-settings-group" data-developer-section="audio"><summary>Audio Diagnostics</summary>${audioDiagnosticsMarkup()}</details>
+    <details class="developer-settings-group" data-developer-section="rendering"><summary>Rendering Diagnostics</summary><p class="developer-settings-note">The performance report includes available render-pass timings, render queue and view counts, visible sprite and environment counts, culling-related counters, and lighting time. Exact GPU draw-call totals are not exposed by the current browser rendering runtime.</p></details>
+    <details class="developer-settings-group" data-developer-section="entities"><summary>Entity Diagnostics</summary><p class="developer-settings-note">The performance report includes supported counts for enemies, NPCs and other creatures, projectiles, hazards, particles, effects, damage text, and dropped loot. Counts that are unavailable in a runtime are omitted rather than estimated.</p></details>
+    <details class="developer-settings-group" data-developer-section="memory"><summary>Memory Diagnostics</summary><p class="developer-settings-note">Heap usage is recorded when the browser exposes it. Allocation rates and cache byte totals are not available from the current runtime, so the report does not invent those values.</p></details>
+    <details class="developer-settings-group" data-developer-section="debugging"><summary>Debugging &amp; Error Logging</summary><div class="settings-grid">
       <label title="Adds verbose enemy AI, pack spawn, affix and shrine events to the Adventurer's Log">Include debug events in the Adventurer's Log</label><input type="checkbox" data-developer-chat-debug ${GameChat.prefs.debug ? 'checked' : ''}>
-    </div></section>
-    <button type="button" class="btn small developer-reset" data-reset-developer>Reset Developer Settings</button>
+    </div><p class="developer-settings-note">JavaScript errors and stack traces go to the browser console; in-game error notices are throttled. No separate error collector runs in the background.</p></details>
+    <details class="developer-settings-group" data-developer-section="other"><summary>Other Developer Tools</summary><p class="developer-settings-note">Resetting here disables developer monitoring and debug event logging without changing ordinary gameplay settings.</p><button type="button" class="btn small developer-reset" data-reset-developer>Reset Developer Settings</button></details>
     <p class="developer-settings-note" data-developer-status role="status" aria-live="polite"></p>
   </div>
   <div class="settings-tab-pane" data-pane="mouseCursor">
@@ -821,7 +827,13 @@ export function settingsDialog() {
     const input = d.box.querySelector('[data-audio-marker]'), marker = input.value.trim();
     if (marker) { recordAudioDiagnosticMarker('user-marker', { marker }); input.value = ''; }
   };
-  const audioStatsTimer = setInterval(() => { if (!d.box.isConnected) { clearInterval(audioStatsTimer); return; } refreshAudioDiagnostics(); }, 1000);
+  const audioDiagnosticsSection = d.box.querySelector('[data-developer-section="audio"]');
+  audioDiagnosticsSection.addEventListener('toggle', refreshAudioDiagnostics);
+  const audioStatsTimer = setInterval(() => {
+    if (!d.box.isConnected) { clearInterval(audioStatsTimer); return; }
+    if (activeSettingsTab !== 'developer' || !audioDiagnosticsSection.open) return;
+    refreshAudioDiagnostics();
+  }, 1000);
   const performancePreset = d.box.querySelector('[data-performance-preset]');
   const adaptivePerformance = d.box.querySelector('[data-adaptive-performance]');
   performancePreset.value = st.graphicsPreset === 'extreme' ? 'extreme' : 'standard';
@@ -898,6 +910,8 @@ export function settingsDialog() {
     developerProfiler.checked = false;
     setPerformanceProfilerEnabled(false);
     GameChat.setDebugEnabled(false);
+    stopAudioDiagnosticRecording();
+    refreshAudioDiagnostics();
     resetPerformanceStatistics();
     refreshDeveloperControls(); developerStatus.textContent = 'Developer settings restored to defaults.'; saveSettings();
   }, 'Reset');
