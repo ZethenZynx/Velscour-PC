@@ -272,6 +272,14 @@ const SOUNDS = {
   gate: (t) => { tone(t, 0.8, { wave: 'sawtooth', f0: 70, f1: 50, vol: 0.12 }); noise(t, 0.8, { type: 'bandpass', f0: 900, f1: 400, q: 6, vol: 0.2 }); },
   step: (t, p) => noise(t, 0.05, { f0: 700 * p, f1: 200, vol: 0.06 }),
   bell: (t, p) => { [[1, 0.16, 2.4], [2.0, 0.09, 1.6], [2.76, 0.07, 1.2], [5.4, 0.04, 0.7], [0.5, 0.06, 2.8]].forEach(([k, v, d]) => tone(t, d, { wave: 'sine', f0: 392 * k * p, f1: 392 * k * p * 0.995, vol: v, a: 0.004 })); },
+  iron_express_whistle: (t, p) => {
+    // Fallback to the generated old-fashioned steam whistle: a low three-note chord, soft breath, and finite release.
+    for (const [f, v] of [[293.66, 0.2], [369.99, 0.15], [440, 0.11]]) {
+      tone(t, 1.12, { f0: f * p * 0.98, f1: f * p * 0.965, vol: v, wave: 'sine', a: 0.055 });
+      tone(t, 1.05, { f0: f * p * 1.96, f1: f * p * 1.93, vol: v * 0.18, wave: 'sine', a: 0.055 });
+    }
+    noise(t + 0.58, 0.68, { type: 'lowpass', f0: 1500, f1: 430, q: 0.8, vol: 0.09, a: 0.08 });
+  },
   note: (t, p) => { const f = [523, 587, 659, 784, 880][Math.floor(Math.random() * 5)]; tone(t, 0.3, { wave: 'triangle', f0: f * p, vol: 0.12 }); },
 };
 
@@ -382,6 +390,7 @@ const SAMPLES = {
   door: { s: [...n3('door_open', 2), ...n3('door_close', 2)], v: 0.45, max: 2 },
   gate: { s: ['gate_open', 'gate_close', 'portcullis_gate'], v: 0.7, max: 1 },
   thunder: { s: ['thunder_crack'], v: 0.6, max: 1 }, // the level-up's lightning (oneshots/, tools/audiopack.py)
+  iron_express_whistle: { s: ['iron_express_whistle'], ext: 'wav', v: 0.72, max: 1 },
   step_stone: STEP('stone'), step_dirt: STEP('dirt'), step_water: STEP('water'), step_wood: STEP('wood'),
 };
 
@@ -389,18 +398,28 @@ async function loadSamples() {
   try {
     manifest = await (await fetch(AUDIO + 'audio.json')).json();
   } catch (e) { return; }   // no audio files: everything stays procedural
-  const want = [...new Set(Object.values(SAMPLES).flatMap((d) => d.s))].filter((k) => manifest.sfx.includes(k));
+  const want = [...new Map(Object.entries(SAMPLES).flatMap(([, d]) => d.s.map((slug) => [slug, { slug, ext: d.ext || 'mp3' }]))).values()]
+    .filter(({ slug }) => manifest.sfx.includes(slug));
   let i = 0;
   const worker = async () => {
     while (i < want.length) {
-      const k = want[i++];
+      const { slug, ext } = want[i++];
       try {
-        const data = await (await fetch(`${AUDIO}sfx/${k}.mp3`)).arrayBuffer();
-        buffers[k] = await new Promise((ok, no) => ac.decodeAudioData(data, ok, no));
+        const data = await (await fetch(`${AUDIO}sfx/${slug}.${ext}`)).arrayBuffer();
+        buffers[slug] = await new Promise((ok, no) => ac.decodeAudioData(data, ok, no));
       } catch (e) { /* that sound stays procedural */ }
     }
   };
   await Promise.all([worker(), worker(), worker(), worker()]);
+}
+
+let ironExpressWhistleUntil = 0;
+/** One finite, non-overlapping notification whistle for Iron Express announcements. */
+export function ironExpressWhistleSfx(volume = 1) {
+  if (!ac || G.settings.sfx <= 0 || ac.currentTime < ironExpressWhistleUntil) return false;
+  ironExpressWhistleUntil = ac.currentTime + 1.42;
+  sfx('iron_express_whistle', volume, 1, { source: 'Iron Express notification', sourceActive: false });
+  return true;
 }
 
 function playSample(name, vol, p, now) {

@@ -12,7 +12,7 @@ import { G } from '../state.js';
 import { UI } from '../ui/ui.js';
 import { camera, HW, HH } from '../core/view.js';
 import { rand, pick, clamp } from '../core/util.js';
-import { sfx } from '../core/audio.js';
+import { sfx, ironExpressWhistleSfx } from '../core/audio.js';
 import { makeMonster } from './monster.js';
 import { dropChest } from './loot.js';
 import { addEffect, addLight, Telegraph, Ring, sparkle, smoke, burst, spawn, floatText } from '../gfx/vfx.js';
@@ -181,7 +181,7 @@ export function createGhostTrainRun(world, gen, biome, depth, onSuccess) {
     run.stationX = x + 110; run.phase = 'brake'; run.stationsSeen += last ? 0 : 1;
     trainStation(name, look);
     UI.centerMsg(name.toUpperCase(), last ? 'Brakes on. She runs into her last stop.' : 'A station ahead. She slows.', 3);
-    sfx('bell', 0.8);
+    ironExpressWhistleSfx(0.8);
   }
   function arrive() {
     const S = run.stop, x0 = S.x - PLAT_LEN / 2, x1 = S.x + PLAT_LEN / 2;
@@ -225,7 +225,7 @@ export function createGhostTrainRun(world, gen, biome, depth, onSuccess) {
     world.rebuildLootIndex?.();
     for (const ch of S.chests) { const i = world.chests.indexOf(ch); if (i >= 0) world.chests.splice(i, 1); }
     platformOff(map);
-    sfx('bell', 0.6);
+    ironExpressWhistleSfx(0.6);
   }
   function finish() {
     if (run.completed) return;
@@ -293,7 +293,7 @@ export function createGhostTrainRun(world, gen, biome, depth, onSuccess) {
     } else {
       // the whistle: raiders leap aboard round the hero (board()'s own landing rings)
       boss.startAction('train_whistle', 0.9);
-      trainVent('whistle'); sfx('bell'); sfx('roar', 0.6);
+      trainVent('whistle'); ironExpressWhistleSfx(); sfx('roar', 0.6);
       later(0.5, () => { if (!boss.dead) board(2 + Math.round(press(depth))); });
     }
   }
@@ -345,7 +345,7 @@ export function createGhostTrainRun(world, gen, biome, depth, onSuccess) {
       const S = run.stop;
       if (!S.last) {
         S.t += dt;
-        if (!S.whistled && S.t > STOP - WHISTLE) { S.whistled = true; UI.centerMsg('ALL ABOARD!', `${WHISTLE} seconds`, 2.2); sfx('bell'); }
+        if (!S.whistled && S.t > STOP - WHISTLE) { S.whistled = true; UI.centerMsg('ALL ABOARD!', `${WHISTLE} seconds`, 2.2); ironExpressWhistleSfx(); }
         if (S.t >= STOP) depart();
       }
     } else if (run.phase === 'leave') {
@@ -381,7 +381,7 @@ export function createGhostTrainRun(world, gen, biome, depth, onSuccess) {
     }
     // the lieutenant whistles his men aboard once, at half his life
     if (lieutenant && !lieutenant.dead && !lieutenant.whistled && lieutenant.hp < lieutenant.maxHp * 0.5) {
-      lieutenant.whistled = true; trainVent('whistle'); sfx('bell', 0.7);
+      lieutenant.whistled = true; trainVent('whistle'); ironExpressWhistleSfx(0.7);
       floatText(lieutenant.x, lieutenant.y, (lieutenant.artH || 60) * (lieutenant.scale || 1) + 12, pick(BARK.whistle), '#ffc080', 16, { life: 1.6, vz: 18 });
       board(2 + Math.round(press(depth)));
     }
