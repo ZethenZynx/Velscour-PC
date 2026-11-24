@@ -24,10 +24,11 @@ import { initTitleForkUpdater } from '../game/forkreleaseupdater.js';
 import { MOUSE_CURSOR_DEFAULTS, refreshMouseCursor } from './mousecursor.js';
 import { CharacterPortrait } from './characterportrait.js';
 import { openCustomizeUI } from './layoutcustomizer.js';
+import { GameChat } from './chat.js';
 import { GORE_PERFORMANCE_WARNING_LIMIT, GORE_PRESET_VERSION, GORE_PRESETS, MAX_CUSTOM_GORE_LIMIT, normalizeGorePreset, goreLimit } from '../gfx/goresettings.mjs';
 import { applyGoreSettings } from '../gfx/vfx.js';
 import { setSkipSeizureWarning } from './seizurewarning.mjs';
-import { exportPerformanceReport, setPerformanceProfilerEnabled } from '../core/perfdiagnostics.js';
+import { exportPerformanceReport, resetPerformanceStatistics, setPerformanceProfilerEnabled } from '../core/perfdiagnostics.js';
 
 let current = null;
 let currentCleanup = null;
@@ -548,6 +549,7 @@ export function settingsDialog() {
     <button type="button" class="settings-tab-btn" data-tab="hud">HUD &amp; UI</button>
     <button type="button" class="settings-tab-btn" data-tab="mouseCursor">Mouse Cursor</button>
     <button type="button" class="settings-tab-btn" data-tab="controls">Controls</button>
+    <button type="button" class="settings-tab-btn" data-tab="developer">⚒ Developer</button>
   </div>
   <div class="settings-tab-pane" data-pane="general">
     <div class="settings-grid">
@@ -579,8 +581,6 @@ export function settingsDialog() {
       <label title="Use a custom maximum number of cosmetic splatters instead of the selected preset limit">Custom splatter limit</label><div class="gore-custom-control"><label><input type="checkbox" data-gore-custom ${st.goreCustomEnabled ? 'checked' : ''}> Custom</label><input type="number" min="1" max="${MAX_CUSTOM_GORE_LIMIT}" step="1" value="${Math.max(1, Math.min(MAX_CUSTOM_GORE_LIMIT, Number(st.goreCustomLimit) || 150))}" data-gore-limit aria-label="Custom maximum splatter count"></div>
       <div class="gore-performance-warning" data-gore-warning role="status" aria-live="polite"></div>
       <label>Screen shake</label><input type="checkbox" data-k="shake" ${st.shake ? 'checked' : ''}>
-      <label title="Record an opt-in rolling 60-second performance history and show live frame, workload, entity and supported memory diagnostics">Performance profiler</label><input type="checkbox" data-k="performanceProfiler" ${st.performanceProfiler ? 'checked' : ''}>
-      <label>Export performance report</label><button type="button" class="btn small" data-export-performance>Export report</button>
       <label title="Reduce full-screen flashes, flashbangs, and rapid hit strobing">Reduce flashing effects</label><input type="checkbox" data-k="reduceFlashing" ${st.reduceFlashing ? 'checked' : ''}>
       <label title="The hero, monsters and pets keep a coloured outline over spells, walls and darkness (hidden only behind another creature)">See-through outlines</label><input type="checkbox" data-k="outlines" ${st.outlines !== false ? 'checked' : ''}>
       <label title="A line along the foot of the dungeon's walls, drawn over every spell (not over creatures)">Outline wall bases</label><input type="checkbox" data-k="wallLines" ${st.wallLines ? 'checked' : ''}>
@@ -598,6 +598,20 @@ export function settingsDialog() {
       <label>Mouse buttons</label><span class="dim">LMB and RMB remain assigned to the action bar</span>
     </div>
     <p class="dim" data-keybind-status aria-live="polite"></p>
+  </div>
+  <div class="settings-tab-pane" data-pane="developer">
+    <div class="developer-warning" role="note"><strong>WARNING — DEVELOPER SETTINGS</strong><p>These settings are intended for debugging, diagnostics and performance troubleshooting. Enabling certain options may reduce performance, display technical information or interfere with normal gameplay. Leave these options disabled during regular gameplay unless troubleshooting an issue.</p></div>
+    <section class="developer-settings-group"><h3>Performance Diagnostics</h3><div class="settings-grid">
+      <label title="Records an opt-in rolling 60-second performance history and shows the diagnostics overlay">Enable Performance Profiler</label><input type="checkbox" data-developer-profiler ${st.performanceProfiler ? 'checked' : ''}>
+      <div class="developer-settings-note">Includes a live FPS counter, frame-time graph, detailed processing times, memory (when supported), entity counts, rendering time, AI and collision workload, and active audio instances.</div>
+      <label>Export Performance Report</label><button type="button" class="btn small" data-export-performance>Export report</button>
+      <label>Reset Performance Statistics</label><button type="button" class="btn small" data-reset-performance>Reset statistics</button>
+    </div></section>
+    <section class="developer-settings-group"><h3>Debug Event Logging</h3><div class="settings-grid">
+      <label title="Adds verbose enemy AI, pack spawn, affix and shrine events to the Adventurer's Log">Include debug events in the Adventurer's Log</label><input type="checkbox" data-developer-chat-debug ${GameChat.prefs.debug ? 'checked' : ''}>
+    </div></section>
+    <button type="button" class="btn small developer-reset" data-reset-developer>Reset Developer Settings</button>
+    <p class="developer-settings-note" data-developer-status role="status" aria-live="polite"></p>
   </div>
   <div class="settings-tab-pane" data-pane="mouseCursor">
     <div class="cursor-live-preview" data-cursor-preview tabindex="0"><b>Live Cursor Preview</b><span>Move your mouse here to preview the cursor, trail, and locator effects.</span></div>
@@ -684,7 +698,7 @@ export function settingsDialog() {
       setTab(btn.dataset.tab);
     };
   });
-  if (!['general', 'audio', 'graphics', 'hud', 'controls', 'mouseCursor'].includes(activeSettingsTab)) activeSettingsTab = 'general';
+  if (!['general', 'audio', 'graphics', 'hud', 'mouseCursor', 'controls', 'developer'].includes(activeSettingsTab)) activeSettingsTab = 'general';
   setTab(activeSettingsTab);
   const cursorSettings = () => (st.mouseCursor ||= { ...MOUSE_CURSOR_DEFAULTS });
   const cursorOutput = (key, value) => {
@@ -711,6 +725,47 @@ export function settingsDialog() {
     refreshCursorControls(); refreshMouseCursor(); saveSettings();
   };
   refreshMouseCursor();
+  const developerProfiler = d.box.querySelector('[data-developer-profiler]');
+  const resetPerformance = d.box.querySelector('[data-reset-performance]');
+  const refreshDeveloperControls = () => { resetPerformance.disabled = !st.performanceProfiler; };
+  const developerStatus = d.box.querySelector('[data-developer-status]');
+  refreshDeveloperControls();
+  developerProfiler.onchange = () => {
+    if (developerProfiler.checked) {
+      developerProfiler.checked = false;
+      UI.confirm('Enable Performance Profiler?', 'The profiler records a rolling performance history and displays technical information. It may reduce performance during troubleshooting.', () => {
+        st.performanceProfiler = true;
+        developerProfiler.checked = true;
+        setPerformanceProfilerEnabled(true);
+        refreshDeveloperControls(); saveSettings();
+      }, 'Enable');
+    } else {
+      st.performanceProfiler = false;
+      setPerformanceProfilerEnabled(false);
+      refreshDeveloperControls(); saveSettings();
+    }
+  };
+  const developerChatDebug = d.box.querySelector('[data-developer-chat-debug]');
+  developerChatDebug.onchange = () => {
+    if (developerChatDebug.checked) {
+      developerChatDebug.checked = false;
+      UI.confirm('Enable Debug Event Logging?', 'Verbose events will be added to the Adventurer\'s Log while enabled.', () => {
+        GameChat.setDebugEnabled(true); developerChatDebug.checked = true;
+      }, 'Enable');
+    } else GameChat.setDebugEnabled(false);
+  };
+  resetPerformance.onclick = () => {
+    if (!resetPerformanceStatistics()) return;
+    developerStatus.textContent = 'Performance statistics reset.';
+  };
+  d.box.querySelector('[data-reset-developer]').onclick = () => UI.confirm('Reset Developer Settings?', 'This disables developer diagnostics and debug logging. Graphics, audio, accessibility, and gameplay settings are not changed.', () => {
+    st.performanceProfiler = false;
+    developerProfiler.checked = false;
+    setPerformanceProfilerEnabled(false);
+    GameChat.setDebugEnabled(false);
+    resetPerformanceStatistics();
+    refreshDeveloperControls(); developerStatus.textContent = 'Developer settings restored to defaults.'; saveSettings();
+  }, 'Reset');
   const keybindRows = d.box.querySelector("[data-keybind-rows]");
   keybindRows.outerHTML = KEY_BINDING_ACTIONS.map((action) => '<label>' + action.label + '</label><button type="button" class="btn small" data-keybind="' + action.id + '">' + keyBindingLabel(getKeyBinding(action.id)) + '</button>').join("");
   const keybindButtons = [...d.box.querySelectorAll("[data-keybind]")];
@@ -841,7 +896,6 @@ export function settingsDialog() {
     inp.oninput = inp.onchange = () => {
       const k = inp.dataset.k;
       st[k] = inp.type === 'checkbox' ? inp.checked : inp.dataset.str ? inp.value : Number(inp.value);
-      if (k === 'performanceProfiler') setPerformanceProfilerEnabled(st[k]);
       if (k === 'skipCutscenes' || k === 'zoom') camera.computeZoom();
       if (k === 'tabMapTransparency') d.box.querySelector('[data-map-opacity]').textContent = `${st[k]}%`;
       if ((k === 'showHeroStats' || k === 'showTargetBox' || k === 'showTargetSprite') && UI.hud && UI.hud.applyVisibilitySettings) UI.hud.applyVisibilitySettings();

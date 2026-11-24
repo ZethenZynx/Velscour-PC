@@ -17,6 +17,9 @@ function allocateHistory() {
   history = Object.fromEntries(KEYS.map((key) => [key, new Float32Array(CAP)]));
   history.samples = new Uint16Array(CAP);
   history.timestamps = new Float64Array(CAP);
+  history.depths = new Float64Array(CAP);
+  history.environments = new Array(CAP);
+  history.worldKinds = new Array(CAP);
   history.heapBytes = new Float64Array(CAP);
   history.counts = Object.fromEntries(COUNT_KEYS.map((key) => [key, new Uint32Array(CAP)]));
   cursor = count = frameSerial = 0;
@@ -35,8 +38,7 @@ function mountPanel() {
   addStyle();
   panel = document.createElement('section');
   panel.id = 'perf-diagnostics';
-  panel.innerHTML = '<div class="pd-head"><b>Performance diagnostics</b><button type="button" data-pd-export>Export report</button></div><div data-pd-summary></div><canvas width="640" height="96" aria-label="Recent frame times"></canvas><div class="pd-stats" data-pd-stats></div><div class="pd-small" data-pd-note></div>';
-  panel.querySelector('[data-pd-export]').addEventListener('click', exportPerformanceReport);
+  panel.innerHTML = '<div class="pd-head"><b>Performance diagnostics</b></div><div data-pd-summary></div><canvas width="640" height="96" aria-label="Recent frame times"></canvas><div class="pd-stats" data-pd-stats></div><div class="pd-small" data-pd-note></div>';
   document.body.appendChild(panel);
   graph = panel.querySelector('canvas');
 }
@@ -53,6 +55,14 @@ export function setPerformanceProfilerEnabled(enabled) {
     prevRaf = nextPaint = 0; phases = null;
     dropPanel();
   }
+}
+
+export function resetPerformanceStatistics() {
+  if (!performanceProfilerEnabled()) return false;
+  history = null; latestCounts = null; count = cursor = frameSerial = 0;
+  prevRaf = nextPaint = 0; phases = null;
+  allocateHistory(); mountPanel();
+  return true;
 }
 
 export function profileStart() {
@@ -115,6 +125,9 @@ export function profileFinishFrame(world) {
   const at = cursor;
   const now = performance.now();
   history.timestamps[at] = now;
+  history.depths[at] = Number.isFinite(Number(world?.depth)) ? Number(world.depth) : 0;
+  history.environments[at] = world?.biome?.name || world?.biome?.id || world?.kind || '';
+  history.worldKinds[at] = world?.kind || '';
   history.frameMs[at] = frameMs;
   history.gapMs[at] = rafGap;
   history.updateMs[at] = updateMs;
@@ -200,6 +213,9 @@ export function performanceReport() {
   for (let i = 0; i < count; i++) {
     const at = (first + i) % CAP, row = {};
     for (const key of KEYS) row[key] = Number(history[key][at].toFixed(3));
+    row.depth = history.depths[at] || 0;
+    row.environment = history.environments[at] || '';
+    row.worldKind = history.worldKinds[at] || '';
     row.elapsedSeconds = Number(((history.timestamps[at] - history.timestamps[first]) / 1000).toFixed(3));
     row.heapBytes = history.heapBytes[at]; peakHeapBytes = Math.max(peakHeapBytes, row.heapBytes);
     if (history.samples[at]) for (const key of COUNT_KEYS) row[key] = history.counts[key][at];
@@ -212,7 +228,7 @@ export function performanceReport() {
     summaryMs: summaries,
     memory: { supported: !!performance.memory, latestHeapBytes: performance.memory?.usedJSHeapSize || 0, peakSampledHeapBytes: peakHeapBytes },
     frames,
-    note: 'Browser/GPU frame presentation and hardware-level memory are not available to this JavaScript report. Heap is shown only when performance.memory is supported.',
+    note: 'Each frame includes its own depth, environment, and world kind so transitions are visible. Browser/GPU frame presentation and hardware-level memory are not available to this JavaScript report. Heap is shown only when performance.memory is supported.',
   };
 }
 

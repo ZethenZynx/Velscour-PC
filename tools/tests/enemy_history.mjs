@@ -9,7 +9,7 @@ const history = [];
 for (let i = 0; i < 105; i++) appendEnemyHistory(history, {
   key: `enemy-${i}`, name: `Enemy ${i}`, art: `art-${i}`, level: i + 1,
   maxHp: 100 + i, hp: 75 + i, dmg: 12 + i, affixes: ['strong'],
-  dungeonAffixes: ['fortified'], res: { fire: 0.4 }, thumbnail: 'data:image/png;base64,abc',
+  dungeonAffixes: ['fortified'], res: { fire: 0.4 }, classId: 'paladin', classPal: { armor: '#aabbcc' }, thumbnail: 'data:image/png;base64,abc',
 });
 assert.equal(history.length, ENEMY_HISTORY_LIMIT, 'history retains no more than 100 encounters');
 assert.equal(history[0].key, 'enemy-5', 'oldest encounter is discarded first');
@@ -26,6 +26,8 @@ assert.equal(restored[4].maxHp, 109, 'enemy statistics survive saving');
 assert.deepEqual(restored[4].affixes, ['strong'], 'elite affixes survive saving');
 assert.deepEqual(restored[4].dungeonAffixes, ['fortified'], 'dungeon affixes survive saving');
 assert.deepEqual(restored[4].res, { fire: 0.4 }, 'resistances survive saving');
+assert.equal(restored[4].classId, 'paladin', 'enemy class identifier survives saving');
+assert.deepEqual(restored[4].classPal, { armor: '#aabbcc' }, 'enemy palette survives saving');
 assert.equal(restored[4].thumbnail, 'data:image/png;base64,abc', 'recorded artwork thumbnail survives saving');
 assert.equal(stored.has(ENEMY_HISTORY_STORAGE_KEY), true);
 assert.deepEqual(normalizeEnemyHistory('invalid'), [], 'invalid stored data safely falls back to empty history');
@@ -53,7 +55,9 @@ assert.equal(writes, 2, 'flush persists the most recent history immediately');
 
 const hud = await readFile(new URL('../../src/ui/hud.js', import.meta.url), 'utf8');
 assert.match(hud, /if \(cur\) \{[\s\S]*?this\.recordEnemy\(cur\)/, 'encounters are recorded during target updates');
-assert.match(hud, /const cached = thumbnails\.get\(img\)/, 'enemy thumbnail canvases are reused per source sprite');
+assert.match(hud, /thumbnail: ''/, 'new encounter recording avoids synchronous thumbnail generation');
+assert.doesNotMatch(hud, /toDataURL\('image\/png'\)/, 'recording an encounter does not encode a thumbnail synchronously');
+assert.match(hud, /record\.classId && classSprite\(record\.classId, 150, record\.classPal \|\| null\)/, 'history artwork is reconstructed from saved class identifiers');
 assert.match(hud, /this\.enemyHistorySaver\?\.schedule\(\)/, 'new encounters batch local-storage writes');
 assert.match(hud, /enemyHistorySaver\?\.flush\(\)/, 'pending encounter history flushes when leaving the page');
 assert.match(hud, /if \(cur && !this\.enemyHistoryReviewing\) this\.tb = cur/, 'new targets do not interrupt history review');

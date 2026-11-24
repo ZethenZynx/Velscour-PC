@@ -3,7 +3,7 @@ import { G } from '../state.js';
 import { el, fmt, fmtInt, fmtDmg, escapeHtml, clamp, drawFiltered } from '../core/util.js';
 import { shownDmg, heroDmgLevel } from '../data/depth.js';
 import { sfx } from '../core/audio.js';
-import { A, potionIcon } from '../core/assets.js';
+import { A, classSprite, potionIcon } from '../core/assets.js';
 import { UI, $, droppable } from './ui.js';
 import { skillIconURL, buffIconURL, smiteIcon, madnessIcon, ultimateIcon } from './icons.js';
 import { CLASSES } from '../data/classes.js';
@@ -37,9 +37,8 @@ const POTIONS = ['hp', 'mp', 'rejuv', 'fury'];
 // HUD art index -> bar index (skills) or potion kind: LMB, 1-9 0 - =, potions, RMB.
 const SLOT_MAP = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 'hp', 'mp', 'rejuv', 'fury', 13];
 
-/** [x, y, w, h] of a sprite's non-transparent pixels (monster sheets carry lots of padding), memoised per image. */
+/** [x, y, w, h] of a sprite's non-transparent pixels, memoised per image for the live target panel. */
 const boxes = new WeakMap();
-const thumbnails = new WeakMap();
 const pct = (v, total) => (v / total) * 100 + '%';
 function opaqueBox(img) {
   let b = boxes.get(img);
@@ -61,25 +60,6 @@ function opaqueBox(img) {
 }
 
 const RESISTANCE_LABELS = { phys: 'Physical', fire: 'Fire', cold: 'Cold', light: 'Lightning', poison: 'Poison', acid: 'Acid', arcane: 'Arcane', holy: 'Holy', shadow: 'Shadow', blood: 'Blood' };
-function enemyThumbnail(monster) {
-  try {
-    const img = monster.spriteImage?.();
-    if (!img?.width || !img?.height) return '';
-    const cached = thumbnails.get(img);
-    if (cached) return cached;
-    const [sx, sy, sw, sh] = opaqueBox(img), size = 64, pad = 2;
-    const scale = Math.min((size - pad * 2) / sw, (size - pad * 2) / sh);
-    const dw = sw * scale, dh = sh * scale, canvas = document.createElement('canvas');
-    canvas.width = canvas.height = size;
-    const ctx = canvas.getContext('2d');
-    ctx.imageSmoothingEnabled = false;
-    ctx.drawImage(img, sx, sy, sw, sh, (size - dw) / 2, size - pad - dh, dw, dh);
-    const thumbnail = canvas.toDataURL('image/png');
-    thumbnails.set(img, thumbnail);
-    return thumbnail;
-  } catch { return ''; }
-}
-
 export const HUD = {
   slots: [],
   last: {},
@@ -891,12 +871,15 @@ export const HUD = {
     const snapshot = {
       key: target._enemyHistoryKey,
       name: target.name || 'Unknown Enemy', arch: target.arch || '', art: target.art || '', swap: target.swap || null,
+      classId: target.classId || '', classPal: target.classPal || null,
       sprite: target.sprite || '', pal: target.pal || null, rank: target.rank || 'normal', level: target.level || 1,
       hp: target.hp || 0, maxHp: target.maxHp || 0, dmg: target.dmg || 0, speed: target.speed || 0,
       el: target.el || 'phys', res: Object.fromEntries(Object.entries(target.res || {}).filter(([, value]) => Number.isFinite(Number(value))).map(([key, value]) => [key, Number(value)])),
       affixes: Array.isArray(target.affixes) ? target.affixes.slice() : [], dungeonAffixes,
       depth: G.world?.depth || 0, area: G.world?.biome?.name || G.world?.biome?.id || '', dead: !!target.dead,
-      thumbnail: enemyThumbnail(target),
+      // Keep encounter recording cheap in the update loop. Art is reconstructed from its saved
+      // identifiers on demand; older records with stored thumbnails remain supported.
+      thumbnail: '',
     };
     const { added, removedOldest } = appendEnemyHistory(this.enemyHistory, snapshot);
     if (!added) return;
@@ -929,7 +912,9 @@ export const HUD = {
       }
       if (img.complete && img.naturalWidth) return img;
     }
-    return (record.art && enemyImage(record.art, record.swap)) || (record.sprite && pixelSprite(record.sprite, record.pal, 6)) || null;
+    return (record.art && enemyImage(record.art, record.swap)) ||
+      (record.classId && classSprite(record.classId, 150, record.classPal || null)) ||
+      (record.sprite && pixelSprite(record.sprite, record.pal, 6)) || null;
   },
 
   /** The target window: the hovered / attacked / last-hit monster's picture and name; it stays up, greyed, once slain. */

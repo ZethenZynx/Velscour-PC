@@ -11,6 +11,8 @@ export function normalizeEnemyHistory(value) {
       arch: typeof entry.arch === 'string' ? entry.arch : '',
       art: typeof entry.art === 'string' ? entry.art : '',
       swap: entry.swap && typeof entry.swap === 'object' ? entry.swap : null,
+      classId: typeof entry.classId === 'string' ? entry.classId : '',
+      classPal: entry.classPal && typeof entry.classPal === 'object' ? entry.classPal : null,
       sprite: typeof entry.sprite === 'string' ? entry.sprite : '',
       pal: entry.pal && typeof entry.pal === 'object' ? entry.pal : null,
       rank: typeof entry.rank === 'string' ? entry.rank : 'normal',
