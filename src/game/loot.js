@@ -22,6 +22,7 @@ import { keyChance } from './unbound.js';
 import { CHEST_RARITIES } from '../data/treasurechests.js';
 import { riftQualityRange, riftRewardProgressionDepth } from '../data/rifts.js';
 import { greedQuantity } from './greed.js';
+import { lifetimeAlpha } from '../core/objectlifetimes.mjs';
 
 /** Highest quality unlocked for ground drops at this campaign depth. */
 export function groundDropRarityCap(depth) { return qualityAtDepth(Math.max(1, depth || 1)); }
@@ -189,6 +190,7 @@ export class GroundItem {
   }
   update(dt, world) {
     if (this._lootRemoved) return false;
+    if (Number.isFinite(this._lootExpiryAt) && world.time >= this._lootExpiryAt) return false;
     // Items outside the active pickup/movement area may be asleep for many frames.
     // Derive their age from world time when they wake so expiry stays exact.
     if (Number.isFinite(this._lootBornAt) && Number.isFinite(world.time)) this.t = Math.max(this.t || 0, world.time - this._lootBornAt);
@@ -215,8 +217,7 @@ export class GroundItem {
         return false;
       }
     }
-    if (!this.riftCompletionReward && this.t > 120 && this.kind !== 'item' && this.kind !== 'key') return false; // completion rewards remain until collected or explicitly abandoned
-    if (this.fades && this.t > this.fades && p.lootTarget !== this) return false;
+    if (Number.isFinite(this._lootExpiryAt) && world.time >= this._lootExpiryAt) return false;
     if (this.kind.startsWith('orb')) addLight(this.x, this.y, 1.8, 0.7);
     return true;
   }
@@ -229,6 +230,10 @@ export class GroundItem {
   }
   draw(ctx) {
     const px = isoX(this.x, this.y), py = isoY(this.x, this.y) - this.z;
+    const alpha = lifetimeAlpha(G.world?.time ?? this._lootBornAt ?? 0, this._lootExpiryAt, this._lootFadeAt);
+    if (alpha <= 0) return;
+    const priorAlpha = ctx.globalAlpha;
+    ctx.globalAlpha = priorAlpha * alpha;
     if (ORB_COLOR[this.kind]) {
       const c = ORB_COLOR[this.kind];
       const b = 8 + Math.sin(this.t * 6) * 1.5;
@@ -237,13 +242,13 @@ export class GroundItem {
       ctx.globalCompositeOperation = 'source-over';
       const [art, swap] = ORB_ICON[this.kind];
       const orb = replacementIcon(art, 20, null, 0.88, swap);
-      if (orb) { ctx.drawImage(orb, px - 10, py - 20 - Math.sin(this.t * 4) * 2); return; }
+      if (orb) { ctx.drawImage(orb, px - 10, py - 20 - Math.sin(this.t * 4) * 2); ctx.globalAlpha = priorAlpha; return; }
       ctx.fillStyle = c; ctx.beginPath(); ctx.arc(px, py - 10 - Math.sin(this.t * 4) * 2, 4.5, 0, TAU); ctx.fill();
       ctx.fillStyle = '#ffffff'; ctx.fillRect(px - 2, py - 13 - Math.sin(this.t * 4) * 2, 2, 2);
-      return;
+      ctx.globalAlpha = priorAlpha; return;
     }
     const img = this.icon();
-    if (!img) return;
+    if (!img) { ctx.globalAlpha = priorAlpha; return; }
     const art = this.kind === 'item' && ((this.item.art && artIcon(this.item)) || gearIcon(this.item) || heldIcon(this.item));
     const s = this.kind === 'gold' ? 20 : art ? 30 : this.kind === 'key' ? 26 : 22;
     ctx.fillStyle = 'rgba(0,0,0,0.35)';
@@ -253,6 +258,7 @@ export class GroundItem {
     if (this.kind === 'item' && this.item.type === 'gear' && !art) ctx.rotate(-0.6); // catalog and gear art are drawn upright / diagonal already
     ctx.drawImage(img, -s / 2, -s / 2, s, s);
     ctx.restore();
+    ctx.globalAlpha = priorAlpha;
   }
 }
 

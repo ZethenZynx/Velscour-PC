@@ -9,11 +9,13 @@ import { sfx } from '../core/audio.js';
 import { spawn, updateVfx, addLight, sparkle, smoke, lights } from '../gfx/vfx.js';
 import { bodyR } from '../world/map.js';
 import { profileEnd, profileRecord, profileStart } from '../core/perfdiagnostics.js';
+import { groundLootLifetime, OBJECT_LIFETIMES } from '../core/objectlifetimes.mjs';
 
 const CELL = 2;
 const LOOT_CELL = 8;
 
 const LOOT_CAP = 240;
+let WORLD_SERIAL = 0;
 
 function heapPush(heap, node) {
   let i = heap.length; heap.push(node);
@@ -34,6 +36,7 @@ function heapPop(heap) {
 export class World {
   constructor(kind, opts) {
     this.kind = kind; // 'town' | 'dungeon'
+    this.id = ++WORLD_SERIAL;
     Object.assign(this, opts); // map, tileset, biome, depth, ...
     this.creatures = [];
     this.hazards = [];
@@ -49,6 +52,9 @@ export class World {
     this._lootRegistered = 0;
     this.unindexedLoot = new Set();
     this._lootTimerStale = 0;
+    this._creatureSerial = 0;
+    this._renderCreatureBuffer = [];
+    this.lifecycle = { creaturesCreated: 0, creaturesRemoved: 0, hazardsCreated: 0, hazardsRemoved: 0, lootCreated: 0, lootRemoved: 0 };
     this.corpses = [];
     this.fallen = []; // dead summons' last poses (core/petart.js)
     this.props = this.props || [];
@@ -105,22 +111,27 @@ export class World {
     // never start inside a wall or prop: a body that overlaps one can't take a step
     if (this.map && !c.ghost && !c.isPlayer && !c.clutter) [c.x, c.y] = this.map.nudge(c.x, c.y, bodyR(c));
     this.creatures.push(c);
+    c._worldRenderOrder = ++this._creatureSerial;
+    if (G.settings?.performanceProfiler === true) this.lifecycle.creaturesCreated++;
     if (Array.isArray(this.dungeonAffixes)) for (const id of this.dungeonAffixes) applyDungeonAffix(c, id);
     return c;
   }
   remove(c) {
     const idx = this.creatures.indexOf(c);
-    if (idx !== -1) this.creatures.splice(idx, 1);
+    if (idx !== -1) { this.creatures.splice(idx, 1); if (G.settings?.performanceProfiler === true) this.lifecycle.creaturesRemoved++; }
     if (c.world === this) c.world = null;
     return c;
   }
-  addHazard(h) { h.world = this; this.hazards.push(h); return h; }
+  addHazard(h) { h.world = this; this.hazards.push(h); if (G.settings?.performanceProfiler === true) this.lifecycle.hazardsCreated++; return h; }
   addLoot(l) {
     l._lootRemoved = false;
     l._lootBornAt = this.time;
-    const life = l.riftCompletionReward ? 0 : (l.fades || (l.kind !== 'item' && l.kind !== 'key' ? 120 : 0));
-    l._lootExpiryAt = life ? this.time + Math.max(0, life - (l.t || 0)) : Infinity;
+    const lifetime = groundLootLifetime(l, this.time);
+    l._lootExpiryAt = lifetime.expiresAt;
+    l._lootFadeAt = lifetime.fadeAt;
+    l._lootMaxLifetime = lifetime.duration;
     this.loot.push(l);
+    if (G.settings?.performanceProfiler === true) this.lifecycle.lootCreated++;
     this._lootRegistered++;
     this._indexLoot(l);
     if (l.z > 0 || l.vz > 0) this.movingLoot.add(l);
@@ -172,6 +183,7 @@ export class World {
   removeLoot(l) {
     if (!l || l._lootRemoved) return false;
     l._lootRemoved = true;
+    if (G.settings?.performanceProfiler === true) this.lifecycle.lootRemoved++;
     l._lootTimerToken = (l._lootTimerToken || 0) + 1;
     if (l.fades) this._lootTimerStale++;
     if (Number.isFinite(l._lootExpiryAt)) this._lootTimerStale++;
@@ -195,8 +207,10 @@ export class World {
       this._lootRegistered++;
       if (!Number.isFinite(l._lootBornAt)) l._lootBornAt = this.time - (l.t || 0);
       if (!Number.isFinite(l._lootExpiryAt)) {
-        const life = l.fades || (l.kind !== 'item' && l.kind !== 'key' ? 120 : 0);
-        l._lootExpiryAt = life ? l._lootBornAt + Math.max(0, life - (l.t || 0)) : Infinity;
+        const lifetime = groundLootLifetime(l, l._lootBornAt);
+        l._lootExpiryAt = lifetime.expiresAt;
+        l._lootFadeAt = lifetime.fadeAt;
+        l._lootMaxLifetime = lifetime.duration;
       }
       l._lootTimerToken = (l._lootTimerToken || 0) + 1;
       this._indexLoot(l);
@@ -208,8 +222,8 @@ export class World {
     this._lootTombstones = 0;
     return this;
   }
-  _compactLoot() {
-    if ((this._lootTombstones || 0) < 32 && (this._lootTombstones || 0) * 10 < this.loot.length) return;
+  _compactLoot(force = false) {
+    if (!force && (this._lootTombstones || 0) < 32 && (this._lootTombstones || 0) * 10 < this.loot.length) return;
     let write = 0;
     for (let read = 0; read < this.loot.length; read++) if (!this.loot[read]._lootRemoved) this.loot[write++] = this.loot[read];
     this.loot.length = write; this._lootTombstones = 0;
@@ -292,6 +306,22 @@ export class World {
         out.push(c);
       }
     }
+    return out;
+  }
+  /** Non-dead creatures in a conservative tile-space rectangle, in stable world insertion order. */
+  creaturesInBounds(minX, minY, maxX, maxY, out = []) {
+    out.length = 0;
+    const x0 = Math.floor(minX / CELL), x1 = Math.floor(maxX / CELL);
+    const y0 = Math.floor(minY / CELL), y1 = Math.floor(maxY / CELL);
+    for (let cy = y0; cy <= y1; cy++) for (let cx = x0; cx <= x1; cx++) {
+      const cell = this.grid.get((cx << 16) | (cy & 0xffff));
+      if (!cell) continue;
+      for (const c of cell) {
+        if (c.dead || c.x + (c.r || 0) < minX || c.x - (c.r || 0) > maxX || c.y + (c.r || 0) < minY || c.y - (c.r || 0) > maxY) continue;
+        out.push(c);
+      }
+    }
+    out.sort((a, b) => a._worldRenderOrder - b._worldRenderOrder);
     return out;
   }
   nearestHostile(team, x, y, r, needLos = false, allowClutter = false) {
@@ -402,7 +432,10 @@ export class World {
     const hazardStart = profiling ? profileStart() : 0;
     for (let i = this.hazards.length - 1; i >= 0; i--) {
       const h = this.hazards[i];
-      if (h.update(dt) === false || h.dead) this.hazards.splice(i, 1);
+      if (h.update(dt) === false || h.dead) {
+        this.hazards.splice(i, 1); if (G.settings?.performanceProfiler === true) this.lifecycle.hazardsRemoved++;
+        if (h.world === this) h.world = null;
+      }
       else if (h.o && h.o.aug) augHazard(h, dt);
     }
     if (profiling) profileRecord('hazard', profileEnd(hazardStart));
@@ -411,21 +444,25 @@ export class World {
     if (profiling) profileRecord('collision', profileEnd(collisionStart));
     for (let i = this.creatures.length - 1; i >= 0; i--) {
       const c = this.creatures[i];
-      if (c.dead && c !== p && (c.removeT = (c.removeT || 0) + dt) > 0.05) this.creatures.splice(i, 1);
+      if (c.dead && c !== p && (c.removeT = (c.removeT || 0) + dt) > 0.05) {
+        this.creatures.splice(i, 1); if (G.settings?.performanceProfiler === true) this.lifecycle.creaturesRemoved++;
+        if (c.world === this) c.world = null;
+      }
     }
     // Loot may stay on the floor indefinitely, so only airborne loot, nearby loot, and
     // the player's explicit target need per-frame simulation. A time heap handles expiry
     // for distant drops without waking every item on every frame.
     const lootStart = profiling ? profileStart() : 0;
     if (this.loot.length - (this._lootTombstones || 0) !== (this._lootRegistered || 0)) this.rebuildLootIndex();
+    let expiredLoot = false;
     while (this.lootExpiry.length && this.lootExpiry[0].at <= this.time) {
       const entry = heapPop(this.lootExpiry), l = entry.ref.deref();
       if (!l || l._lootRemoved || l._lootTimerToken !== entry.token || l._lootExpiryAt !== entry.at) continue;
-      if (p && p.lootTarget === l) {
-        l._lootExpiryAt = this.time + 0.5;
-        heapPush(this.lootExpiry, { at: l._lootExpiryAt, ref: new WeakRef(l), token: l._lootTimerToken });
-      } else this.removeLoot(l);
+      this.removeLoot(l); expiredLoot = true;
     }
+    // Expiry can happen in a large batch after menus or a paused/resumed scene.
+    // Compact once after the batch so expired records are not retained by loot[].
+    if (expiredLoot) this._compactLoot(true);
     const serial = ++this._lootUpdateSerial;
     const updateLoot = (l) => {
       if (!l || l._lootRemoved || l._lootUpdateSerial === serial) return;
@@ -448,7 +485,7 @@ export class World {
     for (let i = this.corpses.length - 1; i >= 0; i--) {
       const c = this.corpses[i];
       c.t += dt;
-      if (c.t > 40 || c.used) this.corpses.splice(i, 1);
+      if (c.t >= OBJECT_LIFETIMES.corpse.max || c.used) this.corpses.splice(i, 1);
     }
     if (this.corpses.length > 70) this.corpses.splice(0, this.corpses.length - 70);
     for (let i = this.fallen.length - 1; i >= 0; i--) if ((this.fallen[i].t += dt) > 3) this.fallen.splice(i, 1);

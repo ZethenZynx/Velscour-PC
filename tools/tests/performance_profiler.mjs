@@ -11,8 +11,8 @@ const state = await readFile(new URL('../../src/state.js', import.meta.url), 'ut
 
 assert.match(state, /performanceProfiler:\s*false/, 'the profiler is disabled for existing and new players by default');
 assert.match(profiler, /if \(!performanceProfilerEnabled\(\)\) return false/, 'disabled collection exits before creating frame history');
-assert.match(profiler, /const CAP = 9000/, 'the preallocated history can retain 60 seconds through 150 Hz');
-assert.match(profiler, /now - history\.timestamps\[oldest\] <= 60000/, 'the rolling window is time-based, not tied to a 60 Hz assumption');
+assert.match(profiler, /const CAP = 27000/, 'the bounded history can retain three minutes through 150 Hz');
+assert.match(profiler, /HISTORY_MS = 180000/, 'the rolling window is time-based and retains several minutes');
 assert.match(profiler, /Float64Array\(CAP\)/, 'timestamps and supported heap samples retain useful precision');
 assert.match(profiler, /'frameMs', 'gapMs', 'updateMs', 'renderMs'/, 'the report distinguishes processing duration from frame pacing');
 assert.match(profiler, /p50: q\(0\.5\), p95: q\(0\.95\), p99: q\(0\.99\), worst/, 'reports summarize median, tail and worst timings');
@@ -32,10 +32,11 @@ assert.match(world, /profileRecord\('collision'/, 'world profiling separates col
 assert.match(game, /profileRecord\('events'/, 'world event scripts are measured');
 assert.match(render, /markRenderPhase\('renderSort'\)/, 'the renderer reports draw-list construction and sorting time');
 assert.match(render, /markRenderPhase\('depthDraw'\)/, 'the renderer reports depth-sorted drawing separately');
+assert.match(render, /world\.creaturesInBounds\(/, 'world rendering and minimap actor markers use spatial culling');
 assert.match(render, /drawParticles\(ctx, vr, profiling\)/, 'visible particle counting only runs during profiling');
 assert.match(render, /profileRecord\('effectDraw', performance\.now\(\) - effectDrawStarted\)/, 'the aggregate effect time includes its split sub-stages');
 assert.match(render, /profileRecord\('screenOverlay', performance\.now\(\) - screenOverlayStarted\)/, 'the aggregate screen-space time includes its split sub-stages');
 assert.match(screens, /data-export-performance/, 'the settings screen exposes report export');
-assert.match(screens, /rolling 60-second performance history/i, 'the setting describes the actual history duration');
+assert.match(screens, /rolling performance history of up to three minutes/i, 'the setting describes the actual history duration');
 
-console.log('Opt-in profiler wiring, disabled-by-default behavior, 60-second ring history, subsystem timings, counts, and export checks passed.');
+console.log('Opt-in profiler wiring, disabled-by-default behavior, three-minute ring history, subsystem timings, counts, and export checks passed.');

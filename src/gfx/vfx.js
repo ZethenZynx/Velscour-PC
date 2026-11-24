@@ -11,6 +11,7 @@ import { addGoreDecal, goreDecalAge, goreDecalAlphaForAge, goreDecalGrowForAge, 
 import { writeBoltGeometry, appendBoltGeometry } from './lightninggeometry.mjs';
 import { effectOutsideView } from './effectvisibility.mjs';
 import { insertCappedParticle } from './particlecap.mjs';
+import { OBJECT_LIFETIMES } from '../core/objectlifetimes.mjs';
 
 export const ELEM = {
   phys: { name: 'Physical', core: '#ffffff', glow: '#e0d8c8', dark: '#7a7060', sfx: 'phys' },
@@ -46,8 +47,11 @@ function bake(d) {
   if (bakedDecals.length > BAKED_MAX) bakedDecals.shift();
 }
 export const effects = [];
+const effectsByLayer = { ground: [], top: [] };
+const ONE_SHOT_IMPACTS = new Set(['Ring', 'Slash', 'Beam', 'Column', 'Flash', 'Sprite', 'ArtFx', 'Bolt']);
 export const texts = [];
 export const lights = [];
+const lifecycle = { particlesCreated: 0, particlesRemoved: 0, decalsCreated: 0, decalsRemoved: 0, effectsCreated: 0, effectsRemoved: 0, textsCreated: 0, textsRemoved: 0 };
 
 // ---------------------------------------------------------------- caches
 // colour-keyed sprites: snapped colours, bounded, repainted in place (util.colourSprites)
@@ -112,7 +116,9 @@ export function spawn(p) {
   p.g = p.g ?? 0; p.drag = p.drag ?? 0; p.size = p.size ?? 2; p.size1 = p.size1 ?? p.size;
   p.rot = p.rot ?? 0; p.vr = p.vr ?? 0;
   const replaced = insertCappedParticle(particles, p, MAX_P(), particleCursor);
+  if (G.settings?.performanceProfiler === true) lifecycle.particlesCreated++;
   if (replaced) {
+    if (G.settings?.performanceProfiler === true) lifecycle.particlesRemoved++;
     if (replaced.life <= 0) dead = Math.max(0, dead - 1);
     else if (replaced.spr) spriteGibs--;
   }
@@ -200,10 +206,19 @@ export function addDecal(x, y, color, size = 1, kind = 'splat', alpha = 0.9, opt
   if ((kind === 'splat' || opts.gore === true) && Number(G.settings.gore) === 0) return;
   const max = G.touch ? 500 : 1100;
   const gore = opts.gore === true;
-  const d = { x, y, color, size, kind, alpha, gore, rot: rand(TAU), idx: randi(0, 7), grow: kind === 'pool' ? 0 : 1, life: gore ? GORE_DECAL_LIFETIME : kind === 'scorch' || kind === 'frost' ? 14 : 9999, bornAt: goreClock, t: 0 };
-  if (gore) { addGoreDecal(goreDecals, d, goreLimit(G.settings)); return; }
-  if (kind === 'splat') { bake(d); return; }
-  if (decals.length >= max) decals.shift();
+  const policy = kind === 'splat' ? OBJECT_LIFETIMES.trail : OBJECT_LIFETIMES.impact;
+  const requestedLife = Number(opts.life);
+  const maxLife = gore ? OBJECT_LIFETIMES.gore.max : policy.max;
+  const life = gore ? maxLife : Number.isFinite(requestedLife) && requestedLife > 0 ? Math.min(maxLife, requestedLife) : maxLife;
+  const d = { x, y, color, size, kind, alpha, gore, rot: rand(TAU), idx: randi(0, 7), grow: kind === 'pool' ? 0 : 1, life, fadeDuration: gore ? OBJECT_LIFETIMES.gore.fade : Math.min(policy.fade, life), bornAt: goreClock, t: 0 };
+  if (gore) {
+    const before = goreDecals.length;
+    const added = addGoreDecal(goreDecals, d, goreLimit(G.settings));
+    if (added && G.settings?.performanceProfiler === true) { lifecycle.decalsCreated++; lifecycle.decalsRemoved += Math.max(0, before + 1 - goreDecals.length); }
+    return;
+  }
+  if (decals.length >= max) { decals.shift(); if (G.settings?.performanceProfiler === true) lifecycle.decalsRemoved++; }
+  if (G.settings?.performanceProfiler === true) lifecycle.decalsCreated++;
   decals.push(d);
 }
 
@@ -650,15 +665,26 @@ export class Sprite {
   }
 }
 
-export function addEffect(e, layer = 'top') { e.layer = layer; effects.push(e); return e; }
+export function addEffect(e, layer = 'top') {
+  // These are transient impact primitives. Clamp long cosmetic tails centrally;
+  // persistent buff/owner effects and gameplay warning fields use other classes.
+  if (ONE_SHOT_IMPACTS.has(e?.constructor?.name) && Number.isFinite(e.dur)) e.dur = Math.min(e.dur, OBJECT_LIFETIMES.impact.max);
+  e.layer = layer; effects.push(e);
+  if (G.settings?.performanceProfiler === true) lifecycle.effectsCreated++;
+  const bucket = effectsByLayer[layer]; if (bucket) bucket.push(e);
+  return e;
+}
 
 export function floatText(x, y, z, text, color = '#fff', size = 14, opts = {}) {
   if (!opts.dmg && typeof text === 'string' && /[a-z]/i.test(text)) {   // (not damage numbers: two hits are two numbers)
     const key = text.replace(/[\d.%]+/g, '#');
     for (const t of texts) if (!t.dmg && t.max - t.life < 0.5 && Math.abs(t.x - x) + Math.abs(t.y - y) < 1.5 && typeof t.text === 'string' && t.text.replace(/[\d.%]+/g, '#') === key) { t.text = text; return; }
   }
-  if (texts.length > 120) texts.shift();
-  texts.push({ x, y, z, text, color, gradient: Array.isArray(opts.gradient) ? opts.gradient : null, size, life: opts.life || 0.9, max: opts.life || 0.9, vz: opts.vz ?? 45, dx: rand(-10, 10), crit: opts.crit, dmg: opts.dmg });
+  if (texts.length > 120) { texts.shift(); if (G.settings?.performanceProfiler === true) lifecycle.textsRemoved++; }
+  if (G.settings?.performanceProfiler === true) lifecycle.textsCreated++;
+  const duration = opts.life || 0.9;
+  const life = opts.dmg ? Math.min(OBJECT_LIFETIMES.damageNumber.max, duration) : duration;
+  texts.push({ x, y, z, text, color, gradient: Array.isArray(opts.gradient) ? opts.gradient : null, size, life, max: life, vz: opts.vz ?? 45, dx: rand(-10, 10), crit: opts.crit, dmg: opts.dmg });
 }
 
 // --------------------------------------------------------- damage numbers
@@ -764,7 +790,8 @@ export function damageText(x, y, z, amount, style = 'hit', color = null, target 
     });
   }
   texts.push({
-    x, y, z: z + rand(-4, 6), text: fmt(amount), color: color || '#e0d8c8', style, life: S.life, max: S.life, dmg: true, comic: true,
+    x, y, z: z + rand(-4, 6), text: fmt(amount), color: color || '#e0d8c8', style,
+    life: Math.min(S.life, OBJECT_LIFETIMES.damageNumber.max), max: Math.min(S.life, OBJECT_LIFETIMES.damageNumber.max), dmg: true, comic: true,
     vz: style === 'dot' ? 24 : crit ? 62 : rand(38, 50), dx: rand(-18, 18), vx: rand(-1, 1) * (crit ? 26 : 6),
     // A tiny, deterministic pixel burst is drawn directly with the number, avoiding particle objects.
     sparkAngle: crit ? rand(TAU) : 0,
@@ -787,12 +814,23 @@ export function addLight(x, y, radius, intensity = 1, z = 20, color = null, prio
 }
 
 export function clearVfx() {
-  particles.length = 0; spriteGibs = 0; evict = 0; dead = 0; decals.length = 0; goreDecals.length = 0; bakedDecals.length = 0; effects.length = 0; texts.length = 0; lights.length = 0;
+  if (G.settings?.performanceProfiler === true) {
+    lifecycle.particlesRemoved += particles.length; lifecycle.decalsRemoved += decals.length + goreDecals.length;
+    lifecycle.effectsRemoved += effects.length; lifecycle.textsRemoved += texts.length;
+  }
+  particles.length = 0; spriteGibs = 0; evict = 0; dead = 0; decals.length = 0; goreDecals.length = 0; bakedDecals.length = 0; effects.length = 0; effectsByLayer.ground.length = effectsByLayer.top.length = 0; texts.length = 0; lights.length = 0;
   goreClock = 0;
 }
 
 /** Counts used only by the optional performance panel/export. */
-export function vfxStats() { return { particles: particles.length, decals: decals.length, gore: goreDecals.length, texts: texts.length, effects: effects.length }; }
+export function vfxStats() {
+  const stats = { particles: particles.length, decals: decals.length, gore: goreDecals.length, texts: texts.length, effects: effects.length, groundEffects: effectsByLayer.ground.length, topEffects: effectsByLayer.top.length, lifecycle: { ...lifecycle } };
+  if (G.settings?.performanceProfiler) {
+    for (const p of particles) { const key = `particle_${p.type || 'other'}`; stats[key] = (stats[key] || 0) + 1; }
+    for (const e of effects) { const key = `effect_${e.constructor?.name || 'other'}`; stats[key] = (stats[key] || 0) + 1; }
+  }
+  return stats;
+}
 
 /** Apply visual preference changes to already-visible cosmetic gore immediately. */
 export function applyGoreSettings() { trimGoreDecals(goreDecals, goreLimit(G.settings)); }
@@ -803,9 +841,9 @@ export function updateVfx(dt, world) {
   // of shifting the surviving array on every expired particle (quadratic work).
   let live = 0;
   for (const p of particles) {
-    if (p.life <= 0) continue; // killed since the last update (kill() already counted its gib)
+    if (p.life <= 0) { if (G.settings?.performanceProfiler === true) lifecycle.particlesRemoved++; continue; }
     p.life -= dt;
-    if (p.life <= 0) { if (p.spr) spriteGibs--; }
+    if (p.life <= 0) { if (G.settings?.performanceProfiler === true) lifecycle.particlesRemoved++; if (p.spr) spriteGibs--; }
     else particles[live++] = p;
   }
   particles.length = live; evict = 0; dead = 0;
@@ -851,8 +889,7 @@ export function updateVfx(dt, world) {
     const d = decals[i];
     if (d.grow < 1) d.grow = Math.min(1, d.grow + dt * 1.2);
     if (d.life < 9999) d.life -= dt;
-    if (d.life <= 0) continue;
-    if (d.kind === 'pool' && d.grow >= 1 && !d.gore) { bake(d); continue; } // a grown non-gore pool is finished blood
+    if (d.life <= 0) { if (G.settings?.performanceProfiler === true) lifecycle.decalsRemoved++; continue; }
     decals[decalWrite++] = d;
   }
   decals.length = decalWrite;
@@ -864,10 +901,16 @@ export function updateVfx(dt, world) {
   for (let i = effectEnd - 1; i >= 0; i--) {
     const effect = effects[i];
     if (effect.update(dt)) effects[--effectWrite] = effect;
+    else if (G.settings?.performanceProfiler === true) lifecycle.effectsRemoved++;
   }
   let effectCount = effectEnd - effectWrite;
   for (let i = effectEnd; i < effects.length; i++) effects[effectCount++] = effects[i];
   effects.length = effectCount;
+  effectsByLayer.ground.length = effectsByLayer.top.length = 0;
+  for (const effect of effects) {
+    const bucket = effectsByLayer[effect.layer];
+    if (bucket) bucket.push(effect);
+  }
   let textWrite = 0;
   for (let i = 0, n = texts.length; i < n; i++) {
     const t = texts[i];
@@ -877,6 +920,7 @@ export function updateVfx(dt, world) {
       if (t.style === 'crit') t.vx *= Math.pow(0.003, dt); // short lateral impact bounce
     } else t.vz *= 0.94;
     if (t.life > 0) texts[textWrite++] = t;
+    else if (G.settings?.performanceProfiler === true) lifecycle.textsRemoved++;
   }
   texts.length = textWrite;
 }
@@ -924,8 +968,7 @@ export function drawDecals(ctx, vr, stamped = null, goreVr = vr) {
     const px = isoX(d.x, d.y), py = isoY(d.x, d.y);
     if (px < vr.x0 - 80 || px > vr.x1 + 80 || py < vr.y0 - 60 || py > vr.y1 + 60 || groundHidden(d.x, d.y)) continue;
     const s = d.size * HW * 1.6 * (d.kind === 'pool' ? 0.3 + 0.7 * d.grow : 1);
-    let a = d.alpha;
-    if (d.life < 3) a *= d.life / 3;
+    const a = d.alpha * (d.life <= d.fadeDuration ? Math.max(0, d.life / Math.max(0.001, d.fadeDuration)) : 1);
     ctx.globalAlpha = a;
     if (d.kind === 'splat' || d.kind === 'pool') drawSplat(ctx, d, s, ba, bb, bc, bd, be, bf);
     else if (d.kind === 'scorch') {
@@ -956,10 +999,10 @@ export function drawDecals(ctx, vr, stamped = null, goreVr = vr) {
 
 export function drawEffects(ctx, layer) {
   boltFrame.length = 0;
+  const layerEffects = effectsByLayer[layer] || [];
   const halfW = G.W / (2 * camera.zoom) + 24, halfH = G.H / (2 * camera.zoom) + 24;
   const x0 = camera.x - halfW, x1 = camera.x + halfW, y0 = camera.y - halfH, y1 = camera.y + halfH;
-  for (const e of effects) {
-    if (e.layer !== layer) continue;
+  for (const e of layerEffects) {
     if (e instanceof Bolt) {
       if (!e.built) e.build();
       if (e.segCount < 2 || !boltOnScreen(e, x0, y0, x1, y1)) continue;
@@ -1024,7 +1067,7 @@ export function drawParticles(ctx, vr, countVisible = false) {
         break;
       }
       case 'gib': {
-        ctx.globalAlpha = Math.min(1, p.life);
+        ctx.globalAlpha = Math.min(1, p.life / OBJECT_LIFETIMES.gore.fade);
         if (p.bone) { drawBoneGib(ctx, p, px, py); break; }
         if (p.spr) {
           const [sx, sy, sw, sh] = p.spr, w = sw * p.size, h = sh * p.size;
@@ -1106,7 +1149,7 @@ export function drawTexts(ctx) {
       if (k < 0.2) sc *= 0.85 + 0.15 * (k / 0.2);
       const spr = numSprite(t.text, t.style, t.color);
       const [sx, sy] = camera.tileToScreen(t.x, t.y, t.z);
-      const alpha = Math.min(1, k / 0.25) * uiOpacity;
+      const alpha = Math.min(1, t.dmg ? t.life / OBJECT_LIFETIMES.damageNumber.fade : k / 0.25) * uiOpacity;
       const f = PIX * dpr * sc * mob, w = spr.width * f, h = spr.height * f, tx = (sx + t.dx) * dpr, ty = sy * dpr;
       if (t.style === 'crit') {
         ctx.save();

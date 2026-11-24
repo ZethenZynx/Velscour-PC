@@ -155,8 +155,7 @@ export function breakClutter(c) {
 
   // 4. Remove from world creatures
   if (w.creatures) {
-    const cidx = w.creatures.indexOf(c);
-    if (cidx !== -1) w.creatures.splice(cidx, 1);
+    w.remove?.(c);
   }
 
 }

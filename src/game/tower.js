@@ -451,7 +451,7 @@ export function createTowerRun(world, gen, biome, onSuccess) {
       update(dt) {
         if (sh.state !== 'in' && sh.state !== 'docked') {
           for (const m of crew.slice(sent)) {
-            if (run.completed) { const i = world.creatures.indexOf(m); if (i >= 0) world.creatures.splice(i, 1); continue; }
+            if (run.completed) { world.remove(m); continue; }
             const [x, y] = roofSpot(3, 8); m.x = x; m.y = y; m.z = 0; enter(m, 'drop');
           }
           return false;

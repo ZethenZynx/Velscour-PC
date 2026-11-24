@@ -2,10 +2,12 @@
 import { G } from '../state.js';
 import { vfxStats } from '../gfx/vfx.js';
 import { audioActiveCount } from './audio.js';
+import { GAME_BUILD_ID, GAME_VERSION } from '../data/build-version.js';
 
-const CAP = 9000; // 60 seconds at up to 150 Hz
+const CAP = 27000; // 3 minutes at 150 Hz; longer on typical 60-120 Hz displays
+const HISTORY_MS = 180000;
 const KEYS = ['frameMs', 'gapMs', 'updateMs', 'renderMs', 'renderSetupMs', 'floorDrawMs', 'groundDrawMs', 'renderSortMs', 'depthDrawMs', 'effectDrawMs', 'ambientTopDrawMs', 'particleDrawMs', 'topHazardDrawMs', 'topEffectDrawMs', 'lightingMs', 'screenOverlayMs', 'skyFrontMs', 'seeThroughMs', 'screenFeedbackMs', 'hudLabelsMs', 'combatTextMs', 'cinematicOverlayMs', 'automapMs', 'worldMs', 'aiMs', 'pathMs', 'collisionMs', 'hazardMs', 'lootMs', 'vfxMs', 'uiMs', 'enemyHistoryMs', 'minimapMs', 'eventsMs', 'environmentMs'];
-const COUNT_KEYS = ['enemies', 'inactiveEnemies', 'deadCreatures', 'corpses', 'projectiles', 'hazards', 'traps', 'groundItems', 'lootLabels', 'particles', 'visibleParticles', 'decals', 'gore', 'damageText', 'audio', 'spatialCandidates', 'collisionPairs', 'pathSearches', 'renderQueue', 'renderViews', 'renderCreatures', 'renderWalls', 'renderProps', 'renderLoot'];
+const COUNT_KEYS = ['creatures', 'enemies', 'inactiveEnemies', 'offscreenCreatures', 'deadCreatures', 'corpses', 'projectiles', 'hazards', 'traps', 'groundItems', 'lootLabels', 'particles', 'visibleParticles', 'effects', 'groundEffects', 'topEffects', 'decals', 'gore', 'damageText', 'audio', 'spatialCandidates', 'collisionPairs', 'pathSearches', 'renderQueue', 'renderViews', 'renderCreatures', 'renderWalls', 'renderProps', 'renderLoot'];
 let history = null, cursor = 0, count = 0, frameSerial = 0, prevRaf = 0, nextPaint = 0, latestCounts = null;
 let frameStarted = 0, rafGap = 16.667, updateMs = 0, renderMs = 0, phases = null;
 let panel = null, graph = null;
@@ -25,6 +27,7 @@ function allocateHistory() {
   history.canvasWidth = new Uint32Array(CAP);
   history.canvasHeight = new Uint32Array(CAP);
   history.heapBytes = new Float64Array(CAP);
+  history.telemetry = new Array(CAP);
   history.counts = Object.fromEntries(COUNT_KEYS.map((key) => [key, new Uint32Array(CAP)]));
   cursor = count = frameSerial = 0;
 }
@@ -108,14 +111,17 @@ function readCounts(world) {
   for (const h of world?.hazards || []) if (h.isProjectile || h.projectile || h.constructor?.name === 'Projectile') projectiles++;
   const vfx = vfxStats();
   return {
+    creatures: world?.creatures?.length || 0,
     enemies, inactiveEnemies, deadCreatures,
+    offscreenCreatures: Math.max(0, enemies - (world?._perfVisibleEnemyCount || 0)),
     corpses: world?.corpses?.length || 0,
     projectiles,
     hazards: world?.hazards?.length || 0,
     traps: world?.environmentTraps?.length || 0,
     groundItems: world?._lootRegistered ?? world?.loot?.length ?? 0,
     lootLabels: G.lootBoxes?.length || 0,
-    particles: vfx.particles || 0, decals: vfx.decals || 0, gore: vfx.gore || 0, damageText: vfx.texts || 0,
+    particles: vfx.particles || 0, effects: vfx.effects || 0, groundEffects: vfx.groundEffects || 0, topEffects: vfx.topEffects || 0,
+    decals: vfx.decals || 0, gore: vfx.gore || 0, damageText: vfx.texts || 0,
     audio: audioActiveCount?.() || 0,
     spatialCandidates: world?._perfSpatialCandidates || 0,
     collisionPairs: world?._perfCollisionPairs || 0,
@@ -127,6 +133,13 @@ function readCounts(world) {
     renderProps: world?._perfRenderCounts?.props || 0,
     renderLoot: world?._perfRenderCounts?.loot || 0,
     visibleParticles: world?._perfVisibleParticles || 0,
+    telemetry: {
+      worldId: world?.id ?? null,
+      worldLifecycle: world?.lifecycle ? { ...world.lifecycle } : null,
+      vfxLifecycle: vfx.lifecycle || null,
+      particleTypes: Object.fromEntries(Object.entries(vfx).filter(([key]) => key.startsWith('particle_'))),
+      effectTypes: Object.fromEntries(Object.entries(vfx).filter(([key]) => key.startsWith('effect_'))),
+    },
   };
 }
 
@@ -166,16 +179,17 @@ export function profileFinishFrame(world) {
   if ((frameSerial++ % 15) === 0) {
     latestCounts = readCounts(world);
     history.heapBytes[at] = performance.memory?.usedJSHeapSize || 0;
-  } else history.heapBytes[at] = history.heapBytes[(at - 1 + CAP) % CAP];
+    history.telemetry[at] = JSON.stringify(latestCounts.telemetry);
+  } else { history.heapBytes[at] = history.heapBytes[(at - 1 + CAP) % CAP]; history.telemetry[at] = ''; }
   history.samples[at] = latestCounts ? 1 : 0;
   for (const key of COUNT_KEYS) history.counts[key][at] = latestCounts?.[key] || 0;
   cursor = (cursor + 1) % CAP; count = Math.min(CAP, count + 1);
   while (count > 1) {
     const oldest = (cursor - count + CAP) % CAP;
-    if (now - history.timestamps[oldest] <= 60000) break;
+    if (now - history.timestamps[oldest] <= HISTORY_MS) break;
     count--;
   }
-  if (now >= nextPaint) { nextPaint = now + 250; paintPanel(frameMs); }
+  if (now >= nextPaint) { nextPaint = now + 1000; paintPanel(frameMs); }
 }
 
 function ordered(key) {
@@ -215,7 +229,7 @@ function paintPanel(lastFrameMs) {
   const statsEl = panel.querySelector('[data-pd-stats]');
   statsEl.innerHTML = `<span>Frame p50 / p95 / p99 / max</span><span>${show(frameStats.p50)} / ${show(frameStats.p95)} / ${show(frameStats.p99)} / ${show(frameStats.worst)} ms</span><span>Update / render</span><span>${show(updateMs)} / ${show(renderMs)} ms</span>` + items.map(([name, value]) => `<span>${name}</span><span>${show(value)} ms</span>`).join('') + COUNT_KEYS.map((key) => `<span>${key.replace(/[A-Z]/g, (c) => ` ${c.toLowerCase()}`)}</span><span>${latestCounts?.[key] || 0}</span>`).join('');
   const mem = performance.memory?.usedJSHeapSize;
-  panel.querySelector('[data-pd-note]').textContent = `Rolling 60 s · ${mem ? `JS heap ${(mem / 1048576).toFixed(1)} MiB` : 'JS heap unavailable in this runtime'} · Entity counts refresh every 15 frames.`;
+  panel.querySelector('[data-pd-note]').textContent = `Rolling up to 180 s · ${mem ? `JS heap ${(mem / 1048576).toFixed(1)} MiB` : 'JS heap unavailable in this runtime'} · Entity counts refresh every 15 frames.`;
   paintGraph();
 }
 
@@ -251,18 +265,74 @@ export function performanceReport() {
     row.canvasHeight = history.canvasHeight[at];
     row.elapsedSeconds = Number(((history.timestamps[at] - history.timestamps[first]) / 1000).toFixed(3));
     row.heapBytes = history.heapBytes[at]; peakHeapBytes = Math.max(peakHeapBytes, row.heapBytes);
-    if (history.samples[at]) for (const key of COUNT_KEYS) row[key] = history.counts[key][at];
+    if (history.samples[at]) {
+      for (const key of COUNT_KEYS) row[key] = history.counts[key][at];
+      try { row.telemetry = JSON.parse(history.telemetry[at] || 'null'); } catch { row.telemetry = null; }
+    }
     frames.push(row);
   }
   const summaries = Object.fromEntries(KEYS.map((key) => [key, stat(ordered(key))]));
+  const frameTimes = ordered('frameMs'), intervals = ordered('gapMs');
+  const quantile = (values, p) => values.length ? values[Math.min(values.length - 1, Math.floor((values.length - 1) * p))] : 0;
+  const meanInterval = intervals.length ? intervals.reduce((sum, value) => sum + value, 0) / intervals.length : 0;
+  const pacing = Object.fromEntries([[60, 1000 / 60], [30, 1000 / 30], [24, 1000 / 24]].map(([fps, threshold]) => {
+    let framesBelow = 0, delayedIntervalMs = 0;
+    for (const gap of intervals) if (gap > threshold) { framesBelow++; delayedIntervalMs += gap; }
+    return [fps, { framesBelow, percentOfFrames: intervals.length ? Number((framesBelow * 100 / intervals.length).toFixed(2)) : 0, delayedIntervalMs: Number(delayedIntervalMs.toFixed(1)) }];
+  }));
+  const samples = frames.filter((frame) => frame.telemetry);
+  const lastSample = samples.at(-1), priorSample = samples.length > 1 ? samples.at(-2) : null;
+  const sampleSeconds = priorSample && lastSample ? lastSample.elapsedSeconds - priorSample.elapsedSeconds : 0;
+  const sameWorld = priorSample?.telemetry?.worldId != null && priorSample.telemetry.worldId === lastSample?.telemetry?.worldId;
+  const rate = (a, b, key) => Number.isFinite(a?.[key]) && Number.isFinite(b?.[key]) && sampleSeconds > 0 && b[key] >= a[key] ? Number(((b[key] - a[key]) / sampleSeconds).toFixed(2)) : null;
+  const objectRatesPerSecond = priorSample && lastSample ? {
+    world: sameWorld ? Object.fromEntries(Object.keys(lastSample.telemetry.worldLifecycle || {}).map((key) => [key, rate(priorSample.telemetry.worldLifecycle, lastSample.telemetry.worldLifecycle, key)])) : null,
+    vfx: Object.fromEntries(Object.keys(lastSample.telemetry.vfxLifecycle || {}).map((key) => [key, rate(priorSample.telemetry.vfxLifecycle, lastSample.telemetry.vfxLifecycle, key)])),
+    intervalSeconds: Number(sampleSeconds.toFixed(3)),
+  } : null;
+  const nav = globalThis.navigator;
+  const firstHeap = frames.find((frame) => frame.heapBytes > 0)?.heapBytes || null;
   return {
     title: 'Velscour Performance Diagnostics', generatedAt: new Date().toISOString(), durationSeconds: count > 1 ? Number(((history.timestamps[cursor - 1 < 0 ? CAP - 1 : cursor - 1] - history.timestamps[first]) / 1000).toFixed(3)) : 0,
+    build: { version: GAME_VERSION, id: GAME_BUILD_ID },
     character: G.char?.name || null, depth: G.world?.depth ?? null, environment: G.world?.biome?.name || G.world?.kind || null,
+    gameplayContext: {
+      worldId: G.world?.id ?? null, worldSeconds: Number((G.world?.time || 0).toFixed(2)), worldKind: G.world?.kind || null,
+      riftTier: G.world?.rift?.tier ?? null, characterClass: G.char?.classId || null, characterLevel: G.char?.level ?? null,
+      greedLevel: G.world?.greed ?? G.char?.greedLevel ?? G.char?.greed ?? 0, heresyRank: G.world?.heresy?.rank ?? null,
+      enemies: lastSample?.enemies ?? null, inactiveEnemies: lastSample?.inactiveEnemies ?? null, kills: G.world?.kills ?? null,
+    },
+    runtime: {
+      userAgent: nav?.userAgent || null, platform: nav?.platform || null,
+      hardwareConcurrency: Number.isFinite(nav?.hardwareConcurrency) ? nav.hardwareConcurrency : null,
+      deviceMemoryGiB: Number.isFinite(nav?.deviceMemory) ? nav.deviceMemory : null,
+      renderer: 'Canvas 2D', contextAttributes: G.ctx?.getContextAttributes?.() || null,
+    },
+    graphicsSettings: {
+      resolutionScale: G.resScale || 1, devicePixelRatio: G.dpr || 1, fpsCap: G.settings?.fpsCap ?? null,
+      gore: G.settings?.gore ?? null, heldEffects: G.settings?.heldFx ?? null, outlines: G.settings?.outlines ?? null,
+      particleQuality: G.settings?.particleQuality ?? null,
+    },
     renderResolution: { scale: G.resScale || 1, devicePixelRatio: G.dpr || 1, canvasWidth: G.canvas?.width || 0, canvasHeight: G.canvas?.height || 0 },
     summaryMs: summaries,
-    memory: { supported: !!performance.memory, latestHeapBytes: performance.memory?.usedJSHeapSize || 0, peakSampledHeapBytes: peakHeapBytes },
+    framePacing: {
+      currentFps: rafGap > 0 ? Number((1000 / rafGap).toFixed(2)) : 0,
+      averageFps: meanInterval > 0 ? Number((1000 / meanInterval).toFixed(2)) : 0,
+      medianFps: quantile(intervals, 0.5) > 0 ? Number((1000 / quantile(intervals, 0.5)).toFixed(2)) : 0,
+      low1PercentFps: quantile(intervals, 0.99) > 0 ? Number((1000 / quantile(intervals, 0.99)).toFixed(2)) : 0,
+      lowPoint1PercentFps: quantile(intervals, 0.999) > 0 ? Number((1000 / quantile(intervals, 0.999)).toFixed(2)) : 0,
+      frameTimeMs: { median: quantile(frameTimes, 0.5), p95: quantile(frameTimes, 0.95), p99: quantile(frameTimes, 0.99), worst: frameTimes.at(-1) || 0 },
+      intervalCountsAbove60FpsBudget: pacing[60], intervalCountsAbove30FpsBudget: pacing[30], intervalCountsAbove24FpsBudget: pacing[24],
+      longProcessingFrames: { over50ms: frameTimes.filter((value) => value > 50).length, over100ms: frameTimes.filter((value) => value > 100).length },
+    },
+    lifecycle: { latest: lastSample?.telemetry || null, ratesPerSecondBetweenLastSamples: objectRatesPerSecond },
+    memory: {
+      supported: !!performance.memory, latestHeapBytes: performance.memory?.usedJSHeapSize || 0, peakSampledHeapBytes: peakHeapBytes,
+      firstSampledHeapBytes: firstHeap, growthBytes: firstHeap && peakHeapBytes ? peakHeapBytes - firstHeap : null,
+    },
+    availability: { jsHeap: !!performance.memory, gcEvents: false, gpuFrameTime: false, listenerCounts: false, timerCounts: false, offscreenCachesBytes: false },
     frames,
-    note: 'Each frame includes its own depth, environment, world kind, and backing-store resolution so transitions and adaptive-resolution changes are visible. Browser/GPU frame presentation and hardware-level memory are not available to this JavaScript report. Heap is shown only when performance.memory is supported.',
+    note: 'History is bounded to 180 seconds and stores object lifecycle/type breakdowns every 15 frames. This measures main-thread processing and animation-frame cadence, not true display presentation. Browser/GPU frame time, GPU memory, GC events, timer/listener totals, and audio hardware latency are unavailable here and are not fabricated. A missing runtime field means that runtime does not expose it.',
   };
 }
 

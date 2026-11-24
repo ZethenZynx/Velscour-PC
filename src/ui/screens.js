@@ -602,7 +602,7 @@ export function settingsDialog() {
   <div class="settings-tab-pane" data-pane="developer">
     <div class="developer-warning" role="note"><strong>WARNING — DEVELOPER SETTINGS</strong><p>These settings are intended for debugging, diagnostics and performance troubleshooting. Enabling certain options may reduce performance, display technical information or interfere with normal gameplay. Leave these options disabled during regular gameplay unless troubleshooting an issue.</p></div>
     <section class="developer-settings-group"><h3>Performance Diagnostics</h3><div class="settings-grid">
-      <label title="Records an opt-in rolling 60-second performance history and shows the diagnostics overlay">Enable Performance Profiler</label><input type="checkbox" data-developer-profiler ${st.performanceProfiler ? 'checked' : ''}>
+      <label title="Records an opt-in rolling performance history of up to three minutes and shows the diagnostics overlay">Enable Performance Profiler</label><input type="checkbox" data-developer-profiler ${st.performanceProfiler ? 'checked' : ''}>
       <div class="developer-settings-note">Includes a live FPS counter, frame-time graph, detailed processing times, memory (when supported), entity counts, rendering time, AI and collision workload, and active audio instances.</div>
       <label>Export Performance Report</label><button type="button" class="btn small" data-export-performance>Export report</button>
       <label>Reset Performance Statistics</label><button type="button" class="btn small" data-reset-performance>Reset statistics</button>

@@ -18,6 +18,7 @@ import { homunculusPose } from '../gfx/homunculus.js';
 import { enemyImage } from '../core/enemyart.js';
 import { drawPetCorpse } from '../core/petart.js';
 import { drawLootLabels } from './loot.js';
+import { OBJECT_LIFETIMES, isometricTileBounds } from '../core/objectlifetimes.mjs';
 import { castleTileDressing, drawCastleParticles, drawCastleWater, MAT } from '../gfx/castleground.js';
 import { drawRim, RIM, xray, drawXray } from './creature.js';
 import { drawKeepGate } from '../gfx/keepgate.js';
@@ -615,7 +616,8 @@ function drawCorpse(ctx, c) {
   const px = (c.px || 2.3) * (c.scale || 1) / 6;
   const h = img._art ? c.artH * (c.scale || 1) : img.height * px, w = img._art ? h * img.width / img.height : img.width * px;
   const x = isoX(c.x, c.y), y = isoY(c.x, c.y);
-  const fade = c.t > 34 ? 1 - (c.t - 34) / 6 : 1;
+  const { max, fade: fadeDuration } = OBJECT_LIFETIMES.corpse;
+  const fade = c.t > max - fadeDuration ? (max - c.t) / fadeDuration : 1;
   ctx.save();
   ctx.globalAlpha = Math.max(0, fade);
   ctx.translate(x, y - 4);
@@ -1077,11 +1079,21 @@ export function renderWorld(ctx, world) {
   // Reuse records by insertion index (sort rearranges the active array only).
   const frame = world.renderFrame || (world.renderFrame = { pool: [], sorted: [], top: [], walls: [] });
   const { pool, sorted, top, walls } = frame;
+  const lastVisibleCreatures = frame.visibleCreatures || (frame.visibleCreatures = []);
+  for (const c of lastVisibleCreatures) { c.sbox = null; c.targetBox = null; }
+  lastVisibleCreatures.length = 0;
+  const creatureBounds = isometricTileBounds({ x0: vr.x0 - 80, x1: vr.x1 + 80, y0: vr.y0 - 40, y1: vr.y1 + 160 }, HW, HH);
+  const visibleCreatures = world.grid?.size && world.creaturesInBounds
+    ? world.creaturesInBounds(creatureBounds.minX, creatureBounds.minY, creatureBounds.maxX, creatureBounds.maxY, frame.creatureCandidates || (frame.creatureCandidates = []))
+    : world.creatures;
+  world._perfCreatureCandidates = visibleCreatures.length;
   sorted.length = 0; top.length = 0; walls.length = 0;
+  let visibleCreaturesDrawn = 0, visibleEnemiesDrawn = 0;
   const enqueue = (d, f, o, index = 0) => {
     const i = sorted.length, item = pool[i] || (pool[i] = {});
     item.d = d; item.f = f; item.o = o; item.index = index;
     sorted.push(item);
+    if (f === 6) { visibleCreaturesDrawn++; if (o?.team === 'enemy' && !o.dead) visibleEnemiesDrawn++; }
   };
   occEnqueue = { map, fn: enqueue };
   for (const h of world.hazards) {
@@ -1124,7 +1136,7 @@ export function renderWorld(ctx, world) {
     v.r = hero ? 24 : 10 * k; v.fall = hero ? 120 : 56 * k; v.hw = hero ? 16 : 8 * k;
   };
   if (p) { at = [p.x, p.y]; look(ppx, ppy, pd, 62, true); }
-  for (const c of world.creatures) {
+  for (const c of visibleCreatures) {
     if (c === p || c.dead || c.static || c.ghostDraw || c.hidden) continue;
     at = [c.x, c.y];
     look(isoX(c.x, c.y), isoY(c.x, c.y), c.x + c.y, c.viewH || 46 * (c.scale || 1), false);
@@ -1217,10 +1229,11 @@ export function renderWorld(ctx, world) {
     enqueue(b.depth, 5, b);
     if (tall) occludeStatic(b, [x, y, x + w, y + h], b.cx, b.cy);
   }
-  for (const c of world.creatures) {
+  for (const c of visibleCreatures) {
     if (c.dead) continue;
     const px = isoX(c.x, c.y), py = isoY(c.x, c.y);
-    if (px < vr.x0 - 80 || px > vr.x1 + 80 || py < vr.y0 - 40 || py > vr.y1 + 160) { c.sbox = null; c.targetBox = null; continue; }
+    if (px < vr.x0 - 80 || px > vr.x1 + 80 || py < vr.y0 - 40 || py > vr.y1 + 160) continue;
+    lastVisibleCreatures.push(c);
     enqueue(c.x + c.y + (c.fly ? 0.2 : 0), 6, c);
   }
   const closeEnough = (x,y,marginX=90,marginY=130) => {
@@ -1262,6 +1275,8 @@ export function renderWorld(ctx, world) {
     }
     world._perfRenderCounts = counts;
   }
+  world._perfVisibleCreatureCount = visibleCreaturesDrawn;
+  world._perfVisibleEnemyCount = visibleEnemiesDrawn;
   if (profiling) markRenderPhase('renderSort');
   let q = hq;
   xray.n = 0; xray.on = true; // creatures note their rims and bars for the see-through layer (drawSeeThrough)
@@ -1405,7 +1420,7 @@ export function renderWorld(ctx, world) {
   }
   if (profiling) markRenderPhase('screenFeedback');
   if (!G.cine) {   // a cut scene's frame shows the actors, not the loot's names (game/cinema.js)
-    drawOverheadNames(ctx, world);
+    drawOverheadNames(ctx, world, visibleCreatures);
     G.lootBoxes = drawLootLabels(ctx, world, G.input && G.input.lastPointerType === 'mouse' ? G.input.mouse : null);
   } else G.lootBoxes = [];
   if (profiling) markRenderPhase('hudLabels');
@@ -1673,11 +1688,11 @@ function drawLabel(ctx, text, x, y, font, fill, lw) {
   ctx.drawImage(c, Math.round(x - c._ox), Math.round(y - c._oy));
 }
 
-function drawOverheadNames(ctx, world) {
+function drawOverheadNames(ctx, world, visibleCreatures = world.creatures) {
   ctx.textAlign = 'center';
   const d = G.dpr;
   const nameFont = `700 ${Math.round(11 * d)}px Cinzel, Georgia, serif`;
-  for (const c of world.creatures) {
+  for (const c of visibleCreatures) {
     if (c.dead || !c.sbox || (c.goblin && !c.impDiscovered)) continue;
     if (c.rank === 'champion' || c.rank === 'unique' || c.depthQuestNameplate) {
       const x = (c.sbox[0] + c.sbox[2]) / 2, y = c.barTop != null ? camera.toScreen(0, c.barTop)[1] - 3 : c.sbox[1] - 8; // above its life bar
@@ -1706,7 +1721,7 @@ function drawOverheadNames(ctx, world) {
     const sprite = nameLabel(String(text), font, fill, lw);
     occupied.push({ x: x - sprite.width / 2, y: y - sprite.height, w: sprite.width, h: sprite.height });
   };
-  for (const c of world.creatures) if (!c.dead && c.sbox && (c.rank === 'champion' || c.rank === 'unique' || c.depthQuestNameplate)) {
+  for (const c of visibleCreatures) if (!c.dead && c.sbox && (c.rank === 'champion' || c.rank === 'unique' || c.depthQuestNameplate)) {
     const x = (c.sbox[0] + c.sbox[2]) / 2, y = c.barTop != null ? camera.toScreen(0, c.barTop)[1] - 3 : c.sbox[1] - 8;
     reserveLabel(c.name, x * d, y * d, nameFont, c.depthQuestNameplate ? '#ffe080' : c.rank === 'unique' ? '#ffc040' : '#80b0ff', 3 * d);
   }
@@ -1926,7 +1941,10 @@ export function drawMinimap(world, dt, canvas, big = false) {
     if (scenarioQuest.state === 'available') for (const n of world.scenario.questNpcs || []) if (n.depthQuest === scenarioQuest && n.questIndicator === '!') questGiver(n.x, n.y);
     if (['accepted', 'objective-complete'].includes(scenarioQuest.state)) for (const target of questTargetValues(scenarioQuest)) questTarget(target, target?.label || target?.name || scenarioQuest.title);
   }
-  for (const m of world.creatures) {
+  const mapActors = world.creaturesInBounds
+    ? world.creaturesInBounds(p.x - 14, p.y - 14, p.x + 14, p.y + 14, world._minimapCreatureBuffer || (world._minimapCreatureBuffer = []))
+    : world.creatures;
+  for (const m of mapActors) {
     if (m.dead || m === p || m.clutter) continue;
     const d = Math.hypot(m.x - p.x, m.y - p.y);
     if (isPlayerHostile(m) && d < 14 && (!m.goblin || m.impDiscovered)) dot(m.x, m.y, m.goblin ? m.impColor : m.depthBountyMark ? '#ffe080' : m.rank === 'boss' ? '#ff8000' : m.rank !== 'normal' ? '#ffb040' : '#ff3030', m.depthBountyMark ? (big ? 5 : 3) : m.rank === 'boss' ? 4 : 2);

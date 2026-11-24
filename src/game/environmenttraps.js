@@ -329,7 +329,9 @@ export function setupEnvironmentalTraps(world, start) {
     obstacle.x = site.x; obstacle.y = site.y; obstacle.name = site.type.name;
     obstacle.environmentTrapObstacle = site;
     obstacle.world = world; // already validated as a free tile; skip ordinary enemy affix application
+    obstacle._worldRenderOrder = ++world._creatureSerial;
     world.creatures.push(obstacle);
+    if (world.lifecycle) world.lifecycle.creaturesCreated++;
   }
   world.environmentTraps = sites;
   world.environmentTrapObstacleDestroyed = (clutter, site) => detonateObstacle(world, site, clutter);
