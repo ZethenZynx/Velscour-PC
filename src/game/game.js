@@ -1668,7 +1668,7 @@ export const game = {
         if (s.rank === 'unique' && i > 0) { m.affixes = []; m.name = m.name + ' Minion'; }
         // A rolled pack trait belongs to its lead member; it should not duplicate across the whole group.
         if (trait && i === 0) applyTrait(m, trait);
-        if (s.champ && i === 0) makeElite(m, 'champion', depth, world);
+        if (s.champ && i === 0 && m.rank === 'normal') makeElite(m, 'champion', depth, world);
         world.add(m); packMembers.push(m);
       }
       assignPackLeader(world, packMembers, biome, depth, s);

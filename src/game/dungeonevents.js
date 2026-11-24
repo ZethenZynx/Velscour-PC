@@ -6,7 +6,7 @@ import { isoX, isoY } from '../core/view.js';
 import { addEffect, Ring, Column, sparkle, spawn, glowSprite, addLight, floatText } from '../gfx/vfx.js';
 import { sfx } from '../core/audio.js';
 import { UI } from '../ui/ui.js';
-import { makeMonster, makeElite } from './monster.js';
+import { makeMonster } from './monster.js';
 import { validMonsterRoster } from './monsterroster.js';
 import { hit } from './combat.js';
 import { GroundItem, rollGroundItem, rollGroundGem } from './loot.js';
@@ -155,8 +155,9 @@ function addEventFoes(world, run, { count = 4, rank = 'normal', arch = null, tea
     const at = spots[i % spots.length], a = arch || pick(roster) || 'skeleton';
     const m = makeMonster(world, a, world.biome, lvl + (rank === 'normal' ? 0 : 2), rank === 'boss' ? 'unique' : rank, at[0], at[1], 0);
     if (!m) continue;
-    if (rank === 'boss') { makeElite(m, 'unique', world.depth, world); m.name = `Omen ${m.name}`; m.scale = Math.max(m.scale || 1, 1.35); }
-    if (rank === 'champion' || rank === 'unique') makeElite(m, rank, world.depth, world);
+    // makeMonster applies the rank in its constructor. Reapplying it here used
+    // to multiply event champions/uniques a second time and reroll their affixes.
+    if (rank === 'boss') { m.name = `Omen ${m.name}`; m.scale = Math.max(m.scale || 1, 1.35); }
     m.team = team; m.hp = m.maxHp = Math.max(m.maxHp, m.maxHp * hp); m.dmg *= damage;
     const death = m.onDeath;
     m.onDeath = (...args) => { if (typeof death === 'function') death.apply(m,args); run.kills = (run.kills || 0) + 1; if (run.def.mode === 'souls') { run.souls = (run.souls || 0) + 1; } };

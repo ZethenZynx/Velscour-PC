@@ -18,6 +18,7 @@ import { attachSlime, slimeUpdate, courtDef } from './slimecourt.js';
 import { ART_BY_ID, REVIVED, greaterSwap, rollLooks, uniqueSwap } from '../data/bestiary.js';
 import { skillMorphFor } from '../data/talents.js';
 import { configureEnemyVariety, updateEnemyVariety, executeEnemyAttack, enemyDamageReduction, enemyDamaged, enemyAllyKilled, enemyKilled } from './enemyvariety.js';
+import { UNIQUE_HEALTH_MULTIPLIER, rollUniqueAffixes, uniqueRegenPerSecond } from './uniqueBalance.js';
 
 const LEASH = 10; // minions fight what's within this many tiles of the hero
 const CHASE = 1.3, CHASE_MAX = 4.6; // monsters' pursuit pace: x1.3, up to 4.6 tiles/s (the hero runs 4.2) unless faster already
@@ -256,23 +257,36 @@ export class Monster extends Creature {
       (this.status.bleed && this.status.bleed.t > 0);
     if (hasDot) this.regenSuppress = Math.max(this.regenSuppress || 0, 3.0);
 
-    // Dungeon affixes use explicit max-health percentages and are separate from the
-    // existing elite regeneration affix, which is intentionally suppressed in combat.
-    if ((this.dungeonAffixIds || []).includes('regenerating') && this.hp < this.maxHp) {
-      this.heal(this.maxHp * DUNGEON_AFFIX_CONFIG.regenerating.healthPerSecond * dt);
-    }
-    if ((this.dungeonAffixIds || []).includes('boss_regeneration') &&
-        this.rank === 'boss' && !(this.regenSuppress > 0) && this.hp < this.maxHp) {
-      this.heal(this.maxHp * DUNGEON_AFFIX_CONFIG.boss_regeneration.healthPerSecond * dt);
-    }
-    if (this.heresyRegen > 0 && !(this.regenSuppress > 0) && this.hp < this.maxHp) {
-      this.heal(this.maxHp * this.heresyRegen * dt);
-    }
-    // Only non-boss monsters with the existing 'regen' affix regenerate out of combat.
-    if (this.affixes && this.affixes.includes('regen') && !(this.regenSuppress > 0) && this.hp < this.maxHp && this.rank !== 'boss') {
-      const capPerSec = (monsterBase(this.level || 1).hp || 100) * 0.01;
-      const healAmt = Math.min(this.maxHp * 0.001, capPerSec) * dt;
-      this.heal(healAmt);
+    // Dungeon regeneration is normally an explicit max-health rate, while the
+    // elite regen affix is combat-suppressed. For a unique, combine all three
+    // sources first so Heresy + dungeon affixes cannot multiply into a stalemate.
+    if (this.rank === 'unique' && this.hp < this.maxHp) {
+      let regenPerSecond = 0;
+      if ((this.dungeonAffixIds || []).includes('regenerating')) regenPerSecond += DUNGEON_AFFIX_CONFIG.regenerating.healthPerSecond;
+      if (this.heresyRegen > 0 && !(this.regenSuppress > 0)) regenPerSecond += this.heresyRegen;
+      if (this.affixes?.includes('regen') && !(this.regenSuppress > 0)) {
+        const capPerSec = (monsterBase(this.level || 1).hp || 100) * 0.01;
+        regenPerSecond += Math.min(this.maxHp * 0.001, capPerSec) / Math.max(1, this.maxHp);
+      }
+      this.heal(this.maxHp * uniqueRegenPerSecond(this.rank, regenPerSecond) * dt);
+    } else {
+      // Preserve existing non-unique and boss regeneration behavior.
+      if ((this.dungeonAffixIds || []).includes('regenerating') && this.hp < this.maxHp) {
+        this.heal(this.maxHp * DUNGEON_AFFIX_CONFIG.regenerating.healthPerSecond * dt);
+      }
+      if ((this.dungeonAffixIds || []).includes('boss_regeneration') &&
+          this.rank === 'boss' && !(this.regenSuppress > 0) && this.hp < this.maxHp) {
+        this.heal(this.maxHp * DUNGEON_AFFIX_CONFIG.boss_regeneration.healthPerSecond * dt);
+      }
+      if (this.heresyRegen > 0 && !(this.regenSuppress > 0) && this.hp < this.maxHp) {
+        this.heal(this.maxHp * this.heresyRegen * dt);
+      }
+      // Only non-boss monsters with the existing 'regen' affix regenerate out of combat.
+      if (this.affixes && this.affixes.includes('regen') && !(this.regenSuppress > 0) && this.hp < this.maxHp && this.rank !== 'boss') {
+        const capPerSec = (monsterBase(this.level || 1).hp || 100) * 0.01;
+        const healAmt = Math.min(this.maxHp * 0.001, capPerSec) * dt;
+        this.heal(healAmt);
+      }
     }
     if (this.affixes && this.affixes.includes('frozen') && w.player) {
       const p = w.player;
@@ -1609,6 +1623,11 @@ export function makeMonster(world, archId, biome, level, rank = 'normal', x = 0,
 }
 
 export function makeElite(m, rank, depth, world) {
+  // makeMonster already applies the requested rank. Keep this public helper safe
+  // for older spawn paths and post-construction callers: a rank's multipliers
+  // and affixes must never be applied twice to the same creature.
+  if (m._eliteRankApplied) return m;
+  m._eliteRankApplied = rank;
   m.rank = rank;
   const keys = Object.keys(ELITE_AFFIXES).filter((k) => k !== 'multishot' || ['ranged', 'caster'].includes(m.ai));
   if (rank === 'champion') {
@@ -1616,8 +1635,8 @@ export function makeElite(m, rank, depth, world) {
     m.affixes = shuffle(keys).slice(0, depth > 40 ? 2 : 1);
     m.name = 'Champion ' + m.name;
   } else if (rank === 'unique') {
-    m.maxHp *= 6; m.dmg *= 1.5; m.xp *= 7; m.aura = '#ffb030'; m.scale = 1.3;
-    m.affixes = shuffle(keys).slice(0, depth > 50 ? 3 : 2);
+    m.maxHp *= UNIQUE_HEALTH_MULTIPLIER; m.dmg *= 1.5; m.xp *= 7; m.aura = '#ffb030'; m.scale = 1.3;
+    m.affixes = rollUniqueAffixes(keys, depth > 50 ? 3 : 2);
     m.name = uniqueName();
     if (m.art) m.swap = uniqueSwap();
   } else if (rank === 'boss') {

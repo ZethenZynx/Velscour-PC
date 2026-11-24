@@ -16,6 +16,7 @@ import { classHitFx } from '../gfx/classfx.js';
 import { astroOnKill } from './astronomer.js';
 import { sigKill } from './signature.js';
 import { armorDiv, depthLevel, shownDmg, dmgScale } from '../data/depth.js';
+import { uniqueDamageAfterDefense } from './uniqueBalance.js';
 import { relicProc } from './relicprocs.js';
 import { commissionKill } from './commissions.js';
 import { riftKill } from './rifts.js';
@@ -178,6 +179,7 @@ export function hit(src, tgt, amount, el = 'phys', o = {}) {
       floatText(tgt.x, tgt.y, 38, 'Dodged', '#d9e8f2', 12);
       return 0;
     }
+    const uniqueDamageBeforeDefense = tgt.rank === 'unique' ? dmg : 0;
     let res = (tgt.res && tgt.res[el === 'astral' ? 'arcane' : el]) || 0;
     if (fromPlayer && owner.st?.markPenetration) res -= Math.min(40, owner.st.markPenetration) / 100;
     if (el === 'arcane' || el === 'astral') res *= 0.5;
@@ -193,6 +195,7 @@ export function hit(src, tgt, amount, el = 'phys', o = {}) {
     if (tgt.status.shred && tgt.status.shred.t > 0) dmg *= 1 + tgt.status.shred.amt;
     if (tgt.ward !== undefined) dmg *= tgt.ward; // a raid boss behind its warding crystals
     if (tgt.team === 'enemy' && tgt.reduceIncomingDamage) dmg = tgt.reduceIncomingDamage(src, dmg, el, o);
+    dmg = uniqueDamageAfterDefense(tgt.rank, uniqueDamageBeforeDefense, dmg);
     if (src && src.curses && src.curses.weaken && src.curses.weaken.t > 0 && !fromPlayer) dmg *= 1 - src.curses.weaken.amt / 100;
     if (tgt.reflect && src && src.isPlayer && !o.dot && !o.force) {
       // a raid boss's riposte (game/raidsigs.js): the hero's own blow comes back (minions' don't)

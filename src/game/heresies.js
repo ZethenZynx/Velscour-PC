@@ -9,6 +9,7 @@ import { sfx } from '../core/audio.js';
 import { addEffect, Telegraph, Ring, smoke, floatText } from '../gfx/vfx.js';
 import { explosionFx } from '../gfx/shapes.js';
 import { ELITE_AFFIXES } from '../data/enemies.js';
+import { UNIQUE_DEFENSIVE_AFFIXES } from './uniqueBalance.js';
 import { HERESIES, HERESY_BY_ID, HERESY_MAX_RANK, heresyRank, heresyMods, KEYS_RANK, MARKS_RANK } from '../data/heresies.js';
 import { ARCH } from '../data/enemies.js';
 import { depthLevel } from '../data/depth.js';
@@ -197,7 +198,10 @@ export function heresyMonster(m, ids) {
   if (ids.includes('infernal_fortification')) m.heresyDamageReduction = 0.20;
   if (ids.includes('gaze')) { m.aggroRange = (m.aggroRange ?? 8.5) * 2; m.gaze = true; } // (a raid boss's 0 stays 0; Monster.pickTarget: an awake one never loses the hero)
   if (ids.includes('crowned') && (m.rank === 'champion' || m.rank === 'unique') && m.affixes) {
-    const keys = Object.keys(ELITE_AFFIXES).filter((k) => !m.affixes.includes(k) && (k !== 'multishot' || ['ranged', 'caster'].includes(m.ai)));
+    const uniqueAlreadyHasDefensiveAffix = m.rank === 'unique' && m.affixes.some((k) => UNIQUE_DEFENSIVE_AFFIXES.includes(k));
+    const keys = Object.keys(ELITE_AFFIXES).filter((k) => !m.affixes.includes(k) &&
+      (k !== 'multishot' || ['ranged', 'caster'].includes(m.ai)) &&
+      (!uniqueAlreadyHasDefensiveAffix || !UNIQUE_DEFENSIVE_AFFIXES.includes(k)));
     for (const k of shuffle(keys).slice(0, m.rank === 'champion' ? 2 : 1)) {
       m.affixes.push(k);
       if (k === 'strong') m.dmg *= 1.5;

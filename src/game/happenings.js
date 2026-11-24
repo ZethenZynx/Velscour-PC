@@ -323,7 +323,8 @@ export function markNemesis(c, src, depth) {
 export function spawnNemesis(world, [x, y], N) {
   const lvl = depthLevel(world.depth);
   const m = makeMonster(world, N.arch, world.biome, lvl + 2, 'unique', x, y, 1, N.art ? { art: N.art, swap: N.swap } : undefined);
-  makeElite(m, 'unique', world.depth, world);
+  // makeMonster already created this Nemesis as a unique; applying the rank
+  // again multiplied its health and left a second layer of rolled defenses.
   m.name = `${N.name} ${N.title}`;
   m.maxHp *= 1.3 + 0.15 * Math.min(4, N.kills - 1); m.hp = m.maxHp; m.dmg *= 1.1; m.xp *= 3; m.scale = 1.45; m.aura = '#ff2a2a';
   m.nemesis = true;
