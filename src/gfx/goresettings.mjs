@@ -75,6 +75,32 @@ export function updateGoreDecals(pool, dt) {
   return removed;
 }
 
+/** Gore age is derived from the VFX clock so stationary decals need no per-frame update pass. */
+export function goreDecalAge(decal, now) {
+  return Math.max(0, now - (Number.isFinite(decal.bornAt) ? decal.bornAt : now));
+}
+
+export function goreDecalExpiredAt(decal, now) {
+  return goreDecalAge(decal, now) >= GORE_DECAL_LIFETIME;
+}
+
+export function goreDecalGrowAt(decal, now) {
+  return goreDecalGrowForAge(decal, goreDecalAge(decal, now));
+}
+
+export function goreDecalAlphaAt(decal, now) {
+  return goreDecalAlphaForAge(decal, goreDecalAge(decal, now));
+}
+
+export function goreDecalGrowForAge(decal, age) {
+  return Math.min(1, (decal.grow ?? 1) + age * 1.2);
+}
+
+export function goreDecalAlphaForAge(decal, age) {
+  const fadeDuration = GORE_DECAL_LIFETIME - GORE_DECAL_FADE_START;
+  return decal.alpha * (age <= GORE_DECAL_FADE_START ? 1 : Math.max(0, (GORE_DECAL_LIFETIME - age) / fadeDuration));
+}
+
 export function goreDecalAlpha(decal) {
   const fadeDuration = GORE_DECAL_LIFETIME - GORE_DECAL_FADE_START;
   return decal.alpha * (decal.life <= fadeDuration ? Math.max(0, decal.life / fadeDuration) : 1);

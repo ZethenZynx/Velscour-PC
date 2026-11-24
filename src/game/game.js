@@ -6,6 +6,7 @@ import { rollTreasureChest } from '../data/treasurechests.js';
 import { addMarkBonusChest } from './markchests.js';
 import { input } from '../core/input.js';
 import { camera } from '../core/view.js';
+import { profileEnd, profileRecord, profileStart } from '../core/perfdiagnostics.js';
 import { sfx, playMusic, stopMusic, setAmbience, stopAmbience, footsteps, stopIronExpressWhistleSfx } from '../core/audio.js';
 import { rand, pick, randi, chance, escapeHtml, dist, dist2, RNG, makeCanvas, fmtInt, swapKey, hexToRgb, clamp, shuffle } from '../core/util.js';
 import { biomeTileSet, loadBiomeArt, mixedTileSet, keepTileSets } from '../core/assets.js';
@@ -3181,6 +3182,8 @@ export const game = {
       if (G.world !== w) return;
       w.update(dt);
       if (G.world !== w) return;
+      const profiling = G.settings?.performanceProfiler === true;
+      const eventsStart = profiling ? profileStart() : 0;
       this.tickDungeonAffixWorld(w, dt);
       worldObjectsTick(w, dt);
       if (w.overworldScenario) w.overworldScenario.update(dt);
@@ -3197,6 +3200,7 @@ export const game = {
       spectateTick(w, dt); // gilded critters, the SMITE reticle (game/spectate.js)
       footsteps(p, w.kind === 'town' ? 'dirt' : STEP_SURFACE[w.biome && w.biome.id] || 'stone');
       Meter.tick(dt);
+      if (profiling) profileRecord('events', profileEnd(eventsStart));
     } else {
       input.endFrame();
     }
@@ -3205,7 +3209,9 @@ export const game = {
     if (!!G.cine !== hudCine) { hudCine = !!G.cine; HUD.show(!hudCine); }
     if (G.hurtFlash > 0) G.hurtFlash = Math.max(0, G.hurtFlash - dt * 2.5);
     if (G.flash > 0) G.flash = Math.max(0, G.flash - dt * 3.5);
+    const hudStart = G.settings?.performanceProfiler ? profileStart() : 0;
     HUD.update(dt);
+    if (hudStart) profileRecord('ui', profileEnd(hudStart));
     saveT += dt;
     if (saveT > 30) this.autosave();
   },

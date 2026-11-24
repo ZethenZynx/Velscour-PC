@@ -25,6 +25,7 @@ import { dropBakes } from './game/render.js';
 import { controls } from './game/controls.js';
 import { initSpectate } from './game/spectate.js';
 import { applyVolumes, preloadSong, TITLE_SONG } from './core/audio.js';
+import { profileBeginFrame, profileEnd, profileFinishFrame, profileSetRender, profileSetUpdate, setPerformanceProfilerEnabled } from './core/perfdiagnostics.js';
 
 function resize() {
   G.W = window.innerWidth;
@@ -214,6 +215,7 @@ function loop(now) {
   const cap = G.mode === 'game' ? G.settings.fpsCap || 0 : 0;
   if (cap && now - last < 1000 / cap - 2) return;
   const raw = Math.max(0, (now - last) / 1000), dt = Math.min(0.05, raw);
+  const profiling = profileBeginFrame(now);
   last = now;
   adaptRes(raw);
   G.time += dt;
@@ -222,8 +224,11 @@ function loop(now) {
   // the update and the draw each get their own try: an update that throws every frame (a broken fight) used to skip
   // every draw too, and the screen went black
   if (G.mode === 'game' && G.world) {
+    const started = profiling ? performance.now() : 0;
     try { game.update(dt); } catch (err) { reportError(err); }
+    if (profiling) profileSetUpdate(profileEnd(started));
   }
+  const renderStarted = profiling ? performance.now() : 0;
   try {
     if (G.mode === 'game' && G.world) game.render();
     else renderTitle(dt);
@@ -233,7 +238,9 @@ function loop(now) {
     // draws through them (restore() past the bottom of the stack does nothing)
     if (G.ctx) for (let i = 0; i < 64; i++) G.ctx.restore();
   }
+  if (profiling) profileSetRender(profileEnd(renderStarted));
   input.endFrame();
+  if (profiling) profileFinishFrame(G.world);
 }
 
 // A hidden page (minimised, covered by other windows, a locked PC) gets no animation frames, and its timers are
@@ -278,6 +285,7 @@ function reportError(err) {
 
 async function boot() {
   loadSettings();
+  setPerformanceProfilerEnabled(G.settings.performanceProfiler);
   initMouseCursor();
   G.canvas = $('#game');
   G.ctx = G.canvas.getContext('2d', { alpha: false });

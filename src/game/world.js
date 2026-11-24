@@ -8,6 +8,7 @@ import { rand, dist2, TAU, chance } from '../core/util.js';
 import { sfx } from '../core/audio.js';
 import { spawn, updateVfx, addLight, sparkle, smoke, lights } from '../gfx/vfx.js';
 import { bodyR } from '../world/map.js';
+import { profileEnd, profileRecord, profileStart } from '../core/perfdiagnostics.js';
 
 const CELL = 2;
 const LOOT_CELL = 8;
@@ -262,6 +263,7 @@ export class World {
         const a = this.grid.get((cx << 16) | (cy & 0xffff));
         if (!a) continue;
         for (const c of a) {
+          if (this._perfProfiling) this._perfSpatialCandidates++;
           if (c.dead) continue;
           const rr = r + c.r;
           if (dist2(x, y, c.x, c.y) <= rr * rr && (!filter || filter(c))) out.push(c);
@@ -360,9 +362,14 @@ export class World {
   }
 
   update(dt) {
+    const profiling = this._perfProfiling = G.settings?.performanceProfiler === true;
+    if (profiling) { this._perfSpatialCandidates = 0; this._perfCollisionPairs = 0; this._perfPathSearches = 0; }
+    const worldStart = profiling ? profileStart() : 0;
     this.time += dt;
     lights.length = 0; // refilled by this update's addLight calls, drawn by the next render (paused frames keep the last set)
+    let envStart = profiling ? profileStart() : 0;
     this.ambientLights();
+    if (profiling) profileRecord('environment', profileEnd(envStart));
     this.pathBudget = 10; // A* searches monsters and minions may run this frame (Monster.navTo), and for at most
     this.pathEnd = performance.now() + 3; // 3 ms of it: a phone a few times slower runs fewer, the rest wait a frame
     const p = this.player;
@@ -370,12 +377,17 @@ export class World {
     // bounded A* routes, so rebuilding a full player-centered field there is wasted work.
     this.flowTimer -= dt;
     if (this.kind !== 'town' && p && !p.dead && this.flowTimer <= 0) {
+      const pathStart = profiling ? profileStart() : 0;
       this.map.buildFlow(p.x, p.y, this.map.flowRange || 64); // (the Castle's: far enough to lead round by its stairs)
+      if (profiling) profileRecord('path', profileEnd(pathStart));
       this.flowTimer = 0.25;
     }
+    let collisionStart = profiling ? profileStart() : 0;
     this.rebuildGrid();
+    if (profiling) profileRecord('collision', profileEnd(collisionStart));
+    const aiStart = profiling ? profileStart() : 0;
     if (p && !p.dead) p.update(dt);
-    if (G.world && G.world !== this) return; // the hero just stepped through a portal: this world stops with him gone
+    if (G.world && G.world !== this) { if (profiling) { profileRecord('ai', profileEnd(aiStart)); profileRecord('world', profileEnd(worldStart)); } return; } // the hero just stepped through a portal: this world stops with him gone
     const ax = p ? p.x : 0, ay = p ? p.y : 0;
     for (const c of this.creatures) {
       if (c === p || c.dead) continue;
@@ -386,12 +398,17 @@ export class World {
     if (this.townLife) this.townLife.update(dt);
     for (const n of this.npcs) n.update && n.update(dt);
     this.openDoors();
+    if (profiling) profileRecord('ai', profileEnd(aiStart));
+    const hazardStart = profiling ? profileStart() : 0;
     for (let i = this.hazards.length - 1; i >= 0; i--) {
       const h = this.hazards[i];
       if (h.update(dt) === false || h.dead) this.hazards.splice(i, 1);
       else if (h.o && h.o.aug) augHazard(h, dt);
     }
+    if (profiling) profileRecord('hazard', profileEnd(hazardStart));
+    collisionStart = profiling ? profileStart() : 0;
     this.separate();
+    if (profiling) profileRecord('collision', profileEnd(collisionStart));
     for (let i = this.creatures.length - 1; i >= 0; i--) {
       const c = this.creatures[i];
       if (c.dead && c !== p && (c.removeT = (c.removeT || 0) + dt) > 0.05) this.creatures.splice(i, 1);
@@ -399,6 +416,7 @@ export class World {
     // Loot may stay on the floor indefinitely, so only airborne loot, nearby loot, and
     // the player's explicit target need per-frame simulation. A time heap handles expiry
     // for distant drops without waking every item on every frame.
+    const lootStart = profiling ? profileStart() : 0;
     if (this.loot.length - (this._lootTombstones || 0) !== (this._lootRegistered || 0)) this.rebuildLootIndex();
     while (this.lootExpiry.length && this.lootExpiry[0].at <= this.time) {
       const entry = heapPop(this.lootExpiry), l = entry.ref.deref();
@@ -426,6 +444,7 @@ export class World {
     }
     this._compactLoot();
     this._compactLootTimers();
+    if (profiling) profileRecord('loot', profileEnd(lootStart));
     for (let i = this.corpses.length - 1; i >= 0; i--) {
       const c = this.corpses[i];
       c.t += dt;
@@ -434,8 +453,12 @@ export class World {
     if (this.corpses.length > 70) this.corpses.splice(0, this.corpses.length - 70);
     for (let i = this.fallen.length - 1; i >= 0; i--) if ((this.fallen[i].t += dt) > 3) this.fallen.splice(i, 1);
     if (p) this.map.reveal(p.x, p.y, 11);
+    envStart = profiling ? profileStart() : 0;
     this.ambient(dt);
+    if (profiling) profileRecord('environment', profileEnd(envStart));
+    const vfxStart = profiling ? profileStart() : 0;
     updateVfx(dt, this);
+    if (profiling) { profileRecord('vfx', profileEnd(vfxStart)); profileRecord('world', profileEnd(worldStart)); }
   }
 
   /** Push overlapping creatures apart. */
@@ -446,6 +469,7 @@ export class World {
         if (a.static) continue;
         for (let j = i + 1; j < cell.length; j++) {
           const b = cell[j];
+        if (this._perfProfiling) this._perfCollisionPairs++;
           if (b.static && b.owner === a) continue; // the hero walks through his own turrets and totems
           const dx = b.x - a.x, dy = b.y - a.y;
           const rr = (a.r + b.r) * 0.85;

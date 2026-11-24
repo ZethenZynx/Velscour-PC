@@ -17,6 +17,7 @@ const AUDIO = 'assets/audio/';
 let manifest = null;               // assets/audio/audio.json
 const buffers = {};                // sample slug -> AudioBuffer
 const voices = {};                 // sound name -> live sample voices (capped)
+let proceduralVoiceNodes = 0;
 
 export function initAudio() {
   if (ac) { if (ac.state !== 'running') ac.resume().catch(() => {}); return; }
@@ -60,6 +61,13 @@ export const audioCtx = () => ac;
 export const audioOut = () => sfxBus;
 /** For tests: what's loaded and playing. */
 export const audioStats = () => ({ samples: Object.keys(buffers).length, music: music && music.kind, song: music && music.song, amb: amb && amb.bed });
+/** Approximate currently playing sample voices plus procedural node groups awaiting disconnect. */
+export function audioActiveCount() {
+  const now = ac?.currentTime || 0;
+  let count = proceduralVoiceNodes;
+  for (const key of Object.keys(voices)) for (const end of voices[key]) if (end > now) count++;
+  return count;
+}
 
 /** Optional, disabled-by-default one-shot tracing for audio investigations. */
 export function setAudioDiagnosticSink(sink) {
@@ -337,7 +345,8 @@ function voice(vol, play) {
   const g = ac.createGain(); g.gain.value = vol;
   const prev = sfxBus; sfxBus = g; g.connect(prev);
   try { play(); } finally { sfxBus = prev; }
-  setTimeout(() => g.disconnect(), 6000);
+  proceduralVoiceNodes++;
+  setTimeout(() => { g.disconnect(); proceduralVoiceNodes = Math.max(0, proceduralVoiceNodes - 1); }, 6000);
 }
 
 

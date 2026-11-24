@@ -7,7 +7,7 @@ import { makeCanvas, rand, TAU, shade, randi, pick, fmt, shuffle, clamp, colourS
 import { groundHidden } from './terrain.js';
 import { bonesReady, boneDeck, boneLook, drawBoneGib } from './bonegibs.js';
 import { damageNumberAboveBarZ } from '../game/damage-number-layout.mjs';
-import { addGoreDecal, goreDecalAlpha, goreDecalOutsideView, GORE_DECAL_LIFETIME, goreLimit, goreMultiplier, trimGoreDecals, updateGoreDecals } from './goresettings.mjs';
+import { addGoreDecal, goreDecalAge, goreDecalAlphaForAge, goreDecalGrowForAge, goreDecalOutsideView, GORE_DECAL_LIFETIME, goreLimit, goreMultiplier, trimGoreDecals } from './goresettings.mjs';
 import { writeBoltGeometry, appendBoltGeometry } from './lightninggeometry.mjs';
 
 export const ELEM = {
@@ -30,6 +30,7 @@ const MAX_P = () => (G.touch ? 1400 : 3000);
 export const particles = [];
 export const decals = []; // live decals: growing pools, scorch, frost (capped, drawn every frame)
 const goreDecals = []; // cosmetic blood/gore only; never stamped into cached floor chunks
+let goreClock = 0;
 // Finished blood (splats, grown pools) never changes again: it is stamped once into the baked floor chunks
 // (render.js drawFloors -> stampDecals) and costs nothing per frame after that, so it isn't capped like the live ones.
 // Each has a rising `seq`; a chunk remembers the last seq it has stamped.
@@ -196,7 +197,7 @@ export function addDecal(x, y, color, size = 1, kind = 'splat', alpha = 0.9, opt
   if ((kind === 'splat' || opts.gore === true) && Number(G.settings.gore) === 0) return;
   const max = G.touch ? 500 : 1100;
   const gore = opts.gore === true;
-  const d = { x, y, color, size, kind, alpha, gore, rot: rand(TAU), idx: randi(0, 7), grow: kind === 'pool' ? 0 : 1, life: gore ? GORE_DECAL_LIFETIME : kind === 'scorch' || kind === 'frost' ? 14 : 9999, t: 0 };
+  const d = { x, y, color, size, kind, alpha, gore, rot: rand(TAU), idx: randi(0, 7), grow: kind === 'pool' ? 0 : 1, life: gore ? GORE_DECAL_LIFETIME : kind === 'scorch' || kind === 'frost' ? 14 : 9999, bornAt: goreClock, t: 0 };
   if (gore) { addGoreDecal(goreDecals, d, goreLimit(G.settings)); return; }
   if (kind === 'splat') { bake(d); return; }
   if (decals.length >= max) decals.shift();
@@ -784,7 +785,11 @@ export function addLight(x, y, radius, intensity = 1, z = 20, color = null, prio
 
 export function clearVfx() {
   particles.length = 0; spriteGibs = 0; evict = 0; dead = 0; decals.length = 0; goreDecals.length = 0; bakedDecals.length = 0; effects.length = 0; texts.length = 0; lights.length = 0;
+  goreClock = 0;
 }
+
+/** Counts used only by the optional performance panel/export. */
+export function vfxStats() { return { particles: particles.length, decals: decals.length, gore: goreDecals.length, texts: texts.length, effects: effects.length }; }
 
 /** Apply visual preference changes to already-visible cosmetic gore immediately. */
 export function applyGoreSettings() { trimGoreDecals(goreDecals, goreLimit(G.settings)); }
@@ -848,7 +853,7 @@ export function updateVfx(dt, world) {
     decals[decalWrite++] = d;
   }
   decals.length = decalWrite;
-  updateGoreDecals(goreDecals, dt);
+  goreClock += dt; // same point in the update where gore used to decrement its per-object lifetime
   // Preserve the prior newest-first update order while compacting. Effects
   // spawned during update are retained for next frame without array splices.
   const effectEnd = effects.length;
@@ -930,11 +935,14 @@ export function drawDecals(ctx, vr, stamped = null, goreVr = vr) {
   }
   let goreWrite = 0;
   for (let i = 0; i < goreDecals.length; i++) {
-    const d = goreDecals[i], px = isoX(d.x, d.y), py = isoY(d.x, d.y), s = d.size * HW * 1.6;
+    const d = goreDecals[i];
+    const age = goreDecalAge(d, goreClock);
+    if (age >= GORE_DECAL_LIFETIME) continue;
+    const px = isoX(d.x, d.y), py = isoY(d.x, d.y), s = d.size * HW * 1.6;
     if (goreDecalOutsideView(d, px, py, goreVr, s)) continue;
     if (!groundHidden(d.x, d.y)) {
-      const k = d.kind === 'pool' ? 0.3 + 0.7 * d.grow : 1;
-      ctx.globalAlpha = goreDecalAlpha(d);
+      const k = d.kind === 'pool' ? 0.3 + 0.7 * goreDecalGrowForAge(d, age) : 1;
+      ctx.globalAlpha = goreDecalAlphaForAge(d, age);
       drawSplat(ctx, d, s * k, ba, bb, bc, bd, be, bf);
     }
     goreDecals[goreWrite++] = d;

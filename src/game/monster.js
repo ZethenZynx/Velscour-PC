@@ -12,6 +12,7 @@ import { ARCH, ARCH_MOVES, ELITE_AFFIXES, bossName, uniqueName } from '../data/e
 import { SUMMONS } from '../data/summons.js';
 import { turretMuzzle } from '../gfx/gunner3d.js';
 import { bodyR } from '../world/map.js';
+import { profileRecord } from '../core/perfdiagnostics.js';
 import { toughness, danger, densityXp, riftHold, dmgScale, endgameScaling, endgameBaseLevel, FINAL_DEPTH } from '../data/depth.js';
 import { riftHpMul, riftDmgMul } from '../data/rifts.js';
 import { attachSlime, slimeUpdate, courtDef } from './slimecourt.js';
@@ -484,7 +485,10 @@ export class Monster extends Creature {
       if (!N.force && map.losWide(this.x, this.y, gx, gy, r)) N.path = null;
       else if (flow && (N.path = map.flowPath(this.x, this.y, r))) { N.part = true; N.force = false; }
       else if (w.pathBudget > 0 && (w.pathBudget === 10 || performance.now() < w.pathEnd)) {
-        w.pathBudget--; N.path = map.findPath(this.x, this.y, gx, gy, far ? 12000 : 2500, r); N.force = false;
+        w.pathBudget--;
+        const pathStarted = w._perfProfiling ? performance.now() : 0;
+        N.path = map.findPath(this.x, this.y, gx, gy, far ? 12000 : 2500, r); N.force = false;
+        if (w._perfProfiling) { w._perfPathSearches++; profileRecord('path', performance.now() - pathStarted); }
         if (!N.path) N.t = rand(1.5, 2.5); // no way there (a sealed boss room...): don't search again for a while
         N.none = !N.path;
       } else N.t = 0; // out of searches this frame: keep the old path and try again next frame

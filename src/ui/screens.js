@@ -27,6 +27,7 @@ import { openCustomizeUI } from './layoutcustomizer.js';
 import { GORE_PERFORMANCE_WARNING_LIMIT, GORE_PRESET_VERSION, GORE_PRESETS, MAX_CUSTOM_GORE_LIMIT, normalizeGorePreset, goreLimit } from '../gfx/goresettings.mjs';
 import { applyGoreSettings } from '../gfx/vfx.js';
 import { setSkipSeizureWarning } from './seizurewarning.mjs';
+import { exportPerformanceReport, setPerformanceProfilerEnabled } from '../core/perfdiagnostics.js';
 
 let current = null;
 let currentCleanup = null;
@@ -578,6 +579,8 @@ export function settingsDialog() {
       <label title="Use a custom maximum number of cosmetic splatters instead of the selected preset limit">Custom splatter limit</label><div class="gore-custom-control"><label><input type="checkbox" data-gore-custom ${st.goreCustomEnabled ? 'checked' : ''}> Custom</label><input type="number" min="1" max="${MAX_CUSTOM_GORE_LIMIT}" step="1" value="${Math.max(1, Math.min(MAX_CUSTOM_GORE_LIMIT, Number(st.goreCustomLimit) || 150))}" data-gore-limit aria-label="Custom maximum splatter count"></div>
       <div class="gore-performance-warning" data-gore-warning role="status" aria-live="polite"></div>
       <label>Screen shake</label><input type="checkbox" data-k="shake" ${st.shake ? 'checked' : ''}>
+      <label title="Record an opt-in rolling 60-second performance history and show live frame, workload, entity and supported memory diagnostics">Performance profiler</label><input type="checkbox" data-k="performanceProfiler" ${st.performanceProfiler ? 'checked' : ''}>
+      <label>Export performance report</label><button type="button" class="btn small" data-export-performance>Export report</button>
       <label title="Reduce full-screen flashes, flashbangs, and rapid hit strobing">Reduce flashing effects</label><input type="checkbox" data-k="reduceFlashing" ${st.reduceFlashing ? 'checked' : ''}>
       <label title="The hero, monsters and pets keep a coloured outline over spells, walls and darkness (hidden only behind another creature)">See-through outlines</label><input type="checkbox" data-k="outlines" ${st.outlines !== false ? 'checked' : ''}>
       <label title="A line along the foot of the dungeon's walls, drawn over every spell (not over creatures)">Outline wall bases</label><input type="checkbox" data-k="wallLines" ${st.wallLines ? 'checked' : ''}>
@@ -838,6 +841,7 @@ export function settingsDialog() {
     inp.oninput = inp.onchange = () => {
       const k = inp.dataset.k;
       st[k] = inp.type === 'checkbox' ? inp.checked : inp.dataset.str ? inp.value : Number(inp.value);
+      if (k === 'performanceProfiler') setPerformanceProfilerEnabled(st[k]);
       if (k === 'skipCutscenes' || k === 'zoom') camera.computeZoom();
       if (k === 'tabMapTransparency') d.box.querySelector('[data-map-opacity]').textContent = `${st[k]}%`;
       if ((k === 'showHeroStats' || k === 'showTargetBox' || k === 'showTargetSprite') && UI.hud && UI.hud.applyVisibilitySettings) UI.hud.applyVisibilitySettings();
@@ -845,6 +849,7 @@ export function settingsDialog() {
       saveSettings();
     };
   });
+  d.box.querySelector('[data-export-performance]').onclick = () => exportPerformanceReport();
   d.box.querySelectorAll('[data-portrait]').forEach((inp) => {
     inp.oninput = inp.onchange = () => {
       const c = (st.characterPortrait ||= { visible: true, locked: false, size: 100, position: null });
