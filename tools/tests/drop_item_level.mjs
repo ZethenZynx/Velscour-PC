@@ -4,6 +4,7 @@ import assert from 'node:assert/strict';
 import { G } from '../../src/state.js';
 import { rollItem, RARITY } from '../../src/data/items.js';
 import { groundDropRarityCap, rollGroundGem, rollGroundItem } from '../../src/game/loot.js';
+import { riftQualityRange } from '../../src/data/rifts.js';
 
 G.char = { level: 3 };
 const gear = rollGroundItem(12, { slot: 'ring', rarity: 0 });
@@ -34,6 +35,19 @@ G.world = { kind: 'town', depth: 0 };
 assert.equal(rollGroundItem(100, { rarity: 19 }).rarity, 0, 'town rewards use the saved campaign depth below depth 26');
 G.char.depth = 26;
 assert.equal(rollGroundItem(100, { rarity: 19 }).rarity, 1, 'town rewards unlock Light Blue at depth 26');
+
+// Virtual Infernal Mark levels do not replace campaign depth for ordinary drops.
+G.char = { level: 100, depth: 503, deepest: 502, experienceMarks: { earned: 1000, xp: 0 } };
+G.world = { kind: 'dungeon', depth: 503 };
+assert.equal(groundDropRarityCap(G.world.depth), 19, 'campaign Depth 503 permits Tier 20 quality');
+assert.equal(rollGroundItem(100, { rarity: 19 }).rarity, 19, 'campaign Depth 503 does not inherit a low Rift tier cap');
+
+// Rift equipment has its own explicit tier ceiling, independent of campaign depth and Mark XP rank.
+G.world = { kind: 'rift', depth: 100, rift: { tier: 2 } };
+assert.deepEqual(riftQualityRange(2, G.char), { min: 1, max: 5, progressionMax: 20, normalDepth: 503 });
+for (let i = 0; i < 100; i++) {
+  assert.ok(rollGroundItem(100, { rarity: 19 }).rarity <= 4, 'Tier 2 Rift remains capped at Tier 5 despite Depth 503 / virtual Mark levels');
+}
 
 assert.equal(rollItem(12, { rarity: 19 }).rarity, 19, 'non-ground item rolls remain outside the depth gate');
 

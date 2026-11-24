@@ -22,7 +22,7 @@ const Save = await import('../../src/game/save.js');
 G.settings = {};
 G.ui = { event() {}, refresh() {}, log() {} };
 G.world = { kind: 'town', depth: 1 };
-const hero = { id: 'progress-hero', name: 'Progress Hero', level: MAX_LEVEL, xp: 0, experienceMarks: { earned: 0, xp: 0 } };
+const hero = { id: 'progress-hero', name: 'Progress Hero', level: MAX_LEVEL, xp: 0, depth: 503, deepest: 502, experienceMarks: { earned: 0, xp: 0 } };
 G.char = hero;
 G.player = { x: 2, y: 3, recompute() {} };
 
@@ -40,6 +40,9 @@ const firstCost = Marks.markXp(0);
 assert.equal(Marks.gainMarkXp(firstCost - 42, G.world, hero), 1, 'level-100 XP earns Marks before Velscour or the Altar is unlocked');
 assert.equal(hero.experienceMarks.earned, 1, 'experience-earned lifetime count is per character');
 assert.equal(hero.experienceMarks.xp, 0, 'exact threshold consumes exactly its requirement');
+assert.equal(hero.level, MAX_LEVEL, 'virtual Mark levels never raise the character level');
+assert.equal(hero.depth, 503, 'earning Infernal Marks never changes current dungeon depth');
+assert.equal(hero.deepest, 502, 'earning Infernal Marks never changes completed-depth progression');
 assert.equal(Endgame.endgame().marks.pts, 11, 'earned XP Mark is added to the existing account-wide currency');
 
 const nextNeed = Marks.markXp(1), thirdNeed = Marks.markXp(2);
@@ -47,6 +50,8 @@ assert.ok(nextNeed > firstCost && thirdNeed > nextNeed, 'virtual levels keep inc
 assert.equal(Marks.gainMarkXp(nextNeed + thirdNeed + 7, G.world, hero), 2, 'one large award can cross multiple rising thresholds');
 assert.equal(hero.experienceMarks.earned, 3, 'both threshold crossings count toward this character lifetime');
 assert.equal(hero.experienceMarks.xp, 7, 'experience beyond the final threshold is retained');
+assert.equal(hero.depth, 503, 'multi-Mark virtual XP awards remain independent of dungeon depth');
+assert.equal(hero.deepest, 502, 'multi-Mark virtual XP awards remain independent of completed depth');
 assert.equal(Marks.capXp(hero).need, Marks.markXp(3), 'the HUD-facing progress uses the next virtual level');
 
 const secondHero = { id: 'second-hero', name: 'Second Hero', level: 99, xp: xpToNext(99) - 10, experienceMarks: { earned: 0, xp: 0 } };
@@ -82,12 +87,18 @@ assert.equal(hero.experienceMarks.earned, beforeSpend, 'spending and refunding d
 assert.equal(Save.writeSave(hero), true, 'character progression saves normally');
 const saved = JSON.parse(data.get('velscour_saves_v1')).find((entry) => entry.id === hero.id);
 assert.deepEqual(saved.experienceMarks, hero.experienceMarks, 'lifetime count and XP remainder persist in the character save');
+assert.equal(saved.depth, 503, 'save writes keep campaign depth separate from virtual Mark progress');
+assert.equal(saved.deepest, 502, 'save writes keep completed depth separate from virtual Mark progress');
 const legacyShape = Save.newCharData('ranger', 'Migration Hero');
 legacyShape.id = 'migration-hero';
 legacyShape.level = MAX_LEVEL;
+legacyShape.depth = 503;
+legacyShape.deepest = 502;
 legacyShape.experienceMarks = JSON.parse(JSON.stringify(saved.experienceMarks));
 const restored = Save.migrate(legacyShape);
 assert.deepEqual(restored.experienceMarks, hero.experienceMarks, 'save migration preserves the new per-character fields');
+assert.equal(restored.depth, 503, 'save migration preserves independently stored campaign depth');
+assert.equal(restored.deepest, 502, 'save migration preserves independently stored completed depth');
 assert.equal(Marks.capXp(restored).earned, 4, 'restored character retains its lifetime display value');
 for (const virtualEarned of [1000, 1e6, 1e12, Number.MAX_SAFE_INTEGER]) {
   assert.ok(Number.isFinite(Marks.markXp(virtualEarned)) && Marks.markXp(virtualEarned) > 0, `XP remains finite at virtual rank ${virtualEarned}`);
