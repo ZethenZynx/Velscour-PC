@@ -1,5 +1,6 @@
 // Global game state singleton. Modules import G and read fields at runtime.
 import { GORE_PRESET_VERSION, normalizeGorePreset } from './gfx/goresettings.mjs';
+import { DEFAULT_AUDIO_SETTINGS, normalizeAudioSettings } from './core/audio-settings.js';
 
 export const G = {
   canvas: null,
@@ -20,9 +21,10 @@ export const G = {
   frame: 0,
   hitStop: 0,
   settings: {
-    sfx: 0.6,
-    music: 0.35,
-    amb: 0.5,
+    sfx: 1,
+    music: 1,
+    amb: 1,
+    audio: normalizeAudioSettings(DEFAULT_AUDIO_SETTINGS),
     gore: 3, // Bloody; settings default to the moderate gore preset
     gorePresetVersion: GORE_PRESET_VERSION,
     goreCustomEnabled: false,
@@ -75,6 +77,20 @@ export function loadSettings() {
   try {
     const s = JSON.parse(localStorage.getItem(SETTINGS_KEY) || '{}');
     Object.assign(G.settings, s);
+    if (s.audio && typeof s.audio === 'object') G.settings.audio = normalizeAudioSettings(s.audio);
+    else {
+      const legacySfx = Math.max(0, Math.min(1, Number(s.sfx ?? 0.6)));
+      const legacyMusic = Math.max(0, Math.min(1, Number(s.music ?? 0.35)));
+      const legacyAmbience = Math.max(0, Math.min(1, Number(s.amb ?? 0.5)));
+      const migrated = normalizeAudioSettings();
+      migrated.volumes.music = Math.round(legacyMusic * 100);
+      migrated.volumes.ambient = Math.round(legacyAmbience * 100);
+      for (const id of Object.keys(migrated.volumes)) if (!['master', 'music', 'ambient'].includes(id)) migrated.volumes[id] = Math.round(legacySfx * 100);
+      migrated.preset = ['sfx', 'music', 'amb'].some((key) => Object.prototype.hasOwnProperty.call(s, key)) ? 'Custom' : 'Default';
+      G.settings.audio = migrated;
+    }
+    // The legacy master multipliers have moved into visible per-category sliders.
+    G.settings.sfx = G.settings.music = G.settings.amb = 1;
     if (s.gorePresetVersion !== GORE_PRESET_VERSION) {
       if ((Number(s.gorePresetVersion) || 0) < 2 && Object.prototype.hasOwnProperty.call(s, 'gore')) {
         const old = Number(s.gore);

@@ -3,6 +3,7 @@ import { G } from '../state.js';
 import { DUNGEON_AFFIX_CONFIG } from '../data/dungeonaffixes.js';
 import { rand, chance, TAU, clamp, angleTo, angleDiff, dist, pick, randi, shuffle } from '../core/util.js';
 import { sfx } from '../core/audio.js';
+import { camera, isoX, isoY } from '../core/view.js';
 import { addEffect, Telegraph, Slash, Ring, Bolt, Column, burst, spawn, sparkle, elem, floatText, smoke, addLight } from '../gfx/vfx.js';
 import { shiftPalette } from '../gfx/pixelart.js';
 import { Creature } from './creature.js';
@@ -27,6 +28,23 @@ const CHASE = 1.3, CHASE_MAX = 4.6; // monsters' pursuit pace: x1.3, up to 4.6 t
 const RAISED_DEAD_CAP = 4, RAISED_DEAD_NEAR_CAP = 8;
 const PROJ_FX = { fire: 'fireball', cold: 'shard', light: 'spark', poison: 'blob', shadow: 'skull', arcane: 'orb', holy: 'bolt', blood: 'blob', acid: 'blob', phys: 'rock' };
 const POOL_FX = { fire: 'fire', cold: 'frost', poison: 'poison', acid: 'slime', shadow: 'void', arcane: 'void', blood: 'blood', light: 'storm', holy: 'holy', phys: 'poison' };
+
+const ENEMY_SPELL_SOUNDS = new Set(['fire', 'cold', 'light', 'holy', 'arcane', 'shadow', 'poison', 'acid', 'blood', 'sonic', 'thunder', 'summon', 'explode', 'portal']);
+function enemySound(monster, name, volume = 1, pitch = 1) {
+  const enemy = monster?.team === 'enemy';
+  const boss = monster?.rank === 'boss' || monster?.boss === true;
+  const category = enemy
+    ? (boss ? 'boss' : ENEMY_SPELL_SOUNDS.has(name) ? 'enemySpell' : name === 'step' ? 'enemyMovement' : name === 'hurt' || name === 'block' ? 'enemyDamage' : name === 'die' || name === 'gore' || name === 'bones' || name === 'squish' ? 'enemyDeath' : 'enemyAttack')
+    : (ENEMY_SPELL_SOUNDS.has(name) ? 'playerSpell' : name === 'step' ? 'playerMovement' : name === 'hurt' || name === 'block' ? 'playerDamage' : 'playerAttack');
+  let offscreen = false;
+  if (enemy && G.settings.audio?.offscreenEnemySounds === false && monster) {
+    const wx = isoX(monster.x, monster.y), wy = isoY(monster.x, monster.y), view = camera.viewRect(64);
+    offscreen = wx < view.x0 || wx > view.x1 || wy < view.y0 || wy > view.y1;
+  }
+  return sfx(name, volume, pitch, { actor: enemy ? 'enemy' : 'player', category, boss, source: monster?.name || (enemy ? 'Enemy ability' : 'Player summon'),
+    sourceActive: () => !!monster && monster.dead !== true, cancelIfInactive: true, entityId: monster?.id ?? null,
+    x: monster?.x, y: monster?.y, offscreen, worldId: G.world?.id });
+}
 
 // When each special move (data/enemies.js ARCH_MOVES) can be used: (monster, target, distance, line of sight), and its
 // cooldown in seconds.
@@ -786,14 +804,14 @@ export class Monster extends Creature {
           if (this.atk && this.atk.chain) chainHit(w, this, t.x, t.y, w.hostiles(this.team, t.x, t.y, 5).find((c) => c !== t), this.atk.chain, this.dmg * 0.6, this.el || 'light', elem(this.el || 'light').glow);
         }
         addEffect(new Slash(this.x, this.y, this.facing, 1.8, 0.9 * this.scale, 0.18, this.team === 'enemy' ? '#ffd0c0' : '#c0ffd0', { width: 6 }));
-        if (!this.summon || chance(0.3)) sfx('swing', 0.5);
+        if (!this.summon || chance(0.3)) enemySound(this, 'swing', 0.5);
         this.cd = this.atkCd;
         break;
       }
       case 'slam': {
         const x = this.x + Math.cos(this.facing) * 0.8, y = this.y + Math.sin(this.facing) * 0.8;
         explode(w, this, x, y, 1.6 * this.scale, this.dmg * 1.6, 'phys', { knock: 1, sound: true }, 'eruption');
-        sfx('thud');
+        enemySound(this, 'thud');
         this.cd = this.atkCd * 1.4;
         break;
       }
@@ -815,7 +833,7 @@ export class Monster extends Creature {
             home: dungeonAffixes.includes('homing_projectiles') ? 2.2 : 0,
             o: { poison: el === 'poison' } }));
         }
-        sfx(P.fx === 'arrow' ? 'bow' : elem(el).sfx, 0.5);
+        enemySound(this, P.fx === 'arrow' ? 'bow' : elem(el).sfx, 0.5);
         this.cd = this.atkCd;
         break;
       }
@@ -824,7 +842,7 @@ export class Monster extends Creature {
         break;
       case 'aoeCast': {
         w.addHazard(new Delayed({ world: w, src: this, x: a.tx, y: a.ty, r: 1.4, delay: 1.0, fx: el === 'fire' ? 'explosion' : 'explosion', el, dmg: [this.dmg * 1.1, this.dmg * 1.4] }));
-        sfx(elem(el).sfx, 0.5);
+        enemySound(this, elem(el).sfx, 0.5);
         this.cd = this.atkCd * 1.3;
         break;
       }
@@ -846,7 +864,7 @@ export class Monster extends Creature {
           w.add(m);
           sparkle(x, y, 10, '#b040ff', 10, 0.4);
         }
-        sfx('summon');
+        enemySound(this, 'summon');
         break;
       }
       case 'nova': {
@@ -856,7 +874,7 @@ export class Monster extends Creature {
           const n = 10;
           for (let i = 0; i < n; i++) w.addHazard(new Projectile({ world: w, src: this, x: this.x, y: this.y, ang: (i / n) * TAU + rand(0.3), speed: 5.5, range: 6, fx: PROJ_FX[el], el, dmg: [this.dmg * 0.6, this.dmg * 0.8] }));
         }
-        sfx(elem(el).sfx);
+        enemySound(this, elem(el).sfx);
         this.cd = this.atkCd * 1.6;
         break;
       }
@@ -866,12 +884,12 @@ export class Monster extends Creature {
         const ex = this.x + Math.cos(a.ang) * L, ey = this.y + Math.sin(a.ang) * L;
         for (const c of lineTargets(w, this.team, this.x, this.y, ex, ey, 0.45)) this.deal(c, this.dmg * 1.4, el, {});
         addEffect(new (Bolt)(this.x, this.y, 30, ex, ey, 20, elem(el).glow, 0.3, 4));
-        sfx(elem(el).sfx);
+        enemySound(this, elem(el).sfx);
         this.cd = this.atkCd * 1.5;
         break;
       }
       case 'charge':
-        this.state = 'act'; a.ongoing = true; sfx('roar', 0.6);
+        this.state = 'act'; a.ongoing = true; enemySound(this, 'roar', 0.6);
         return;
       case 'explode':
         explode(w, this, this.x, this.y, 1.7 * this.scale, this.dmg * 1.6, el === 'phys' ? 'fire' : el, {}, 'explosion');
@@ -911,13 +929,13 @@ export class Monster extends Creature {
           const ang = angleTo(this.x, this.y, t.x, t.y) + (n > 1 ? (i - (n - 1) / 2) * 0.2 : 0), mz = turretMuzzle(this, ang); // 3D turrets fire from the barrel
           w.addHazard(new Projectile({ world: w, src: this, x: mz ? mz.x : this.x, y: mz ? mz.y : this.y, z: mz ? mz.z : this.fly ? 40 : 26, ang, speed: A.spd || 9, range: (A.range || 7) + 2, fx: A.fx || PROJ_FX[el], el, dmg, home: A.home ? 1 : 0, exp: A.exp || 0, pierce: A.pierce ? 99 : 0, heal: A.heal, o: { slow: A.slow, poison: A.poison } }));
         }
-        if (chance(0.4)) sfx(A.fx === 'bullet' ? 'shoot' : A.fx === 'arrow' ? 'bow' : E.sfx, 0.35);
+        if (chance(0.4)) enemySound(this, A.fx === 'bullet' ? 'shoot' : A.fx === 'arrow' ? 'bow' : E.sfx, 0.35);
         break;
       }
       case 'chain':
         if (!t) return;
         chainHit(w, this, this.x, this.y, t, A.n || 2, rand(dmg[0], dmg[1]), el, E.glow);
-        sfx('light', 0.35);
+        enemySound(this, 'light', 0.35);
         break;
       case 'strike':
         if (!t) return;
@@ -926,7 +944,7 @@ export class Monster extends Creature {
           addEffect(Bolt(t.x - 0.6, t.y - 0.6, 300, t.x, t.y, 0, E.glow, 0.25, 3));
           if (A.fx === 'pillar') addEffect(new Column(t.x, t.y, E.glow, 0.4, 20, 240));
           aoe(w, this, t.x, t.y, 0.9, rand(dmg[0], dmg[1]), el, {});
-          sfx(E.sfx, 0.4);
+          enemySound(this, E.sfx, 0.4);
         }
         break;
       case 'beam': {
@@ -941,7 +959,7 @@ export class Monster extends Creature {
           for (const c of lineTargets(w, this.team, this.x, this.y, ex, ey, 0.5)) hit(this, c, rand(dmg[0], dmg[1]), el, { freeze: A.freeze });
           addEffect(Bolt(mz ? mz.x : this.x, mz ? mz.y : this.y, mz ? mz.z : 30, ex, ey, 20, E.glow, 0.2, 3));
         }
-        sfx(E.sfx, 0.35);
+        enemySound(this, E.sfx, 0.35);
         break;
       }
       case 'nova':
@@ -1027,7 +1045,7 @@ export class Monster extends Creature {
     this.speed *= 1.35; this.atkCd *= 0.7; this.dmg *= 1.15;
     this.aura = this.aura || '#ff2010';
     floatText(this.x, this.y, 60, 'Frenzy!', '#ff5030', 13, { life: 1.2 });
-    sfx('roar', 0.5);
+    enemySound(this, 'roar', 0.5);
   }
 
   trySpecial(t, d) {
@@ -1091,7 +1109,7 @@ export class Monster extends Creature {
           sparkle(this.x, this.y, 20, elem(this.el || 'arcane').glow, 10, 0.4);
           this.x = x; this.y = y; this.nav = null;
           sparkle(x, y, 20, elem(this.el || 'arcane').glow, 10, 0.4);
-          sfx('arcane', 0.4);
+          enemySound(this, 'arcane', 0.4);
           this.cd = Math.min(this.cd, 0.35);
           return true;
         }
@@ -1132,7 +1150,7 @@ export class Monster extends Creature {
           sparkle(this.x, this.y, 30, g, 24, 0.5); addEffect(new Ring(this.x, this.y, 0.2, 1.4, 0.35, g, 3));
           this.x = x; this.y = y; this.nav = null; this.alpha = 0.3;
           sparkle(x, y, 30, g, 24, 0.5); addEffect(new Ring(x, y, 1.6, 0.2, 0.35, g, 3));
-          sfx('arcane', 0.5);
+          enemySound(this, 'arcane', 0.5);
           tele({ kind: 'circle', x, y, r: 1.6 * big, dur: 0.55 });
           this.startAction('mv_phase', 0.55);
           return true;
@@ -1141,7 +1159,7 @@ export class Monster extends Creature {
       }
       case 'burrow':
         smoke(this.x, this.y, 5, '#4a3a2a', 8, 12); burst(this.x, this.y, 5, 'phys', 14, 3);
-        sfx('thud', 0.5);
+        enemySound(this, 'thud', 0.5);
         this.targetable = false;
         this.state = 'act'; this.action = { kind: 'mv_burrow', t: 0, ongoing: true, target: t, stage: 0 };
         break;
@@ -1157,53 +1175,53 @@ export class Monster extends Creature {
     switch (a.kind) {
       case 'mv_lunge': case 'mv_combo': case 'mv_burst': case 'mv_sweep': case 'mv_spiral': case 'mv_cross': case 'mv_rings':
         this.state = 'act'; a.ongoing = true; a.t = 0; a.k = 0; a.sx = this.x; a.sy = this.y;
-        if (a.kind === 'mv_lunge') sfx('swing', 0.6);
+        if (a.kind === 'mv_lunge') enemySound(this, 'swing', 0.6);
         return;
       case 'mv_whirl':
         aoe(w, this, this.x, this.y, 1.8 * big, dmg * 1.3, el === 'phys' ? 'phys' : el, { melee: true, knock: 0.8 });
         for (let i = 0; i < 4; i++) addEffect(new Slash(this.x, this.y, this.facing + i * 1.57, 2.2, 1.6 * big, 0.25, this.team === 'enemy' ? '#ffd0c0' : '#c0ffd0', { width: 8 }));
-        sfx('swing'); sfx('phys', 0.5);
+        enemySound(this, 'swing'); enemySound(this, 'phys', 0.5);
         break;
       case 'mv_quake':
         w.addHazard(new Fissure({ world: w, src: this, x: this.x, y: this.y, ang: a.ang, len: 6.5, dmg: [dmg * 0.9, dmg * 1.2], el, fx: el === 'fire' ? 'fire' : el === 'cold' ? 'ice' : 'earth', o: { knock: 0.5 } }));
-        sfx('thud');
+        enemySound(this, 'thud');
         break;
       case 'mv_hook':
         w.addHazard(new Projectile({ world: w, src: this, x: this.x, y: this.y, ang: a.ang, speed: 14, range: a.len, fx: 'chain', el: 'phys', dmg: [dmg * 0.6, dmg * 0.8], o: { pull: true } }));
-        sfx('swing');
+        enemySound(this, 'swing');
         break;
       case 'mv_fan': {
         const base = a.target && !a.target.dead ? angleTo(this.x, this.y, a.target.x, a.target.y) : this.facing;
         for (let i = 0; i < 5; i++) shot(base + (i - 2) * 0.2);
-        sfx(P.fx === 'arrow' ? 'bow' : E.sfx, 0.5);
+        enemySound(this, P.fx === 'arrow' ? 'bow' : E.sfx, 0.5);
         break;
       }
       case 'mv_web':
         if (a.target && !a.target.dead) shot(this.leadAng(a.target, 8), { speed: 8, fx: 'blob', el: el === 'phys' ? 'poison' : el, o: { slow: true }, size: 1.3 });
-        sfx('acid', 0.4);
+        enemySound(this, 'acid', 0.4);
         break;
       case 'mv_lob': {
         const pel = el === 'phys' ? 'poison' : el;
         w.addHazard(new Projectile({ world: w, src: this, x: this.x, y: this.y, lob: true, tx: a.tx, ty: a.ty, range: 8, fx: 'blob', el: pel, dmg: [dmg * 0.8, dmg], exp: 1.1, size: 1.3,
           onLand: (x, y) => w.addHazard(new Area({ world: w, src: this, x, y, r: 1.2, dur: 3.5, tick: 0.5, dmg: [dmg * 0.22, dmg * 0.3], el: pel, fx: POOL_FX[pel] || 'poison' })) }));
-        sfx(elem(pel).sfx, 0.4);
+        enemySound(this, elem(pel).sfx, 0.4);
         break;
       }
       case 'mv_snipe':
         w.addHazard(new Projectile({ world: w, src: this, x: this.x, y: this.y, ang: a.ang, speed: 17, range: 13, fx: P.fx || 'arrow', el, dmg: [dmg * 1.8, dmg * 2.2], size: 1.4, pierce: 99 }));
-        sfx(P.fx === 'arrow' ? 'bow' : E.sfx, 0.7);
+        enemySound(this, P.fx === 'arrow' ? 'bow' : E.sfx, 0.7);
         break;
       case 'mv_runes': {
         const pts = [[a.tx, a.ty]];
         for (const off of [2.1, -2.1]) pts.push([a.tx + Math.cos(a.ang + off) * 1.6, a.ty + Math.sin(a.ang + off) * 1.6]);
         pts.forEach(([x, y], i) => { if (w.map.isFloor(x, y)) w.addHazard(new Delayed({ world: w, src: this, x, y, r: 1.1, delay: 0.9 + i * 0.25, fx: 'explosion', el, dmg: [dmg * 1, dmg * 1.3] })); });
-        sfx(E.sfx, 0.5);
+        enemySound(this, E.sfx, 0.5);
         break;
       }
       case 'mv_wall': {
         const px = -Math.sin(a.ang), py = Math.cos(a.ang);
         for (let i = -3; i <= 3; i++) shot(a.ang, { x: this.x + px * i * 0.55, y: this.y + py * i * 0.55, speed: 5, range: 10, size: 1.2 });
-        sfx(E.sfx, 0.5);
+        enemySound(this, E.sfx, 0.5);
         break;
       }
       case 'mv_rain': {
@@ -1214,23 +1232,23 @@ export class Monster extends Creature {
           w.addHazard(new Delayed({ world: w, src: this, x, y, r: 1, delay: 0.8 + i * 0.18, fx: el === 'phys' ? 'meteor' : 'explosion', el, dmg: [dmg * 0.8, dmg * 1.1] }));
         }
         addEffect(new Column(this.x, this.y, g, 0.5, 14, 200));
-        sfx(E.sfx, 0.6);
+        enemySound(this, E.sfx, 0.6);
         break;
       }
       case 'mv_homing':
         for (let i = 0; i < 3; i++) w.addHazard(new Projectile({ world: w, src: this, x: this.x, y: this.y, ang: this.facing + (i - 1) * 1.1, speed: 3.6, range: 13, home: 0.45, fx: PROJ_FX[el] === 'rock' ? 'orb' : PROJ_FX[el], el, dmg: [dmg * 0.7, dmg * 0.9], size: 1.4 }));
-        sfx('arcane', 0.5);
+        enemySound(this, 'arcane', 0.5);
         break;
       case 'mv_phase':
         this.alpha = undefined;
         aoe(w, this, this.x, this.y, 1.6 * big, dmg * 1.25, el, { melee: true, knock: 0.6 });
         for (let i = 0; i < 3; i++) addEffect(new Slash(this.x, this.y, this.facing + i * 2.1, 2, 1.4 * big, 0.25, elem(el === 'phys' ? 'arcane' : el).glow, { width: 7 }));
-        sfx('swing'); sfx(E.sfx, 0.4);
+        enemySound(this, 'swing'); enemySound(this, E.sfx, 0.4);
         break;
       case 'mv_orbs': {
         const a0 = rand(TAU);
         for (let i = 0; i < 8; i++) w.addHazard(new Projectile({ world: w, src: this, x: this.x, y: this.y, ang: a0 + (i / 8) * TAU, speed: 3.2, range: 7, fx: PROJ_FX[el] === 'rock' ? 'orb' : PROJ_FX[el], el, dmg: [dmg * 0.7, dmg * 0.9], size: 1.3 }));
-        sfx(E.sfx, 0.5);
+        enemySound(this, E.sfx, 0.5);
         break;
       }
     }
@@ -1249,7 +1267,7 @@ export class Monster extends Creature {
         this.z = 50 * 4 * k * (1 - k); this.moving = true;
         if (k >= 1) {
           explode(w, this, this.x, this.y, 1.1 * big, dmg * 1.3, el, { knock: 0.6, melee: true }, 'eruption');
-          sfx('thud', 0.6);
+          enemySound(this, 'thud', 0.6);
           done();
         }
         break;
@@ -1263,7 +1281,7 @@ export class Monster extends Creature {
         }
         this.lunge = 1;
         addEffect(new Slash(this.x, this.y, this.facing, 1.8, 0.9 * this.scale, 0.15, '#ffd0c0', { width: 6, flip: a.k % 2 === 1 }));
-        sfx('swing', 0.4);
+        enemySound(this, 'swing', 0.4);
         if (++a.k >= a.n) done();
         break;
       }
@@ -1273,7 +1291,7 @@ export class Monster extends Creature {
         if (t && !t.dead) {
           w.addHazard(new Projectile({ world: w, src: this, x: this.x, y: this.y, ang: this.leadAng(t, P.speed || 7) + rand(-0.05, 0.05), speed: P.speed || 7, range: (this.range || 7) + 2, fx: P.fx, el, dmg: [dmg * 0.6, dmg * 0.8] }));
           this.face(angleTo(this.x, this.y, t.x, t.y));
-          if (a.k % 2 === 0) sfx(P.fx === 'arrow' ? 'bow' : elem(el).sfx, 0.35);
+          if (a.k % 2 === 0) enemySound(this, P.fx === 'arrow' ? 'bow' : elem(el).sfx, 0.35);
         }
         if (++a.k >= a.n) done();
         break;
@@ -1297,11 +1315,11 @@ export class Monster extends Creature {
         const fire = (ang, sp) => w.addHazard(new Projectile({ world: w, src: this, x: this.x, y: this.y, ang, speed: sp, range: 9, fx, el, dmg: [dmg * 0.45, dmg * 0.6], size: 1.1 }));
         const spec = a.kind === 'mv_spiral' ? [0.07, 1.8, 2] : a.kind === 'mv_cross' ? [0.13, 1.7, 4] : [0.32, 1.0, 14];
         if (a.t < a.k * spec[0]) break;
-        if (a.kind === 'mv_rings') { for (let i = 0; i < spec[2]; i++) fire(a.a0 + (i + (a.k % 2) * 0.5) / spec[2] * TAU, 3.4); sfx(elem(el).sfx, 0.35); }
+        if (a.kind === 'mv_rings') { for (let i = 0; i < spec[2]; i++) fire(a.a0 + (i + (a.k % 2) * 0.5) / spec[2] * TAU, 3.4); enemySound(this, elem(el).sfx, 0.35); }
         else {
           const base = a.a0 + a.dir * a.t * (a.kind === 'mv_spiral' ? 4.2 : 1.3);
           for (let i = 0; i < spec[2]; i++) fire(base + i / spec[2] * TAU, a.kind === 'mv_spiral' ? 4.2 : 5);
-          if (a.k % 4 === 0) sfx(elem(el).sfx, 0.2);
+          if (a.k % 4 === 0) enemySound(this, elem(el).sfx, 0.2);
         }
         a.k++;
         if (a.t >= spec[1]) done();
@@ -1327,7 +1345,7 @@ export class Monster extends Creature {
             this.alpha = undefined; this.z = 0; this.targetable = true;
             explode(w, this, this.x, this.y, 1.5 * big, dmg * 1.4, el, { knock: 0.8, melee: true }, 'eruption');
             smoke(this.x, this.y, 5, '#4a3a2a', 10, 14);
-            sfx('thud', 0.8);
+            enemySound(this, 'thud', 0.8);
             done();
           }
         }
@@ -1355,7 +1373,7 @@ export class Monster extends Creature {
       this.speed *= 1.2; this.atkCd *= 0.75;
       floatText(this.x, this.y, 90, 'ENRAGED!', '#ff4020', 22, { life: 1.5 });
       addEffect(new Ring(this.x, this.y, 0.2, 4, 0.8, '#ff3010', 6));
-      sfx('roar'); sfx('boss');
+      enemySound(this, 'roar'); enemySound(this, 'boss');
       this.patternQ = ['summon', ...this.patternQ];
     }
     this.bossT -= dt;
@@ -1419,7 +1437,7 @@ export class Monster extends Creature {
     switch (a.kind) {
       case 'boss_slam':
         explode(w, this, this.x, this.y, 3.2 * (this.scale / 1.6), dmg * 1.8, 'phys', { knock: 1.5 }, 'eruption');
-        sfx('thud'); sfx('explode');
+        enemySound(this, 'thud'); enemySound(this, 'explode');
         break;
       case 'boss_nova': {
         const n = this.isVelscour ? 28 : 18;
@@ -1430,7 +1448,7 @@ export class Monster extends Creature {
             w.addHazard(pr);
           }
         }
-        sfx(E.sfx);
+        enemySound(this, E.sfx);
         break;
       }
       case 'boss_volley': {
@@ -1438,12 +1456,12 @@ export class Monster extends Creature {
         const base = angleTo(this.x, this.y, t.x, t.y);
         const n = this.isVelscour ? 9 : 5;
         for (let i = 0; i < n; i++) w.addHazard(new Projectile({ world: w, src: this, x: this.x, y: this.y, ang: base + (i - (n - 1) / 2) * 0.16, speed: 8, range: 12, fx: PROJ_FX[el], el, dmg: [dmg * 0.8, dmg], size: 1.1 }));
-        sfx(E.sfx);
+        enemySound(this, E.sfx);
         break;
       }
       case 'boss_summon': {
         if (G.room && !G.game?.isDungeonAuthority(w.depth)) {
-          sfx('summon'); sfx('roar');
+          enemySound(this, 'summon'); enemySound(this, 'roar');
           break;
         }
         const roster = this.isVelscour ? ['demon', 'imp', 'gargoyle', 'knight'] : w.biome.roster;
@@ -1456,7 +1474,7 @@ export class Monster extends Creature {
           addEffect(new Ring(x, y, 0.1, 1, 0.5, '#ff2020', 3));
           smoke(x, y, 0, '#200808', 4, 8);
         }
-        sfx('summon'); sfx('roar');
+        enemySound(this, 'summon'); enemySound(this, 'roar');
         break;
       }
       case 'boss_meteor': {
@@ -1467,7 +1485,7 @@ export class Monster extends Creature {
           if (!w.map.isFloor(x, y)) continue;
           w.addHazard(new Delayed({ world: w, src: this, x, y, r: 1.5, delay: 1.1 + i * 0.12, fx: 'meteor', el: el === 'phys' ? 'fire' : el, dmg: [dmg * 1.2, dmg * 1.5] }));
         }
-        sfx('boss');
+        enemySound(this, 'boss');
         break;
       }
       case 'boss_spiral': {
@@ -1483,7 +1501,7 @@ export class Monster extends Creature {
           w.addHazard({ t: 0.06, update(dt) { this.t -= dt; if (this.t <= 0) { fire(); return false; } return true; }, draw() {} });
         };
         fire();
-        sfx(E.sfx);
+        enemySound(this, E.sfx);
         break;
       }
       case 'boss_beam': {
@@ -1492,7 +1510,7 @@ export class Monster extends Creature {
         const ex = this.x + Math.cos(a.ang) * L, ey = this.y + Math.sin(a.ang) * L;
         for (const c of lineTargets(w, this.team, this.x, this.y, ex, ey, 0.75)) this.deal(c, dmg * 2, el, {});
         for (let i = 0; i < 3; i++) addEffect(Bolt(this.x, this.y, 40, ex, ey, 20, i ? E.core : E.glow, 0.45, 6 - i * 2));
-        sfx('explode');
+        enemySound(this, 'explode');
         break;
       }
     }

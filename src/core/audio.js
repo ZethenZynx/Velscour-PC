@@ -5,11 +5,23 @@
 //   setAmbience(key)    a biome id or 'town': a looped ambient bed that drifts louder and softer (the title has none)
 // Songs and beds stream through <audio> elements routed into the Web Audio graph, so they're never fully decoded.
 import { G } from '../state.js';
+import { AUDIO_VOLUME_GROUPS, audioGroupForSound, normalizeAudioSettings } from './audio-settings.js';
 
-let ac = null, master, sfxBus, musicBus, ambBus, noiseBuf, pulseWave;
+let ac = null, master, sfxBus, musicBus, ambBus, noiseBuf, pulseWave, activeOutputBus = null;
+const categoryBuses = {};
 let currentSoundName = null;
+let currentPlaybackRecord = null;
+let audioRecording = null;
+let nextPlaybackId = 0;
+const liveSoundInstances = [];
+const audioMetrics = { discarded: 0, duplicateSuppressed: 0, distanceCulled: 0, offscreenCulled: 0, cancelledAfterCombat: 0, playbackErrors: 0 };
+const peakByCategory = {};
+const metricsByCategory = {};
+let audioProcessingMs = 0, audioProcessingSamples = 0, audioProcessingWorstMs = 0;
+let audioFocusGain = 1;
 const ironExpressWhistleSources = new Set();
 let fanfareEnd = 0;
+let notificationDuckUntil = 0;
 let audioDiagnosticSink = null, currentDiagnostic = null, nextDiagnosticId = 0;
 const activeDiagnostics = new Map();
 const last = {};
@@ -17,7 +29,6 @@ const AUDIO = 'assets/audio/';
 let manifest = null;               // assets/audio/audio.json
 const buffers = {};                // sample slug -> AudioBuffer
 const voices = {};                 // sound name -> live sample voices (capped)
-let proceduralVoiceNodes = 0;
 
 export function initAudio() {
   if (ac) { if (ac.state !== 'running') ac.resume().catch(() => {}); return; }
@@ -36,6 +47,10 @@ export function initAudio() {
   comp.threshold.value = -16; comp.ratio.value = 6;
   comp.connect(master);
   sfxBus = ac.createGain(); sfxBus.connect(comp);
+  for (const { id } of AUDIO_VOLUME_GROUPS) {
+    if (id === 'master' || id === 'music' || id === 'ambient') continue;
+    categoryBuses[id] = ac.createGain(); categoryBuses[id].connect(comp);
+  }
   musicBus = ac.createGain(); musicBus.connect(master);
   ambBus = ac.createGain(); ambBus.connect(master);
   applyVolumes();
@@ -51,6 +66,15 @@ export function initAudio() {
   for (const k in decks) for (const dk of decks[k]) dk.unlock();   // iOS: media elements must first play inside a gesture
   loadSamples();
   setInterval(tick, 250);
+  const updateAudioFocus = () => {
+    const unfocused = document.visibilityState !== 'visible' || !document.hasFocus();
+    audioFocusGain = unfocused && (G.settings.audio?.muteWhenUnfocused || !G.settings.audio?.backgroundAudio) ? 0 : 1;
+    if (master) applyVolumes();
+  };
+  window.addEventListener('focus', updateAudioFocus);
+  window.addEventListener('blur', updateAudioFocus);
+  document.addEventListener('visibilitychange', updateAudioFocus);
+  updateAudioFocus();
   if (pending.music) { const m = pending.music; pending.music = null; playMusic(m.kind, m.opts); }
   if (pending.amb) { const a = pending.amb; pending.amb = null; setAmbience(a); }
 }
@@ -58,15 +82,50 @@ export function initAudio() {
 export const audioReady = () => !!ac && ac.state === 'running';
 /** The shared context and the sfx bus, for the instrument sampler (src/core/sampler.js). */
 export const audioCtx = () => ac;
-export const audioOut = () => sfxBus;
+export const audioOut = (category = 'playerSpell') => categoryBuses[category] || sfxBus;
 /** For tests: what's loaded and playing. */
 export const audioStats = () => ({ samples: Object.keys(buffers).length, music: music && music.kind, song: music && music.song, amb: amb && amb.bed });
-/** Approximate currently playing sample voices plus procedural node groups awaiting disconnect. */
+/** Approximate live logical sounds across samples, procedural cues, instruments, and dialogue. */
 export function audioActiveCount() {
   const now = ac?.currentTime || 0;
-  let count = proceduralVoiceNodes;
-  for (const key of Object.keys(voices)) for (const end of voices[key]) if (end > now) count++;
+  let count = 0;
+  for (let i = liveSoundInstances.length - 1; i >= 0; i--) {
+    if (liveSoundInstances[i].endsAt <= now) liveSoundInstances.splice(i, 1);
+    else count++;
+  }
   return count;
+}
+
+export function audioActiveByCategory() {
+  const now = ac?.currentTime || 0, counts = {};
+  for (let i = liveSoundInstances.length - 1; i >= 0; i--) {
+    const item = liveSoundInstances[i];
+    if (item.endsAt <= now) { liveSoundInstances.splice(i, 1); continue; }
+    counts[item.category] = (counts[item.category] || 0) + 1;
+  }
+  return counts;
+}
+
+/** Register a non-sfx Web Audio voice (for example the Bard sampler) with the same limits and diagnostics. */
+export function beginAudioVoice(sound, category, source, durationSeconds = 1, { combat = false } = {}) {
+  const audio = G.settings.audio = normalizeAudioSettings(G.settings.audio);
+  if (audio.muted.master || audio.volumes.master <= 0 || audio.muted[category] || audio.volumes[category] <= 0) return null;
+  const now = ac?.currentTime || 0;
+  for (let i = liveSoundInstances.length - 1; i >= 0; i--) if (liveSoundInstances[i].endsAt <= now) liveSoundInstances.splice(i, 1);
+  if (liveSoundInstances.filter((item) => item.sound === sound).length >= audio.maxIdenticalSounds) { recordAudioMetric('duplicateSuppressed', category); return null; }
+  if (combat && liveSoundInstances.filter((item) => item.combat).length >= audio.maxCombatSounds) { recordAudioMetric('discarded', category); return null; }
+  const playback = { id: ++nextPlaybackId, sound, category, combat, endsAt: now + Math.max(0.05, durationSeconds), route: null };
+  liveSoundInstances.push(playback);
+  const diagnostic = beginDiagnostic(sound, { category, source });
+  if (diagnostic) { diagnostic.playbackId = playback.id; diagnostic.asset = `sampler:${sound}`; diagnosticEvent('actual-start', diagnostic, { category, playbackId: playback.id, asset: diagnostic.asset }); }
+  if (audioRecording?.active) peakByCategory[category] = Math.max(peakByCategory[category] || 0, liveSoundInstances.filter((item) => item.category === category).length);
+  return { playback, diagnostic };
+}
+
+export function finishAudioVoice(token, reason = 'ended') {
+  if (!token) return;
+  token.playback.endsAt = ac?.currentTime || 0;
+  if (token.diagnostic) { token.diagnostic.sealed = true; finishDiagnostic(token.diagnostic, reason); }
 }
 
 /** Optional, disabled-by-default one-shot tracing for audio investigations. */
@@ -75,14 +134,99 @@ export function setAudioDiagnosticSink(sink) {
   if (!audioDiagnosticSink) activeDiagnostics.clear();
   return () => { if (audioDiagnosticSink === sink) setAudioDiagnosticSink(null); };
 }
+
+export function startAudioDiagnosticRecording() {
+  if (audioRecording?.active) return false;
+  audioRecording = { active: true, startedUtc: new Date().toISOString(), startedPerfMs: performance.now(), events: [] };
+  for (const key of Object.keys(audioMetrics)) audioMetrics[key] = 0;
+  for (const key of Object.keys(peakByCategory)) delete peakByCategory[key];
+  for (const key of Object.keys(metricsByCategory)) delete metricsByCategory[key];
+  audioProcessingMs = audioProcessingSamples = audioProcessingWorstMs = 0;
+  setAudioDiagnosticSink((event) => {
+    if (audioRecording?.active && audioRecording.events.length < 20000) audioRecording.events.push(event);
+  });
+  recordAudioDiagnosticMarker('recording-start');
+  return true;
+}
+
+export function stopAudioDiagnosticRecording() {
+  if (!audioRecording?.active) return false;
+  recordAudioDiagnosticMarker('recording-stop');
+  audioRecording.activeAtStop = [...activeDiagnostics.values()].map(({ id, sound, asset, assetPath, category, source, sources }) => ({ id, sound, asset, assetPath, category, source, activeSources: sources }));
+  audioRecording.active = false;
+  audioRecording.stoppedUtc = new Date().toISOString();
+  audioRecording.durationMs = Number((performance.now() - audioRecording.startedPerfMs).toFixed(2));
+  setAudioDiagnosticSink(null);
+  return true;
+}
+
+export function clearAudioDiagnosticRecording() {
+  const wasActive = !!audioRecording?.active;
+  setAudioDiagnosticSink(null);
+  audioRecording = null;
+  if (wasActive) startAudioDiagnosticRecording();
+}
+
+export function recordAudioDiagnosticMarker(type, detail = {}) {
+  if (!audioRecording?.active) return false;
+  if (audioRecording.events.length < 20000) audioRecording.events.push({ type, timeUtc: new Date().toISOString(), perfMs: performance.now(), ...detail });
+  return true;
+}
+
+export function audioDiagnosticReport() {
+  if (!audioRecording) return { error: 'No audio diagnostic recording has been started.' };
+  const events = audioRecording.events.slice(), sounds = new Map(), starts = new Map(), lifetimes = [];
+  for (const event of events) {
+    if (event.type === 'play') { sounds.set(event.sound, (sounds.get(event.sound) || 0) + 1); starts.set(event.id, event); }
+    else if (event.type === 'stop' && starts.has(event.id)) {
+      const start = starts.get(event.id);
+      lifetimes.push({ sound: start.sound, category: start.category, asset: start.asset, assetPath: start.assetPath, source: start.source,
+        startedUtc: start.timeUtc, stoppedUtc: event.timeUtc, durationMs: Math.max(0, Date.parse(event.timeUtc) - Date.parse(start.timeUtc)), reason: event.reason || 'ended' });
+    }
+  }
+  const settings = normalizeAudioSettings(G.settings.audio);
+  return {
+    title: 'Velscour Audio Diagnostics', startedUtc: audioRecording.startedUtc, stoppedUtc: audioRecording.stoppedUtc || null,
+    durationMs: audioRecording.durationMs ?? Number((performance.now() - audioRecording.startedPerfMs).toFixed(2)),
+    character: G.char?.name || null, environment: G.world?.biome?.name || G.world?.kind || null,
+    audioSettings: { ...settings, volumes: { ...settings.volumes }, muted: { ...settings.muted } },
+    activeInstancesByCategory: audioActiveByCategory(), peakInstancesByCategory: { ...peakByCategory },
+    metrics: { ...audioMetrics, byCategory: structuredCloneSafe(metricsByCategory), audioProcessingAverageMs: audioProcessingSamples ? Number((audioProcessingMs / audioProcessingSamples).toFixed(3)) : 0, audioProcessingWorstMs: Number(audioProcessingWorstMs.toFixed(3)), audioProcessingSamples, combatSoundsQueued: 0 },
+    summary: { mostFrequentSounds: [...sounds].map(([sound, count]) => ({ sound, count })).sort((a, b) => b.count - a.count).slice(0, 25),
+      longestSounds: lifetimes.sort((a, b) => b.durationMs - a.durationMs).slice(0, 25),
+      potentiallyOrphaned: lifetimes.filter((item) => item.durationMs > 5000).slice(0, 100),
+      stillActiveWhenRecordingStopped: audioRecording.activeAtStop || [],
+      audioProcessingSpikes: events.filter((event) => event.type === 'processing-spike').sort((a, b) => b.durationMs - a.durationMs).slice(0, 100),
+      totalRequests: [...sounds.values()].reduce((a, b) => a + b, 0) },
+    eventLimit: 20000, truncated: events.length >= 20000, events,
+  };
+}
+
+function structuredCloneSafe(value) { return JSON.parse(JSON.stringify(value)); }
+
+function recordAudioMetric(metric, category) {
+  audioMetrics[metric] = (audioMetrics[metric] || 0) + 1;
+  const counters = metricsByCategory[category] || (metricsByCategory[category] = {});
+  counters[metric] = (counters[metric] || 0) + 1;
+}
+
+export function exportAudioDiagnosticReport() {
+  const report = audioDiagnosticReport(), blob = new Blob([JSON.stringify(report, null, 2)], { type: 'application/json' });
+  const url = URL.createObjectURL(blob), link = document.createElement('a');
+  link.href = url; link.download = `velscour-audio-${new Date().toISOString().replace(/[:.]/g, '-')}.json`;
+  link.click(); setTimeout(() => URL.revokeObjectURL(url), 30000);
+  return report;
+}
 export const audioDiagnosticsEnabled = () => !!audioDiagnosticSink;
 export function audioDiagnosticStats() {
   return { enabled: !!audioDiagnosticSink, active: activeDiagnostics.size,
-    sounds: [...activeDiagnostics.values()].map(({ id, sound, asset, source, sources }) => ({ id, sound, asset, source, activeSources: sources })) };
+    activeByCategory: audioActiveByCategory(), peakByCategory: { ...peakByCategory },
+    sounds: [...activeDiagnostics.values()].map(({ id, sound, asset, source, sources, category }) => ({ id, sound, asset, source, category, activeSources: sources })) };
 }
 function diagnosticEvent(type, record, details = {}) {
   if (!audioDiagnosticSink || !record) return;
-  try { audioDiagnosticSink({ type, id: record.id, sound: record.sound, asset: record.asset,
+  try { audioDiagnosticSink({ type, timeUtc: new Date().toISOString(), perfMs: performance.now(), id: record.id, sound: record.sound, asset: record.asset,
+    assetPath: record.assetPath || null, category: record.category || null, playbackId: record.playbackId || null,
     source: record.source, stack: record.stack, activeInstances: activeDiagnostics.size,
     activeSources: record.sources, ...details }); } catch { /* diagnostics must never affect sound playback */ }
 }
@@ -93,7 +237,8 @@ function diagnosticSourceActive(record) {
 function beginDiagnostic(sound, context) {
   if (!audioDiagnosticSink) return null;
   const record = { id: ++nextDiagnosticId, sound, asset: `procedural:${sound}`, source: context?.source || 'unattributed',
-    sourceActive: context?.sourceActive, stack: new Error().stack, sources: 0, sealed: false };
+    assetPath: null, category: context?.category || null, sourceActive: context?.sourceActive,
+    stack: new Error().stack, sources: 0, sealed: false };
   activeDiagnostics.set(record.id, record);
   diagnosticEvent('play', record, { sourceActive: diagnosticSourceActive(record) });
   return record;
@@ -119,9 +264,15 @@ function trackDiagnosticSource(source, record = currentDiagnostic) {
 
 export function applyVolumes() {
   if (!ac) return;
-  sfxBus.gain.value = G.settings.sfx;
-  musicBus.gain.value = G.settings.music;
-  ambBus.gain.value = G.settings.amb ?? 0.5;
+  const audio = G.settings.audio = normalizeAudioSettings(G.settings.audio);
+  const unfocused = document.visibilityState !== 'visible' || !document.hasFocus();
+  audioFocusGain = unfocused && (audio.muteWhenUnfocused || !audio.backgroundAudio) ? 0 : 1;
+  const volume = (id) => Math.max(0, Math.min(1, audio.volumes[id] / 100)) * (audio.muted[id] ? 0 : 1);
+  master.gain.value = 0.9 * volume('master') * audioFocusGain;
+  sfxBus.gain.value = 1;
+  musicBus.gain.value = volume('music');
+  ambBus.gain.value = volume('ambient');
+  for (const [id, bus] of Object.entries(categoryBuses)) bus.gain.value = volume(id);
 }
 
 function env(g, t, a, peak, dec, sus = 0.0001) {
@@ -136,7 +287,7 @@ function noise(t, dur, { type = 'lowpass', f0 = 1000, f1 = f0, q = 1, vol = 0.5,
   const filt = ac.createBiquadFilter(); filt.type = type; filt.Q.value = q;
   filt.frequency.setValueAtTime(f0, t); filt.frequency.exponentialRampToValueAtTime(Math.max(20, f1), t + dur);
   const g = ac.createGain(); env(g, t, a, vol, dur);
-  src.connect(filt); filt.connect(g); g.connect(sfxBus);
+  src.connect(filt); filt.connect(g); g.connect(activeOutputBus || sfxBus); trackPlaybackEnd(t + dur + 0.05);
   trackIronExpressWhistleSource(src); trackDiagnosticSource(src); src.start(t, Math.random() * 0.5); src.stop(t + dur + 0.05);
 }
 
@@ -145,7 +296,7 @@ function tone(t, dur, { wave = 'sine', f0 = 440, f1 = f0, vol = 0.3, a = 0.005, 
   if (wave === 'pulse') o.setPeriodicWave(pulseWave); else o.type = wave;
   o.frequency.setValueAtTime(f0, t); o.frequency.exponentialRampToValueAtTime(Math.max(20, f1), t + dur);
   const g = ac.createGain(); env(g, t, a, vol, dur);
-  o.connect(g); g.connect(sfxBus);
+  o.connect(g); g.connect(activeOutputBus || sfxBus); trackPlaybackEnd(t + dur + 0.05);
   trackIronExpressWhistleSource(o); trackDiagnosticSource(o); o.start(t); o.stop(t + dur + 0.05);
 }
 
@@ -170,7 +321,7 @@ const SOUNDS = {
   bones: (t, p) => { for (let i = 0; i < 4; i++) tone(t + i * 0.035, 0.05, { wave: 'square', f0: R(700, 1300) * p, f1: 300, vol: 0.06 }); },
   fire: (t, p) => noise(t, 0.35, { f0: 2400 * p, f1: 300, vol: 0.35, a: 0.03 }),
   cold: (t, p) => { tone(t, 0.25, { f0: 2200 * p, f1: 3400, vol: 0.07 }); noise(t, 0.2, { type: 'highpass', f0: 5000, f1: 2500, vol: 0.18 }); },
-  light: (t, p) => { const o = ac.createOscillator(); o.type = 'sawtooth'; const g = ac.createGain(); env(g, t, 0.003, 0.12, 0.2); for (let i = 0; i < 8; i++) o.frequency.setValueAtTime(R(150, 1800) * p, t + i * 0.02); o.connect(g); g.connect(sfxBus); o.start(t); o.stop(t + 0.25); noise(t, 0.15, { type: 'highpass', f0: 3000, vol: 0.2 }); },
+  light: (t, p) => { const o = ac.createOscillator(); o.type = 'sawtooth'; const g = ac.createGain(); env(g, t, 0.003, 0.12, 0.2); for (let i = 0; i < 8; i++) o.frequency.setValueAtTime(R(150, 1800) * p, t + i * 0.02); o.connect(g); g.connect(activeOutputBus || sfxBus); trackPlaybackEnd(t + 0.3); trackDiagnosticSource(o); o.start(t); o.stop(t + 0.25); noise(t, 0.15, { type: 'highpass', f0: 3000, vol: 0.2 }); },
   holy_bolt: (t, p) => {
     noise(t, 0.2, { type: 'bandpass', f0: 4200, f1: 700, q: 1.2, vol: 0.22, a: 0.002 });
     for (let i = 0; i < 3; i++) noise(t + 0.025 + i * 0.035, 0.045, { type: 'highpass', f0: R(2800, 5200), f1: 900, vol: 0.12, a: 0.001 });
@@ -315,38 +466,132 @@ export function infernalMarkRewardSfx() {
 export function sfx(name, vol = 1, pitch = 1, context = null) {
   // Catch legacy and future notification bells while aboard; preserve every other sound and region.
   if (name === 'bell' && ironExpressActive()) return ironExpressWhistleSfx(vol);
-  const diagnostic = beginDiagnostic(name, context);
-  if (!ac || G.settings.sfx <= 0) { if (diagnostic) { diagnostic.sealed = true; finishDiagnostic(diagnostic, 'unavailable'); } return; }
+  const category = audioGroupForSound(name, context);
+  const diagnostic = beginDiagnostic(name, { ...context, category });
+  if (!ac || G.settings.sfx <= 0) return finishRequestedDiagnostic(diagnostic, 'unavailable');
   const fn = SOUNDS[name];
-  if (!fn) { if (diagnostic) { diagnostic.sealed = true; finishDiagnostic(diagnostic, 'unknown-sound'); } return; }
+  if (!fn) return finishRequestedDiagnostic(diagnostic, 'unknown-sound');
   const now = ac.currentTime;
-  const l = last[name] || (last[name] = { t: 0, n: 0 });
-  if (now - l.t < 0.045) { if (++l.n > 2) { if (diagnostic) { diagnostic.sealed = true; finishDiagnostic(diagnostic, 'rate-limited'); } return; } } else { l.n = 0; }
+  const audio = G.settings.audio = normalizeAudioSettings(G.settings.audio);
+  if (audio.muted.master || audio.volumes.master <= 0 || audio.muted[category] || audio.volumes[category] <= 0) return finishRequestedDiagnostic(diagnostic, 'muted');
+  if (context?.cancelIfInactive && typeof context.sourceActive === 'function' && !context.sourceActive()) {
+    recordAudioMetric('cancelledAfterCombat', category); return finishRequestedDiagnostic(diagnostic, 'source-ended');
+  }
+  if (context?.cancelIfInactive && context.worldId != null && G.world?.id !== context.worldId) {
+    recordAudioMetric('cancelledAfterCombat', category); return finishRequestedDiagnostic(diagnostic, 'area-ended');
+  }
+  if (audio.persistentSpellSounds === false && (context?.persistent === true || category === 'persistentSpell')) return finishRequestedDiagnostic(diagnostic, 'persistent-disabled');
+  const needsDistance = audio.distanceCulling || audio.stereoPositioning;
+  const distance = needsDistance && context?.x != null && context?.y != null && G.player ? Math.hypot(context.x - G.player.x, context.y - G.player.y) : null;
+  if (distance != null && audio.distanceCulling && distance > 28 && !['boss', 'combatWarnings', 'questAchievement'].includes(category)) {
+    recordAudioMetric('distanceCulled', category); return finishRequestedDiagnostic(diagnostic, 'distance-culled');
+  }
+  if ((context?.actor === 'enemy' || context?.sourceType === 'enemy') && context?.offscreen === true && !audio.offscreenEnemySounds) {
+    recordAudioMetric('offscreenCulled', category); return finishRequestedDiagnostic(diagnostic, 'offscreen-culled');
+  }
+  if (category === 'environment' && audio.environmentalDensity !== 'Full' && context?.important !== true) {
+    const probability = audio.environmentalDensity === 'Minimal' ? 0.35 : 0.65;
+    if (Math.random() > probability) { recordAudioMetric('environmentDensitySuppressed', category); return finishRequestedDiagnostic(diagnostic, 'environment-density'); }
+  }
+  for (let i = liveSoundInstances.length - 1; i >= 0; i--) if (liveSoundInstances[i].endsAt <= now) liveSoundInstances.splice(i, 1);
+  const identicalLimit = Math.max(1, Math.min(5, Number(audio.maxIdenticalSounds) || 2));
+  if (liveSoundInstances.filter((item) => item.sound === name).length >= identicalLimit) {
+    recordAudioMetric('duplicateSuppressed', category); return finishRequestedDiagnostic(diagnostic, 'duplicate-suppressed');
+  }
+  const nonCombat = ['music', 'ambient', 'interface', 'environment', 'npc', 'portal', 'shrine', 'chest', 'itemDrop', 'itemPickup', 'currency', 'rareItem', 'questAchievement'];
+  const combat = !nonCombat.includes(category);
+  if (combat && liveSoundInstances.filter((item) => item.combat).length >= audio.maxCombatSounds) {
+    recordAudioMetric('discarded', category); return finishRequestedDiagnostic(diagnostic, 'channel-limit');
+  }
+  const repetitionMs = ({ Off: 0, Low: 45, Medium: 100, High: 220 })[audio.repetitiveSuppression] ?? 45;
+  const l = last[name] || (last[name] = { t: -Infinity, n: 0 });
+  if (repetitionMs && (now - l.t) * 1000 < repetitionMs) {
+    if (++l.n > (audio.repetitiveSuppression === 'High' ? 1 : 2)) {
+      recordAudioMetric('duplicateSuppressed', category); return finishRequestedDiagnostic(diagnostic, 'repeat-suppressed');
+    }
+  } else l.n = 0;
   l.t = now;
+  const route = createSpatialRoute(categoryBuses[category] || sfxBus, context, distance, audio);
+  const playback = { id: ++nextPlaybackId, sound: name, category, combat, endsAt: now + 0.2, route: route.cleanup };
+  liveSoundInstances.push(playback);
+  if (diagnostic) { diagnostic.category = category; diagnostic.playbackId = playback.id; diagnosticEvent('actual-start', diagnostic, { category, playbackId: playback.id }); }
+  if (audioRecording?.active) peakByCategory[category] = Math.max(peakByCategory[category] || 0, liveSoundInstances.filter((item) => item.category === category).length);
+  if (['rareItem', 'questAchievement'].includes(category) && audio.notificationDucking) duckForNotification(now, audio);
   const previousDiagnostic = currentDiagnostic;
   const previousSoundName = currentSoundName;
+  const previousOutputBus = activeOutputBus;
+  const previousPlayback = currentPlaybackRecord;
   currentDiagnostic = diagnostic;
   currentSoundName = name;
+  activeOutputBus = route.node;
+  currentPlaybackRecord = playback;
+  const started = audioRecording?.active ? performance.now() : 0;
   try {
     const p = pitch * (0.92 + Math.random() * 0.16);
-    if (playSample(name, vol, p, now)) return;
-    voice(vol, () => fn(now, p));
-  } catch (e) { if (diagnostic) diagnosticEvent('error', diagnostic, { message: String(e?.message || e) }); /* audio errors are never fatal */ }
+    if (playSample(name, vol * route.attenuation, p, now, route.node)) return true;
+    voice(vol * route.attenuation, () => fn(now, p), route.node);
+    return true;
+  } catch (e) { recordAudioMetric('playbackErrors', category); if (diagnostic) diagnosticEvent('error', diagnostic, { message: String(e?.message || e) }); return false; }
   finally {
+    if (started) {
+      const elapsed = performance.now() - started;
+      audioProcessingMs += elapsed; audioProcessingSamples++; audioProcessingWorstMs = Math.max(audioProcessingWorstMs, elapsed);
+      if (elapsed > 2 && audioRecording?.active && audioRecording.events.length < 20000) audioRecording.events.push({ type: 'processing-spike', timeUtc: new Date().toISOString(), durationMs: Number(elapsed.toFixed(3)), sound: name, category });
+    }
     currentDiagnostic = previousDiagnostic;
     currentSoundName = previousSoundName;
+    activeOutputBus = previousOutputBus;
+    currentPlaybackRecord = previousPlayback;
+    if (route.cleanup) setTimeout(route.cleanup, Math.max(0, (playback.endsAt - now) * 1000) + 120);
     if (diagnostic) { diagnostic.sealed = true; if (!diagnostic.sources) finishDiagnostic(diagnostic); }
   }
+}
+
+function duckForNotification(now, audio) {
+  if (!ac || now < notificationDuckUntil) return;
+  notificationDuckUntil = now + 0.8;
+  const depth = Math.max(0.2, 1 - audio.duckAmount / 100);
+  for (const [bus, base] of [[musicBus, audio.volumes.music / 100], [ambBus, audio.volumes.ambient / 100]]) {
+    const param = bus.gain;
+    param.cancelScheduledValues(now); param.setValueAtTime(param.value, now);
+    param.linearRampToValueAtTime(base * depth, now + 0.06);
+    param.setValueAtTime(base * depth, notificationDuckUntil);
+    param.linearRampToValueAtTime(base, notificationDuckUntil + 0.18);
+  }
+}
+
+function finishRequestedDiagnostic(diagnostic, reason) {
+  if (diagnostic) { diagnostic.sealed = true; finishDiagnostic(diagnostic, reason); }
+  return false;
+}
+
+function trackPlaybackEnd(at) {
+  if (currentPlaybackRecord && Number.isFinite(at)) currentPlaybackRecord.endsAt = Math.max(currentPlaybackRecord.endsAt, at);
+}
+
+function createSpatialRoute(bus, context, distance, audio) {
+  const usesDistance = audio.stereoPositioning || audio.distanceCulling;
+  const attenuation = usesDistance ? Math.max(0.12, 1 / (1 + Math.max(0, distance || 0) * 0.08)) : 1;
+  if (!audio.stereoPositioning || !context || context.x == null || context.y == null || !G.player || typeof ac.createStereoPanner !== 'function') {
+    return { node: bus, attenuation, cleanup: null };
+  }
+  const panner = ac.createStereoPanner();
+  panner.pan.value = Math.max(-1, Math.min(1, ((context.x - G.player.x) - (context.y - G.player.y)) / 12));
+  panner.connect(bus);
+  const cleanup = () => { try { panner.disconnect(); } catch {} };
+  return { node: panner, attenuation, cleanup };
 }
 // A procedural sound's oscillators, filters and gains go through a gain of their own that is unplugged once the sound
 // is over (the longest is ~2.5 s): left wired into the mix, a long session piles up thousands of finished nodes, which
 // WebKit keeps processing.
-function voice(vol, play) {
+function voice(vol, play, bus = sfxBus) {
   const g = ac.createGain(); g.gain.value = vol;
-  const prev = sfxBus; sfxBus = g; g.connect(prev);
-  try { play(); } finally { sfxBus = prev; }
-  proceduralVoiceNodes++;
-  setTimeout(() => { g.disconnect(); proceduralVoiceNodes = Math.max(0, proceduralVoiceNodes - 1); }, 6000);
+  const prev = activeOutputBus; activeOutputBus = g; g.connect(bus);
+  try { play(); } finally { activeOutputBus = prev; }
+  const delay = Math.max(100, ((currentPlaybackRecord?.endsAt || ac.currentTime + 0.25) - ac.currentTime) * 1000 + 100);
+  setTimeout(() => {
+    g.disconnect();
+  }, delay);
 }
 
 
@@ -358,9 +603,17 @@ const NOTE = (n) => 440 * Math.pow(2, (n - 69) / 12); // MIDI note -> Hz
  * Returns { voiceAt, voiceDur } (the moment of the toll, 0), or null when sound is off or one is still ringing.
  */
 export function levelUpFanfare() {
-  if (!ac || G.settings.sfx <= 0) return null;
+  const audio = normalizeAudioSettings(G.settings.audio);
+  if (!ac || G.settings.sfx <= 0 || audio.muted.master || audio.muted.questAchievement || audio.volumes.master <= 0 || audio.volumes.questAchievement <= 0) return null;
   const now = ac.currentTime;
   if (now < fanfareEnd) return null;
+  const previousOutputBus = activeOutputBus, previousDiagnostic = currentDiagnostic, previousPlayback = currentPlaybackRecord, previousName = currentSoundName;
+  const diagnostic = beginDiagnostic('levelup-fanfare', { category: 'questAchievement', source: 'Character level-up celebration', sourceActive: false });
+  const playback = { id: ++nextPlaybackId, sound: 'levelup-fanfare', category: 'questAchievement', combat: false, endsAt: now + 4.2, route: null };
+  liveSoundInstances.push(playback);
+  activeOutputBus = categoryBuses.questAchievement || sfxBus;
+  currentDiagnostic = diagnostic; currentPlaybackRecord = playback; currentSoundName = 'levelup-fanfare';
+  if (diagnostic) { diagnostic.playbackId = playback.id; diagnosticEvent('actual-start', diagnostic, { category: 'questAchievement', playbackId: playback.id }); }
   const t0 = now + 0.02, ts = t0 + 0.55;
   try {
     // dread swell into the toll
@@ -372,20 +625,24 @@ export function levelUpFanfare() {
     [[0.5, 0.2], [1, 0.16], [1.19, 0.1], [1.5, 0.07], [2, 0.06], [2.74, 0.04], [3.76, 0.025]].forEach(([m, v], i) =>
       tone(ts, 3.6 - i * 0.3, { f0: 98 * m, f1: 98 * m * 0.985, vol: v, a: 0.004, detune: i % 2 ? 6 : -6 }));
     // a low diminished choir under it (D, F, Ab), detuned saws through a dark filter
-    const lp = ac.createBiquadFilter(); lp.type = 'lowpass'; lp.frequency.value = 520; lp.connect(sfxBus);
+    const lp = ac.createBiquadFilter(); lp.type = 'lowpass'; lp.frequency.value = 520; lp.connect(categoryBuses.questAchievement || sfxBus);
     [38, 41, 44, 50].forEach((n, i) => [-9, 9].forEach((dt) => {
       const o = ac.createOscillator(); o.type = 'sawtooth'; o.frequency.value = NOTE(n); o.detune.value = dt;
       const g = ac.createGain(); g.gain.setValueAtTime(0.0001, ts); g.gain.exponentialRampToValueAtTime(0.03 - i * 0.004, ts + 0.6);
       g.gain.exponentialRampToValueAtTime(0.0001, ts + 3.4);
-      o.connect(g); g.connect(lp); o.start(ts); o.stop(ts + 3.5);
+      o.connect(g); g.connect(lp); trackDiagnosticSource(o); trackPlaybackEnd(ts + 3.5); o.start(ts); o.stop(ts + 3.5);
     }));
     noise(ts + 0.3, 2.6, { type: 'bandpass', f0: 380, f1: 180, q: 4, vol: 0.12, a: 0.8 });   // a breath in the dark
-  } catch (e) { /* audio errors are never fatal */ }
+  } catch (e) { audioMetrics.playbackErrors++; }
+  finally {
+    activeOutputBus = previousOutputBus; currentDiagnostic = previousDiagnostic; currentPlaybackRecord = previousPlayback; currentSoundName = previousName;
+    if (diagnostic) { diagnostic.sealed = true; if (!diagnostic.sources) finishDiagnostic(diagnostic); }
+  }
   const voiceAt = 0.57, voiceDur = 0;
   const end = voiceAt + 3;
   fanfareEnd = now + end;
   // duck the music and ambience under it
-  for (const [bus, v] of [[musicBus, G.settings.music], [ambBus, G.settings.amb ?? 0.5]]) {
+  for (const [bus, v] of [[musicBus, audio.volumes.music / 100], [ambBus, audio.volumes.ambient / 100]]) {
     const g = bus.gain;
     g.cancelScheduledValues(now); g.setValueAtTime(v, now);
     g.linearRampToValueAtTime(v * 0.25, now + 0.15); g.setValueAtTime(v * 0.25, now + end);
@@ -464,7 +721,7 @@ export function ironExpressWhistleSfx(volume = 1) {
     return true;
   }
   ironExpressWhistleUntil = ac.currentTime + 1.42;
-  sfx('iron_express_whistle', volume, 1, { source: 'Iron Express notification', sourceActive: false });
+  sfx('iron_express_whistle', volume, 1, { source: 'Iron Express notification', sourceActive: false, important: true });
   scheduleIronExpressWhistle();
   return true;
 }
@@ -487,7 +744,7 @@ export function notificationSfx(fallback = 'ui', volume = 1) {
   return false;
 }
 
-function playSample(name, vol, p, now) {
+function playSample(name, vol, p, now, bus = sfxBus) {
   const d = SAMPLES[name];
   if (!d) return false;
   const ready = d.s.filter((k) => buffers[k]);
@@ -498,13 +755,15 @@ function playSample(name, vol, p, now) {
   const buf = ready[Math.floor(Math.random() * ready.length)];
   const src = ac.createBufferSource(); src.buffer = buffers[buf]; src.playbackRate.value = p;
   const g = ac.createGain(); g.gain.value = d.v * vol;
-  src.connect(g); g.connect(sfxBus); src.start(now);
+  src.connect(g); g.connect(bus); src.start(now);
   src.onended = () => { src.disconnect(); g.disconnect(); };
   trackIronExpressWhistleSource(src);
   if (currentDiagnostic) currentDiagnostic.asset = `sample:${buf}`;
+  if (currentDiagnostic) currentDiagnostic.assetPath = `${AUDIO}${manifest?.sfxFiles?.[buf] || `${buf}.${d.ext || 'mp3'}`}`;
   trackDiagnosticSource(src);
-  live.push(now + buffers[buf].duration / p);
-  if (d.layer) voice(vol * 0.6, () => SOUNDS[d.layer](now, p));
+  const endAt = now + buffers[buf].duration / p;
+  trackPlaybackEnd(endAt); live.push(endAt);
+  if (d.layer) voice(vol * 0.6, () => SOUNDS[d.layer](now, p), bus);
   return true;
 }
 
@@ -608,13 +867,13 @@ export function playMusic(kind, opts = {}) {
   if (!ac) { pending.music = { kind, opts }; return; }
   if (music && music.kind === kind) return;
   const def = MUSIC[kind]; if (!def) return;
-  if (music && music.deck) music.deck.stop(1.5);
+  if (music && music.deck) music.deck.stop(normalizeAudioSettings(G.settings.audio).musicFadeSeconds);
   const deck = decks.music.find((d) => !d.playing && (!music || d !== music.deck)) || decks.music[0];
   const queue = def.shuffle ? [...def.songs].sort(() => Math.random() - 0.5) : [...def.songs];
   music = { kind, def, deck, queue, next: ac.currentTime + (opts.delay ?? (music ? 1.2 : 0.3)), song: null };
 }
 
-export function stopMusic(sec = 1.5) {
+export function stopMusic(sec = normalizeAudioSettings(G.settings.audio).musicFadeSeconds) {
   pending.music = null;
   if (!music || !ac) { music = null; return; }
   if (music.deck) music.deck.stop(sec);
@@ -632,7 +891,7 @@ function startSong(at = 0) {
   const deck = m.deck;
   deck.load(m.song, songUrls[m.song] || `${AUDIO}music/${m.song}.mp3`, false, at || def.at || 0);
   deck.g.gain.cancelScheduledValues(ac.currentTime); deck.g.gain.setValueAtTime(0, ac.currentTime);
-  deck.fade(def.vol, at || def.at ? 0.4 : 0.05);
+  deck.fade(def.vol, normalizeAudioSettings(G.settings.audio).musicFadeSeconds);
   m.next = 0;
 }
 

@@ -1,7 +1,7 @@
 // The Bard's acoustic plucked lute sampler and step sequencer (MIDI 36-96).
 // Synthesizes authentic acoustic Renaissance plucked lute string tones with physical plectrum attack transient,
 // warm dual-string course detuning (+/- 3.5 cents), dynamic lowpass damping, and soundboard wooden body resonance.
-import { audioCtx, audioOut } from './audio.js';
+import { audioCtx, audioOut, beginAudioVoice, finishAudioVoice } from './audio.js';
 
 export const INSTRUMENTS = {
   lute: { name: 'Acoustic Lute', lo: 36, hi: 96 },
@@ -66,13 +66,14 @@ function out(ac) {
 function playLuteNote(ac, midi, { at = 0, dur = 0.5, vel = 0.8, art = 'normal_held', id } = {}) {
   const t = Math.max(at, ac.currentTime);
   const freq = 440 * Math.pow(2, (midi - 69) / 12);
-  const outNode = out(ac);
-
   const isShort = art.includes('short') || art.includes('staccato');
   const isSoft = art.includes('soft');
   const isMarcato = art.includes('marcato');
   const holdDur = isShort ? Math.min(dur, 0.2) : Math.max(0.12, dur);
   const totalDur = holdDur + (isShort ? 0.25 : 0.45);
+  const soundToken = beginAudioVoice(`lute:${midi}`, 'playerSpell', `Bard acoustic lute (${midi})`, totalDur + Math.max(0, t - ac.currentTime));
+  if (!soundToken) return null;
+  const outNode = out(ac);
 
   // 1. Master note gain envelope
   const g = ac.createGain();
@@ -173,6 +174,7 @@ function playLuteNote(ac, midi, { at = 0, dur = 0.5, vel = 0.8, art = 'normal_he
   osc1.onended = () => {
     const i = live.indexOf(v);
     if (i >= 0) live.splice(i, 1);
+    finishAudioVoice(soundToken);
     try {
       g.disconnect();
       filter.disconnect();

@@ -5,7 +5,7 @@ import { G } from '../state.js';
 import { applyDungeonAffix } from '../data/dungeonaffixes.js';
 import { camera, isoX, isoY } from '../core/view.js';
 import { rand, dist2, TAU, chance } from '../core/util.js';
-import { sfx } from '../core/audio.js';
+import { sfx, audioDiagnosticsEnabled, recordAudioDiagnosticMarker } from '../core/audio.js';
 import { spawn, updateVfx, addLight, sparkle, smoke, lights } from '../gfx/vfx.js';
 import { bodyR } from '../world/map.js';
 import { profileEnd, profileRecord, profileStart } from '../core/perfdiagnostics.js';
@@ -77,9 +77,11 @@ export class World {
     this.exitOpen = kind === 'town';
     this.kills = 0;
     this.lastPlayerTile = -1;
+    this._audioDiagnosticCombat = false;
     if (this.kind === 'dungeon') {
       this.initClutter();
     }
+    recordAudioDiagnosticMarker('area-enter', { worldId: this.id, kind: this.kind, environment: this.biome?.name || this.kind, depth: this.depth ?? null });
   }
 
   initClutter() {
@@ -393,6 +395,13 @@ export class World {
   }
 
   update(dt) {
+    if (audioDiagnosticsEnabled()) {
+      const inCombat = this.creatures.some((creature) => creature.team === 'enemy' && !creature.dead && (creature.awake || creature.state === 'act'));
+      if (this._audioDiagnosticCombat !== inCombat) {
+        recordAudioDiagnosticMarker(inCombat ? 'combat-start' : 'combat-end', { worldId: this.id, environment: this.biome?.name || this.kind, depth: this.depth ?? null });
+        this._audioDiagnosticCombat = inCombat;
+      }
+    } else this._audioDiagnosticCombat = null;
     const profiling = this._perfProfiling = G.settings?.performanceProfiler === true;
     if (profiling) { this._perfSpatialCandidates = 0; this._perfCollisionPairs = 0; this._perfPathSearches = 0; }
     const worldStart = profiling ? profileStart() : 0;

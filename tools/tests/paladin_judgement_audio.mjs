@@ -33,5 +33,5 @@ test('impact cue starts in the same update as Judgement damage and casting remai
 });
 
 test('Judgement-specific hit sound suppression does not remove ordinary combat hit sounds', () => {
-  assert.match(combat, /if \(!o\.dot && !o\.silent && !o\.noHitSound\) sfx\(crit \? 'crit' : 'hit', 0\.5\)/);
+  assert.match(combat, /if \(!o\.dot && !o\.silent && !o\.noHitSound\) combatSound\(crit \? 'crit' : 'hit', src, tgt, crit \? 'critical' : 'weaponImpact', 0\.5\)/);
 });

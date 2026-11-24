@@ -18,7 +18,7 @@
 import { G } from '../state.js';
 import { camera, isoX, isoY, HH } from '../core/view.js';
 import { clamp } from '../core/util.js';
-import { audioCtx, audioOut } from '../core/audio.js';
+import { audioCtx, audioOut, beginAudioVoice, finishAudioVoice } from '../core/audio.js';
 import { shownEquip } from '../data/items.js';
 import { heroLook, heroPortrait, characterPaperdollPortrait } from '../core/gearart.js';
 import { heldPortraitArgs } from '../gfx/heldart.js';
@@ -100,10 +100,14 @@ const ease = { lin: (k) => k, io: (k) => k * k * (3 - 2 * k), out: (k) => 1 - (1
 
 /** A short blip per syllable, pitched per speaker: the dialogue voice. */
 function voice(text, v = {}) {
-  const ac = audioCtx(), out = audioOut();
-  if (!ac || !out || ac.state !== 'running' || (G.settings && G.settings.sfx === 0)) return;
+  const ac = audioCtx(), out = audioOut('npc');
+  if (!ac || !out || ac.state !== 'running' || G.settings.audio?.muted.master || G.settings.audio?.muted.npc || G.settings.audio?.volumes?.master === 0 || G.settings.audio?.volumes?.npc === 0) return;
   const words = text.split(/\s+/).filter(Boolean).slice(0, 24);
+  if (!words.length) return;
   let t = ac.currentTime + 0.02;
+  const soundToken = beginAudioVoice('npc-dialogue', 'npc', v.name || 'NPC dialogue voice', words.length * 0.35 + 0.1);
+  if (!soundToken) return;
+  let finalOsc = null;
   const base = 180 * (v.pitch || 1);
   for (const w of words) {
     const syl = Math.max(1, Math.min(4, Math.round(w.replace(/[^a-z]/gi, '').length / 3)));
@@ -115,10 +119,12 @@ function voice(text, v = {}) {
       o.frequency.setValueAtTime(f, t); o.frequency.linearRampToValueAtTime(f * 0.9, t + 0.06);
       g.gain.setValueAtTime(0, t); g.gain.linearRampToValueAtTime(0.045 * loud, t + 0.01); g.gain.linearRampToValueAtTime(0, t + 0.07);
       o.connect(g); g.connect(out); o.start(t); o.stop(t + 0.08);
+      finalOsc = o;
       t += 0.075;
     }
     t += 0.05;
   }
+  if (finalOsc) finalOsc.onended = () => finishAudioVoice(soundToken);
 }
 
 /** The game's own zoom (settings, screen size), without touching the camera. */

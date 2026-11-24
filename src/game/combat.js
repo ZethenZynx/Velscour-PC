@@ -28,6 +28,11 @@ import { notifyBossDefeated } from './bosscompletion.js';
 
 const PLAYER_RES = { fire: 'fire', cold: 'cold', light: 'light', poison: 'poison', acid: 'poison' };
 const LEECH_K = 2; // life/mana leech: a whole monster's life taken returns LEECH_K x leech% of the hero's own
+function combatSound(name, source, target, category, volume = 1) {
+  const enemySource = source?.team === 'enemy';
+  return sfx(name, volume, 1, { category, actor: enemySource ? 'enemy' : 'player', source: source?.name || (enemySource ? 'Enemy combat' : 'Player combat'),
+    sourceActive: () => !source || source.dead !== true, x: target?.x ?? source?.x, y: target?.y ?? source?.y, worldId: G.world?.id });
+}
 /** Heal `who` for leeching `frac` of a hit of dmg on tgt: by the share of tgt's life it took, in `who`'s own life. */
 export function leechHeal(who, tgt, dmg, frac) {
   if (who && who.heal && tgt && frac > 0) who.heal(Math.min(1, dmg / Math.max(1, tgt.maxHp)) * LEECH_K * who.maxHp * frac, true);
@@ -142,7 +147,7 @@ export function hit(src, tgt, amount, el = 'phys', o = {}) {
     }
     if (!o.dot && st.block > 0 && chance(Math.min(0.6, st.block / 100))) {
       floatText(tgt.x, tgt.y, 40, 'Blocked', '#c0c8d0', 12);
-      sfx('block');
+      combatSound('block', src, tgt, 'playerDamage');
       return 0;
     }
     if (el === 'phys') {
@@ -376,7 +381,7 @@ export function hit(src, tgt, amount, el = 'phys', o = {}) {
     if (tgt.isPlayer) {
       damageText(tgt.x, tgt.y, z, dmg, o.dot ? 'dot' : 'hurt', elem(el).glow);
       if (!o.dot) {
-        sfx('hurt');
+        combatSound('hurt', src, tgt, 'playerDamage');
         const hurtMax = G.settings?.reduceFlashing ? 0.2 : 0.4;
         G.hurtFlash = Math.min(hurtMax, (G.hurtFlash || 0) + (dmg / tgt.maxHp) * (G.settings?.reduceFlashing ? 0.8 : 1.5));
         camera.shake(Math.min(G.settings?.shake ? 8 : 0, 2 + (dmg / tgt.maxHp) * 20));
@@ -390,7 +395,7 @@ export function hit(src, tgt, amount, el = 'phys', o = {}) {
     const force = clamp(dmg / tgt.maxHp, 0.05, 1);
     if (!(tgt.goreType === 'spark' || tgt.goreType === 'ecto') || chance(0.5)) bloodSpray(tgt.x, tgt.y, 28, ang, Math.round(4 + force * 18), bloodOf(tgt), 0.7 + force);
     if (!o.dot) hitSpark(tgt.x, tgt.y, 28, el);
-    if (!o.dot && !o.silent && !o.noHitSound) sfx(crit ? 'crit' : 'hit', 0.5);
+    if (!o.dot && !o.silent && !o.noHitSound) combatSound(crit ? 'crit' : 'hit', src, tgt, crit ? 'critical' : 'weaponImpact', 0.5);
     if (crit && dmg > tgt.maxHp * 0.3) G.hitStop = Math.max(G.hitStop, 0.035);
   }
 
@@ -542,7 +547,7 @@ export function kill(tgt, src, info = {}) {
         hit(source, target, cap, 'fire', { aoe: true, affixHazard: true, crit: false, noVariance: true, noArc: true });
       }
       explosionFx(x, y, radius, 'fire', 'explosion');
-      sfx('fire', 0.25);
+      combatSound('fire', source, { x, y }, 'damageOverTime', 0.25);
       return false;
     }, draw() {} });
   }
@@ -630,7 +635,7 @@ export function kill(tgt, src, info = {}) {
     }
     if (gore.blood !== '#ffcc40') addDecal(tgt.x, tgt.y, blood, (big ? 1.1 : 0.7) * rand(0.8, 1.2), 'pool', 0.92, { gore: true });
   }
-  sfx(gore.bones ? 'bones' : overkill ? 'gore' : 'squish', 0.8);
+  combatSound(gore.bones ? 'bones' : overkill ? 'gore' : 'squish', src, tgt, tgt.team === 'enemy' ? 'enemyDeath' : 'playerDamage', 0.8);
   if ((!overkill || tgt.enemyPackId) && tgt.sprite && world && world.corpses) world.corpses.push({ x: tgt.x, y: tgt.y, sprite: tgt.sprite, pal: tgt.pal, art: tgt.art, swap: tgt.swap, artH: tgt.artH, px: tgt.px, scale: tgt.scale, flip: tgt.flip, t: 0, maxHp: tgt.maxHp, arch: tgt.arch, level: tgt.level, fly: tgt.fly, enemyPackId: tgt.enemyPackId || null });
   // elite death affix
   if (tgt.affixes && tgt.affixes.includes('fiery')) {

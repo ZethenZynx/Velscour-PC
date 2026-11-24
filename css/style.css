@@ -882,6 +882,7 @@ body.touch .reliquary-panel .codex-cell { width: 34px; height: 34px; }
 .velscour-biome-select { max-width: 82vw; padding: 9px 12px; border: 2px solid var(--gold-dim); border-radius: 4px; background: #120a06; color: var(--gold-bright); font: 700 15px var(--font-head); }
 .death-title { font: 900 clamp(40px, 9vw, 96px) var(--font-head); color: #b3140c; text-shadow: 0 0 30px #f00, 0 0 4px #000; letter-spacing: 6px; animation: logo-in 2s; }
 .settings-dialog { width: min(760px, 94vw); max-width: min(760px, 94vw); }
+.settings-dialog:has(.audio-settings) { width: min(1120px, 96vw); max-width: min(1120px, 96vw); }
 .settings-tabs { display: flex; gap: 4px; border-bottom: 2px solid var(--gold-dim); margin: 0 0 14px; overflow-x: auto; -webkit-overflow-scrolling: touch; padding-bottom: 0; }
 .settings-tab-btn { flex: 1 1 auto; min-width: 0; padding: 8px 10px; text-align: center; font-family: var(--font-head); font-size: 13px; font-weight: 700; letter-spacing: 0.8px; color: #a8977c; background: #140d08; border: 1px solid #4a3018; border-bottom: 2px solid transparent; border-radius: 5px 5px 0 0; cursor: pointer; transition: background 0.1s ease, color 0.1s ease; white-space: nowrap; user-select: none; -webkit-user-select: none; }
 .settings-tab-btn:hover { color: #ffd860; background: #23160e; }
@@ -904,6 +905,34 @@ body.touch .reliquary-panel .codex-cell { width: 34px; height: 34px; }
 .performance-recommendation { grid-column: 1 / -1; margin: 0; padding: 8px 10px; border: 1px solid #a56d2a; border-radius: 4px; background: rgba(100,60,14,.2); color: #f1c879; font-size: 12px; line-height: 1.4; }
 .performance-recommendation[hidden] { display: none; }
 .settings-grid select[data-performance-preset] { width: 100%; min-width: 0; color: #e1d0ad; background: #17100c; border: 1px solid #594329; border-radius: 3px; padding: 5px 7px; }
+.audio-settings { max-height: min(72vh, 760px); overflow: auto; padding: 1px 4px 8px 1px; text-align: left; }
+.audio-preset-row { display: grid; grid-template-columns: minmax(130px, .55fr) minmax(180px, 1fr) auto; align-items: center; gap: 9px; margin-bottom: 7px; }
+.audio-preset-row select, .audio-advanced-grid select { min-width: 0; color: #e1d0ad; background: #17100c; border: 1px solid #594329; border-radius: 3px; padding: 5px 7px; }
+.audio-help { margin: 0 0 10px; font-size: 11px; }
+.audio-settings-section { margin: 7px 0; padding: 0 10px 9px; border: 1px solid rgba(141,103,48,.48); border-radius: 4px; background: rgba(0,0,0,.18); }
+.audio-settings-section > summary { padding: 9px 0 6px; color: var(--gold-bright); font: 700 13px var(--font-head); cursor: pointer; }
+.audio-volume-list { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 5px 12px; }
+.audio-volume-row { display: grid; grid-template-columns: minmax(125px, 1fr) minmax(75px, 1.1fr) 3.4em auto auto auto; align-items: center; gap: 5px; min-width: 0; padding: 5px 6px; border-radius: 3px; background: rgba(255,255,255,.025); }
+.audio-volume-row label { min-width: 0; color: #d9c8a6; font-size: 11px; line-height: 1.2; }
+.audio-volume-row input[type="range"], .audio-advanced-grid input[type="range"] { width: 100%; min-width: 50px; accent-color: #d5a74f; }
+.audio-volume-row output, .audio-advanced-grid output { color: #e8c987; font-size: 11px; font-variant-numeric: tabular-nums; text-align: right; }
+.audio-volume-row .btn { min-height: 26px; padding: 3px 6px; font-size: 10px; white-space: nowrap; }
+.audio-advanced-grid { display: grid; grid-template-columns: minmax(210px, .8fr) minmax(160px, 1fr); align-items: center; gap: 8px 14px; text-align: left; }
+.audio-advanced-grid > label { font-size: 12px; }
+.audio-advanced-grid input[type="checkbox"] { justify-self: start; }
+.audio-diagnostic-controls { display: flex; align-items: center; flex-wrap: wrap; gap: 7px; margin: 7px 0; }
+.audio-diagnostic-controls input[type="text"] { flex: 1 1 180px; min-width: 120px; }
+.audio-diagnostic-controls button:disabled { opacity: .48; cursor: not-allowed; }
+.audio-diagnostic-summary { color: var(--text-dim); font-size: 11px; line-height: 1.5; overflow-wrap: anywhere; }
+@media (max-width: 900px) { .audio-volume-list { grid-template-columns: 1fr; } }
+@media (max-width: 650px) {
+  .audio-preset-row { grid-template-columns: 1fr auto; }
+  .audio-preset-row label { grid-column: 1 / -1; }
+  .audio-volume-row { grid-template-columns: minmax(112px, 1fr) minmax(70px, 1fr) 3em auto; }
+  .audio-volume-row [data-audio-preview] { display: none; }
+  .audio-volume-row .btn { padding-inline: 5px; }
+  .audio-advanced-grid { grid-template-columns: minmax(125px, 1fr) minmax(115px, 1fr); gap: 7px; }
+}
 .map-opacity-control { display: flex; align-items: center; gap: 8px; min-width: 0; }
 .map-opacity-control input[type="range"] { flex: 1; min-width: 80px; }
 .map-opacity-control output { min-width: 3.2em; text-align: right; color: #e5c98e; font-variant-numeric: tabular-nums; }

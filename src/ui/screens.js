@@ -4,7 +4,8 @@ import { KEY_BINDING_ACTIONS, getKeyBinding, keyBindingLabel, setKeyBinding, res
 import { setMacroKey, MACRO_KEYS } from '../game/macros.js';
 import { camera } from '../core/view.js';
 import { el, escapeHtml, fmtInt } from '../core/util.js';
-import { sfx, applyVolumes, initAudio } from '../core/audio.js';
+import { sfx, applyVolumes, initAudio, audioActiveByCategory, audioDiagnosticStats, startAudioDiagnosticRecording, stopAudioDiagnosticRecording, clearAudioDiagnosticRecording, recordAudioDiagnosticMarker, exportAudioDiagnosticReport } from '../core/audio.js';
+import { DEFAULT_AUDIO_SETTINGS, AUDIO_VOLUME_GROUPS, AUDIO_SECTIONS, AUDIO_PRESETS, applyAudioPreset, normalizeAudioSettings } from '../core/audio-settings.js';
 import { CLASS_IDS, A } from '../core/assets.js';
 import { CLASSES, ATTRS } from '../data/classes.js';
 import { UI, $ } from './ui.js';
@@ -540,6 +541,51 @@ export function victoryScreen(onContinue) {
 
 let activeSettingsTab = 'general';
 
+const AUDIO_PREVIEW_SOUNDS = {
+  master: 'ui', music: 'ui', ambient: 'step_stone', interface: 'ui', playerAttack: 'swing', playerSpell: 'fire', playerMovement: 'step_stone', playerDamage: 'hurt', playerBuff: 'buff',
+  enemyAttack: 'swing', enemySpell: 'arcane', enemyMovement: 'step_stone', enemyDamage: 'hurt', enemyDeath: 'die', boss: 'boss', weaponImpact: 'hit', critical: 'crit', damageOverTime: 'poison', persistentSpell: 'consecration', explosions: 'explode', combatWarnings: 'roar',
+  environment: 'bell', npc: 'ui', portal: 'portal', shrine: 'heal', chest: 'chest', itemDrop: 'orb', itemPickup: 'pickup', currency: 'gold', rareItem: 'levelup', questAchievement: 'infernal_mark',
+};
+
+function audioSettingsMarkup(settings) {
+  const audio = normalizeAudioSettings(settings);
+  const sections = AUDIO_SECTIONS.map((section) => `<details class="audio-settings-section" data-audio-section="${section.id}" ${section.id === 'general' || section.id === 'music-ambience' ? 'open' : ''}>
+    <summary>${section.label}</summary><div class="audio-volume-list">${section.groups.map((id) => {
+      const group = AUDIO_VOLUME_GROUPS.find((entry) => entry.id === id);
+      const preview = ['music', 'ambient'].includes(id) ? '' : `<button type="button" class="btn small" data-audio-preview="${id}" title="Preview ${group.label}">Preview</button>`;
+      return `<div class="audio-volume-row" data-audio-row="${id}"><label for="audio-volume-${id}">${group.label}</label><input id="audio-volume-${id}" type="range" min="0" max="100" step="1" value="${audio.volumes[id]}" data-audio-volume="${id}"><output data-audio-output="${id}">${audio.volumes[id]}%</output><button type="button" class="btn small audio-mute" data-audio-mute="${id}" aria-pressed="${audio.muted[id]}">${audio.muted[id] ? 'Muted' : 'Mute'}</button>${preview}<button type="button" class="btn small" data-audio-reset="${id}" title="Reset ${group.label}">Reset</button></div>`;
+    }).join('')}</div></details>`).join('');
+  const options = (values, current) => values.map((value) => `<option value="${value}"${String(current) === String(value) ? ' selected' : ''}>${value}</option>`).join('');
+  return `<div class="audio-settings">
+    <div class="audio-preset-row"><label for="audio-preset">Audio preset</label><select id="audio-preset" data-audio-setting="preset">${['Default', 'Immersive', 'Balanced Combat', 'Performance', 'Quiet Combat', 'Minimal', 'Custom'].map((name) => `<option value="${name}"${audio.preset === name ? ' selected' : ''}>${name}</option>`).join('')}</select><button type="button" class="btn small" data-audio-reset-all>Reset All Audio</button></div>
+    <p class="dim audio-help">Volume changes apply immediately. Category levels combine with the existing Sound Effects, Music and Ambience master controls.</p>
+    ${sections}
+    <details class="audio-settings-section"><summary>Audio Performance</summary><div class="audio-advanced-grid">
+      <label title="Combat sounds beyond this number are discarded immediately; they are never queued">Maximum Simultaneous Combat Sounds</label><select data-audio-setting="maxCombatSounds">${options([16, 32, 48, 64, 96], audio.maxCombatSounds)}</select>
+      <label title="Limits overlapping copies of the same sound. Extra requests are discarded, not delayed">Maximum Identical Sound Instances</label><select data-audio-setting="maxIdenticalSounds">${options([1, 2, 3, 4, 5], audio.maxIdenticalSounds)}</select>
+      <label title="Suppresses very rapid repeated playback of the same sound">Repetitive Sound Suppression</label><select data-audio-setting="repetitiveSuppression">${options(['Off', 'Low', 'Medium', 'High'], audio.repetitiveSuppression)}</select>
+      <label title="Drops distant sounds that provide no essential cue">Distance-Based Audio Culling</label><input type="checkbox" data-audio-setting="distanceCulling"${audio.distanceCulling ? ' checked' : ''}>
+      <label title="Suppresses audible enemy sounds whose source is marked outside the view">Off-Screen Enemy Sounds</label><input type="checkbox" data-audio-setting="offscreenEnemySounds"${audio.offscreenEnemySounds ? ' checked' : ''}>
+      <label title="Disables looping or persistent spell audio where a source explicitly supports it">Persistent Spell Sounds</label><input type="checkbox" data-audio-setting="persistentSpellSounds"${audio.persistentSpellSounds ? ' checked' : ''}>
+      <label title="Reduces chance-based decorative ambience sounds; warnings and gameplay cues are preserved">Environmental Sound Density</label><select data-audio-setting="environmentalDensity">${options(['Full', 'Reduced', 'Minimal'], audio.environmentalDensity)}</select>
+      <label title="Adds stereo panning and distance attenuation to positional sounds">Stereo Positional Audio</label><input type="checkbox" data-audio-setting="stereoPositioning"${audio.stereoPositioning ? ' checked' : ''}>
+      <label>Background Audio When Game Is Unfocused</label><input type="checkbox" data-audio-setting="backgroundAudio"${audio.backgroundAudio ? ' checked' : ''}>
+      <label>Mute Audio When Game Is Unfocused</label><input type="checkbox" data-audio-setting="muteWhenUnfocused"${audio.muteWhenUnfocused ? ' checked' : ''}>
+    </div></details>
+    <details class="audio-settings-section"><summary>Advanced</summary><div class="audio-advanced-grid">
+      <label title="No separate exploration/combat music tracks exist in the current soundtrack">Dynamic Combat Music</label><span class="dim">Unavailable: no separate combat music assets are registered.</span>
+      <label>Music Fade Duration <output data-audio-fade-output>${audio.musicFadeSeconds.toFixed(1)} s</output></label><input type="range" min="0" max="8" step="0.5" value="${audio.musicFadeSeconds}" data-audio-setting="musicFadeSeconds">
+      <label title="Temporarily lowers music and ambience during rare item and achievement notifications">Audio Ducking for Important Notifications</label><input type="checkbox" data-audio-setting="notificationDucking"${audio.notificationDucking ? ' checked' : ''}>
+      <label>Notification Duck Amount <output data-audio-duck-output>${audio.duckAmount}%</output></label><input type="range" min="0" max="80" step="5" value="${audio.duckAmount}" data-audio-setting="duckAmount">
+    </div></details>
+    <details class="audio-settings-section" data-audio-diagnostics><summary>Audio Diagnostics</summary><p class="dim">Optional event recording can add processing overhead. Sound channel limits discard excess sounds immediately and never build a playback queue.</p>
+      <div class="audio-diagnostic-controls"><button type="button" class="btn small" data-audio-record-start>Start Recording</button><button type="button" class="btn small" data-audio-record-stop disabled>Stop</button><button type="button" class="btn small" data-audio-record-clear>Clear</button><button type="button" class="btn small" data-audio-record-export>Export Report</button></div>
+      <div class="audio-diagnostic-controls"><input type="text" maxlength="120" data-audio-marker placeholder="Add a diagnostic marker"><button type="button" class="btn small" data-audio-record-marker>Add Marker</button><span class="dim" data-audio-diagnostic-status role="status">Recording is off.</span></div>
+      <div class="audio-diagnostic-summary" data-audio-diagnostic-summary></div>
+    </details>
+  </div>`;
+}
+
 export function settingsDialog() {
   const st = G.settings;
   const html = `<div class="settings-tabs">
@@ -566,11 +612,7 @@ export function settingsDialog() {
     </div>
   </div>
   <div class="settings-tab-pane" data-pane="audio">
-    <div class="settings-grid">
-      <label>Sound effects</label><input type="range" min="0" max="1" step="0.05" value="${st.sfx}" data-k="sfx">
-      <label>Music</label><input type="range" min="0" max="1" step="0.05" value="${st.music}" data-k="music">
-      <label>Ambience</label><input type="range" min="0" max="1" step="0.05" value="${st.amb ?? 0.5}" data-k="amb">
-    </div>
+    ${audioSettingsMarkup(st.audio)}
   </div>
   <div class="settings-tab-pane" data-pane="graphics">
     <div class="settings-grid">
@@ -704,6 +746,82 @@ export function settingsDialog() {
   });
   if (!['general', 'audio', 'graphics', 'hud', 'mouseCursor', 'controls', 'developer'].includes(activeSettingsTab)) activeSettingsTab = 'general';
   setTab(activeSettingsTab);
+  const audioState = () => (st.audio = normalizeAudioSettings(st.audio));
+  const saveAudio = () => { audioState(); applyVolumes(); saveSettings(); refreshAudioDiagnostics(); };
+  const refreshAudioControls = () => {
+    const audio = audioState();
+    d.box.querySelectorAll('[data-audio-volume]').forEach((control) => {
+      const id = control.dataset.audioVolume; control.value = String(audio.volumes[id]);
+      const output = d.box.querySelector(`[data-audio-output="${id}"]`); if (output) output.textContent = `${audio.volumes[id]}%`;
+      const mute = d.box.querySelector(`[data-audio-mute="${id}"]`); if (mute) { mute.textContent = audio.muted[id] ? 'Muted' : 'Mute'; mute.setAttribute('aria-pressed', String(audio.muted[id])); }
+    });
+    d.box.querySelectorAll('[data-audio-setting]').forEach((control) => {
+      const key = control.dataset.audioSetting; if (key === 'preset') { control.value = audio.preset; return; }
+      if (control.type === 'checkbox') control.checked = !!audio[key]; else control.value = String(audio[key]);
+    });
+    const fadeOutput = d.box.querySelector('[data-audio-fade-output]'); if (fadeOutput) fadeOutput.textContent = `${audio.musicFadeSeconds.toFixed(1)} s`;
+    const duckOutput = d.box.querySelector('[data-audio-duck-output]'); if (duckOutput) duckOutput.textContent = `${audio.duckAmount}%`;
+  };
+  const refreshAudioDiagnostics = () => {
+    const stats = audioDiagnosticStats(), active = audioActiveByCategory();
+    const status = d.box.querySelector('[data-audio-diagnostic-status]');
+    if (status) status.textContent = stats.enabled ? `Recording: on · ${Object.values(active).reduce((sum, n) => sum + n, 0)} active sounds` : 'Recording is off.';
+    const summary = d.box.querySelector('[data-audio-diagnostic-summary]');
+    if (summary) summary.textContent = `Active by category: ${Object.entries(active).map(([name, count]) => `${name} ${count}`).join(' · ') || 'none'}${stats.enabled ? ` · Peak: ${Object.entries(stats.peakByCategory).map(([name, count]) => `${name} ${count}`).join(' · ') || 'none'}` : ''}`;
+    const start = d.box.querySelector('[data-audio-record-start]'), stop = d.box.querySelector('[data-audio-record-stop]');
+    if (start) start.disabled = stats.enabled; if (stop) stop.disabled = !stats.enabled;
+  };
+  refreshAudioControls(); refreshAudioDiagnostics();
+  d.box.querySelectorAll('[data-audio-volume]').forEach((control) => {
+    control.oninput = () => {
+      const audio = audioState(), id = control.dataset.audioVolume;
+      audio.volumes[id] = Number(control.value); audio.preset = 'Custom';
+      const output = d.box.querySelector(`[data-audio-output="${id}"]`); if (output) output.textContent = `${control.value}%`;
+      d.box.querySelector('[data-audio-setting="preset"]').value = 'Custom';
+      applyVolumes(); saveSettings();
+    };
+  });
+  d.box.querySelectorAll('[data-audio-mute]').forEach((button) => button.onclick = () => {
+    const audio = audioState(), id = button.dataset.audioMute; audio.muted[id] = !audio.muted[id]; audio.preset = 'Custom';
+    d.box.querySelector('[data-audio-setting="preset"]').value = 'Custom'; refreshAudioControls(); saveAudio();
+  });
+  d.box.querySelectorAll('[data-audio-reset]').forEach((button) => button.onclick = () => {
+    const audio = audioState(), id = button.dataset.audioReset; audio.volumes[id] = DEFAULT_AUDIO_SETTINGS.volumes[id]; audio.muted[id] = false; audio.preset = 'Custom';
+    refreshAudioControls(); saveAudio();
+  });
+  d.box.querySelectorAll('[data-audio-preview]').forEach((button) => button.onclick = () => {
+    const id = button.dataset.audioPreview; initAudio();
+    sfx(AUDIO_PREVIEW_SOUNDS[id] || 'ui', 0.8, 1, { category: id, source: `Settings preview: ${id}`, sourceActive: false });
+  });
+  d.box.querySelector('[data-audio-reset-all]').onclick = () => {
+    G.settings.audio = normalizeAudioSettings({ ...normalizeAudioSettings(), preset: 'Default' });
+    refreshAudioControls(); saveAudio();
+  };
+  d.box.querySelectorAll('[data-audio-setting]').forEach((control) => {
+    control.oninput = control.onchange = () => {
+      const audio = audioState(), key = control.dataset.audioSetting;
+      if (key === 'preset') {
+        G.settings.audio = applyAudioPreset(audio, control.value);
+        refreshAudioControls(); saveAudio(); return;
+      }
+      audio[key] = control.type === 'checkbox' ? control.checked : control.type === 'range' ? Number(control.value) : (['maxCombatSounds', 'maxIdenticalSounds'].includes(key) ? Number(control.value) : control.value);
+      audio.preset = 'Custom';
+      if (key === 'musicFadeSeconds') { const out = d.box.querySelector('[data-audio-fade-output]'); if (out) out.textContent = `${Number(control.value).toFixed(1)} s`; }
+      if (key === 'duckAmount') { const out = d.box.querySelector('[data-audio-duck-output]'); if (out) out.textContent = `${control.value}%`; }
+      d.box.querySelector('[data-audio-setting="preset"]').value = 'Custom'; saveAudio();
+    };
+  });
+  d.box.querySelector('[data-audio-record-start]').onclick = () => UI.confirm('Start Audio Diagnostics?', 'Audio diagnostics record sound playback events and timing details. Recording can add processing overhead. Continue only while investigating an audio issue.', () => {
+    startAudioDiagnosticRecording(); refreshAudioDiagnostics();
+  }, 'Start Recording');
+  d.box.querySelector('[data-audio-record-stop]').onclick = () => { stopAudioDiagnosticRecording(); refreshAudioDiagnostics(); };
+  d.box.querySelector('[data-audio-record-clear]').onclick = () => { clearAudioDiagnosticRecording(); refreshAudioDiagnostics(); };
+  d.box.querySelector('[data-audio-record-export]').onclick = () => exportAudioDiagnosticReport();
+  d.box.querySelector('[data-audio-record-marker]').onclick = () => {
+    const input = d.box.querySelector('[data-audio-marker]'), marker = input.value.trim();
+    if (marker) { recordAudioDiagnosticMarker('user-marker', { marker }); input.value = ''; }
+  };
+  const audioStatsTimer = setInterval(() => { if (!d.box.isConnected) { clearInterval(audioStatsTimer); return; } refreshAudioDiagnostics(); }, 1000);
   const performancePreset = d.box.querySelector('[data-performance-preset]');
   const adaptivePerformance = d.box.querySelector('[data-adaptive-performance]');
   performancePreset.value = st.graphicsPreset === 'extreme' ? 'extreme' : 'standard';

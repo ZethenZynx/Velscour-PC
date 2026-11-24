@@ -440,7 +440,7 @@ export class Player extends Creature {
     const { x, y } = this;
     G.hitStop = Math.max(G.hitStop, 0.08);
     camera.shake(7);
-    sfx('thunder', 1, 1, { source: 'Player.levelUpFx', sourceActive: false });
+    sfx('thunder', 1, 1, { category: 'questAchievement', source: 'Player.levelUpFx', sourceActive: false });
     const sig = addEffect(new Sigil(x, y, 2.6, 3.4, '#8a0a06', '#3a0000'), 'ground');
     addEffect(new SigilFlames(sig), 'ground');
     addEffect(new Column(x, y, '#7a0804', 1.6, 60, 520));
@@ -554,7 +554,7 @@ export class Player extends Creature {
     c.potions[kind]--;
     keepPotion();
     this.potionCd = 0.9;
-    sfx('potion');
+    sfx('potion', 1, 1, { category: 'playerBuff', source: 'Player potion use', sourceActive: false });
     switch (kind) {
       case 'hp': { const t = 2 * (1 + (this.st.markPotionDuration || 0) / 100); this.potionRegen.push({ id: ++this.potionRegenSequence, kind: 'hp', hp: this.maxHp * 0.45 / t, mp: 0, t, max: t }); break; }
       case 'mp': { const t = 2 * (1 + (this.st.markPotionDuration || 0) / 100); this.potionRegen.push({ id: ++this.potionRegenSequence, kind: 'mp', hp: 0, mp: this.maxMana * 0.5 / t, t, max: t }); break; }
@@ -748,7 +748,7 @@ export class Player extends Creature {
       addEffect(new Column(this.x, this.y, '#ff8020', 1, 50, 300));
       burst(this.x, this.y, 20, 'fire', 40, 5);
       floatText(this.x, this.y, 70, 'PHOENIX!', '#ffa020', 20, { life: 1.5 });
-      sfx('roar');
+      sfx('roar', 1, 1, { category: 'playerBuff', source: 'Phoenix passive', sourceActive: false });
       return;
     }
     const shrinePhoenix = this.buffs.find((b) => b.worldObject && b.phoenixCharges > 0);
@@ -761,7 +761,7 @@ export class Player extends Creature {
       addEffect(new Column(this.x, this.y, '#ff8b42', 1, 48, 300));
       burst(this.x, this.y, 24, 'fire', 40, 5);
       floatText(this.x, this.y, 70, 'PHOENIX!', '#ffb35f', 20, { life: 1.5 });
-      sfx('roar');
+      sfx('roar', 1, 1, { category: 'playerBuff', source: 'Phoenix shrine buff', sourceActive: false });
       return;
     }
     const cdCheat = this.st && this.st.cheatDeath;
@@ -773,7 +773,7 @@ export class Player extends Creature {
       addEffect(new Column(this.x, this.y, E.glow, 0.9, 46, 280));
       burst(this.x, this.y, 20, cEl, 36, 4.5);
       floatText(this.x, this.y, 70, cdCheat.name || 'SECOND CHANCE!', E.glow, 18, { life: 1.5 });
-      sfx('roar');
+      sfx('roar', 1, 1, { category: 'playerBuff', source: 'Cheat death passive', sourceActive: false });
       return;
     }
     if (this.dead) return;
@@ -781,7 +781,7 @@ export class Player extends Creature {
     this.hp = 0;
     this.channel = null;
     G.ui?.event?.({ category: 'combat.playerDeath', text: 'You have fallen.', color: '#ff5a5a', meta: { important: true } });
-    sfx('die');
+    sfx('die', 1, 1, { category: 'playerDamage', source: 'Player death', sourceActive: false });
     if (G.game) G.game.onPlayerDeath(src);
   }
 

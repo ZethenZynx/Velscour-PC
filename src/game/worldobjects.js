@@ -126,7 +126,7 @@ function vfx(world,o,good=true) {
   addEffect(new Ring(o.x,o.y,.2,3.2,.65,col,5));
   burst(o.x,o.y,22,good?'arcane':'blood',22,3.5,{up:1.4});
   sparkle(o.x,o.y,24,col,12,.55);
-  sfx(good?'levelup':'roar',.45);
+  sfx(good?'levelup':'roar',.45,1,{category:'shrine',source:o.name||'Shrine interaction',sourceActive:false,x:o.x,y:o.y,worldId:world?.id});
 }
 function used(world,o) {
   o.opened=true; o.used=true; o.dot='#68606a';
