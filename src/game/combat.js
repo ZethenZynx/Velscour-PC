@@ -24,6 +24,7 @@ import { keepKill } from './keep.js';
 import { SKILLS } from '../data/skills.js';
 import { skillMorphFor } from '../data/talents.js';
 import { EXTRA_AFFIX_DEATHS } from './affixcatalogruntime.js';
+import { notifyBossDefeated } from './bosscompletion.js';
 
 const PLAYER_RES = { fire: 'fire', cold: 'cold', light: 'light', poison: 'poison', acid: 'poison' };
 const LEECH_K = 2; // life/mana leech: a whole monster's life taken returns LEECH_K x leech% of the hero's own
@@ -679,7 +680,7 @@ export function kill(tgt, src, info = {}) {
   }
   if ((tgt.rank === 'boss' || tgt.rank === 'raid' || tgt === world?.boss) && world) {
     for (const c of world.creatures) if (c.summon && !c.dead) c.cheerT = 2.5;
-    if (world.onBossKilled) world.onBossKilled(tgt);
+    notifyBossDefeated(world, tgt);
   }
 }
 

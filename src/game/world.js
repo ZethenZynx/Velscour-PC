@@ -10,6 +10,7 @@ import { spawn, updateVfx, addLight, sparkle, smoke, lights } from '../gfx/vfx.j
 import { bodyR } from '../world/map.js';
 import { profileEnd, profileRecord, profileStart } from '../core/perfdiagnostics.js';
 import { groundLootLifetime, OBJECT_LIFETIMES } from '../core/objectlifetimes.mjs';
+import { reconcileBossDefeats } from './bosscompletion.js';
 
 const CELL = 2;
 const LOOT_CELL = 8;
@@ -442,6 +443,10 @@ export class World {
     collisionStart = profiling ? profileStart() : 0;
     this.separate();
     if (profiling) profileRecord('collision', profileEnd(collisionStart));
+    // Completion must observe a defeated guardian before cleanup detaches dead
+    // entities. This also catches scripted deaths that set `dead` directly
+    // instead of flowing through combat.kill().
+    reconcileBossDefeats(this);
     for (let i = this.creatures.length - 1; i >= 0; i--) {
       const c = this.creatures[i];
       if (c.dead && c !== p && (c.removeT = (c.removeT || 0) + dt) > 0.05) {
