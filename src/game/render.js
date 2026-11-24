@@ -1357,10 +1357,14 @@ export function renderWorld(ctx, world) {
     for (let ty = ty0; ty <= ty1; ty++) for (let tx = tx0; tx <= tx1; tx++) if (map.block[ty * map.w + tx]) tile(tx, ty, 'rgba(255,0,0,0.22)');
     for (const [tx, ty] of G.debugMarks || []) tile(tx, ty, 'rgba(0,255,255,0.55)');
   }
+  if (profiling) markRenderPhase('ambientTopDraw');
   if (world.sky) skyFx(ctx, world); // furnaces, braziers, chains, cannon shot, lightning
   if (world.wyrm) drawWyrm(ctx, world.wyrm, 'top'); // the Breach's wyrm flying over everything
-  drawParticles(ctx, vr);
+  if (profiling) markRenderPhase('particleDraw');
+  const visibleParticles = drawParticles(ctx, vr, profiling);
+  if (profiling) { world._perfVisibleParticles = visibleParticles; markRenderPhase('topHazardDraw'); }
   for (const h of top) h.draw(ctx);
+  if (profiling) markRenderPhase('topEffectDraw');
   ctx.globalCompositeOperation = 'lighter';
   drawEffects(ctx, 'top');
   ctx.globalCompositeOperation = 'source-over';
@@ -1371,7 +1375,9 @@ export function renderWorld(ctx, world) {
   drawLighting(ctx, world);
   if (profiling) markRenderPhase('lighting');
   if (world.sky) skyFront(ctx, W, H, world, Math.min(0.05, G.dt || 0.016)); // rain, snow, ash, wind, fog, lightning
+  if (profiling) markRenderPhase('skyFront');
   drawSeeThrough(ctx, world, camT, hq, tx0, ty0, tx1, ty1);
+  if (profiling) markRenderPhase('seeThrough');
   if (G.hurtFlash > 0) {
     const maxHurt = G.settings?.reduceFlashing ? 0.2 : 0.4;
     ctx.fillStyle = `rgba(160,0,0,${Math.min(maxHurt, G.hurtFlash)})`;
@@ -1385,12 +1391,16 @@ export function renderWorld(ctx, world) {
     ctx.fillStyle = `rgba(120,0,0,${0.15 + Math.sin(G.time * 6) * 0.08})`;
     ctx.fillRect(0, 0, W, H);
   }
+  if (profiling) markRenderPhase('screenFeedback');
   if (!G.cine) {   // a cut scene's frame shows the actors, not the loot's names (game/cinema.js)
     drawOverheadNames(ctx, world);
     G.lootBoxes = drawLootLabels(ctx, world, G.input && G.input.lastPointerType === 'mouse' ? G.input.mouse : null);
   } else G.lootBoxes = [];
+  if (profiling) markRenderPhase('hudLabels');
   drawTexts(ctx);
+  if (profiling) markRenderPhase('combatText');
   drawCine(ctx, W, H);
+  if (profiling) markRenderPhase('cinematicOverlay');
   if (profiling) markRenderPhase('screenOverlay');
   // Keep capacity without retaining creatures/loot that have left the world.
   for (const item of pool) item.o = null;

@@ -20,6 +20,9 @@ assert.match(profiler, /spatialCandidates.*collisionPairs.*pathSearches/s, 'the 
 assert.match(profiler, /peakSampledHeapBytes/, 'the export reports supported heap measurements');
 assert.match(profiler, /renderSetupMs.*floorDrawMs.*groundDrawMs.*renderSortMs.*depthDrawMs.*effectDrawMs.*lightingMs.*screenOverlayMs/s, 'the export separates major rendering stages');
 assert.match(profiler, /history\.renderSetupMs\[at\]\s*=\s*phases\.renderSetupMs[\s\S]*history\.automapMs\[at\]\s*=\s*phases\.automapMs/, 'each render-stage timing is copied into the exported rolling history');
+assert.match(profiler, /particleDrawMs.*topHazardDrawMs.*topEffectDrawMs/s, 'the top effects stage is split into ambient, particle, hazard, and effect timings');
+assert.match(profiler, /skyFrontMs.*seeThroughMs.*screenFeedbackMs.*hudLabelsMs.*combatTextMs.*cinematicOverlayMs/s, 'large screen-space rendering stages are separated for spike diagnosis');
+assert.match(profiler, /visibleParticles:\s*world\?\._perfVisibleParticles/, 'visible particle workload is counted separately from retained particles');
 assert.match(profiler, /resolutionScale.*devicePixelRatio.*canvasWidth.*canvasHeight/s, 'per-frame reports capture adaptive backing-store resolution');
 assert.match(profiler, /renderQueue.*renderViews.*renderCreatures.*renderWalls.*renderProps.*renderLoot/s, 'per-frame counts include visible rendering work');
 assert.match(main, /profileBeginFrame\(now\)/, 'frame sampling is connected to the main loop');
@@ -29,6 +32,7 @@ assert.match(world, /profileRecord\('collision'/, 'world profiling separates col
 assert.match(game, /profileRecord\('events'/, 'world event scripts are measured');
 assert.match(render, /markRenderPhase\('renderSort'\)/, 'the renderer reports draw-list construction and sorting time');
 assert.match(render, /markRenderPhase\('depthDraw'\)/, 'the renderer reports depth-sorted drawing separately');
+assert.match(render, /drawParticles\(ctx, vr, profiling\)/, 'visible particle counting only runs during profiling');
 assert.match(screens, /data-export-performance/, 'the settings screen exposes report export');
 assert.match(screens, /rolling 60-second performance history/i, 'the setting describes the actual history duration');
 

@@ -983,13 +983,15 @@ export function drawEffects(ctx, layer) {
 }
 
 const FIRE = ['#fff4c0', '#ffd860', '#ff9a28', '#ff5a10', '#d02008', '#7a0a04']; // a 'flame' particle's colour over its life
-export function drawParticles(ctx, vr) {
+export function drawParticles(ctx, vr, countVisible = false) {
   let mode = 'source-over';
+  let visibleCount = 0;
   const B = ctx.getTransform(), ba = B.a, bb = B.b, bc = B.c, bd = B.d, be = B.e, bf = B.f; // rotated particles reset to it (cheaper than a full save/restore each)
   for (const p of particles) {
     if (p.life <= 0) continue;
     const px = isoX(p.x, p.y), py = isoY(p.x, p.y) - p.z;
     if (px < vr.x0 - 20 || px > vr.x1 + 20 || py < vr.y0 - 40 || py > vr.y1 + 20) continue;
+    if (countVisible) visibleCount++;
     const k = 1 - p.life / p.max;
     const size = p.size + (p.size1 - p.size) * k;
     const want = p.add ? 'lighter' : 'source-over';
@@ -1061,6 +1063,7 @@ export function drawParticles(ctx, vr) {
   }
   ctx.globalAlpha = 1;
   ctx.globalCompositeOperation = 'source-over';
+  return countVisible ? visibleCount : 0;
 }
 
 /** Floating combat text in screen space (call with identity transform). */
