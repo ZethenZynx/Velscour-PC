@@ -3221,6 +3221,7 @@ export const game = {
     if (!w) return;
     renderWorld(G.ctx, w);
     if (G.showAutomap) {
+      const automapStart = G.settings?.performanceProfiler ? profileStart() : 0;
       const W = G.W * G.dpr, H = G.H * G.dpr;
       if (!automapCanvas || automapCanvas.width !== W || automapCanvas.height !== H) automapCanvas = makeCanvas(W, H);
       drawMinimap(w, 0, automapCanvas, true);
@@ -3229,6 +3230,7 @@ export const game = {
       ctx.fillStyle = 'rgba(0,0,0,0.45)'; ctx.fillRect(0, 0, W, H);
       // The terrain layer carries the user's transparency; draw markers at full strength above the dimmed world.
       ctx.drawImage(automapCanvas, 0, 0);
+      if (automapStart) profileRecord('automap', profileEnd(automapStart));
     }
   },
 };

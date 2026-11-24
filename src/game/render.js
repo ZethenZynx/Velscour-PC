@@ -33,6 +33,7 @@ import { hopArc } from './alpine.js';
 import { townStorageChestArtFor } from '../data/town-storage-chests.js';
 import { CURSED_CHEST_VARIANT, selectDungeonChestVariant } from '../data/chestappearances.js';
 import { MAP_TERRAIN_COLORS, eternalBreachMapColor, terrainColor, terrainKindFromName } from '../gfx/mapcolors.js';
+import { profileRecord } from '../core/perfdiagnostics.js';
 
 let lightCanvas = null, glowCanvas = null, vignette = null, vigKey = '';
 const transitionSprites = new Map();
@@ -1005,6 +1006,9 @@ export function propReach(world) {
 }
 
 export function renderWorld(ctx, world) {
+  const profiling = G.settings?.performanceProfiler === true;
+  let profileMark = profiling ? performance.now() : 0;
+  const markRenderPhase = profiling ? (key) => { const now = performance.now(); profileRecord(key, now - profileMark); profileMark = now; } : null;
   const W = G.W * G.dpr, H = G.H * G.dpr;
   ctx.setTransform(1, 0, 0, 1, 0, 0);
   ctx.globalAlpha = 1; ctx.globalCompositeOperation = 'source-over';
@@ -1033,8 +1037,10 @@ export function renderWorld(ctx, world) {
 
   if (world.sky) skyWorld(ctx, world); // the pirates' galleon and boats, behind the ship
   if (world.wyrm) drawWyrm(ctx, world.wyrm, 'void'); // the Breach's wyrm deep under the islands (gfx/breachdragon.js)
+  if (profiling) markRenderPhase('renderSetup');
   if (!world.tower && !world.cave) drawFloors(ctx, world, vr, hq);
   if (map.castleMat) drawCastleWater(ctx, world, vr, G.time, G.touch);
+  if (profiling) markRenderPhase('floorDraw');
   ctx.imageSmoothingQuality = hq;
   const fc = world.floorNow;
   drawDecals(ctx, vr, world.tower || world.cave ? () => false : (d, px, py) => decalStamped(fc, d, px, py), camera.viewRect(0)); // cull gore at the actual viewport edge; the tower turns: its blood can't bake
@@ -1085,6 +1091,7 @@ export function renderWorld(ctx, world) {
   // Warning geometry remains readable above ground spell decals while still
   // sitting under creatures and the player in the normal depth pass.
   for (const h of world.hazards) if (h.drawAfterEffects) h.drawAfterEffects(ctx);
+  if (profiling) markRenderPhase('groundDraw');
 
   // depth sorted pass
   const p = world.player;
@@ -1234,6 +1241,17 @@ export function renderWorld(ctx, world) {
     for (let i = 0; i < occ.length; i += 2) enqueue(occ[i], 14, occ[i + 1]);
   }
   sorted.sort((a, b) => a.d - b.d);
+  if (profiling) {
+    const counts = { queue: sorted.length, views: views.length, creatures: 0, walls: 0, props: 0, loot: 0 };
+    for (const item of sorted) {
+      if (item.f === 2) counts.walls++;
+      else if (item.f === 4) counts.props++;
+      else if (item.f === 6) counts.creatures++;
+      else if (item.f === 8) counts.loot++;
+    }
+    world._perfRenderCounts = counts;
+  }
+  if (profiling) markRenderPhase('renderSort');
   let q = hq;
   xray.n = 0; xray.on = true; // creatures note their rims and bars for the see-through layer (drawSeeThrough)
   for (const it of sorted) {
@@ -1329,6 +1347,7 @@ export function renderWorld(ctx, world) {
     ctx.globalAlpha = 1;
   }
   if (world.tower) world.tower.front(ctx); // the tower's railings and chandeliers over whoever stands behind them
+  if (profiling) markRenderPhase('depthDraw');
   if (G.debugWalk) {
     // test shots only: blocked tiles red and the tiles a test points at (G.debugMarks) cyan, to check art against collision
     const tile = (tx, ty, c) => {
@@ -1345,10 +1364,12 @@ export function renderWorld(ctx, world) {
   ctx.globalCompositeOperation = 'lighter';
   drawEffects(ctx, 'top');
   ctx.globalCompositeOperation = 'source-over';
+  if (profiling) markRenderPhase('effectDraw');
 
   // ---------------------------------------------------------- screen space
   ctx.setTransform(1, 0, 0, 1, 0, 0);
   drawLighting(ctx, world);
+  if (profiling) markRenderPhase('lighting');
   if (world.sky) skyFront(ctx, W, H, world, Math.min(0.05, G.dt || 0.016)); // rain, snow, ash, wind, fog, lightning
   drawSeeThrough(ctx, world, camT, hq, tx0, ty0, tx1, ty1);
   if (G.hurtFlash > 0) {
@@ -1370,6 +1391,7 @@ export function renderWorld(ctx, world) {
   } else G.lootBoxes = [];
   drawTexts(ctx);
   drawCine(ctx, W, H);
+  if (profiling) markRenderPhase('screenOverlay');
   // Keep capacity without retaining creatures/loot that have left the world.
   for (const item of pool) item.o = null;
   top.length = 0;

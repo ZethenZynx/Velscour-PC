@@ -5,6 +5,7 @@ const profiler = await readFile(new URL('../../src/core/perfdiagnostics.js', imp
 const main = await readFile(new URL('../../src/main.js', import.meta.url), 'utf8');
 const world = await readFile(new URL('../../src/game/world.js', import.meta.url), 'utf8');
 const game = await readFile(new URL('../../src/game/game.js', import.meta.url), 'utf8');
+const render = await readFile(new URL('../../src/game/render.js', import.meta.url), 'utf8');
 const screens = await readFile(new URL('../../src/ui/screens.js', import.meta.url), 'utf8');
 const state = await readFile(new URL('../../src/state.js', import.meta.url), 'utf8');
 
@@ -17,11 +18,16 @@ assert.match(profiler, /'frameMs', 'gapMs', 'updateMs', 'renderMs'/, 'the report
 assert.match(profiler, /p50: q\(0\.5\), p95: q\(0\.95\), p99: q\(0\.99\), worst/, 'reports summarize median, tail and worst timings');
 assert.match(profiler, /spatialCandidates.*collisionPairs.*pathSearches/s, 'the workload report includes search and collision counters');
 assert.match(profiler, /peakSampledHeapBytes/, 'the export reports supported heap measurements');
+assert.match(profiler, /renderSetupMs.*floorDrawMs.*groundDrawMs.*renderSortMs.*depthDrawMs.*effectDrawMs.*lightingMs.*screenOverlayMs/s, 'the export separates major rendering stages');
+assert.match(profiler, /resolutionScale.*devicePixelRatio.*canvasWidth.*canvasHeight/s, 'per-frame reports capture adaptive backing-store resolution');
+assert.match(profiler, /renderQueue.*renderViews.*renderCreatures.*renderWalls.*renderProps.*renderLoot/s, 'per-frame counts include visible rendering work');
 assert.match(main, /profileBeginFrame\(now\)/, 'frame sampling is connected to the main loop');
 assert.match(main, /profileFinishFrame\(G\.world\)/, 'frame records close after update and rendering');
 assert.match(world, /profileRecord\('ai'/, 'world profiling separates AI work');
 assert.match(world, /profileRecord\('collision'/, 'world profiling separates collision work');
 assert.match(game, /profileRecord\('events'/, 'world event scripts are measured');
+assert.match(render, /markRenderPhase\('renderSort'\)/, 'the renderer reports draw-list construction and sorting time');
+assert.match(render, /markRenderPhase\('depthDraw'\)/, 'the renderer reports depth-sorted drawing separately');
 assert.match(screens, /data-export-performance/, 'the settings screen exposes report export');
 assert.match(screens, /rolling 60-second performance history/i, 'the setting describes the actual history duration');
 

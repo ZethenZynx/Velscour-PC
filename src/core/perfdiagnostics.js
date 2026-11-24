@@ -4,8 +4,8 @@ import { vfxStats } from '../gfx/vfx.js';
 import { audioActiveCount } from './audio.js';
 
 const CAP = 9000; // 60 seconds at up to 150 Hz
-const KEYS = ['frameMs', 'gapMs', 'updateMs', 'renderMs', 'worldMs', 'aiMs', 'pathMs', 'collisionMs', 'hazardMs', 'lootMs', 'vfxMs', 'uiMs', 'enemyHistoryMs', 'minimapMs', 'eventsMs', 'environmentMs'];
-const COUNT_KEYS = ['enemies', 'inactiveEnemies', 'deadCreatures', 'corpses', 'projectiles', 'hazards', 'traps', 'groundItems', 'lootLabels', 'particles', 'decals', 'gore', 'damageText', 'audio', 'spatialCandidates', 'collisionPairs', 'pathSearches'];
+const KEYS = ['frameMs', 'gapMs', 'updateMs', 'renderMs', 'renderSetupMs', 'floorDrawMs', 'groundDrawMs', 'renderSortMs', 'depthDrawMs', 'effectDrawMs', 'lightingMs', 'screenOverlayMs', 'automapMs', 'worldMs', 'aiMs', 'pathMs', 'collisionMs', 'hazardMs', 'lootMs', 'vfxMs', 'uiMs', 'enemyHistoryMs', 'minimapMs', 'eventsMs', 'environmentMs'];
+const COUNT_KEYS = ['enemies', 'inactiveEnemies', 'deadCreatures', 'corpses', 'projectiles', 'hazards', 'traps', 'groundItems', 'lootLabels', 'particles', 'decals', 'gore', 'damageText', 'audio', 'spatialCandidates', 'collisionPairs', 'pathSearches', 'renderQueue', 'renderViews', 'renderCreatures', 'renderWalls', 'renderProps', 'renderLoot'];
 let history = null, cursor = 0, count = 0, frameSerial = 0, prevRaf = 0, nextPaint = 0, latestCounts = null;
 let frameStarted = 0, rafGap = 16.667, updateMs = 0, renderMs = 0, phases = null;
 let panel = null, graph = null;
@@ -20,6 +20,10 @@ function allocateHistory() {
   history.depths = new Float64Array(CAP);
   history.environments = new Array(CAP);
   history.worldKinds = new Array(CAP);
+  history.resolutionScale = new Float32Array(CAP);
+  history.devicePixelRatio = new Float32Array(CAP);
+  history.canvasWidth = new Uint32Array(CAP);
+  history.canvasHeight = new Uint32Array(CAP);
   history.heapBytes = new Float64Array(CAP);
   history.counts = Object.fromEntries(COUNT_KEYS.map((key) => [key, new Uint32Array(CAP)]));
   cursor = count = frameSerial = 0;
@@ -88,7 +92,7 @@ export function profileBeginFrame(rafNow) {
   prevRaf = now;
   frameStarted = performance.now();
   updateMs = renderMs = 0;
-  phases = { worldMs: 0, aiMs: 0, pathMs: 0, collisionMs: 0, hazardMs: 0, lootMs: 0, vfxMs: 0, uiMs: 0, enemyHistoryMs: 0, minimapMs: 0, eventsMs: 0, environmentMs: 0 };
+  phases = { worldMs: 0, aiMs: 0, pathMs: 0, collisionMs: 0, hazardMs: 0, lootMs: 0, vfxMs: 0, uiMs: 0, enemyHistoryMs: 0, minimapMs: 0, eventsMs: 0, environmentMs: 0, renderSetupMs: 0, floorDrawMs: 0, groundDrawMs: 0, renderSortMs: 0, depthDrawMs: 0, effectDrawMs: 0, lightingMs: 0, screenOverlayMs: 0, automapMs: 0 };
   return true;
 }
 
@@ -116,6 +120,12 @@ function readCounts(world) {
     spatialCandidates: world?._perfSpatialCandidates || 0,
     collisionPairs: world?._perfCollisionPairs || 0,
     pathSearches: world?._perfPathSearches || 0,
+    renderQueue: world?._perfRenderCounts?.queue || 0,
+    renderViews: world?._perfRenderCounts?.views || 0,
+    renderCreatures: world?._perfRenderCounts?.creatures || 0,
+    renderWalls: world?._perfRenderCounts?.walls || 0,
+    renderProps: world?._perfRenderCounts?.props || 0,
+    renderLoot: world?._perfRenderCounts?.loot || 0,
   };
 }
 
@@ -128,6 +138,10 @@ export function profileFinishFrame(world) {
   history.depths[at] = Number.isFinite(Number(world?.depth)) ? Number(world.depth) : 0;
   history.environments[at] = world?.biome?.name || world?.biome?.id || world?.kind || '';
   history.worldKinds[at] = world?.kind || '';
+  history.resolutionScale[at] = Number(G.resScale) || 1;
+  history.devicePixelRatio[at] = Number(G.dpr) || 1;
+  history.canvasWidth[at] = G.canvas?.width || 0;
+  history.canvasHeight[at] = G.canvas?.height || 0;
   history.frameMs[at] = frameMs;
   history.gapMs[at] = rafGap;
   history.updateMs[at] = updateMs;
@@ -181,6 +195,10 @@ function paintPanel(lastFrameMs) {
     ['Hazards', phases?.hazardMs], ['Loot', phases?.lootMs], ['VFX', phases?.vfxMs], ['HUD', phases?.uiMs],
     ['Enemy history (HUD subphase)', phases?.enemyHistoryMs], ['Minimap (HUD subphase)', phases?.minimapMs],
     ['Events / world scripts', phases?.eventsMs], ['Environment', phases?.environmentMs],
+    ['Render setup / floor tiles', phases?.renderSetupMs], ['Floor chunk draw', phases?.floorDrawMs],
+    ['Ground decals / effects', phases?.groundDrawMs], ['Render queue + sorting', phases?.renderSortMs],
+    ['Depth-sorted actors / terrain', phases?.depthDrawMs], ['Particles / effects', phases?.effectDrawMs],
+    ['Lighting', phases?.lightingMs], ['Screen overlays / labels', phases?.screenOverlayMs], ['TAB map', phases?.automapMs],
   ];
   const frameStats = stat(times);
   const statsEl = panel.querySelector('[data-pd-stats]');
@@ -216,6 +234,10 @@ export function performanceReport() {
     row.depth = history.depths[at] || 0;
     row.environment = history.environments[at] || '';
     row.worldKind = history.worldKinds[at] || '';
+    row.resolutionScale = history.resolutionScale[at] || 1;
+    row.devicePixelRatio = history.devicePixelRatio[at] || 1;
+    row.canvasWidth = history.canvasWidth[at];
+    row.canvasHeight = history.canvasHeight[at];
     row.elapsedSeconds = Number(((history.timestamps[at] - history.timestamps[first]) / 1000).toFixed(3));
     row.heapBytes = history.heapBytes[at]; peakHeapBytes = Math.max(peakHeapBytes, row.heapBytes);
     if (history.samples[at]) for (const key of COUNT_KEYS) row[key] = history.counts[key][at];
@@ -225,10 +247,11 @@ export function performanceReport() {
   return {
     title: 'Velscour Performance Diagnostics', generatedAt: new Date().toISOString(), durationSeconds: count > 1 ? Number(((history.timestamps[cursor - 1 < 0 ? CAP - 1 : cursor - 1] - history.timestamps[first]) / 1000).toFixed(3)) : 0,
     character: G.char?.name || null, depth: G.world?.depth ?? null, environment: G.world?.biome?.name || G.world?.kind || null,
+    renderResolution: { scale: G.resScale || 1, devicePixelRatio: G.dpr || 1, canvasWidth: G.canvas?.width || 0, canvasHeight: G.canvas?.height || 0 },
     summaryMs: summaries,
     memory: { supported: !!performance.memory, latestHeapBytes: performance.memory?.usedJSHeapSize || 0, peakSampledHeapBytes: peakHeapBytes },
     frames,
-    note: 'Each frame includes its own depth, environment, and world kind so transitions are visible. Browser/GPU frame presentation and hardware-level memory are not available to this JavaScript report. Heap is shown only when performance.memory is supported.',
+    note: 'Each frame includes its own depth, environment, world kind, and backing-store resolution so transitions and adaptive-resolution changes are visible. Browser/GPU frame presentation and hardware-level memory are not available to this JavaScript report. Heap is shown only when performance.memory is supported.',
   };
 }
 

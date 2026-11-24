@@ -1,11 +1,13 @@
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 
-const [screens, state, chat, profiler, css] = await Promise.all([
+const [screens, state, chat, profiler, render, game, css] = await Promise.all([
   readFile(new URL('../../src/ui/screens.js', import.meta.url), 'utf8'),
   readFile(new URL('../../src/state.js', import.meta.url), 'utf8'),
   readFile(new URL('../../src/ui/chat.js', import.meta.url), 'utf8'),
   readFile(new URL('../../src/core/perfdiagnostics.js', import.meta.url), 'utf8'),
+  readFile(new URL('../../src/game/render.js', import.meta.url), 'utf8'),
+  readFile(new URL('../../src/game/game.js', import.meta.url), 'utf8'),
   readFile(new URL('../../css/style.css', import.meta.url), 'utf8'),
 ]);
 
@@ -29,6 +31,15 @@ assert.doesNotMatch(chat, /Enable Debug tab|data-debug/, 'journal no longer expo
 assert.match(profiler, /if \(!performanceProfilerEnabled\(\)\) return false;/, 'performance history reset does no work while profiling is disabled');
 assert.match(profiler, /row\.environment = history\.environments\[at\]/, 'reports include environment context for each frame');
 assert.match(profiler, /row\.depth = history\.depths\[at\]/, 'reports include depth context for each frame');
+assert.match(profiler, /row\.resolutionScale = history\.resolutionScale\[at\]/, 'reports include per-frame adaptive resolution');
+assert.match(profiler, /renderResolution:/, 'reports include canvas backing-store size');
 assert.doesNotMatch(profiler, /data-pd-export/, 'report export is only available from Developer settings');
+assert.match(render, /markRenderPhase\('floorDraw'\)/, 'profiler separates floor drawing from other render stages');
+assert.match(render, /markRenderPhase\('renderSort'\)/, 'profiler separates visible-entity collection and sorting');
+assert.match(render, /markRenderPhase\('depthDraw'\)/, 'profiler separates depth-sorted scene rendering');
+assert.match(render, /markRenderPhase\('lighting'\)/, 'profiler isolates lighting work');
+assert.match(render, /world\._perfRenderCounts = counts/, 'profiler records visible render queue counts');
+assert.match(profiler, /'renderQueue',[\s\S]*'renderViews'/, 'profiler includes visible draw queue and occlusion-view counts');
+assert.match(game, /profileRecord\('automap'/, 'profiler separately times the expanded TAB map');
 assert.match(css, /\.developer-warning[^\{]*\{[^}]*#e2a33a/s, 'developer warning has amber styling');
 console.log('Developer settings placement, warnings, persistence, opt-in diagnostics, and reset checks passed.');
