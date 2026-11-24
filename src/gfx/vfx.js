@@ -9,6 +9,8 @@ import { bonesReady, boneDeck, boneLook, drawBoneGib } from './bonegibs.js';
 import { damageNumberAboveBarZ } from '../game/damage-number-layout.mjs';
 import { addGoreDecal, goreDecalAge, goreDecalAlphaForAge, goreDecalGrowForAge, goreDecalOutsideView, GORE_DECAL_LIFETIME, goreLimit, goreMultiplier, trimGoreDecals } from './goresettings.mjs';
 import { writeBoltGeometry, appendBoltGeometry } from './lightninggeometry.mjs';
+import { effectOutsideView } from './effectvisibility.mjs';
+import { insertCappedParticle } from './particlecap.mjs';
 
 export const ELEM = {
   phys: { name: 'Physical', core: '#ffffff', glow: '#e0d8c8', dark: '#7a7060', sfx: 'phys' },
@@ -99,20 +101,21 @@ function splatSprite(color, idx) {
 /**
  * type: 'dot' | 'glow' | 'blood' | 'gib' | 'streak' | 'smoke' | 'shard' | 'img'
  */
-// At the cap the oldest particle goes, as before, but by marking it dead (life -1: not drawn, compacted out in
-// updateVfx) instead of particles.shift(), which moved the whole array on every spawn in a busy fight.
+// At the cap the oldest slot is reused in place. This preserves the cap even during a burst between updates and
+// avoids both O(n) array shifts and temporary dead entries that still need to be scanned by the renderer.
 let evict = 0, dead = 0;
+const particleCursor = { get index() { return evict; }, set index(value) { evict = value; } };
 function kill(p) { if (p.life > 0) { p.life = -1; dead++; if (p.spr) spriteGibs--; } }
 export function spawn(p) {
-  if (particles.length - dead >= MAX_P()) {
-    while (evict < particles.length && particles[evict].life <= 0) evict++;
-    if (evict < particles.length) kill(particles[evict++]);
-  }
   p.life = p.life ?? 0.6; p.max = p.life;
   p.z = p.z ?? 0; p.vx = p.vx ?? 0; p.vy = p.vy ?? 0; p.vz = p.vz ?? 0;
   p.g = p.g ?? 0; p.drag = p.drag ?? 0; p.size = p.size ?? 2; p.size1 = p.size1 ?? p.size;
   p.rot = p.rot ?? 0; p.vr = p.vr ?? 0;
-  particles.push(p);
+  const replaced = insertCappedParticle(particles, p, MAX_P(), particleCursor);
+  if (replaced) {
+    if (replaced.life <= 0) dead = Math.max(0, dead - 1);
+    else if (replaced.spr) spriteGibs--;
+  }
   return p;
 }
 
@@ -963,6 +966,7 @@ export function drawEffects(ctx, layer) {
       boltFrame.push(e);
       continue;
     }
+    if (effectOutsideView(e, x0, y0, x1, y1, isoX, isoY)) continue;
     if (e.add) ctx.globalCompositeOperation = 'lighter';
     e.draw(ctx);
     ctx.globalCompositeOperation = 'source-over';

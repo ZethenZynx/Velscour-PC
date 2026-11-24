@@ -12,6 +12,7 @@ import { drawSlime } from '../gfx/slimeart.js';
 import { TURRET3D, drawTurret3D } from '../gfx/gunner3d.js';
 import { isPlayerHostile, isPlayerTargetable } from './targeting.js';
 import { MAX_TEMPORARY_BUFF_SECONDS, normalizeTemporaryBuff } from './buffduration.mjs';
+import { RectGrid } from './rectgrid.mjs';
 
 // Bounds for the visible sprite after its local flip/rotation/scale transforms.
 // Kept in world-pixel coordinates and projected by render.js with the current camera.
@@ -166,16 +167,19 @@ const bounds = (out, i, t, x, y, w, h) => {
     if (X < out[i]) out[i] = X; if (X > out[i + 2]) out[i + 2] = X; if (Y < out[i + 1]) out[i + 1] = Y; if (Y > out[i + 3]) out[i + 3] = Y;
   }
 };
-const at = [0, 0, 0, 0], laid = []; // laid: the bounds of every ring and bar on the layer so far, 4 numbers each
+const at = [0, 0, 0, 0], laid = [], laidGrid = new RectGrid(); // prior ring/bar bounds indexed in reusable screen-space cells
 
 /** Lays the noted rims (rings: Settings › see-through outlines) and life bars on oc, which has the canvas's device
  * px; camT is the camera's transform; under: wall lines already lie everywhere. Grows box [x0, y0, x1, y1] round it. */
 export function drawXray(oc, camT, rings, box, under) {
   let nl = 0;
+  const useGrid = !under && xray.n >= 400;
+  if (useGrid) laidGrid.reset(oc.canvas.width, oc.canvas.height);
   const lay = (t, x, y, w, h) => {
     bounds(laid, nl, t, x, y, w, h);
     if (laid[nl] < box[0]) box[0] = laid[nl]; if (laid[nl + 1] < box[1]) box[1] = laid[nl + 1];
     if (laid[nl + 2] > box[2]) box[2] = laid[nl + 2]; if (laid[nl + 3] > box[3]) box[3] = laid[nl + 3];
+    if (useGrid) laidGrid.insert(nl >> 2, laid, nl);
     nl += 4;
   };
   for (let i = 0; i < xray.n; i++) {
@@ -186,7 +190,8 @@ export function drawXray(oc, camT, rings, box, under) {
     let cut = under || nl > 4096;
     if (!cut) {
       bounds(at, 0, e.t, e.dx, e.dy, e.dw, e.dh);
-      for (let j = 0; j < nl && !cut; j += 4) cut = at[0] < laid[j + 2] && at[2] > laid[j] && at[1] < laid[j + 3] && at[3] > laid[j + 1];
+      if (useGrid) cut = laidGrid.overlapsAny(at, laid);
+      else for (let j = 0; j < nl && !cut; j += 4) cut = at[0] < laid[j + 2] && at[2] > laid[j] && at[1] < laid[j + 3] && at[3] > laid[j + 1];
     }
     if (cut) {
       oc.globalCompositeOperation = 'destination-out';

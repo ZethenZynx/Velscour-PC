@@ -33,6 +33,8 @@ assert.match(game, /profileRecord\('events'/, 'world event scripts are measured'
 assert.match(render, /markRenderPhase\('renderSort'\)/, 'the renderer reports draw-list construction and sorting time');
 assert.match(render, /markRenderPhase\('depthDraw'\)/, 'the renderer reports depth-sorted drawing separately');
 assert.match(render, /drawParticles\(ctx, vr, profiling\)/, 'visible particle counting only runs during profiling');
+assert.match(render, /profileRecord\('effectDraw', performance\.now\(\) - effectDrawStarted\)/, 'the aggregate effect time includes its split sub-stages');
+assert.match(render, /profileRecord\('screenOverlay', performance\.now\(\) - screenOverlayStarted\)/, 'the aggregate screen-space time includes its split sub-stages');
 assert.match(screens, /data-export-performance/, 'the settings screen exposes report export');
 assert.match(screens, /rolling 60-second performance history/i, 'the setting describes the actual history duration');
 

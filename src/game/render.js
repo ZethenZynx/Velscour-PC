@@ -1357,23 +1357,24 @@ export function renderWorld(ctx, world) {
     for (let ty = ty0; ty <= ty1; ty++) for (let tx = tx0; tx <= tx1; tx++) if (map.block[ty * map.w + tx]) tile(tx, ty, 'rgba(255,0,0,0.22)');
     for (const [tx, ty] of G.debugMarks || []) tile(tx, ty, 'rgba(0,255,255,0.55)');
   }
-  if (profiling) markRenderPhase('ambientTopDraw');
   if (world.sky) skyFx(ctx, world); // furnaces, braziers, chains, cannon shot, lightning
   if (world.wyrm) drawWyrm(ctx, world.wyrm, 'top'); // the Breach's wyrm flying over everything
-  if (profiling) markRenderPhase('particleDraw');
+  if (profiling) markRenderPhase('ambientTopDraw');
   const visibleParticles = drawParticles(ctx, vr, profiling);
-  if (profiling) { world._perfVisibleParticles = visibleParticles; markRenderPhase('topHazardDraw'); }
+  if (profiling) { world._perfVisibleParticles = visibleParticles; markRenderPhase('particleDraw'); }
   for (const h of top) h.draw(ctx);
-  if (profiling) markRenderPhase('topEffectDraw');
+  if (profiling) markRenderPhase('topHazardDraw');
+  const effectDrawStarted = profiling ? performance.now() : 0;
   ctx.globalCompositeOperation = 'lighter';
   drawEffects(ctx, 'top');
   ctx.globalCompositeOperation = 'source-over';
-  if (profiling) markRenderPhase('effectDraw');
+  if (profiling) { profileRecord('effectDraw', performance.now() - effectDrawStarted); markRenderPhase('topEffectDraw'); }
 
   // ---------------------------------------------------------- screen space
   ctx.setTransform(1, 0, 0, 1, 0, 0);
   drawLighting(ctx, world);
   if (profiling) markRenderPhase('lighting');
+  const screenOverlayStarted = profiling ? performance.now() : 0;
   if (world.sky) skyFront(ctx, W, H, world, Math.min(0.05, G.dt || 0.016)); // rain, snow, ash, wind, fog, lightning
   if (profiling) markRenderPhase('skyFront');
   drawSeeThrough(ctx, world, camT, hq, tx0, ty0, tx1, ty1);
@@ -1400,8 +1401,7 @@ export function renderWorld(ctx, world) {
   drawTexts(ctx);
   if (profiling) markRenderPhase('combatText');
   drawCine(ctx, W, H);
-  if (profiling) markRenderPhase('cinematicOverlay');
-  if (profiling) markRenderPhase('screenOverlay');
+  if (profiling) { markRenderPhase('cinematicOverlay'); profileRecord('screenOverlay', performance.now() - screenOverlayStarted); markRenderPhase('screenOverlay'); }
   // Keep capacity without retaining creatures/loot that have left the world.
   for (const item of pool) item.o = null;
   top.length = 0;
