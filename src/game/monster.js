@@ -13,6 +13,7 @@ import { SUMMONS } from '../data/summons.js';
 import { turretMuzzle } from '../gfx/gunner3d.js';
 import { bodyR } from '../world/map.js';
 import { toughness, danger, densityXp, riftHold, dmgScale, endgameScaling, endgameBaseLevel, FINAL_DEPTH } from '../data/depth.js';
+import { riftHpMul, riftDmgMul } from '../data/rifts.js';
 import { attachSlime, slimeUpdate, courtDef } from './slimecourt.js';
 import { ART_BY_ID, REVIVED, greaterSwap, rollLooks, uniqueSwap } from '../data/bestiary.js';
 import { skillMorphFor } from '../data/talents.js';
@@ -1520,6 +1521,13 @@ export function makeMonster(world, archId, biome, level, rank = 'normal', x = 0,
     const scale = endgameScaling(depth);
     B.hp = baseline.hp * scale.health;
     B.dmg = baseline.dmg * scale.damage;
+  }
+  const riftTier = world.rift?.tier ?? world.riftTier;
+  if (riftTier != null) {
+    // Rifts stay anchored to the Depth 100 baseline, then apply the selected
+    // tier exactly once. Children and summons inherit already-scaled values.
+    B.hp *= riftHpMul(riftTier);
+    B.dmg *= riftDmgMul(riftTier);
   }
   if (world.riftHold) B.hp *= riftHold(level);
   if (A.seaOfSand && biome.id === 'sea_of_sand') look = { art:'ss_'+archId, swap:null };

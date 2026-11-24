@@ -66,6 +66,8 @@ export const UI = {
   pointerX: 0,
   pointerY: 0,
   hasPointerPosition: false,
+  riftCompletionEl: null,
+  riftCompletionActions: null,
   tipIdentity: null,
   tipIdentityFn: null,
   get modal() { return this.modalCount > 0; },
@@ -512,6 +514,71 @@ export const UI = {
 
   clearCenterMsg() { clearTimeout(this.msgT); this.msgEl.style.opacity = '0'; },
   clearLog() { this.logEl.innerHTML = ''; },
+
+  /** A non-modal Rift completion card: world input remains available behind it. */
+  showRiftCompletion(data, actions = {}) {
+    this.hideRiftCompletion();
+    const card = el('section', 'rift-completion', `
+      <div class="rift-completion-kicker">ABYSSAL RIFT COMPLETE</div>
+      <h2>ABYSSAL GUARDIAN DEFEATED</h2>
+      <div class="rift-completion-tier"></div>
+      <div class="rift-completion-summary"></div>
+      <div class="rift-completion-unlocks"></div>
+      <div class="rift-completion-rewards"></div>
+      <div class="rift-completion-warning" role="status" aria-live="polite"></div>
+      <div class="rift-completion-countdown"><strong></strong><span>Returning to town in</span></div>
+      <div class="rift-completion-track"><i></i></div>
+      <div class="rift-completion-actions"></div>`);
+    card.addEventListener('pointerdown', (event) => event.stopPropagation());
+    const button = (label, cls, fn) => {
+      const b = el('button', `btn ${cls || ''}`, label);
+      b.type = 'button'; b.addEventListener('click', (event) => { event.stopPropagation(); sfx('ui'); fn?.(); });
+      return b;
+    };
+    const actionRow = card.querySelector('.rift-completion-actions');
+    actionRow.append(button('Return Now', 'red', () => actions.onReturn?.(false)));
+    actionRow.append(button('More Time (+30s)', '', () => actions.onMoreTime?.()));
+    card._setWarning = (show) => {
+      if (card._warningState === !!show) return;
+      card._warningState = !!show;
+      const warning = card.querySelector('.rift-completion-warning');
+      warning.replaceChildren();
+      actionRow.replaceChildren();
+      if (show) {
+        warning.textContent = 'Uncollected completion rewards remain on the ground. Collect them or confirm that you want to leave them behind.';
+        actionRow.append(button('Collect Remaining Rewards (+30s)', '', () => actions.onCollect?.()));
+        actionRow.append(button('Return to Town Anyway', 'red', () => actions.onReturn?.(true)));
+      } else {
+        actionRow.append(button('Return Now', 'red', () => actions.onReturn?.(false)));
+        actionRow.append(button('More Time (+30s)', '', () => actions.onMoreTime?.()));
+      }
+    };
+    this.riftCompletionEl = card;
+    this.riftCompletionActions = actions;
+    $('#hud')?.append(card);
+    this.updateRiftCompletion(data);
+  },
+  updateRiftCompletion(data = {}) {
+    const card = this.riftCompletionEl;
+    if (!card?.isConnected) return;
+    card.querySelector('.rift-completion-tier').textContent = `Rift Tier ${data.tier || 1} · ${data.timed ? 'Timed success' : 'Overtime completion'}`;
+    card.querySelector('.rift-completion-summary').textContent = `Completed in ${data.time || '0:00'} · highest tier unlocked: ${data.highest || 1}`;
+    card.querySelector('.rift-completion-unlocks').textContent = data.additional > 0
+      ? `${data.additional} additional tier${data.additional === 1 ? '' : 's'} unlocked`
+      : 'No additional tiers unlocked';
+    card.querySelector('.rift-completion-rewards').textContent = `+${data.marks || 0} Infernal Marks · ${data.rewardSummary || 'Guardian rewards generated'}`;
+    const remaining = Math.max(0, Number(data.remaining) || 0), total = Math.max(1, Number(data.total) || 10);
+    card.querySelector('.rift-completion-countdown strong').textContent = data.blocked ? 'PAUSED' : `${Math.ceil(remaining)}s`;
+    card.querySelector('.rift-completion-track i').style.width = `${Math.max(0, Math.min(100, remaining / total * 100))}%`;
+    card.classList.toggle('has-warning', !!data.blocked);
+    card._setWarning?.(!!data.blocked);
+  },
+  warnRiftCompletion() { this.riftCompletionEl?._setWarning?.(true); },
+  hideRiftCompletion() {
+    this.riftCompletionEl?.remove();
+    this.riftCompletionEl = null;
+    this.riftCompletionActions = null;
+  },
 
   // ------------------------------------------------------------- dialogs
   dialog({ title, html, buttons = [], closable = true, cls = '' }) {

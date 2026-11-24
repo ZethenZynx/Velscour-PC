@@ -770,8 +770,8 @@ export function createSeaBattle(world, gen, biome, depth, opts, onSuccess) {
         this.opened = true; sfx('chest'); sfx('gold');
         dropChest(world, this, depth);
         const st0 = G.player ? G.player.st : { magicFind: 0 }, il = lvl + 2;
-        world.addLoot(new GroundItem(this.x, this.y + 0.3, 'item', { item: rollGroundItem(il, { mf: st0.magicFind, bonus: 1.6 * run.rewardK }) }));
-        if (run.rewardK > 0.75 && chance(0.35)) world.addLoot(new GroundItem(this.x + 0.3, this.y + 0.2, 'item', { item: rollGroundItem(il, { rarity: rarityAt(il, chance(0.2) ? 4 : 3) }) }));
+        world.addLoot(new GroundItem(this.x, this.y + 0.3, 'item', { item: rollGroundItem(il, { world, mf: st0.magicFind, bonus: 1.6 * run.rewardK }) }));
+        if (run.rewardK > 0.75 && chance(0.35)) world.addLoot(new GroundItem(this.x + 0.3, this.y + 0.2, 'item', { item: rollGroundItem(il, { world, rarity: rarityAt(il, chance(0.2) ? 4 : 3) }) }));
         sparkle(this.x, this.y, 20, '#ffd060', 30, 0.6);
       },
     };

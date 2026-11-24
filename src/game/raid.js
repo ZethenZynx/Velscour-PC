@@ -23,6 +23,7 @@ import { UI } from '../ui/ui.js';
 import { madnessReady } from './mayhem.js';
 import { SIGS, SIG_NAMES, PASSIVES } from './raidsigs.js';
 import { heresyRaid, worldHeresies } from './heresies.js';
+import { riftHpMul, riftDmgMul } from '../data/rifts.js';
 
 // ------------------------------------------------------------------------------------------------ the bosses
 // art: bestiary art ids (one is picked); fx: their projectile look; adds: archetypes that come to their aid;
@@ -592,10 +593,13 @@ export function makeRaidBoss(world, arena, depth, level, opts = {}) {
   // Raid-specific pressure is part of the depth-100 boss baseline. Above the
   // campaign, the continuous health/damage curves are the sole depth multiplier.
   const raidDepth = depth > FINAL_DEPTH ? FINAL_DEPTH : depth;
+  const riftTier = world.rift?.tier ?? world.riftTier;
+  const riftHp = riftTier == null ? 1 : riftHpMul(riftTier);
+  const riftDmg = riftTier == null ? 1 : riftDmgMul(riftTier);
   Object.assign(m, {
     ai: 'raid', el: tpl.el, res: { [tpl.el]: 0.4, ...(m.undead ? { poison: 0.5, shadow: 0.3 } : null) },
     scale: has('colossal') ? 2.75 : 2.4, r: 1.05, atkReach: 0.35, speed: 2.4 * (tpl.spd || 1) * (has('colossal') ? 0.88 : 1), atkCd: 1.3,
-    maxHp: statBase.hp * 26 * raidHpMul(raidDepth) * endgame.health * (has('colossal') ? 1.35 : 1) * (tpl.hp || 1) * 1.3 * (opts.hp || 1), dmg: raidHitMul(raidDepth) * statBase.dmg * endgame.damage * (has('empowered') ? 1.25 : 1) * (opts.dmg || 1), xp: B.xp * 60,
+    maxHp: statBase.hp * 26 * raidHpMul(raidDepth) * endgame.health * riftHp * (has('colossal') ? 1.35 : 1) * (tpl.hp || 1) * 1.3 * (opts.hp || 1), dmg: raidHitMul(raidDepth) * statBase.dmg * endgame.damage * riftDmg * (has('empowered') ? 1.25 : 1) * (opts.dmg || 1), xp: B.xp * 60,
     name: tpl.name.toUpperCase(), title: tpl.title, aura: elem(tpl.el).glow, affixes: [],
     moves: null, patterns: [], isRaid: true, ward: 1, aggroRange: 0,
   });
@@ -1120,7 +1124,10 @@ class Raid {
         // everything that can see the boss is engulfed
         for (const c of w.hostiles(m.team, m.x, m.y, 40)) {
           if (!w.map.los(m.x, m.y, c.x, c.y)) continue;
-          hit(m, c, c.maxHp * 0.75, el === 'phys' ? 'phys' : el, { force: true, crit: false, noArc: true });
+          // Cataclysm is percentage-based rather than derived from m.dmg, so it
+          // must explicitly inherit Rift damage scaling once like other attacks.
+          const riftScale = m.world?.rift ? riftDmgMul(m.world.rift.tier) : 1;
+          hit(m, c, c.maxHp * 0.75 * riftScale, el === 'phys' ? 'phys' : el, { force: true, crit: false, noArc: true });
         }
         explosionFx(m.x, m.y, 6, el === 'phys' ? 'fire' : el, 'nova', { shake: 18 });
         for (let i = 0; i < 4; i++) addEffect(new Ring(m.x, m.y, 0.3, 6 + i * 4, 0.6 + i * 0.15, i % 2 ? E.core : E.glow, 8));

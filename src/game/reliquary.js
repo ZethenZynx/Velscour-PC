@@ -128,9 +128,9 @@ export function makeAccountHeirloom(ilvl, opts = {}) {
   return item;
 }
 /** Apply the existing relic odds while ensuring a Heirloom can only be generated once account-wide. */
-export function maybeAccountRelic(item, boost = 1) {
+export function maybeAccountRelic(item, boost = 1, world = G.world) {
   const eligible = undiscoveredHeirlooms().map((h) => h.id);
-  const result = maybeRelic(item, boost, eligible);
+  const result = maybeRelic(item, boost, eligible, world);
   if (result !== item && result?.relic === 'heir') noteFind(result);
   return result;
 }

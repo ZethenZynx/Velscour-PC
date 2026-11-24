@@ -20,7 +20,7 @@ import { maybeAccountRelic } from './reliquary.js';
 import { heresyAllows } from './heresies.js';
 import { keyChance } from './unbound.js';
 import { CHEST_RARITIES } from '../data/treasurechests.js';
-import { riftLootDepth } from '../data/rifts.js';
+import { riftQualityRange, riftRewardProgressionDepth } from '../data/rifts.js';
 import { greedQuantity } from './greed.js';
 
 /** Highest quality unlocked for ground drops at this campaign depth. */
@@ -28,7 +28,12 @@ export function groundDropRarityCap(depth) { return qualityAtDepth(Math.max(1, d
 
 /** Progression depth for a ground reward; Rift items scale by Rift tier while combat level stays capped at 100. */
 export function groundRewardDepth(world = G.world, fallbackDepth = 1) {
-  return world?.rift ? riftLootDepth(world.rift.tier) : fallbackDepth;
+  return world?.rift ? riftRewardProgressionDepth(world.rift.tier, G.char) : fallbackDepth;
+}
+
+/** Rift sigils follow Rift tier but cannot outrun the hero's normal-depth unlocks. */
+export function groundRewardSigilDepth(world = G.world, fallbackDepth = 1) {
+  return world?.rift ? riftRewardProgressionDepth(world.rift.tier, G.char) : fallbackDepth;
 }
 
 const ORB_COLOR = { orb_hp: '#ff2a2a', orb_mp: '#3a6aff', orb_rejuv: '#c040ff', orb_fury: '#ffa020' };
@@ -54,16 +59,25 @@ export function rollGroundItem(ilvl, opts = {}) {
   const progressionDepth = groundRewardDepth(world, depth);
   const depthCap = groundDropRarityCap(progressionDepth);
   const requestedCap = Number.isFinite(rollOpts.maxRarity) ? rollOpts.maxRarity : depthCap;
-  // A reward source may request a high rarity, but it cannot bypass the active
-  // campaign/endgame progression cap (notably Rift completion rewards).
-  const rarityCap = Math.min(depthCap, requestedCap);
-  return rollItem(level == null ? ilvl : Math.min(ilvl, level), { ...rollOpts, maxRarity: rarityCap });
+  const bounds = world?.rift ? riftQualityRange(world.rift.tier, G.char) : null;
+  const rarityCap = Math.max(0, Math.min(depthCap, requestedCap, bounds ? bounds.max - 1 : depthCap));
+  const rarityFloor = bounds ? Math.min(rarityCap, bounds.min - 1) : Math.min(rarityCap, Number.isFinite(rollOpts.minRarity) ? rollOpts.minRarity : 0);
+  // Rifts preserve existing MF/quality weights but gently favor the lower end
+  // of their eligible band so higher quality remains a rarer find.
+  const finalOpts = { ...rollOpts, maxRarity: rarityCap, minRarity: rarityFloor, ...(bounds ? { lowerQualityBias: 0.75 } : {}) };
+  // A Rift-specific requested rarity is honored only if it is eligible. An
+  // out-of-range request falls back to a weighted roll across the legal band;
+  // it is never clamped into a guaranteed maximum-quality reward.
+  if (bounds && Number.isFinite(finalOpts.rarity) &&
+      (finalOpts.rarity < rarityFloor || finalOpts.rarity > rarityCap)) delete finalOpts.rarity;
+  return rollItem(level == null ? ilvl : Math.min(ilvl, level), finalOpts);
 }
 
 /** Roll ground gems at a tier available to the character's current level. */
 export function rollGroundGem(ilvl, world = G.world) {
   const level = G.char?.level;
-  const progressionLevel = world?.rift ? depthLevel(groundRewardDepth(world)) + 4 : ilvl;
+  const progressionDepth = world?.rift ? riftRewardProgressionDepth(world.rift.tier, G.char) : 0;
+  const progressionLevel = world?.rift ? depthLevel(progressionDepth) + 4 : ilvl;
   return rollGem(level == null ? progressionLevel : Math.min(progressionLevel, level), G.player?.st?.markGemTier || 0);
 }
 
@@ -208,7 +222,7 @@ export class GroundItem {
         return false;
       }
     }
-    if (this.t > 120 && this.kind !== 'item' && this.kind !== 'key') return false; // (an Abyssal Key waits)
+    if (!this.riftCompletionReward && this.t > 120 && this.kind !== 'item' && this.kind !== 'key') return false; // completion rewards remain until collected or explicitly abandoned
     if (this.fades && this.t > this.fades && p.lootTarget !== this) return false;
     if (this.kind.startsWith('orb')) addLight(this.x, this.y, 1.8, 0.7);
     return true;
@@ -415,13 +429,13 @@ export function dropLoot(world, m) {
   const boost = (world.raid || m.isRaid || m.isVelscour ? 3 : 1) * (world.relicMul || 1) * (1 + (st.markCollector || 0) / 100); // Collector only modifies eligible Covenant chance
   for (let i = 0; i < items; i++) {
     const ilvl = lvl + (rank === 'boss' ? 2 : rank === 'normal' ? 0 : 1) + randi(-1, 1);
-    const item = maybeAccountRelic(rollGroundItem(ilvl, { world, mf: st.magicFind + (world.mfAdd || 0), bonus }), boost);
+    const item = maybeAccountRelic(rollGroundItem(ilvl, { world, mf: st.magicFind + (world.mfAdd || 0), bonus }), boost, world);
     add('item', { item, fades: fadeOf(item) });
   }
   // Sigil Stones: rare from the rank and file, common from guardians (Heresies: world.sigilMul)
   const sig = { normal: 0.004, champion: 0.03, unique: 0.08, boss: 0.45 }[rank] * (world.lootMul || 1) * (world.sigilMul || 1) * (1 + (st.markSigilChance || 0) / 100) * breachScale;
   const sigils = greedMore(world.depth && chance(sig) ? 1 : 0);
-  for (let i = 0; i < sigils; i++) add('item', { item: rollSigil(groundRewardDepth(world, world.depth), rank === 'boss' ? 1 : 0) });
+  for (let i = 0; i < sigils; i++) add('item', { item: rollSigil(groundRewardSigilDepth(world, world.depth), rank === 'boss' ? 1 : 0) });
   // an Abyssal Key (docs/ENDGAME.md): BOSS ROOM bosses past depth 600 under Heresy rank 10, rift guardians from tier 10
   if (m.isRaid && chance(keyChance(world, m))) add('key', {}); // (keyChance rolls once a boss: a raid boss pays out three dropLoots)
   // rings: a guardian usually drops one
@@ -456,14 +470,14 @@ export function dropChest(world, chest, depth) {
     const itemDepth = depthLevel(depth) + 1;
     const item = rollGroundItem(itemDepth, { world, mf: st.magicFind + (world.mfAdd || 0), bonus: rarityBonus,
       ...(chest.heretical ? { rarity: rarityAt(itemDepth, Math.min(4, groundDropRarityCap(groundRewardDepth(world, depth)))) } : {}) });
-    add('item', { item: maybeAccountRelic(item, (1 + (st.markCollector || 0) / 100) * (world.relicMul || 1)) });
+    add('item', { item: maybeAccountRelic(item, (1 + (st.markCollector || 0) / 100) * (world.relicMul || 1), world) });
   }
   const sigilChance = rarity ? rarity.sigilChance : chest.rare ? 0.25 : 0.06;
   const sigils = !goldOnly && !gemsOnly && chance(Math.min(1, sigilChance * (world.lootMul || 1) * (world.sigilMul || 1) * (1 + (st.markSigilChance || 0) / 100))) ? greedCount(1) : 0;
-  for (let i = 0; i < sigils; i++) add('item', { item: rollSigil(groundRewardDepth(world, depth)) });
+  for (let i = 0; i < sigils; i++) add('item', { item: rollSigil(groundRewardSigilDepth(world, depth)) });
   if (chest.heresyPool === 'hunt' || chest.heresyPool === 'retribution') {
     const count = chest.heresyPool === 'retribution' ? 2 : 1;
-    for (let i = 0; i < count; i++) add('item', { item: rollSigil(groundRewardDepth(world, depth), 1) });
+    for (let i = 0; i < count; i++) add('item', { item: rollSigil(groundRewardSigilDepth(world, depth), 1) });
     if (!goldOnly) add('item', { item: rollGroundGem(depthLevel(depth) + 4, world) });
   }
   const goldPiles = gemsOnly ? 0 : greedCount(breachCount(randi(goldRange[0], goldRange[1])) + (goldOnly ? 2 : 0));

@@ -3,13 +3,12 @@ import { G } from '../state.js';
 import { rand, chance, pick, escapeHtml } from '../core/util.js';
 import { sfx } from '../core/audio.js';
 import { addEffect, Ring, Column, Bolt, sparkle, floatText } from '../gfx/vfx.js';
-import { explosionFx } from '../gfx/shapes.js';
 import { UI } from '../ui/ui.js';
 import { makeRaidBoss, RAID_BOSSES } from './raid.js';
-import { GroundItem, rollGroundItem, rollGroundGem, groundDropRarityCap } from './loot.js';
-import { rollItem, rollSigil, rollGem, rarityAt, ABYSSAL, RARITY_MYTHIC, goldPile, RARITY } from '../data/items.js';
+import { GroundItem, rollGroundItem, rollGroundGem, groundRewardSigilDepth } from './loot.js';
+import { rollSigil, goldPile } from '../data/items.js';
 import { hit } from './combat.js';
-import { RIFT_TIME, RIFT_QUOTA, RIFT_DENSITY, RIFT_GUARDIAN_HP, PYLONS, riftDepth, riftLevel, riftLootDepth, riftJump, riftWeight, riftReward, fmtTime, instabilitiesForTier } from '../data/rifts.js';
+import { RIFT_TIME, RIFT_QUOTA, RIFT_DENSITY, RIFT_GUARDIAN_HP, PYLONS, riftDepth, riftLevel, riftLootDepth, riftJump, riftWeight, riftReward, fmtTime, instabilitiesForTier, normalizeRiftTier, nextRiftTier, riftHpMul, riftDmgMul } from '../data/rifts.js';
 import { markBonuses, grantMarksWithBonus, riftMarks } from './marks.js';
 import { heroDamage } from './heroDamage.js';
 import { noteRiftBest, endgame } from './endgame.js';
@@ -19,7 +18,108 @@ export { RIFT_TIME, RIFT_QUOTA, RIFT_DENSITY, riftDepth, riftLevel, riftLootDept
 /** The clock a rift gives: the base plus Haste Marks. */
 export const riftTime = () => RIFT_TIME + markBonuses().rift;
 /** May the hero enter tier T: 1 .. the tier his wins opened. */
-export const riftOpen = (c = G.char) => Math.max(1, (c && c.rifts && c.rifts.open) | 0);
+export const riftOpen = (c = G.char) => normalizeRiftTier(c?.rifts?.open ?? 1);
+export { riftHpMul, riftDmgMul, normalizeRiftTier, nextRiftTier };
+
+const completionLootRemain = (world) => !!world?.loot?.some((loot) => loot?.riftCompletionReward && !loot._lootRemoved);
+const completionData = (world) => {
+  const R = world?.rift, C = R?.completion, result = R?.result || {};
+  return {
+    tier: R?.tier || 1, time: fmtTime(result.time ?? R?.t ?? 0), timed: !!result.timed,
+    highest: G.char?.rifts?.open || 1, additional: result.jump || 0, marks: result.marks || 0,
+    rewardSummary: result.rewardSummary || '', remaining: C?.remaining ?? 10, total: C?.total ?? 10,
+    blocked: !!C?.blocked,
+  };
+};
+
+/** Explicit completion return; the caller must confirm before leaving uncollected completion loot. */
+export function requestRiftReturn(world = G.world, confirmed = false) {
+  const R = world?.rift, C = R?.completion;
+  if (!R?.done || R.failed || !C || C.returning || G.world !== world) return false;
+  if (!confirmed && completionLootRemain(world)) {
+    C.blocked = true;
+    UI.warnRiftCompletion();
+    UI.updateRiftCompletion(completionData(world));
+    return false;
+  }
+  C.returning = true;
+  if (G.char) G.char.riftCompletionPending = null;
+  UI.hideRiftCompletion();
+  sfx('portal');
+  // Persist the one-way completion handoff before replacing the Rift world.
+  G.game?.autosave?.();
+  G.game?.enterTown?.();
+  return true;
+}
+
+/** Restore an already paid Rift completion without replaying its boss or granting rewards again. */
+export function restoreRiftCompletion(world, pending) {
+  const R = world?.rift;
+  if (!R || !pending || pending.version !== 1) return false;
+  R.tier = normalizeRiftTier(pending.tier);
+  R.done = true; R.failed = false; R.timedOut = !pending.result?.timed;
+  R.guardian = null; R.progress = R.quota;
+  R.result = pending.result && typeof pending.result === 'object' ? pending.result : {};
+  const remaining = Math.max(0, Number(pending.completion?.remaining) || 0);
+  R.completion = {
+    remaining, total: Math.max(remaining, Number(pending.completion?.total) || 10),
+    blocked: !!pending.completion?.blocked, returning: false, started: true,
+    warningPlayed: !!pending.completion?.warningPlayed,
+  };
+  R.completionShown = false;
+  showRiftCompletion(world, false);
+  UI.updateRiftCompletion(completionData(world));
+  return true;
+}
+
+function updateRiftCompletion(world, dt) {
+  const R = world.rift, C = R.completion;
+  if (!C || C.returning) return;
+  if (C.blocked && !completionLootRemain(world)) {
+    requestRiftReturn(world, true);
+    return;
+  }
+  if (!C.blocked) C.remaining = Math.max(0, C.remaining - dt);
+  if (!C.blocked && C.remaining > 0 && C.remaining <= 3 && !C.warningPlayed) {
+    C.warningPlayed = true;
+    sfx('error');
+  }
+  if (C.remaining <= 0 && completionLootRemain(world)) {
+    C.remaining = 0;
+    C.blocked = true;
+    UI.warnRiftCompletion();
+  } else if (C.remaining <= 0) {
+    requestRiftReturn(world, true);
+    return;
+  }
+  UI.updateRiftCompletion(completionData(world));
+}
+
+function showRiftCompletion(world, playSound = true) {
+  const R = world.rift;
+  if (R.completionShown || !R.completion) return;
+  R.completionShown = true;
+  UI.showRiftCompletion(completionData(world), {
+    onReturn: (confirmed) => requestRiftReturn(world, confirmed),
+    onMoreTime: () => {
+      if (R.completion.returning) return;
+      R.completion.blocked = false;
+      R.completion.remaining += 30;
+      R.completion.total += 30;
+      R.completion.warningPlayed = false;
+      UI.updateRiftCompletion(completionData(world));
+    },
+    onCollect: () => {
+      if (R.completion.returning) return;
+      R.completion.blocked = false;
+      R.completion.remaining = 30;
+      R.completion.total = Math.max(30, R.completion.total + 30);
+      R.completion.warningPlayed = false;
+      UI.updateRiftCompletion(completionData(world));
+    },
+  });
+  if (playSound) sfx('gate');
+}
 
 /** The run object, kept on world.rift. */
 export function createRiftRun(world, gen, tier, hooks = {}) {
@@ -32,21 +132,6 @@ export function createRiftRun(world, gen, tier, hooks = {}) {
     label() { return `TIER ${this.tier} · ${fmtTime(this.left)} · ${this.guardian ? (this.guardian.dead ? 'cleared' : 'the Guardian') : this.pct + '%'}`; },
   };
   return run;
-}
-
-/** Keep the portal's usable state derived from the actual completed Rift run. */
-export function activateRiftExit(world) {
-  const run = world?.rift;
-  // The world owns the live portal object. Prefer it over a stale run reference
-  // left by restored or replaced world state, then repair the back-reference.
-  const exit = world?.portals?.find((portal) => portal?.type === 'exit' && !portal.hidden) || run?.exitPortal;
-  if (!run?.done || run.failed || !exit || exit.type !== 'exit') return false;
-  run.exitPortal = exit;
-  exit.riftRun = run;
-  exit.active = true;
-  exit.color = '#20e0ff';
-  exit.label = 'Exit';
-  return true;
 }
 
 /** A kill in a rift: progress toward the Guardian. */
@@ -121,7 +206,17 @@ export function riftDeathPenalty(world) {
 export function riftTick(world, dt) {
   const R = world.rift, p = world.player;
   if (R && R.failed && R.backT > 0) { if ((R.backT -= dt) <= 0 && R.hooks.onBack) R.hooks.onBack(); return; }
-  if (!R || R.done || R.failed || !p) return;
+  if (!R || R.failed || !p) return;
+  if (R.done) {
+    // Recover legacy completed runs that predate the completion card; do not replay rewards.
+    if (!R.completion) {
+      R.completion = { remaining: 10, total: 10, blocked: completionLootRemain(world), returning: false, started: true };
+      if (!R.result) R.result = { tier: R.tier, timed: !R.timedOut, jump: 0, marks: 0, rewardSummary: 'Previously granted Rift rewards' };
+    }
+    showRiftCompletion(world);
+    updateRiftCompletion(world, dt);
+    return;
+  }
 
   // Pylon buff processing
   if (p.pylonBuff && p.pylonBuff.timer > 0) {
@@ -149,21 +244,27 @@ export function riftTick(world, dt) {
   for (const [at, msg] of [[60, 'One minute left in the Rift!'], [30, 'Thirty seconds!'], [10, 'Ten seconds!']]) {
     if (left <= at && !R.warned[at]) { R.warned[at] = true; UI.centerMsg(fmtTime(at), 'The Rift is closing', 1.8); sfx('error'); }
   }
-  if (left <= 0) riftCollapse(world);
+  if (left <= 0 && !R.timedOut) {
+    R.timedOut = true;
+    UI.centerMsg('RIFT TIMER EXPIRED', 'Defeat the Guardian in overtime; no additional tiers will unlock.', 3.2);
+    UI.log('<b style="color:#ffb86b">Rift time expired.</b> You may still defeat the Guardian and claim completion rewards, but this run will not unlock more tiers.', '#ffb86b');
+    sfx('error');
+  }
 }
 
 /** The Guardian is dead: The Grand Piñata reward explosion */
 export function riftWin(world, m) {
   const R = world.rift, c = G.char, p = world.player;
   if (!R || R.done || R.failed) return;
+  const tier = normalizeRiftTier(R.tier);
   R.done = true;
-  activateRiftExit(world);
-  const time = R.t, k = time / R.limit, jump = riftJump(k), tier = R.tier;
+  const time = Math.max(0, Number(R.t) || 0), timed = !R.timedOut && time <= R.limit;
+  const jump = timed ? riftJump(time / R.limit) : 0;
   c.rifts ||= { open: 1, best: 0, cleared: {}, bestTime: {}, runs: 0, fails: 0, deaths: 0 };
   const first = !c.rifts.cleared[tier];
   c.rifts.cleared[tier] = (c.rifts.cleared[tier] || 0) + 1;
   c.rifts.best = Math.max(c.rifts.best || 0, tier);
-  c.rifts.open = Math.max(c.rifts.open || 1, tier + jump);
+  c.rifts.open = Math.max(riftOpen(c), nextRiftTier(tier, jump));
   c.rifts.bestTime[tier] = Math.min(c.rifts.bestTime[tier] || 1e9, Math.round(time * 10) / 10);
   const rewardScale = 1 + (p?.st?.markRiftRewards || 0) / 100;
   const scaledCount = (n) => Math.floor(n * rewardScale) + (chance((n * rewardScale) % 1) ? 1 : 0);
@@ -171,33 +272,41 @@ export function riftWin(world, m) {
 
   // The Grand Piñata Reward Hoard:
   const RW = riftReward(tier, first), lvl = 100, lootDepth = riftLootDepth(tier);
-  const drop = (kind, data) => world.addLoot(new GroundItem(m.x + rand(-2.0, 2.0), m.y + rand(-2.0, 2.0), kind, data));
+  const itemCount = scaledCount(RW.items || 4), sigilCount = scaledCount(RW.sigils), gemCount = scaledCount(3);
+  let keyCount = 0;
+  const drop = (kind, data) => {
+    const loot = new GroundItem(m.x + rand(-2.0, 2.0), m.y + rand(-2.0, 2.0), kind, data);
+    loot.riftCompletionReward = true;
+    return world.addLoot(loot);
+  };
 
   // Equipment drops
-  for (let i = 0; i < scaledCount(RW.items || 4); i++) {
-    const isAbyssal = (i === 0 && chance(RW.abyssal)) || (RW.abyssal >= 1 && i < 2);
-    const rar = isAbyssal ? ABYSSAL : rarityAt(lvl, 5);
-    drop('item', { item: rollGroundItem(lvl, { world, rarity: rar, maxRarity: isAbyssal ? ABYSSAL : RARITY_MYTHIC, mf: p ? p.st.magicFind : 0 }) });
+  for (let i = 0; i < itemCount; i++) {
+    const enhancedWeight = (i === 0 && chance(RW.abyssal)) || (RW.abyssal >= 1 && i < 2);
+    drop('item', { item: rollGroundItem(lvl, { world, mf: p ? p.st.magicFind : 0, bonus: enhancedWeight ? 1.35 : 0.35 }) });
   }
 
   // Abyssal Keys for Unbound Exploration
   if (RW.keys > 0) {
-    const keys = scaledCount(RW.keys);
-    for (let k = 0; k < keys; k++) drop('key', {});
-    UI.log(`<b style="color:#20e0ff">+${keys} Abyssal Key${keys > 1 ? 's' : ''}</b> dropped! Use them at the town portal for Unbound Exploration.`, '#a0f0ff');
+    keyCount = scaledCount(RW.keys);
+    for (let k = 0; k < keyCount; k++) drop('key', {});
+    UI.log(`<b style="color:#20e0ff">+${keyCount} Abyssal Key${keyCount > 1 ? 's' : ''}</b> dropped! Use them at the town portal for Unbound Exploration.`, '#a0f0ff');
   }
 
   // Sigils, Gems & Gold
-  for (let i = 0; i < scaledCount(RW.sigils); i++) drop('item', { item: rollSigil(lootDepth, RW.sigilBonus) });
-  for (let i = 0; i < scaledCount(3); i++) drop('item', { item: rollGroundGem(lvl + 4, world) });
+  for (let i = 0; i < sigilCount; i++) drop('item', { item: rollSigil(groundRewardSigilDepth(world, lootDepth), RW.sigilBonus) });
+  for (let i = 0; i < gemCount; i++) drop('item', { item: rollGroundGem(lvl + 4, world) });
   for (let i = 0; i < 6; i++) drop('gold', { amount: Math.round(goldPile(lvl) * rand(3, 6) * (1 + (((p && p.st.goldFind) || 0) + (p?.st?.markGold || 0)) / 100) * rewardScale) });
 
   // Records
   const cheat = barred(c), best = !cheat && noteRiftBest(c.classId, tier, time);
-  R.result = { tier, time, jump, next: tier + jump, marks, first, rarity: groundDropRarityCap(lootDepth), best, personal: c.rifts.bestTime[tier] === Math.round(time * 10) / 10 };
-  UI.centerMsg('THE RIFT IS CLOSED', `Tier ${tier} in ${fmtTime(time)} · Tier${jump > 1 ? 's' : ''} ${tier + 1}${jump > 1 ? `-${tier + jump}` : ''} open`, 4);
-  UI.log(`<b style="color:#20e0ff">Abyssal Rift Tier ${tier}</b> closed in ${fmtTime(time)} (${Math.round(k * 100)}% of the clock): +${jump} tier${jump > 1 ? 's' : ''}${best ? ', <b>a new best</b> for your ' + c.classId.replace('_', ' ') : ''}.`, '#a0f0ff');
-  addEffect(new Column(m.x, m.y, '#20e0ff', 1.4, 60, 420)); G.flash = 0.5; sfx('levelup');
+  const unlocked = Math.max(1, normalizeRiftTier(c.rifts.open));
+  const rewardSummary = `${itemCount} equipment · ${sigilCount} sigils · ${gemCount} gems · ${keyCount} key${keyCount === 1 ? '' : 's'}`;
+  R.result = { tier, time, jump, next: nextRiftTier(tier, jump), highest: unlocked, marks, first, timed, rewardSummary, best, personal: c.rifts.bestTime[tier] === Math.round(time * 10) / 10 };
+  R.completion = { remaining: 10, total: 10, blocked: false, returning: false, started: true };
+  UI.log(`<b style="color:#20e0ff">Abyssal Rift Tier ${tier}</b> completed in ${fmtTime(time)} (${timed ? 'timed success' : 'overtime'}): ${jump ? `+${jump} tiers unlocked` : 'no additional tiers unlocked'}${best ? ', <b>a new best</b> for your ' + c.classId.replace('_', ' ') : ''}.`, '#a0f0ff');
+  addEffect(new Column(m.x, m.y, '#20e0ff', 1.4, 60, 420)); G.flash = 0.5;
+  showRiftCompletion(world);
   if (R.hooks.onWin) R.hooks.onWin(R.result);
 }
 
@@ -209,16 +318,4 @@ export function riftLeave(world) {
   c.rifts.fails = (c.rifts.fails || 0) + 1;
 }
 
-/** The clock ran out: the rift collapses */
-export function riftCollapse(world) {
-  const R = world.rift, c = G.char, p = world.player;
-  if (!R || R.done || R.failed) return;
-  R.failed = true; R.backT = 2.5;
-  c.rifts.fails = (c.rifts.fails || 0) + 1;
-  if (p) p.invuln = 3;
-  UI.centerMsg('THE RIFT COLLAPSES', `Tier ${R.tier} · the clock ran out`, 3.5);
-  UI.log(`<b style="color:#ff6050">The Rift collapses</b> round you: the clock ran out ${R.guardian ? 'with the Guardian still standing' : `at ${R.pct}% of the quota`}. Tier ${R.tier} is still yours to try.`, '#ffb0a0');
-  explosionFx(p.x, p.y, 5, 'arcane', 'eruption', { shake: 16 }); G.flash = 0.8; sfx('explode'); sfx('portal');
-  if (R.hooks.onFail) R.hooks.onFail();
-}
 export { pick };

@@ -207,8 +207,8 @@ function beginPortalTrip(world,run,{label='Return Through the Gate',reward=null,
 function loot(world, x, y, { gold = 0, gear = 0, gems = 0, quality = 2 } = {}) {
   const p = world.player, lvl = depthLevel(world.depth || 1);
   for (let i = 0; i < Math.min(12, gold); i++) world.addLoot(new GroundItem(x + rand(-1.7,1.7), y + rand(-1.7,1.7), 'gold', { amount: Math.round((14 + lvl * 2.5) * (0.7 + Math.random()*0.6)) }));
-  for (let i = 0; i < Math.min(3, gear); i++) world.addLoot(new GroundItem(x + rand(-0.7,0.7), y + rand(-0.7,0.7), 'item', { item: rollGroundItem(lvl + 1, { rarity: quality, mf: p?.st?.magicFind || 0 }) }));
-  for (let i = 0; i < Math.min(4, gems); i++) world.addLoot(new GroundItem(x + rand(-1.1,1.1), y + rand(-1.1,1.1), 'item', { item: rollGroundGem(lvl + 1) }));
+  for (let i = 0; i < Math.min(3, gear); i++) world.addLoot(new GroundItem(x + rand(-0.7,0.7), y + rand(-0.7,0.7), 'item', { item: rollGroundItem(lvl + 1, { world, rarity: quality, mf: p?.st?.magicFind || 0 }) }));
+  for (let i = 0; i < Math.min(4, gems); i++) world.addLoot(new GroundItem(x + rand(-1.1,1.1), y + rand(-1.1,1.1), 'item', { item: rollGroundGem(lvl + 1, world) }));
 }
 
 function pulse(world, run, { element = 'arcane', color = run.def.color, duration = 18, damage = 0.045, radius = 1.6 } = {}) {

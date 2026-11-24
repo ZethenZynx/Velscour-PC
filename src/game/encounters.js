@@ -101,8 +101,8 @@ const guardsAround = (e, r = 7) => e.guards.filter((m) => !m.dead && dist(m.x, m
 const reward = (world, at, { items = 1, rare = false, gold = 1, gem = false, bountyPct = G.player?.st?.markBounty || 0 } = {}) => {
   const lvl = lvlOf(world), p = world.player;
   const bountyItems = items + (bountyPct > 0 && chance(Math.min(1, items * bountyPct / 100)) ? 1 : 0);
-  for (let i = 0; i < bountyItems; i++) world.addLoot(new GroundItem(at.x + rand(-0.6, 0.6), at.y + rand(-0.6, 0.6), 'item', { item: rollGroundItem(lvl + (rare ? 3 : 1), { mf: p ? p.st.magicFind : 0, bonus: rare ? 2 : 1 }) }));
-  if (gem) world.addLoot(new GroundItem(at.x + rand(-0.6, 0.6), at.y + rand(-0.6, 0.6), 'item', { item: rollGroundGem(lvl + 4) }));
+  for (let i = 0; i < bountyItems; i++) world.addLoot(new GroundItem(at.x + rand(-0.6, 0.6), at.y + rand(-0.6, 0.6), 'item', { item: rollGroundItem(lvl + (rare ? 3 : 1), { world, mf: p ? p.st.magicFind : 0, bonus: rare ? 2 : 1 }) }));
+  if (gem) world.addLoot(new GroundItem(at.x + rand(-0.6, 0.6), at.y + rand(-0.6, 0.6), 'item', { item: rollGroundGem(lvl + 4, world) }));
   world.addLoot(new GroundItem(at.x + rand(-0.5, 0.5), at.y + rand(-0.5, 0.5), 'gold', { amount: Math.round((30 + lvl * 7) * goldScale(lvl) * gold * rand(0.8, 1.3) * (1 + bountyPct / 100) * (1 + ((p?.st?.markGold || 0) / 100))) }));
 };
 const pack = (world, at, n, rank = 'normal') => {
@@ -265,7 +265,7 @@ const BUILD = {
           if (G.char !== c || c.gold < prices[id] || e.stock[id] <= 0) { sfx('error'); return; }
           if (id !== 'gem' && (c.potions[id] || 0) >= POTION_BELT_CAPACITY) { UI.log('Your potion belt is full.', '#ff8080'); return; }
           c.gold -= prices[id]; e.stock[id]--;
-          if (id === 'gem') world.addLoot(new GroundItem(n.x + 0.4, n.y, 'item', { item: rollGroundGem(lvlOf(world) + 2) }));
+          if (id === 'gem') world.addLoot(new GroundItem(n.x + 0.4, n.y, 'item', { item: rollGroundGem(lvlOf(world) + 2, world) }));
           else c.potions[id] = (c.potions[id] || 0) + 1;
           UI.refresh(); sfx('gold');
         } })), { label: 'Leave' },
@@ -373,7 +373,7 @@ const BUILD = {
       if (e.sold) { n.say('My case is empty now.', 2.5); return; }
       choices(n, 'Relic Collector', `One sealed relic recovered from this depth. Price: ${price.toLocaleString()} gold.`, [{ label: `Buy relic · ${price.toLocaleString()} gold`, run: () => {
         const c = G.char; if (!c || c.gold < price || e.sold) { UI.log('You cannot afford that relic.', '#ff8080'); sfx('error'); return; }
-        c.gold -= price; e.sold = true; world.addLoot(new GroundItem(n.x + 0.5, n.y, 'item', { item: rollGroundItem(lvlOf(world) + 2, { mf: world.player?.st.magicFind || 0, bonus: 1 }) })); n.say('A fair exchange. Keep it safe.', 2.5); UI.refresh(); sfx('gold');
+        c.gold -= price; e.sold = true; world.addLoot(new GroundItem(n.x + 0.5, n.y, 'item', { item: rollGroundItem(lvlOf(world) + 2, { world, mf: world.player?.st.magicFind || 0, bonus: 1 }) })); n.say('A fair exchange. Keep it safe.', 2.5); UI.refresh(); sfx('gold');
       } }]);
     };
     return e;
@@ -468,7 +468,7 @@ const BUILD = {
       if (e.traded) { n.say('That was my last usable thing.', 2.5); return; }
       choices(n, 'Desperate Scavenger', 'I can trade a sealed gem I found for some gold. No haggling.', [{ label: `Buy a gem · ${Math.round(60 + lvlOf(world) * 10)} gold`, run: () => {
         const c = G.char, cost = Math.round(60 + lvlOf(world) * 10); if (!c || c.gold < cost || e.traded) { sfx('error'); return; }
-        c.gold -= cost; e.traded = true; world.addLoot(new GroundItem(n.x + 0.5, n.y, 'item', { item: rollGroundGem(lvlOf(world) + 1) })); UI.refresh(); sfx('gold');
+        c.gold -= cost; e.traded = true; world.addLoot(new GroundItem(n.x + 0.5, n.y, 'item', { item: rollGroundGem(lvlOf(world) + 1, world) })); UI.refresh(); sfx('gold');
       } }]);
     };
     return e;

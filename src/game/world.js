@@ -117,7 +117,7 @@ export class World {
   addLoot(l) {
     l._lootRemoved = false;
     l._lootBornAt = this.time;
-    const life = l.fades || (l.kind !== 'item' && l.kind !== 'key' ? 120 : 0);
+    const life = l.riftCompletionReward ? 0 : (l.fades || (l.kind !== 'item' && l.kind !== 'key' ? 120 : 0));
     l._lootExpiryAt = life ? this.time + Math.max(0, life - (l.t || 0)) : Infinity;
     this.loot.push(l);
     this._lootRegistered++;
@@ -182,6 +182,8 @@ export class World {
     if (this.player && this.player.lootTarget === l) this.player.lootTarget = null;
     this._lootTombstones = (this._lootTombstones || 0) + 1;
     this._lootRegistered = Math.max(0, (this._lootRegistered || 0) - 1);
+    // Persist completion-hoard pickups immediately so reloads cannot duplicate a claimed reward.
+    if (l.riftCompletionReward && G.world === this) G.game?.autosave?.();
     return true;
   }
   rebuildLootIndex() {

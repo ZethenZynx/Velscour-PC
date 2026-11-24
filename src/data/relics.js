@@ -9,7 +9,7 @@
 import { chance, pick, clamp } from '../core/util.js';
 import { rollItem, affixValue, AFFIX_BY_STAT, GEMS, SIGILS, RELIC_HOOK, powerLevel, legendaryScale, LEGENDARY, RARITY_COMMON, RARITY_MYTHIC, WEAPONS, OFFHANDS, ARMORS, qualityAtDepth } from './items.js';
 import { G } from '../state.js';
-import { riftLootDepth } from './rifts.js';
+import { riftLootDepth, riftQualityRange } from './rifts.js';
 
 // ---------------------------------------------------------------- line values
 const MYTHIC = RARITY_MYTHIC;
@@ -276,10 +276,13 @@ export function makeCovenant(ilvl, opts = {}) {
   const activityDepth = world?.rift ? riftLootDepth(world.rift.tier)
     : Number.isFinite(opts.depth) ? opts.depth : Number(world?.depth) || ilvl;
   const progressionCap = qualityAtDepth(activityDepth);
-  const maxRarity = world?.rift && Number.isFinite(opts.maxRarity)
-    ? Math.min(progressionCap, opts.maxRarity)
+  const bounds = world?.rift ? riftQualityRange(world.rift.tier, G.char) : null;
+  const maxRarity = bounds
+    ? Math.min(progressionCap, bounds.max - 1, Number.isFinite(opts.maxRarity) ? opts.maxRarity : progressionCap)
     : Number.isFinite(opts.maxRarity) ? opts.maxRarity : progressionCap;
-  const it = rollItem(ilvl, { slot: P.slot, rarity: opts.rarity, maxRarity, base: P.base, generic: true });
+  const minRarity = bounds ? Math.min(maxRarity, bounds.min - 1) : 0;
+  const rarity = Number.isFinite(opts.rarity) && opts.rarity >= minRarity && opts.rarity <= maxRarity ? opts.rarity : undefined;
+  const it = rollItem(ilvl, { slot: P.slot, ...(rarity === undefined ? {} : { rarity }), maxRarity, minRarity, base: P.base, generic: true });
   it.cset = P.set;
   return shapeRelic(it, 'cov', P.id, P.name, P.lines, P.slot === 'ring' ? 1 : 3);
 }
@@ -291,7 +294,7 @@ export function migrateCovenantItem(item) {
  * Maybe turn a fresh equipment drop into an account-first Heirloom or a repeatable Covenant piece. Heirlooms
  * remain level-1 copies; Covenant conversion inherits the source item's level and eligible quality.
  */
-export function maybeRelic(it, boost = 1, eligibleHeirloomIds = []) {
+export function maybeRelic(it, boost = 1, eligibleHeirloomIds = [], world = G.world) {
   if (!it || it.type !== 'gear' || it.relic) return it;
   const knownSet = new Set(eligibleHeirloomIds || []);
   const heirloomAvailable = HEIRLOOMS.some((h) => knownSet.has(h.id) && h.slot === it.slot);
@@ -301,7 +304,7 @@ export function maybeRelic(it, boost = 1, eligibleHeirloomIds = []) {
     if (h) return h;
   }
   if (chance(0.04 * boost)) {
-    const c = makeCovenant(it.ilvl, { slot: it.slot, rarity: it.rarity, maxRarity: it.rarity });
+    const c = makeCovenant(it.ilvl, { slot: it.slot, rarity: it.rarity, maxRarity: it.rarity, world });
     if (c) return c;
   }
   return it;

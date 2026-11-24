@@ -134,7 +134,7 @@ function makeScenario(world, start, info, need) {
     dropChest(world, { x, y, rare: true }, depth); dropChest(world, { x, y, rare: true }, depth);
     const p = G.player;
     // an Epic, Legendary 30% of the time (always for a legendary scenario), Mythic 3%; gated by item level (rarityAt)
-    world.addLoot(new GroundItem(x, y + 0.3, 'item', { item: rollGroundItem(lvl + 2, { rarity: rarityAt(lvl + 2, chance(0.03) ? 5 : legendary || chance(0.3) ? 4 : 3), mf: p ? p.st.magicFind : 0 }) }));
+    world.addLoot(new GroundItem(x, y + 0.3, 'item', { item: rollGroundItem(lvl + 2, { world, rarity: rarityAt(lvl + 2, chance(0.03) ? 5 : legendary || chance(0.3) ? 4 : 3), mf: p ? p.st.magicFind : 0 }) }));
     addEffect(new Column(x, y, COLOR, 0.9, 30, 360)); sparkle(x, y, 24, '#ffd060', 24, 0.6);
     sfx('gate'); UI.centerMsg(S.title.toUpperCase(), 'Scenario complete: a hoard is yours', 2.8);
     UI.log(`<b style="color:${COLOR}">${S.title}</b> complete.`, COLOR);

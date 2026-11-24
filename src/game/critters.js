@@ -506,7 +506,7 @@ export function catchCritter(cr) {
   } else if (cr.reward === 'gem') {
     const count = 1 + Math.floor(cr.tier / 10);
     for (let i = 0; i < count; i++) {
-      const item = rollGroundGem(depthLevel(world.depth || 1) + cr.tier);
+      const item = rollGroundGem(depthLevel(world.depth || 1) + cr.tier, world);
       world.addLoot(new GroundItem(cr.x + rand(-0.25, 0.25), cr.y + rand(-0.25, 0.25), 'item', { item }));
     }
     summary = count === 1 ? 'an upgrade gem dropped nearby' : `${count} upgrade gems dropped nearby`;

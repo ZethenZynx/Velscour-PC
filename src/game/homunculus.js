@@ -158,7 +158,7 @@ export function homunculusChat(d, v) {
 function finaleGift(v) {
   const p = G.player, w = G.world, c = G.char;
   if (!p || !w) return;
-  const item = rollGroundItem(depthLevel(c.depth || 1) + 3, { bonus: 2, mf: p.st ? p.st.magicFind : 0 });
+  const item = rollGroundItem(depthLevel(c.depth || 1) + 3, { world: w, bonus: 2, mf: p.st ? p.st.magicFind : 0 });
   w.addLoot(new GroundItem(p.x + 0.4, p.y + 0.3, 'item', { item }));
   holyFlare(v, STORY.length, 40);
   sparkle(p.x, p.y, 30, '#ffe080', 24, 0.6);

@@ -601,13 +601,16 @@ function rollAffixes(item, count, perk = false) {
  * A drop's rarity. mf: magic find (%). bonus: a guardian's, chest's or event's better odds (0 = a plain kill).
  * ilvl: the item's level (rarities unlock with it; rarityUnlock).
  */
-export function rollRarity(mf = 0, bonus = 0, ilvl = 999, maxRarity = RARITY.length - 1) {
-  const cap = clamp(maxRarity | 0, 0, RARITY.length - 1);
-  const mythicCount = RARITY.filter((r) => r.id >= RARITY_MYTHIC && r.id <= cap && rarityUnlock(r.id, ilvl) > 0).length;
+export function rollRarity(mf = 0, bonus = 0, ilvl = 999, maxRarity = RARITY.length - 1, minRarity = 0, lowerQualityBias = 1) {
+  const cap = clamp(Math.floor(Number(maxRarity) || 0), 0, RARITY.length - 1);
+  const floor = clamp(Math.floor(Number(minRarity) || 0), 0, cap);
+  const bias = clamp(Number(lowerQualityBias) || 1, 0.01, 1);
+  const mythicCount = RARITY.filter((r) => r.id >= Math.max(RARITY_MYTHIC, floor) && r.id <= cap && rarityUnlock(r.id, ilvl) > 0).length;
   return weighted(RARITY.map((r) => {
-    if (r.id > cap) return [r.id, 0];
+    if (r.id < floor || r.id > cap) return [r.id, 0];
     const weight = r.dropGroup === 'mythic' ? (mythicCount ? 0.012 / mythicCount : 0) : r.weight;
-    return [r.id, r.id === 0 ? weight / (1 + bonus) : weight * (1 + bonus * r.bonus) * mfMul(mf, r.id) * rarityUnlock(r.id, ilvl)];
+    const progressionBias = Math.pow(bias, r.id - floor);
+    return [r.id, (r.id === 0 ? weight / (1 + bonus) : weight * (1 + bonus * r.bonus) * mfMul(mf, r.id) * rarityUnlock(r.id, ilvl)) * progressionBias];
   }));
 }
 /** Magic find's multiplier on quality weights (at 100% it raises the share of Epic and above ~1.6x). */
@@ -622,8 +625,10 @@ export const HOLLOW = { weapon: 6, body: 6, offhand: 4, head: 4, legs: 4, hands:
 export function rollItem(ilvl, opts = {}) {
   ilvl = Math.max(1, Math.round(ilvl));
   const slot = opts.slot || pick(['weapon', 'weapon', 'offhand', 'head', 'head', 'body', 'body', 'body', 'hands', 'legs', 'feet', 'ring', 'ring']);
-  const rolledRarity = opts.rarity ?? rollRarity(opts.mf || 0, opts.bonus || 0, ilvl, opts.maxRarity ?? RARITY.length - 1);
-  const rarity = Math.min(rolledRarity, opts.maxRarity ?? RARITY.length - 1);
+  const maxRarity = clamp(Math.floor(Number(opts.maxRarity ?? RARITY.length - 1) || 0), 0, RARITY.length - 1);
+  const minRarity = clamp(Math.floor(Number(opts.minRarity) || 0), 0, maxRarity);
+  const rolledRarity = opts.rarity ?? rollRarity(opts.mf || 0, opts.bonus || 0, ilvl, maxRarity, minRarity, opts.lowerQualityBias ?? 1);
+  const rarity = clamp(Math.floor(Number(rolledRarity) || 0), minRarity, maxRarity);
   const tier = tierOf(ilvl), pl = powerLevel(ilvl, rarity);
   const item = { uid: newUid(), type: 'gear', slot, rarity, ilvl, tier, upg: 0, affixes: [], gems: [], sockets: 0 };
   const art = opts.generic || slot === 'ring' ? null : classItem(slot, rarity, opts.base);

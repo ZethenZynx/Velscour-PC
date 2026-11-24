@@ -4,11 +4,13 @@ import { G } from '../../src/state.js';
 import { game } from '../../src/game/game.js';
 import { UI } from '../../src/ui/ui.js';
 
-const [gameSource, riftSource, townSource] = await Promise.all([
+const [gameSource, riftSource, townSource, gameRiftSource] = await Promise.all([
   readFile(new URL('../../src/game/game.js', import.meta.url), 'utf8'),
   readFile(new URL('../../src/ui/rifts.js', import.meta.url), 'utf8'),
   readFile(new URL('../../src/world/town.js', import.meta.url), 'utf8'),
+  readFile(new URL('../../src/game/rifts.js', import.meta.url), 'utf8'),
 ]);
+const buildRiftSource = gameSource.slice(gameSource.indexOf('buildRift(tier'), gameSource.indexOf('riftDeath(src)'));
 assert.match(gameSource, />Abyssal Rifts<\/button>/, 'Portal to the Depths includes an Abyssal Rifts button');
 assert.match(gameSource, /if \(canUnbound\) tabRifts\.addEventListener\('click',[\s\S]*?confirmRift\(undefined, \{ backToDepths: true \}\)/,
   'the Rift button observes endgame unlock and opens the existing selector with a return path');
@@ -21,8 +23,14 @@ assert.doesNotMatch(gameSource, /world\.portals\.push\(\{[^\n]*rift: true/, 'Her
 assert.doesNotMatch(gameSource, /rift: true,[\s\S]{0,250}use: \(\) => this\.confirmRift\(\)/,
   'Sunscorch Oasis has no standalone Rift entrance');
 assert.doesNotMatch(townSource, /const rift = spot|\bportal, breach, rift, altar\b/, 'town generation no longer reserves or exposes a separate Rift entrance spot');
-assert.match(gameSource, /type: 'exit', active: false[\s\S]*?use: \(\) => this\.useExit\(world, exit\)/,
-  'Rift exit portal implementation remains intact');
+assert.doesNotMatch(buildRiftSource, /type: 'exit'|type: \"exit\"/,
+  'Rift generation has no completion exit portal or portal interaction requirement');
+assert.match(gameSource, /if \(w\?\.rift\?\.done\) \{ requestRiftReturn\(w, false\); return; \}/,
+  'the existing Rift town portal routes completed runs through reward-safety return handling');
+assert.doesNotMatch(riftSource, /activateRiftExit|exitPortal/,
+  'Rift completion no longer maintains an exit portal or its activation state');
+assert.match(gameRiftSource, /R\.timedOut = true[\s\S]*?Defeat the Guardian in overtime/,
+  'clock expiry leaves the Guardian encounter available in overtime rather than collapsing the run');
 
 // Exercise the real Rift selector button configuration and its Back callback
 // without constructing or launching a browser.

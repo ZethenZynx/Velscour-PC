@@ -171,8 +171,8 @@ function payBounty(world, n) {
   if (b.kind === 'relic') saveHeirloomBounty(world, n, b);
   const at = p || n;
   const add = (kind, data) => world.addLoot(new GroundItem(at.x + rand(-0.5, 0.5), at.y + rand(-0.5, 0.5), kind, data));
-  add('item', { item: rollGroundItem(lvl + 2, { mf: p ? p.st.magicFind : 0, bonus: 1 }) });
-  if (chance(0.5)) add('item', { item: rollGroundGem(lvl + 4) });
+  add('item', { item: rollGroundItem(lvl + 2, { world, mf: p ? p.st.magicFind : 0, bonus: 1 }) });
+  if (chance(0.5)) add('item', { item: rollGroundGem(lvl + 4, world) });
   add('gold', { amount: Math.round((40 + lvl * 9) * goldScale(lvl) * rand(0.8, 1.3)) });
   if (p && G.char) { p.gainXp && p.gainXp(Math.round(120 * Math.pow(lvl, 1.5))); } // ~30 kills' worth (monsterBase xp); 60 * 1.11^lvl was hundreds of levels deep down
   n.say(b.kind === 'relic' ? 'You brought my heirloom home. I cannot thank you enough!' : pick(LINES.cheer), 4, true);

@@ -937,8 +937,8 @@ export function createSkyBattle(world, gen, biome, depth, opts, onSuccess) {
         dropChest(world, this, depth);
         // the hoard: a better chance at Epic and above than any other chest
         const st0 = G.player ? G.player.st : { magicFind: 0 }, il = lvl + 2;
-        world.addLoot(new GroundItem(this.x, this.y + 0.3, 'item', { item: rollGroundItem(il, { mf: st0.magicFind, bonus: 1.6 }) }));
-        if (chance(0.35)) world.addLoot(new GroundItem(this.x + 0.3, this.y + 0.2, 'item', { item: rollGroundItem(il, { rarity: rarityAt(il, chance(0.2) ? 4 : 3) }) }));
+        world.addLoot(new GroundItem(this.x, this.y + 0.3, 'item', { item: rollGroundItem(il, { world, mf: st0.magicFind, bonus: 1.6 }) }));
+        if (chance(0.35)) world.addLoot(new GroundItem(this.x + 0.3, this.y + 0.2, 'item', { item: rollGroundItem(il, { world, rarity: rarityAt(il, chance(0.2) ? 4 : 3) }) }));
         sparkle(this.x, this.y, 20, '#ffd060', 30, 0.6);
       },
     };
