@@ -23,16 +23,11 @@ export function loadKeepArt() {
     loadBaked(KEEP_DIR),
     fetch(DECOR_DIR + 'decor.json').then((r) => r.json()),
     loadImg(DECOR_DIR + 'banners.webp'), loadImg(DECOR_DIR + 'glass.webp'), loadImg(DECOR_DIR + 'rugs.webp'),
-    loadImg(DECOR_DIR + 'sacred_flame_navy.png'), loadImg(DECOR_DIR + 'sacred_flame_ivory.png'),
     loadImg('assets/tiles/castle_keep/scatter.webp'), fetch('assets/tiles/castle_keep/pack.json').then((r) => r.json()),
-  ]).then(([baked, meta, banners, glass, rugs, sacredNavy, sacredIvory, scat, pack]) => {
-    // Keep existing saved decoration IDs, but replace their source art completely.
-    // The old banner atlas remains available for unrelated standards and heraldry.
-    const sacredById = { tess_a: sacredNavy, tess_b: sacredNavy, tess_a1: sacredIvory, tess_b1: sacredIvory };
-    for (const entry of meta.banners) {
-      const img = sacredById[entry.id];
-      if (img) { entry.img = img; entry.r = [0, 0, img.width, img.height]; }
-    }
+  ]).then(([baked, meta, banners, glass, rugs, scat, pack]) => {
+    // Tessariel's Azure/Ivory and The Ember's Blue/White are replaced in their
+    // original atlas frames, so all callers (including saved decoration IDs)
+    // resolve the new art through the same established atlas path.
     A = { baked, meta, banners, glass, rugs, scat, pack, cache: new Map() };
     return A;
   }).catch((e) => { loading = null; throw e; });

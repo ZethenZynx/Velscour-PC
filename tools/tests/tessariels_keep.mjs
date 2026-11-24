@@ -69,11 +69,16 @@ assert.equal(shouldReleaseTownSheets({ id: 'catacombs' }, null, true), false, 't
 const artSource = await readFile(new URL('../../src/gfx/keepart.js', import.meta.url), 'utf8');
 const keepUiSource = await readFile(new URL('../../src/ui/keep.js', import.meta.url), 'utf8');
 assert.doesNotMatch(artSource, /sacredFlameEmblem|badgeW|badgeH/, 'the former programmatic emblem overlay is removed');
-assert.match(artSource, /sacred_flame_navy\.png/);
-assert.match(artSource, /sacred_flame_ivory\.png/);
-assert.match(artSource, /tess_a: sacredNavy, tess_b: sacredNavy, tess_a1: sacredIvory, tess_b1: sacredIvory/,
-  'all original Keep banner IDs resolve to the complete replacement artwork');
+assert.doesNotMatch(artSource, /sacred_flame_(?:navy|ivory)\.png|sacredNavy|sacredIvory/,
+  'banner art is no longer supplied through a fragile runtime-only override');
+assert.match(artSource, /loadImg\(DECOR_DIR \+ 'banners\.webp'\)/,
+  'the standard banner atlas remains the single runtime source');
 assert.match(keepUiSource, /m\?\.img \|\| A\.banners/, 'Furnish thumbnails show the replacement art too');
+const decorMeta = JSON.parse(await readFile(new URL('../../assets/tiles/tkeep/decor/decor.json', import.meta.url), 'utf8'));
+assert.deepEqual(decorMeta.banners.filter(({ id }) => /^tess_[ab]1?$/.test(id)).map(({ id, r }) => [id, r]), [
+  ['tess_a', [0, 0, 128, 255]], ['tess_a1', [128, 0, 128, 254]],
+  ['tess_b', [256, 0, 128, 255]], ['tess_b1', [384, 0, 128, 254]],
+], 'saved banner IDs retain their original atlas frames, now replaced in-place');
 for (const asset of ['sacred_flame_navy.png', 'sacred_flame_ivory.png']) {
   const bytes = await readFile(new URL(`../../assets/tiles/tkeep/decor/${asset}`, import.meta.url));
   assert.equal(bytes.readUInt32BE(16), 256, `${asset} retains the source sprite width`);
@@ -86,4 +91,7 @@ for (const sprite of ['07_knight_ivory_mantle', '41_friar', '09_knight_silver_ce
 for (const asset of ['assets/tiles/tkeep/index.json', 'assets/tiles/tkeep/page_0.webp', 'assets/tiles/tkeep/decor/decor.json', 'assets/tiles/tkeep/decor/banners.webp', 'assets/tiles/tkeep/decor/glass.webp', 'assets/tiles/tkeep/decor/rugs.webp', 'assets/tiles/castle_keep/scatter.webp', 'assets/tiles/castle_keep/pack.json']) {
   await access(new URL(`../../${asset}`, import.meta.url));
 }
+const bannerAtlas = await readFile(new URL('../../assets/tiles/tkeep/decor/banners.webp', import.meta.url));
+assert.equal(bannerAtlas.toString('ascii', 0, 4), 'RIFF');
+assert.equal(bannerAtlas.toString('ascii', 8, 12), 'WEBP', 'the replaced original atlas is a valid WebP asset');
 console.log('Tessariel’s Keep content, persistence, layout anchors and cleanup regression checks passed.');
