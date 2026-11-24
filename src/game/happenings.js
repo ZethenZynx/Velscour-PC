@@ -928,8 +928,11 @@ export function beginVictoryTownCelebration(world, character) {
   character.townVictoryFireworksPending = false;
   character.townVictoryFireworksDone = true;
   world.victoryFireworks = { elapsed: 0, duration: 6.2, next: 0, shots: 0 };
+  const keep = world.townId === 'act4_town';
   UI.centerMsg('VELSCOUR HAS FALLEN', 'The townsfolk celebrate your victory!', 4);
-  UI.log('<b style="color:#ffd060">The Hollow erupts in celebration.</b> The townsfolk honor your victory over Velscour.', '#ffd060');
+  UI.log(keep
+    ? '<b style="color:#ffd060">Tessariel’s Keep erupts in celebration.</b> The townsfolk honor your victory over Velscour.'
+    : '<b style="color:#ffd060">The Hollow erupts in celebration.</b> The townsfolk honor your victory over Velscour.', '#ffd060');
   return true;
 }
 

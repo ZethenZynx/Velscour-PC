@@ -20,6 +20,8 @@ import { drawPetCorpse } from '../core/petart.js';
 import { drawLootLabels } from './loot.js';
 import { castleTileDressing, drawCastleParticles, drawCastleWater, MAT } from '../gfx/castleground.js';
 import { drawRim, RIM, xray, drawXray } from './creature.js';
+import { drawKeepGate } from '../gfx/keepgate.js';
+import { drawLightShafts, drawSacredFlame } from '../gfx/keepart.js';
 import { isPlayerHostile, isPlayerTargetable, setCreatureTargetBounds } from './targeting.js';
 import { drawNebula } from '../gfx/breach.js';
 import { drawWyrm } from '../gfx/breachdragon.js';
@@ -581,6 +583,7 @@ function drawScenarioGlyph(ctx, p) {
 function drawPortal(ctx, p) {
   if (p.skygate) return drawSkyGate(ctx, p);
   if (p.seagate) return; // the Pirate Seas: the Dawnwake's bell-tower door is the portal, in three.js (gfx/seabattle3d.js)
+  if (p.keepGate) return drawKeepGate(ctx, p);
   if (p.type === 'objective' && G.cine && G.world && G.world.seaRun) return; // the Pirate Seas: no gameplay marks in a cut scene
   if (p.type === 'shrine' || p.type === 'objective') return drawScenarioGlyph(ctx, p);
   const x = isoX(p.x, p.y), y = isoY(p.x, p.y);
@@ -751,6 +754,13 @@ function drawNpc(ctx, n) {
     return;
   }
   if (n.hidden) { n.sbox = null; return; }
+  if (n.keepFlame) {
+    const x = isoX(n.x, n.y), y = isoY(n.x, n.y) - (n.lv || 0) * 4;
+    drawSacredFlame(ctx, x, y - 26, G.time, 0.82);
+    n.sbox = [x - 30, y - 62, x + 30, y + 4];
+    n.viewH = 62;
+    return;
+  }
   // Vendors retain their existing hand-painted artwork, names and shops.
   // Only visitors/civilians use the animated townsfolk collection; visiting adventurers use their class portrait.
   const spriteId=n.vendor||n.adv?null:(n.townsfolkSpriteId||n.spriteId||n.townsfolkId);
@@ -1039,6 +1049,7 @@ export function renderWorld(ctx, world) {
   if (world.wyrm) drawWyrm(ctx, world.wyrm, 'void'); // the Breach's wyrm deep under the islands (gfx/breachdragon.js)
   if (profiling) markRenderPhase('renderSetup');
   if (!world.tower && !world.cave) drawFloors(ctx, world, vr, hq);
+  if (world.keep) drawLightShafts(ctx, world, G.time);
   if (map.castleMat) drawCastleWater(ctx, world, vr, G.time, G.touch);
   if (profiling) markRenderPhase('floorDraw');
   ctx.imageSmoothingQuality = hq;

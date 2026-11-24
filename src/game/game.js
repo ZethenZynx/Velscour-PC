@@ -40,7 +40,9 @@ import { toggleSmite, getUltimate, executeUltimate } from './smite.js';
 import { hearthTick, useHearth, hearthPortalActive, closeHearthPortals, getActiveHearth, returnFromHearth } from './hearth.js';
 import { generateTown, makeTownTiles, rollTownWeather } from '../world/town.js';
 import { generateAct2Town, makeAct2TownTiles, ACT2_TOWN_NAME } from '../world/act2town.js';
-import { actSelectionRows, shouldAutoTravelToAct2 } from './actselection.js';
+import { actSelectionRows, shouldAutoTravelToAct2, act4Unlocked, shouldAutoTravelToAct4 } from './actselection.js';
+import { buildTessarielKeep } from './tessarielskeep.js';
+import { releaseKeepArt } from '../gfx/keepart.js';
 import { generateOverworld } from '../world/overworld.js';
 import { createOverworldScenario } from './overworld.js';
 import { addWanderers } from './wanderers.js';
@@ -419,6 +421,7 @@ export const game = {
   setWorld(world, start, oldWorld) {
     const p = G.player;
     if (oldWorld?.map?.ghostTrain && oldWorld !== world) stopIronExpressWhistleSfx();
+    if (oldWorld?.keep && !world?.keep) releaseKeepArt();
     UI.hideRiftCompletion();
     if (oldWorld && oldWorld !== world) clearWorldObjectBuffs(p);
     if (oldWorld && oldWorld.rift && oldWorld !== world) riftLeave(oldWorld); // walking out of an unfinished rift is a fail
@@ -459,6 +462,14 @@ export const game = {
   },
 
   enterTown() {
+    if (G.char?.lastTown === 'act4' && act4Unlocked(G.char)) {
+      void this.enterTessarielKeep();
+      return;
+    }
+    if (G.char?.lastTown === 'act2' && G.char?.visitedAct2Town) {
+      void this.enterAct2Town();
+      return;
+    }
     const old = G.world;
     const c = G.char;
     if (c) {
@@ -517,8 +528,8 @@ export const game = {
     }];
     // The Act Selection Portal reuses the former Eternal Breach portal's reserved, reachable pad.
     world.portals.push({
-      x: t.breach.x, y: t.breach.y, active: true, color: '#3a8aff', reach: 2.0,
-      label: 'Portal to the Acts',
+      x: t.breach.x, y: t.breach.y, active: true, color: '#8fd45a', reach: 2.0,
+      keepGate: true, label: 'Portal to the Acts',
       use: () => this.openActSelection(),
     });
     // the hero steps out of the portal, a little way down its road toward the square
@@ -633,8 +644,8 @@ export const game = {
 
     // The same blue act portal occupies the former Eternal Breach portal pad in Sunscorch Oasis.
     if (t.breach) world.portals.push({
-      x: t.breach.x, y: t.breach.y, active: true, color: '#3a8aff', reach: 2.0,
-      label: 'Portal to the Acts',
+      x: t.breach.x, y: t.breach.y, active: true, color: '#8fd45a', reach: 2.0,
+      keepGate: true, label: 'Portal to the Acts',
       use: () => this.openActSelection(),
     });
 
@@ -651,6 +662,53 @@ export const game = {
     p.mana = p.maxMana;
     this.autosave();
     UI.log('You step into <b style="color:#f3c778">Sunscorch Oasis</b>, haven of the Scorched Wastes!', '#ffe080');
+  },
+
+  async enterTessarielKeep() {
+    const c = G.char;
+    if (!c || !act4Unlocked(c) || this._enteringTessarielKeep) return false;
+    this._enteringTessarielKeep = true;
+    const old = G.world;
+    c.lastTown = 'act4';
+    c.visitedAct4Town = true;
+    c.act4AutoTravelDone = true;
+    c.depth = Math.max(76, Number(c.depth) || 1);
+    closeHearthPortals();
+    this.autosave();
+    LoadingScreen.show({ title: "TESSARIEL'S KEEP", subtitle: 'Act IV', text: 'Opening the halls of the Sacred Flame.', progress: 25 });
+    try {
+      keepTileSets(null);
+      const built = await buildTessarielKeep(this, {
+        openVendor: (id) => Vendor.open(id),
+        openStash: () => Stash.open(),
+        openReliquary: () => G.ui.reliquary.open(),
+        openJewelBox: () => JewelBox.open(),
+        openHeresies: () => Heresies.open(),
+        describeFlame: () => UI.log("Tessariel's green flame burns steadily at the heart of the Keep.", '#c8f060'),
+      });
+      LoadingScreen.setProgress(80, 'Preparing the Keep.');
+      this.setWorld(built.world, built.start, old);
+      await warmLevelArt(built.world);
+      HUD.setArea("Tessariel's Keep", 'Act IV — Sanctuary of the Sacred Flame');
+      playMusic('town'); setAmbience('tkeep');
+      Vendor.restock();
+      if (G.player) { G.player.hp = G.player.maxHp; G.player.mana = G.player.maxMana; }
+      beginVictoryTownCelebration(built.world, c);
+      UI.log("You step into <b style=\"color:#c8f060\">Tessariel's Keep</b>, the hall of the Sacred Flame.", '#e0f0c0');
+      this.autosave();
+      LoadingScreen.setProgress(100, "Welcome to Tessariel's Keep.");
+      return true;
+    } catch (error) {
+      console.warn("Could not open Tessariel's Keep:", error);
+      const fallbackAct2 = !!c.visitedAct2Town;
+      c.lastTown = fallbackAct2 ? 'act2' : 'act1';
+      UI.log("The road to Tessariel's Keep could not be opened. Your town save is unchanged.", '#ff8060');
+      if (fallbackAct2) void this.enterAct2Town(); else this.enterTown();
+      return false;
+    } finally {
+      this._enteringTessarielKeep = false;
+      await LoadingScreen.hide();
+    }
   },
 
   /** The one-line "what to do here" blurb for a biome (the town portal's floor picker). */
@@ -681,7 +739,7 @@ export const game = {
     if (!c) return;
     const currentAct = getActForDepth(Math.min(FINAL_DEPTH, Math.max(1, Number(c.depth) || 1))).act;
     const rows = actSelectionRows(c);
-    const html = `<p class="dim">Travel freely between available act towns. Act 2 opens after its campaign milestone.</p>
+    const html = `<p class="dim">Travel freely between unlocked act towns. New destinations open through campaign progression.</p>
       <div class="act-selection-list">${rows.map((act) => `<section class="act-selection-card${act.act === currentAct ? ' current' : ''}${act.unlocked ? '' : ' locked'}${act.implemented ? '' : ' coming-soon'}">
         <div class="act-selection-heading"><strong>ACT ${act.act} — ${escapeHtml(act.name)}</strong><span class="act-selection-status">${act.status}${act.act === currentAct && act.unlocked ? ' · Current Act' : ''}</span></div>
         <div class="act-selection-details"><span>Depths ${act.start}–${act.end}</span>${act.town ? `<span>Town: ${escapeHtml(act.town)}</span>` : ''}</div>
@@ -701,6 +759,7 @@ export const game = {
         dialog.close();
         sfx('portal');
         if (act.act === 2) this.enterAct2Town();
+        else if (act.act === 4) this.enterTessarielKeep();
         else {
           c.lastTown = 'act1';
           this.enterTown();
@@ -1721,12 +1780,14 @@ export const game = {
       }
       const first = !c.cleared[depth];
       const autoTravelToAct2 = shouldAutoTravelToAct2(c, depth, first);
+      const autoTravelToAct4 = shouldAutoTravelToAct4(c, depth, first);
       if (m.isVelscour && !world.practice && !c.townVictoryFireworksDone && !c.townVictoryFireworksPending) {
         c.townVictoryFireworksPending = true;
       }
       c.cleared[depth] = true;
       c.deepest = Math.max(c.deepest || 0, depth);
       if (autoTravelToAct2) c.act2AutoTravelDone = true;
+      if (autoTravelToAct4) c.act4AutoTravelDone = true;
       this.brokeThrough(depth);
       if (first) {
         this.awardFloorClear(depth);
@@ -1742,6 +1803,14 @@ export const game = {
         UI.log('<b style="color:#ffd860">Act 2 is now available.</b> Your journey continues in Sunscorch Oasis.', '#ffd860');
         sfx('portal');
         void this.enterAct2Town();
+        return;
+      }
+      if (autoTravelToAct4) {
+        c.depth = Math.max(76, Number(c.depth) || 1);
+        c.lastTown = 'act4';
+        UI.log('<b style="color:#c8f060">Act IV is now available.</b> Your path leads to Tessariel’s Keep.', '#c8f060');
+        sfx('portal');
+        void this.enterTessarielKeep();
         return;
       }
       if (m.isVelscour && !world.practice) {

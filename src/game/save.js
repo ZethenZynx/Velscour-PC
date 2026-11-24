@@ -195,7 +195,7 @@ export function newCharData(classId, name) {
     jewelBox: Array(JEWEL_BOX_COLS * JEWEL_BOX_BASE_ROWS).fill(null), // dedicated town vault for gems & runes
     tabs: Array(TAB_SLOTS).fill(null), tabAt: 0, // the Bard's Tabs: locked Music Sheets he plays (data/tabs.js)
     gold: 150, potions: { hp: 6, mp: 4, rejuv: 1, fury: 1 },
-    depth: 1, deepest: 0, nextBiome: 'catacombs', biomeBag: [], cleared: {}, visitedAct2Town: false, act2AutoTravelDone: false, dungeonAffixes: [], nextAffixes: [], greedLevel: 0, greed: 0, greedSystemV1: true, greedAffixPreview: null, greedAffixPreviews: {}, greedPortalDestinations: {}, overworldMisses: 0, overworldLastVisit: null, seaOfSandRuns: {}, darkForestRuns: {}, wandererBounties: {}, npcEncounterDepths: {}, treasureImpDepths: [], treasureImpGuaranteedAreas: [], treasureImpRandomAreas: [], treasureImpGuaranteedPending: {}, treasureImpRandomCheckedAreas: [], treasureImpRandomPending: {}, treasureImpTutorialShown: false, townVictoryFireworksPending: false, townVictoryFireworksDone: false, breach: { best: 0, cleared: {} },
+    depth: 1, deepest: 0, nextBiome: 'catacombs', biomeBag: [], cleared: {}, visitedAct2Town: false, act2AutoTravelDone: false, visitedAct4Town: false, act4AutoTravelDone: false, lastTown: 'act1', dungeonAffixes: [], nextAffixes: [], greedLevel: 0, greed: 0, greedSystemV1: true, greedAffixPreview: null, greedAffixPreviews: {}, greedPortalDestinations: {}, overworldMisses: 0, overworldLastVisit: null, seaOfSandRuns: {}, darkForestRuns: {}, wandererBounties: {}, npcEncounterDepths: {}, treasureImpDepths: [], treasureImpGuaranteedAreas: [], treasureImpRandomAreas: [], treasureImpGuaranteedPending: {}, treasureImpRandomCheckedAreas: [], treasureImpRandomPending: {}, treasureImpTutorialShown: false, townVictoryFireworksPending: false, townVictoryFireworksDone: false, breach: { best: 0, cleared: {} },
     heresy: { on: [] }, rifts: { open: 1, best: 0, cleared: {}, bestTime: {}, runs: 0, fails: 0, deaths: 0 }, keys: 0, unbound: { wins: 0, best: 0 }, unboundExploration: { depth: 1, deepest: 1, cleared: {} }, experienceMarks: { earned: 0, xp: 0 }, // per-hero post-level-cap progression; Mark currency itself remains account-wide
     kills: 0, deaths: 0, created: Date.now(), lastPlayed: Date.now(), tips: {}, critterTutorialSeen: false, critterArrowEncounters: 0, wdmg: 1,
   };
@@ -428,6 +428,15 @@ export function migrate(c) {
   }
   c.act2AutoTravelDone = !!c.act2AutoTravelDone;
   c.visitedAct2Town = !!c.visitedAct2Town;
+  c.visitedAct4Town = !!c.visitedAct4Town;
+  if (typeof c.act4AutoTravelDone !== 'boolean') {
+    c.act4AutoTravelDone = !!(c.visitedAct4Town || c.deepest >= 75 || c.cleared[75]);
+  }
+  c.act4AutoTravelDone = !!c.act4AutoTravelDone;
+  if (!['act1', 'act2', 'act4'].includes(c.lastTown)) c.lastTown = c.deepest >= 75 ? 'act4' : c.visitedAct2Town ? 'act2' : 'act1';
+  // Existing endgame characters already passed the Act IV unlock milestone;
+  // return them to the new official Act IV home without changing progression.
+  if (c.deepest >= 75 || c.cleared[75]) c.lastTown = 'act4';
   c.wandererBounties = c.wandererBounties && typeof c.wandererBounties === 'object' && !Array.isArray(c.wandererBounties) ? c.wandererBounties : {};
   c.npcEncounterDepths = c.npcEncounterDepths && typeof c.npcEncounterDepths === 'object' && !Array.isArray(c.npcEncounterDepths) ? c.npcEncounterDepths : {};
   c.treasureImpDepths = Array.isArray(c.treasureImpDepths)
