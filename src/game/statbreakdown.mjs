@@ -8,12 +8,29 @@ const ATTRS = [
 const ELEMENTS = [['fire', 'Fire'], ['cold', 'Cold'], ['light', 'Lightning'], ['poison', 'Poison'], ['magic', 'Magic']];
 const PCT = new Set(['dmgPct', 'atkSpeed', 'castSpeed', 'critChance', 'critDmg', 'lifePct', 'reduce', 'resFire', 'resCold', 'resLight', 'resPoison', 'resAll', 'manaSteal', 'lifeSteal', 'moveSpeed', 'goldFind', 'magicFind', 'block', 'physPct', 'firePct', 'coldPct', 'lightPct', 'poisonPct', 'arcanePct', 'holyPct', 'shadowPct', 'bloodPct', 'acidPct', 'armorPct', 'cdr', 'xpPct', 'bossDmg', 'manaRegenPct']);
 const AFFIX_LABELS = new Map(AFFIXES.map((a) => [a.s, a.t.replace(/\{v\}/g, '').replace(/\s+/g, ' ').trim().replace(/^\+/, '').replace(/%$/, '').replace(/\s*$/, '')]));
-const GROUPS = [
-  { id: 'attributes', name: 'Attributes', keys: ['str', 'dex', 'vit', 'int', 'allAttr'] },
-  { id: 'offense', name: 'Offense', keys: ['dmgPct', 'flatDmg', 'atkSpeed', 'castSpeed', 'critChance', 'critDmg', 'physPct', 'firePct', 'coldPct', 'lightPct', 'poisonPct', 'arcanePct', 'holyPct', 'shadowPct', 'bloodPct', 'acidPct', 'bossDmg', 'areaPct', 'projSpeed', 'extraProj', 'pierce', 'chainPlus', 'splitChance', 'echoChance', 'homing', 'novaOnCast', 'orbitOnCast'] },
-  { id: 'defense', name: 'Defense', keys: ['life', 'lifePct', 'mana', 'armor', 'baseArmor', 'armorPct', 'reduce', 'lifeRegen', 'manaRegen', 'resFire', 'resCold', 'resLight', 'resPoison', 'resAll', 'block', 'thorns', 'lifeSteal', 'manaSteal'] },
-  { id: 'utility', name: 'Utility & progression', keys: ['moveSpeed', 'goldFind', 'magicFind', 'xpPct', 'skillsAll', 'skillTree0', 'skillTree1', 'skillTree2', 'skillTree3', 'summonPct'] },
+export const EQUIPMENT_STAT_CATEGORIES = [
+  { id: 'attributes', name: 'Primary Attributes', keys: ['str', 'dex', 'vit', 'int', 'allAttr'], metricKeys: ['str', 'dex', 'vit', 'int'] },
+  { id: 'health', name: 'Health & Survivability', keys: ['life', 'lifePct'], metricKeys: ['maxHealth'] },
+  { id: 'mana', name: 'Mana & Resource Management', keys: ['mana', 'manaRegen', 'manaRegenPct'], metricKeys: ['maxMana', 'manaRegen'] },
+  { id: 'damage', name: 'Damage Bonuses', keys: ['dmgPct', 'flatDmg', 'physPct'], metricKeys: ['weaponBase', 'dmgPct', 'physPct'] },
+  { id: 'elemental', name: 'Elemental Damage', keys: ['firePct', 'coldPct', 'lightPct', 'poisonPct', 'arcanePct', 'holyPct', 'shadowPct', 'bloodPct', 'acidPct'], metricKeys: ['firePct', 'coldPct', 'lightPct', 'poisonPct', 'arcanePct', 'holyPct', 'shadowPct', 'bloodPct', 'acidPct'] },
+  { id: 'spell', name: 'Spell, Skill & Summon Bonuses', keys: ['skillsAll', 'skillTree0', 'skillTree1', 'skillTree2', 'skillTree3', 'summonPct', 'areaPct'], metricKeys: ['areaPct', 'summonPct', 'skillsAll', 'skillTree0', 'skillTree1', 'skillTree2', 'skillTree3'] },
+  { id: 'critical', name: 'Critical Strike & Critical Damage', keys: ['critChance', 'critDmg'], metricKeys: ['critChance', 'critDmg'] },
+  { id: 'speed', name: 'Attack & Casting Speed', keys: ['atkSpeed', 'castSpeed'], metricKeys: ['atkSpeed', 'castSpeed'] },
+  { id: 'cooldown', name: 'Cooldown Reduction', keys: ['cdr'], metricKeys: ['cdr'] },
+  { id: 'armor', name: 'Armor & Damage Reduction', keys: ['armor', 'baseArmor', 'armorPct', 'reduce'], metricKeys: ['armor', 'reduce'] },
+  { id: 'resistances', name: 'Resistances', keys: ['resFire', 'resCold', 'resLight', 'resPoison', 'resAll'], metricKeys: ['resFire', 'resCold', 'resLightning', 'resPoison', 'resMagic'] },
+  { id: 'block', name: 'Block, Dodge & Evasion', keys: ['block'], metricKeys: ['block'] },
+  { id: 'mobility', name: 'Movement & Mobility', keys: ['moveSpeed'], metricKeys: ['moveSpeed'] },
+  { id: 'recovery', name: 'Health & Mana Recovery', keys: ['lifeRegen'], metricKeys: ['lifeRegen'] },
+  { id: 'onhit', name: 'Life Steal & On-Hit Effects', keys: ['lifeSteal', 'manaSteal', 'thorns'], metricKeys: ['lifeSteal', 'manaSteal', 'thorns'] },
+  { id: 'loot', name: 'Loot & Magic Find', keys: ['goldFind', 'magicFind'], metricKeys: ['goldFind', 'magicFind', 'drops'] },
+  { id: 'experience', name: 'Experience & Currency Bonuses', keys: ['xpPct'], metricKeys: ['xpPct'] },
+  { id: 'conditional', name: 'Conditional & Special Bonuses', keys: ['bossDmg'], metricKeys: ['bossDmg'] },
+  { id: 'projectiles', name: 'Projectile & Skill Behavior', keys: ['projSpeed', 'extraProj', 'pierce', 'chainPlus', 'splitChance', 'echoChance', 'homing', 'novaOnCast', 'orbitOnCast'], metricKeys: ['projSpeed', 'extraProj', 'pierce', 'chainPlus', 'splitChance', 'echoChance'] },
+  { id: 'misc', name: 'Miscellaneous Bonuses', keys: [], metricKeys: [] },
 ];
+const GROUPS = EQUIPMENT_STAT_CATEGORIES;
 const EXTRA_LABELS = {
   allAttr: 'All Attributes', flatDmg: 'Flat Weapon Damage', life: 'Maximum Health', lifePct: 'Maximum Health %', mana: 'Maximum Mana',
   armor: 'Armor', baseArmor: 'Base Item Armor', armorPct: 'Armor %', manaRegen: 'Mana Regeneration', lifeRegen: 'Health Regeneration', manaRegenPct: 'Mana Regeneration %',
@@ -42,7 +59,8 @@ function sumBySlot(audit, keys, weights = {}) {
 
 function capResult(raw, cap, effective, note = '') {
   const excess = cap == null ? 0 : Math.max(0, raw - cap);
-  return { cap, excess, note, diminishing: 'None', effective };
+  const capState = cap == null ? 'uncapped' : excess > 0.001 ? 'over' : effective >= cap - 0.001 ? 'at' : raw >= cap * 0.9 ? 'approaching' : 'below';
+  return { cap, excess, capState, note, diminishing: 'None', effective };
 }
 
 /**
@@ -129,7 +147,7 @@ export function buildEquipmentStatReport(player, character) {
 
   const buckets = GROUPS.map((group) => ({ ...group, keys: [...group.keys] }));
   const known = new Set(buckets.flatMap((group) => group.keys));
-  const fallbackBucket = (key) => /^(life|mana|armor|reduce|res|block|thorns)/.test(key) ? buckets[2] : /^(str|dex|vit|int|allAttr)$/.test(key) ? buckets[0] : /^(goldFind|magicFind|xpPct|skill|summon|moveSpeed)/.test(key) ? buckets[3] : buckets[1];
+  const fallbackBucket = () => buckets.find((group) => group.id === 'misc');
   const powerStatKeys = (P) => [...(P?.stats || []).map(([key]) => key), ...(P?.legs || []).flatMap((flag) => (LEGENDARY[flag]?.stats || []).map(([key]) => key))];
   const allEquipmentKeys = [
     ...AFFIXES.map((a) => a.s),
@@ -139,7 +157,7 @@ export function buildEquipmentStatReport(player, character) {
     ...Object.keys(eq),
   ];
   for (const key of allEquipmentKeys) if (!known.has(key)) { fallbackBucket(key).keys.push(key); known.add(key); }
-  const affixRows = buckets.map((group) => ({ ...group, rows: group.keys.map((key) => {
+  const affixRows = buckets.map((group) => ({ ...group, rows: [...new Set(group.keys)].map((key) => {
     const raw = n(eq[key]);
     const sources = Object.entries(audit.bySlot || {}).flatMap(([slot, item]) => n(item.stats?.[key]) ? [{ slot, name: item.name, value: n(item.stats[key]) }] : []);
     for (const source of audit.specialSources || []) {
@@ -155,5 +173,9 @@ export function buildEquipmentStatReport(player, character) {
     const def = AFFIXES.find((a) => a.s === key);
     return { key, label: EXTRA_LABELS[key] || (def ? AFFIX_LABELS.get(key) : key), raw, sources, combined: raw, unit: PCT.has(key) ? '%' : '' };
   }) }));
-  return { rows, affixRows, audit, attributes: character?.attrs || {} };
+  const categoryByKey = new Map(affixRows.flatMap((group) => [...group.keys, ...(group.metricKeys || [])].map((key) => [key, group.id])));
+  const metricGroups = affixRows.map((group) => ({
+    id: group.id, name: group.name, metrics: rows.filter((row) => categoryByKey.get(row.key) === group.id), modifiers: group.rows,
+  }));
+  return { rows, metricGroups, affixRows, audit, attributes: character?.attrs || {} };
 }

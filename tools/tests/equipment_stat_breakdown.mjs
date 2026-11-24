@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
 import { AFFIXES, GEMS, LEGENDARY } from '../../src/data/items.js';
 import { POWERS } from '../../src/data/relics.js';
 import { buildEquipmentStatReport } from '../../src/game/statbreakdown.mjs';
@@ -51,6 +52,9 @@ assert.equal(metric('atkSpeed').excess, 28);
 assert.equal(metric('moveSpeed').cap, 80);
 assert.equal(metric('reduce').effective, 60);
 assert.equal(metric('cdr').excess, 24);
+assert.equal(metric('critChance').capState, 'over');
+assert.equal(metric('block').capState, 'over');
+assert.equal(metric('goldFind').capState, 'uncapped');
 assert.equal(metric('goldFind').cap, null, 'uncapped stats are represented as No Cap by the UI');
 assert.equal(metric('maxHealth').effective, 12345);
 assert.equal(metric('maxMana').effective, 678);
@@ -63,8 +67,14 @@ const allEquipmentKeys = new Set([
   ...Object.values(POWERS).flatMap((power) => [...(power.stats || []).map(([key]) => key), ...(power.legs || []).flatMap((flag) => (LEGENDARY[flag]?.stats || []).map(([key]) => key))]),
 ]);
 for (const key of allEquipmentKeys) assert.ok(report.affixRows.some((group) => group.rows.some((row) => row.key === key)), `gem/legendary/set power modifier ${key} is listed, even at zero`);
-assert.deepEqual(report.affixRows.find((group) => group.id === 'offense').rows.find((row) => row.key === 'critChance').sources.map((source) => source.slot), ['weapon', 'ring1']);
-assert.equal(report.affixRows.find((group) => group.id === 'defense').rows.find((row) => row.key === 'reduce').sources.at(-1).slot, 'set', 'Covenant set bonus is a separate contributor');
+assert.deepEqual(report.affixRows.find((group) => group.id === 'critical').rows.find((row) => row.key === 'critChance').sources.map((source) => source.slot), ['weapon', 'ring1']);
+assert.equal(report.affixRows.find((group) => group.id === 'armor').rows.find((row) => row.key === 'reduce').sources.at(-1).slot, 'set', 'Covenant set bonus is a separate contributor');
+assert.deepEqual(report.metricGroups.flatMap((group) => group.metrics.map((row) => row.key)).sort(), report.rows.map((row) => row.key).sort(), 'every live total is assigned to one breakdown category');
+assert.equal(new Set(report.metricGroups.map((group) => group.id)).size, report.metricGroups.length, 'breakdown category identifiers are unique');
+const atCapSt = structuredClone(baseSt); atCapSt.rawMoveSpeed = 80; atCapSt.moveSpeed = 80; atCapSt.equipmentAudit.formulaInputs.moveSpeed = 80;
+assert.equal(buildEquipmentStatReport({ st: atCapSt, maxHp: 1, maxMana: 1 }, character).rows.find((row) => row.key === 'moveSpeed').capState, 'at', 'a stat exactly at its live cap is marked at-cap');
+const nearCapSt = structuredClone(baseSt); nearCapSt.rawMoveSpeed = 75; nearCapSt.moveSpeed = 75; nearCapSt.equipmentAudit.formulaInputs.moveSpeed = 75;
+assert.equal(buildEquipmentStatReport({ st: nearCapSt, maxHp: 1, maxMana: 1 }, character).rows.find((row) => row.key === 'moveSpeed').capState, 'approaching', 'a stat within ten percent of its live cap is marked approaching');
 
 // Verify a save/load-style reconstruction: the UI report reads newly recomputed live stats and
 // a fresh audit, rather than persisting a stale presentation snapshot in character save data.
@@ -73,5 +83,13 @@ loadedSt.critChance = 70; loadedSt.rawCritChance = 70; loadedSt.critOver = 0;
 const afterLoad = buildEquipmentStatReport({ st: loadedSt, maxHp: 12000, maxMana: 700 }, structuredClone(character));
 assert.equal(metric('critChance').effective, 75);
 assert.equal(afterLoad.rows.find((row) => row.key === 'critChance').effective, 70);
+
+const inventorySource = readFileSync(new URL('../../src/ui/inventory.js', import.meta.url), 'utf8');
+const styleSource = readFileSync(new URL('../../css/style.css', import.meta.url), 'utf8');
+for (const control of ['Expand All', 'Collapse All', 'Show Overcapped Stats', 'Show Capped Stats', 'Hide Zero-Value Stats']) assert.ok(inventorySource.includes(control), `Character & Stats exposes ${control}`);
+assert.match(inventorySource, /Search stats or bonuses/);
+assert.match(inventorySource, /Overcapped Stats \(/);
+assert.match(inventorySource, /data-jump-stat/);
+for (const state of ['below', 'approaching', 'at', 'over']) assert.ok(styleSource.includes(`cap-${state}`), `cap state ${state} has a visual style`);
 
 console.log(`Equipment stat breakdown passed: ${AFFIXES.length} equipment affixes present, cap stages and source attribution verified.`);
