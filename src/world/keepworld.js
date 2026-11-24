@@ -5,7 +5,7 @@
 import { TileMap } from './map.js';
 import { tkeepLayout, TK, KK } from './tkeep.js';
 import { bannerSprite, glassSprite, rugCanvas, drawRugTile, trophySprite, keepProp, windowShaft } from '../gfx/keepart.js';
-import { TROPHY_BY_ID } from '../data/tessarielskeep.js';
+import { TROPHY_BY_ID } from '../data/keep.js';
 
 /** The keep's map: heights, blocking, which tiles are masonry (baked pieces that may hide whoever stands behind). */
 export function generateKeep() {

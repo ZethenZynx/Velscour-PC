@@ -19,6 +19,7 @@ import { depthLevel } from '../data/depth.js';
 import { sheetItem, bannerKitItem, BANNER_KIT_PRICE, goldLvl } from '../data/items.js';
 import { SHEET_PRICE } from '../data/tabs.js';
 import { POTION_BELT_CAPACITY, potionPurchaseQuote } from '../game/potionpurchase.js';
+import { keepUpgrade } from '../game/keep.js';
 
 const VBY = Object.fromEntries(VENDORS.map((v) => [v.id, v]));
 const buyPrice = (base) => Math.max(1, Math.ceil(base * (1 - Math.min(40, G.player?.st?.markDiscount || 0) / 100)));
@@ -376,7 +377,7 @@ export const Vendor = {
     if (it && it.type === 'gear') {
       if (kind === 'upgrade') {
         if ((it.upg || 0) >= 10) box.appendChild(el('div', 'dim', 'This item is fully upgraded (+10).'));
-        else btn(`Upgrade to +${(it.upg || 0) + 1}`, upgradeCost(it), true, () => { it.upg = (it.upg || 0) + 1; sfx('thud'); UI.log(`${escapeHtml(itemName(it))} upgraded!`, '#ffd34a'); });
+        else btn(`Upgrade to +${(it.upg || 0) + 1}`, upgradeCost(it), true, () => { it.upg = (it.upg || 0) + 1; keepUpgrade(); sfx('thud'); UI.log(`${escapeHtml(itemName(it))} upgraded!`, '#ffd34a'); });
         box.appendChild(el('div', 'dim', 'Each upgrade: +10% base damage/armor and +4% to affix values.'));
       } else if (kind === 'enchant') {
         const affs = Array.isArray(it.affixes) ? it.affixes : (it.affixes = []);

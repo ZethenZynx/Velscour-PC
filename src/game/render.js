@@ -19,6 +19,7 @@ import { enemyImage } from '../core/enemyart.js';
 import { drawPetCorpse } from '../core/petart.js';
 import { drawLootLabels } from './loot.js';
 import { OBJECT_LIFETIMES, isometricTileBounds } from '../core/objectlifetimes.mjs';
+import { canCullCreaturesByViewport, viewportCandidatesContainPlayer } from './renderpolicy.mjs';
 import { castleTileDressing, drawCastleParticles, drawCastleWater, MAT } from '../gfx/castleground.js';
 import { drawRim, RIM, xray, drawXray } from './creature.js';
 import { drawKeepGate } from '../gfx/keepgate.js';
@@ -718,6 +719,14 @@ function drawHeresyAltar(ctx, x, y, open, lit) {
 }
 
 function drawNpc(ctx, n) {
+  // Keep service markers are intentional invisible interaction anchors over
+  // the physical table, lectern and treasury chest props.
+  if (n.keepMarker) {
+    const x = isoX(n.x, n.y), y = isoY(n.x, n.y);
+    n.sbox = [x - 22, y - (n.h || 30) - 10, x + 22, y + 6];
+    n.viewH = n.h || 30;
+    return;
+  }
   if (n.altar) { // the Altar of Heresy: the reference-based crimson shrine landmark in the town plaza
     const x = isoX(n.x, n.y), y = isoY(n.x, n.y), open = endgameUnlocked(), lit = open && heresyRankOf() > 0;
     const heresyAltarSprite = A.heresyAltar;
@@ -1085,9 +1094,14 @@ export function renderWorld(ctx, world) {
   for (const c of lastVisibleCreatures) { c.sbox = null; c.targetBox = null; }
   lastVisibleCreatures.length = 0;
   isometricTileBounds(vr.x0 - 80, vr.y0 - 40, vr.x1 + 80, vr.y1 + 160, HW, HH, actorTileBounds);
-  const visibleCreatures = world.grid?.size && world.creaturesInBounds
-    ? world.creaturesInBounds(actorTileBounds.minX, actorTileBounds.minY, actorTileBounds.maxX, actorTileBounds.maxY, frame.creatureCandidates || (frame.creatureCandidates = []))
-    : world.creatures;
+  let visibleCreatures = world.creatures;
+  if (world.grid?.size && canCullCreaturesByViewport(world)) {
+    const candidates = world.creaturesInBounds(actorTileBounds.minX, actorTileBounds.minY, actorTileBounds.maxX, actorTileBounds.maxY, frame.creatureCandidates || (frame.creatureCandidates = []));
+    // A transition can render between world assignment and the first fresh
+    // grid rebuild. Keep the full list in that frame rather than losing the
+    // hero or the rest of the visible actors.
+    if (viewportCandidatesContainPlayer(world, candidates)) visibleCreatures = candidates;
+  }
   world._perfCreatureCandidates = visibleCreatures.length;
   sorted.length = 0; top.length = 0; walls.length = 0;
   let visibleCreaturesDrawn = 0, visibleEnemiesDrawn = 0;

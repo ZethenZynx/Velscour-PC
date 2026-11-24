@@ -30,6 +30,7 @@ import { sparkle } from '../gfx/vfx.js';
 import { bagRows, nextRowCost, buyBagRow, BAG_MAX_ROWS, gemBagRows, nextGemBagRowCost, canBuyGemBagRow, buyGemBagRow, GEM_BAG_MAX_ROWS } from '../data/bag.js';
 import { Stash } from './stash.js';
 import { Reliquary } from './reliquary.js';
+import { keepSocket, keepUpgrade } from '../game/keep.js';
 
 export const DOLL = { head: [2, 1], weapon: [1, 2], body: [2, 2], offhand: [3, 2], hands: [1, 3], legs: [2, 3], feet: [2, 4], ring1: [4, 1], ring2: [4, 2], ring3: [4, 3], ring4: [4, 4] };
 
@@ -158,6 +159,7 @@ export function socketGem(gemIdx, target, fromWhere = null) {
   if (it.gems.length >= it.sockets) { UI.log(it.sockets ? 'No free sockets. Visit the Jeweler to add more.' : 'This item has no sockets. The Jeweler can add some.', '#ff8080'); sfx('error'); return false; }
   const was = glyphOf(it);
   it.gems.push({ gem: gem.gem, tier: gem.tier });
+  keepSocket();
   if ((gem.count || 1) > 1) gem.count--; else container[gemIdx] = null;
   UI.log(`Socketed <span style="color:${itemColor(gem)}">${gemName(gem.gem, gem.tier)}</span> into ${escapeHtml(itemName(it))}.`);
   const gw = glyphOf(it);

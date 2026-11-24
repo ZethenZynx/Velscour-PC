@@ -2,34 +2,77 @@ import assert from 'node:assert/strict';
 import { readFile, access } from 'node:fs/promises';
 import { generateKeep } from '../../src/world/keepworld.js';
 import { reachableKeepSpot } from '../../src/game/tessarielskeep.js';
+import { KEEP_TABS } from '../../src/ui/keep.js';
+import { keepState, sagaList, keepBonuses } from '../../src/game/keep.js';
+import { shouldReleaseCastle3D, shouldReleaseTownSheets } from '../../src/game/levelart.mjs';
+import { TROPHIES } from '../../src/data/keep.js';
 
 const { map, start, anchors } = generateKeep();
 assert.equal(map.keep, true);
-assert.equal(map.c3only, true, 'the imported Keep uses its original baked isometric terrain');
+assert.equal(map.c3only, true, 'the original baked isometric architecture remains active');
 assert.ok(map.walkable(start[0], start[1]), 'the player arrival point is walkable');
 
 const occupied = [];
-const place = (label, point, prior = occupied) => {
-  const at = reachableKeepSpot(map, start, point, prior);
-  assert.ok(at, `${label} has a walkable interaction location reachable from spawn`);
-  assert.ok(map.circleFree(at[0], at[1], 0.38), `${label} has room for the player collision radius`);
-  assert.ok(map.findPath(start[0], start[1], at[0], at[1], 9000, 0.38), `${label} path uses the actual movement map`);
-  assert.ok(prior.every(([x, y]) => Math.hypot(at[0] - x, at[1] - y) >= 2.05), `${label} does not overlap another interaction point`);
+const place = (label, point) => {
+  const at = reachableKeepSpot(map, start, point, occupied);
+  assert.ok(at, `${label} has a reachable interaction position`);
+  assert.ok(map.circleFree(at[0], at[1], 0.38), `${label} fits the player collision radius`);
+  assert.ok(map.findPath(start[0], start[1], at[0], at[1], 9000, 0.38), `${label} is reachable by walking`);
+  assert.ok(occupied.every(([x, y]) => Math.hypot(at[0] - x, at[1] - y) >= 2.05), `${label} does not overlap another interaction point`);
   occupied.push(at);
   return at;
 };
 
-const townsfolk = [[21, 10.8], [17.2, 20.4], [24.8, 20.2], [14.5, 29.1], [27.5, 13.5], [18.2, 30]];
-for (const [index, point] of townsfolk.entries()) place(`townsperson ${index + 1}`, point);
+// The core folk, storage, portals and service anchors all use the movement map.
+const castellan = place('Castellan Elsabet', anchors.castellan);
+place('Sacred Flame', [anchors.flame[0] - 2.7, anchors.flame[1] + 1.2]);
+place('Brother Cael', [anchors.flame[0] - 2.7, anchors.flame[1] + 1.2]);
+place('Ser Cassius', [anchors.columns[1][0] + 1.4, anchors.columns[1][1] - 1.2]);
+place('Kestrel', [anchors.waygate[0] + 3.2, anchors.start[1]]);
+place('Mother Agatha', [anchors.chronicle[0] + 1.3, anchors.chronicle[1] + 0.6]);
+place('Halvard', [anchors.townPortal[0] + 3.2, anchors.townPortal[1] - 1.2]);
+place('War Table', anchors.warTable);
+place('Chronicle', anchors.chronicle);
+place('Vault', anchors.vault);
+place('Storage Chest', anchors.stash);
+place('Reliquary', anchors.reliquary);
+place('Jewel Box', anchors.jewelBox);
+place('Portal to the Acts', anchors.townPortal);
 
-const services = [[11.5, 13.5], [11.5, 17.5], [11.5, 22.5], [11.5, 27.5], [30.5, 13.5], [30.5, 17.5], [30.5, 22.5], [30.5, 27.5]];
-for (const [index, point] of services.entries()) place(`vendor ${index + 1}`, point);
-for (const [label, point] of [['Storage Chest', anchors.stash], ['Reliquary', anchors.reliquary], ['Jewel Box', anchors.jewelBox], ['Portal to the Acts', anchors.townPortal], ['Portal to the Depths', anchors.waygate], ['Altar of Heresy', anchors.vault]]) place(label, point);
+const oldDepthPortal = place('old depth portal anchor', anchors.waygate);
+const depthPortal = place('repositioned depth portal', [17.5, 27.5]);
+assert.ok(Math.hypot(...depthPortal.map((v, i) => v - oldDepthPortal[i])) > 4, 'depth portal moves inward from the battlement edge');
+const altar = place('Altar of Heresy', [21, 14.5]);
+assert.ok(Math.hypot(altar[0] - anchors.vault[0], altar[1] - anchors.vault[1]) > 4, 'altar is separated from the treasury chest');
+assert.ok(anchors.columns.every(([x, y]) => Math.hypot(altar[0] - x, altar[1] - y) > 4), 'altar clears the pillars');
+assert.ok(Math.hypot(castellan[0] - altar[0], castellan[1] - altar[1]) > 2.05, 'altar does not overlap Castellan Elsabet');
 
-assert.equal(anchors.start[0], start[0]);
-const audioSource = await readFile(new URL('../../src/core/audio.js', import.meta.url), 'utf8');
-assert.match(audioSource, /tkeep:\s*\['inside_night',\s*'torch_loop'\]/, 'the Keep uses existing indoor and torch ambience');
-for (const asset of ['assets/tiles/tkeep/index.json', 'assets/tiles/tkeep/page_0.webp', 'assets/tiles/tkeep/decor/decor.json', 'assets/tiles/tkeep/decor/banners.webp', 'assets/tiles/tkeep/decor/glass.webp', 'assets/tiles/tkeep/decor/rugs.webp', 'assets/tiles/castle_keep/scatter.webp', 'assets/tiles/castle_keep/pack.json', 'assets/audio/amb/inside_night.mp3', 'assets/audio/amb/torch_loop.mp3', 'assets/audio/music/empty_school.mp3']) {
+assert.deepEqual(KEEP_TABS.map(([, name]) => name), ['Sagas', 'Bounties', 'Deeds', 'Ember Trade', 'Vault', 'Furnish', 'Chronicle', 'War Table']);
+assert.ok(TROPHIES.length >= 25, 'the restored trophy catalogue is available to the Furnish tab');
+const savedKeep = { embers: 73, renown: 30, sagas: { ember_road: { ch: 2, base: 17 } }, done: { old_deed: 123 }, have: { trophy: ['ember_shield'] } };
+const hero = { id: 'keep-test', classId: 'paladin', level: 100, deepest: 75, keep: structuredClone(savedKeep) };
+const state = keepState(hero);
+assert.equal(state.embers, savedKeep.embers, 'migration preserves Embers');
+assert.equal(state.renown, savedKeep.renown, 'migration preserves Renown');
+assert.deepEqual(state.sagas, savedKeep.sagas, 'migration preserves saga chapter progress');
+assert.deepEqual(state.done, savedKeep.done, 'migration preserves deed records');
+assert.deepEqual(state.have.trophy, savedKeep.have.trophy, 'migration preserves earned trophies');
+assert.equal(sagaList(hero).length, 8, 'all authored Sagas are available');
+assert.ok(keepBonuses(hero).gf > 0, 'Renown bonuses contribute to active player stats');
+
+assert.equal(shouldReleaseCastle3D({ id: 'catacombs' }, { keep: true }), false, 'late dungeon cleanup cannot unload the active Keep');
+assert.equal(shouldReleaseCastle3D({ id: 'tkeep' }, null), false, 'the Keep atlas is not treated as disposable level art');
+assert.equal(shouldReleaseCastle3D({ id: 'catacombs' }, null, true), false, 'cleanup cannot unload the bake during the Keep transition');
+assert.equal(shouldReleaseCastle3D({ id: 'catacombs' }, { keep: false }), true, 'the bake is still released after leaving the Keep');
+assert.equal(shouldReleaseTownSheets({ id: 'catacombs' }, null, true), false, 'townfolk sheets survive late cleanup during Keep entry');
+
+const artSource = await readFile(new URL('../../src/gfx/keepart.js', import.meta.url), 'utf8');
+assert.match(artSource, /sacredFlameEmblem/);
+assert.match(artSource, /id === 'tess_a'.*id === 'tess_b1'/s);
+for (const sprite of ['07_knight_ivory_mantle', '41_friar', '09_knight_silver_censer', '14_knight_dusk_lancer', '42_priest', '13_knight_frostbound']) {
+  await access(new URL(`../../assets/sprites/people/${sprite}.webp`, import.meta.url));
+}
+for (const asset of ['assets/tiles/tkeep/index.json', 'assets/tiles/tkeep/page_0.webp', 'assets/tiles/tkeep/decor/decor.json', 'assets/tiles/tkeep/decor/banners.webp', 'assets/tiles/tkeep/decor/glass.webp', 'assets/tiles/tkeep/decor/rugs.webp', 'assets/tiles/castle_keep/scatter.webp', 'assets/tiles/castle_keep/pack.json']) {
   await access(new URL(`../../${asset}`, import.meta.url));
 }
-console.log('Tessariel’s Keep terrain and interaction accessibility checks passed.');
+console.log('Tessariel’s Keep content, persistence, layout anchors and cleanup regression checks passed.');

@@ -43,6 +43,8 @@ import { generateAct2Town, makeAct2TownTiles, ACT2_TOWN_NAME } from '../world/ac
 import { actSelectionRows, shouldAutoTravelToAct2, act4Unlocked, shouldAutoTravelToAct4 } from './actselection.js';
 import { buildTessarielKeep } from './tessarielskeep.js';
 import { releaseKeepArt } from '../gfx/keepart.js';
+import { keepClear, keepDeath, keepBreach } from './keep.js';
+import { isCurrentWorldForArtRelease, shouldReleaseCastle3D, shouldReleaseTownSheets } from './levelart.mjs';
 import { generateOverworld } from '../world/overworld.js';
 import { createOverworldScenario } from './overworld.js';
 import { addWanderers } from './wanderers.js';
@@ -269,11 +271,21 @@ async function warmLevelArt(w) {
 // images and canvases after 30 levels, ~290 MB now). Everything reloads from the HTTP cache when needed.
 // (The painted biome packs stay: there are only a few, and fetching one again decoded a second copy while the
 // browser still held the first, which cost more renderer memory than it saved.)
-function releaseLevelArt(biome) {
-  if (biome?.id !== 'castle' && !regionOf(biome)?.castleArt) releaseCastlePack(); // (a region drawn with its masonry keeps it)
-  if (biome?.id !== 'castle' && biome?.id !== 'skyship') releaseCastle3D();
-  if (biome?.id !== 'sea_of_sand' && biome?.id !== 'scorpion_king_pyramid') releaseSeaOfSandPack(); // loadArtFor fetches it again for ss_ monsters elsewhere
-  if (!biome?.overworld && biome?.id !== 'town') releaseTownSheets();
+function releaseLevelArt(biome, expectedWorld = null) {
+  // Entry flows warm art asynchronously. A stale transition must not unload
+  // packs still used by a different world that became active in the meantime.
+  if (!isCurrentWorldForArtRelease(expectedWorld, G.world)) return false;
+  const activeBiome = G.world?.biome || biome;
+  if (activeBiome?.id !== 'castle' && !regionOf(activeBiome)?.castleArt) releaseCastlePack(); // (a region drawn with its masonry keeps it)
+  // Tessariel's Keep shares the baked 3D renderer state with Castle/Skyship.
+  // A prior async level-art cleanup could finish after the Keep entered and
+  // release its only architecture atlas, leaving an otherwise populated town
+  // almost bare. Keep the bake while the active world owns it.
+  const keepTransitionPending = !!G.game?._enteringTessarielKeep;
+  if (shouldReleaseCastle3D(activeBiome, G.world, keepTransitionPending)) releaseCastle3D();
+  if (activeBiome?.id !== 'sea_of_sand' && activeBiome?.id !== 'scorpion_king_pyramid') releaseSeaOfSandPack(); // loadArtFor fetches it again for ss_ monsters elsewhere
+  if (shouldReleaseTownSheets(activeBiome, G.world, keepTransitionPending)) releaseTownSheets();
+  return true;
 }
 
 let hudCine = false;
@@ -439,6 +451,7 @@ export const game = {
       world.add(s);
     }
     G.world = world;
+    if (typeof document !== 'undefined') document.body?.classList?.toggle('in-keep', !!world.keep);
     if (oldWorld !== world) {
       const areaName = world.biome?.name || world.region?.name || (world.kind === 'dungeon' ? 'Dungeon' : 'new area');
       UI.event({ category: world.kind === 'dungeon' ? 'dungeon.entryExit' : 'dungeon.discovery', text: `Entered ${areaName}${world.depth ? ` at depth ${world.depth}` : ''}.`, meta: { data: { area: areaName, depth: world.depth || null } } });
@@ -1301,7 +1314,7 @@ export const game = {
       await loadArtFor([...w.creatures.map((m) => m.art), ...(w.looks ? w.looks.ids() : [])], true).catch((e) => console.warn(e));
       LoadingScreen.setProgress(90, 'Warming the flame…');
       await warmLevelArt(w);
-      releaseLevelArt(biome);
+      releaseLevelArt(biome, w);
       LoadingScreen.setProgress(100, 'Arriving…');
     } catch (e) {
       console.warn(e);
@@ -1342,7 +1355,7 @@ export const game = {
       await loadArtFor([...w.creatures.map((m) => m.art), ...(w.looks ? w.looks.ids() : [])], true).catch((e) => console.warn(e));
       LoadingScreen.setProgress(90, 'Warming the flame…');
       await warmLevelArt(w);
-      releaseLevelArt(biome);
+      releaseLevelArt(biome, w);
       LoadingScreen.setProgress(100, 'Arriving…');
     } catch (e) {
       console.warn(e);
@@ -1448,7 +1461,7 @@ export const game = {
         LoadingScreen.setProgress(90, 'Preparing the veil…');
         await yieldForLoadingPaint();
         await warmLevelArt(w);
-        releaseLevelArt(biome);
+        releaseLevelArt(biome, w);
         LoadingScreen.setProgress(100, 'Arriving…');
         void artReady.then(async () => {
           let active = G.world;
@@ -2317,6 +2330,7 @@ export const game = {
   brokeThrough(depth) {
     const c = G.char, had = c.defiance && c.defiance.n;
     commissionClear(G.world);
+    keepClear(G.world);
     if (worldRank(G.world) >= MARKS_RANK && !G.world.markPaid && canEarnInfernalMarks(G.world, c)) {
       G.world.markPaid = true;
       grantMarksWithBonus(1, `for a depth cleared at Heresy rank ${worldRank(G.world)}`, G.world, G.player?.st?.markHeretic || 0);
@@ -2329,6 +2343,7 @@ export const game = {
   onPlayerDeath(src) {
     const c = G.char;
     const w = G.world;
+    keepDeath();
     if (w && w.breach) return this.breachDeath(src);
     if (w && w.rift) return this.riftDeath(src);
     if (w && (w.unbound || w.unboundExploration)) return this.unboundDeath(src);
@@ -2390,7 +2405,7 @@ export const game = {
         await loadArtFor(BREACH_ART.map((a) => a.id), true).catch((e) => console.warn(e)); // the Breach's six atlases (~1.6 MB)
         LoadingScreen.setProgress(90, 'Stabilizing dimensions…');
         await warmLevelArt(w);
-        releaseLevelArt(BREACH_BIOME);
+        releaseLevelArt(BREACH_BIOME, w);
         LoadingScreen.setProgress(100, 'Arriving…');
       } finally { await LoadingScreen.hide(); }
     }, 40);
@@ -2462,6 +2477,7 @@ export const game = {
   /** A cleared Breach floor exits to town; there is no direct onward portal. */
   breachExit(world) {
     const floor = world.breach.floor, depth = G.char?.depth || breachDepth(floor);
+    if (!world.keepBreachRecorded) { world.keepBreachRecorded = true; keepBreach(floor); }
     UI.dialog({
       title: `Breach Floor ${floor} Sealed`,
       html: `<p>The Heart is still. Return to town to continue your campaign at Depth <b>${depth}</b>.</p>`,
@@ -2524,7 +2540,7 @@ export const game = {
         await loadArtFor([...w.creatures.map((m) => m.art), ...(w.looks ? w.looks.ids() : [])], true).catch((e) => console.warn(e));
         LoadingScreen.setProgress(90, 'Igniting the beacon…');
         await warmLevelArt(w);
-        releaseLevelArt(biome);
+        releaseLevelArt(biome, w);
         LoadingScreen.setProgress(100, 'Arriving…');
       } finally { await LoadingScreen.hide(); }
     }, 40);
@@ -2681,7 +2697,7 @@ export const game = {
       await loadArtFor([...w.creatures.map((m) => m.art), ...(w.looks ? w.looks.ids() : []), ...(w.velscour ? w.velscour.courtArt || [] : [])], true).catch((e) => console.warn(e)); // (his court steps in later)
       LoadingScreen.setProgress(90, 'Preparing the battleground…');
       await warmLevelArt(w);
-      releaseLevelArt(biome);
+      releaseLevelArt(biome, w);
       const p = G.player;
       if (w.velscour && p) {
         const [x, y] = w.map.nudge(22.5, 26.5, 0.4);
@@ -2749,7 +2765,7 @@ export const game = {
         await loadArtFor([...w.creatures.map((m) => m.art), ...(w.looks ? w.looks.ids() : [])], true).catch((e) => console.warn(e));
         LoadingScreen.setProgress(90, 'Preparing the veil…');
         await warmLevelArt(w);
-        releaseLevelArt(biome);
+        releaseLevelArt(biome, w);
         LoadingScreen.setProgress(100, 'Arrived.');
       } catch (e) {
         console.warn(e);

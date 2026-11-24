@@ -1,5 +1,6 @@
 // Abyssal Rifts (docs/ENDGAME.md, docs/ENDGAME_OVERHAUL.md): the run inside a rift level.
 import { G } from '../state.js';
+import { keepRift } from './keep.js';
 import { rand, chance, pick, escapeHtml } from '../core/util.js';
 import { sfx } from '../core/audio.js';
 import { addEffect, Ring, Column, Bolt, sparkle, floatText } from '../gfx/vfx.js';
@@ -258,6 +259,7 @@ export function riftWin(world, m) {
   if (!R || R.done || R.failed) return;
   const tier = normalizeRiftTier(R.tier);
   R.done = true;
+  keepRift(R.tier, R.t || 0);
   const time = Math.max(0, Number(R.t) || 0), timed = !R.timedOut && time <= R.limit;
   const jump = timed ? riftJump(time / R.limit) : 0;
   c.rifts ||= { open: 1, best: 0, cleared: {}, bestTime: {}, runs: 0, fails: 0, deaths: 0 };

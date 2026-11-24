@@ -42,6 +42,7 @@ import { noteFind, codexMf } from './reliquary.js';
 import { markBonuses, gainMarkXp } from './marks.js';
 import { endgame, saveEndgame } from './endgame.js';
 import { heresyHero, heresyAllows, heresyAbilityCostMul, heresyCooldownMul, heresyShrineDurationMul } from './heresies.js';
+import { keepBonuses, keepGold, keepItem, keepPotion } from './keep.js';
 
 // XP for the next level across the Level 1-100 progression curve.
 const xpCurve = (L) => (45 * L * L + 35 * L) * (1 + Math.pow(L / 25, 1.25));
@@ -145,6 +146,8 @@ export class Player extends Creature {
     // Defiance (deaths in this five-depth block) and the town's blessing (game/defiance.js)
     const hb = heroBonus(c);
     buffDmg += hb.dmg; buffLife += hb.life; buffReduce += hb.reduce; buffMf += hb.mf + (this.codexMf = codexMf()); buffGf += hb.gf; buffXp += hb.xp;
+    const kb = keepBonuses(c);
+    buffMf += kb.mf; buffGf += kb.gf; buffXp += kb.xp;
     // the Endgame (docs/ENDGAME.md): Infernal Marks (every hero's) and the Glass Cannon Heresy (this hero's)
     const mk = this.marks = markBonuses(), hh = heresyHero(c);
     buffLife += hh.life; buffDmg += hh.dmg; // (Marks' life multiplies maxHp below; their Fortune is st.drops, game/loot.js)
@@ -477,7 +480,7 @@ export class Player extends Creature {
     const c = this.char;
     switch (g.kind) {
       case 'gold':
-        c.gold += g.amount; sfx('gold');
+        c.gold += g.amount; keepGold(g.amount); sfx('gold');
         G.ui?.event?.({ category: 'loot.gold', text: `Picked up ${fmtInt(g.amount)} gold.`, color: '#ffd34a', meta: { data: { amount: g.amount } } });
         floatText(this.x, this.y, 46, `+${fmtInt(g.amount)} gold`, '#ffd34a', 12);
         return true;
@@ -534,6 +537,7 @@ export class Player extends Creature {
           if (!g.warned) { g.warned = true; const reason = g.item.type === 'gem' ? 'Gem Bag full' : 'Inventory full'; floatText(this.x, this.y, 50, reason, '#ff8080', 12); G.ui?.event?.({ category: 'loot.inventoryFull', text: `${reason}.`, color: '#ff7777', meta: { important: true } }); sfx('error'); }
           return false;
         }
+        keepItem(g.item);
         sfx('pickup');
         if (G.ui) { G.ui.log(`${slot ? 'Equipped' : 'Picked up'} <span style="color:${g.color}">${g.label}</span>`, g.color, { category: g.item.type === 'gem' ? 'loot.gem' : 'loot.equipment', important: g.item.type === 'gear' && g.item.rarity >= RARITY_LEGENDARY, data: { rarity: g.item.rarity } }); G.ui.refresh(); }
         return true;
@@ -548,6 +552,7 @@ export class Player extends Creature {
     if (!heresyAllows('potion', c)) { floatText(this.x, this.y, 50, 'The Heresy forbids it', '#ff8060', 11); sfx('error'); return; } // Dry Throat
     if (!c.potions[kind]) { floatText(this.x, this.y, 50, 'No potions', '#ccc', 11); sfx('error'); return; }
     c.potions[kind]--;
+    keepPotion();
     this.potionCd = 0.9;
     sfx('potion');
     switch (kind) {
