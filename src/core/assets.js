@@ -11,6 +11,7 @@ import { loadReplacementArt } from './replacementart.js';
 import { loadEnemyArt } from './enemyart.js';
 import { preloadSong } from './audio.js';
 import { walkOverProp } from '../data/walkover.js';
+import { potionIconColor } from './potion-icon-color.mjs';
 
 export const CLASS_IDS = [
   'paladin', 'ranger', 'wizard', 'necromancer',
@@ -287,9 +288,21 @@ export function keepTileSets(tileset) {
 
 /** Make a canvas icon from a potion image (for inventory / shop). */
 export function potionIcon(color, size = 48) {
-  const img = A.potions[color];
+  const key = potionIconColor(color);
+  const img = key && A.potions[key];
   const c = makeCanvas(size, size);
   const x = c.getContext('2d');
+  if (!img || !img.width || !img.height) {
+    // A gameplay potion kind can reach this shared path before an inventory item has
+    // supplied a color. Keep a recognizable icon even if an asset failed to decode.
+    const tint = ({ hp: '#d94349', mp: '#4388e8', rejuv: '#a05add', fury: '#ed923d' })[String(color || '').toLowerCase()] || '#c28cce';
+    x.save(); x.translate(size / 2, size / 2); x.scale(size / 48, size / 48);
+    x.fillStyle = '#211923'; x.strokeStyle = '#e7c77b'; x.lineWidth = 2.5;
+    x.beginPath(); x.moveTo(-6, -20); x.lineTo(6, -20); x.lineTo(6, -13); x.lineTo(12, -7); x.lineTo(12, 17); x.quadraticCurveTo(0, 22, -12, 17); x.lineTo(-12, -7); x.lineTo(-6, -13); x.closePath(); x.fill(); x.stroke();
+    x.fillStyle = tint; x.beginPath(); x.moveTo(-10, 2); x.quadraticCurveTo(0, -1, 10, 2); x.lineTo(10, 15); x.quadraticCurveTo(0, 19, -10, 15); x.closePath(); x.fill();
+    x.restore();
+    return c;
+  }
   const s = Math.min(size / img.width, size / img.height) * 0.92;
   x.drawImage(img, (size - img.width * s) / 2, (size - img.height * s) / 2, img.width * s, img.height * s);
   return c;

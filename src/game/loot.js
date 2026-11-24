@@ -328,7 +328,7 @@ export function bannerKitIcon(size = 48) {
 export function itemIcon(item, size = 48) {
   if (item.type === 'gem' && GEMS[item.gem].sigil) return sigilIcon(item.tier, size);
   if (item.type === 'gem') return gemIcon(item.gem, GEMS[item.gem].color, item.tier, size);
-  if (item.type === 'potion') return potionIcon(item.color, size);
+  if (item.type === 'potion') return potionIcon(item.color || item.kind, size);
   if (item.type === 'sheet') return sheetIcon(item, size);
   if (item.type === 'banner_kit') return bannerKitIcon(size);
   if (item.slot === 'ring') return ringIcon(MATERIALS[item.tier].color, elem((AUGMENTS[(item.aug && item.aug[0] || {}).id] || {}).el || 'arcane').glow, item.rarity, size);

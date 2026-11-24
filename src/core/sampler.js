@@ -1,7 +1,7 @@
 // The Bard's acoustic plucked lute sampler and step sequencer (MIDI 36-96).
 // Synthesizes authentic acoustic Renaissance plucked lute string tones with physical plectrum attack transient,
 // warm dual-string course detuning (+/- 3.5 cents), dynamic lowpass damping, and soundboard wooden body resonance.
-import { audioCtx, audioOut, beginAudioVoice, finishAudioVoice } from './audio.js';
+import { audioCtx, audioOut, beginAudioVoice, finishAudioVoice, registerAudioVoiceSource } from './audio.js';
 
 export const INSTRUMENTS = {
   lute: { name: 'Acoustic Lute', lo: 36, hi: 96 },
@@ -73,6 +73,7 @@ function playLuteNote(ac, midi, { at = 0, dur = 0.5, vel = 0.8, art = 'normal_he
   const totalDur = holdDur + (isShort ? 0.25 : 0.45);
   const soundToken = beginAudioVoice(`lute:${midi}`, 'playerSpell', `Bard acoustic lute (${midi})`, totalDur + Math.max(0, t - ac.currentTime));
   if (!soundToken) return null;
+  const diagnosticSources = [];
   const outNode = out(ac);
 
   // 1. Master note gain envelope
@@ -133,6 +134,7 @@ function playLuteNote(ac, midi, { at = 0, dur = 0.5, vel = 0.8, art = 'normal_he
     gSub.connect(filter);
     oscSub.start(t);
     oscSub.stop(t + totalDur + 0.02);
+    diagnosticSources.push({ source: oscSub, startAt: t, stopAt: t + totalDur + 0.02 });
   }
 
   // 4. Pluck attack transient (white noise puff simulating plectrum/finger friction on gut string)
@@ -158,6 +160,7 @@ function playLuteNote(ac, midi, { at = 0, dur = 0.5, vel = 0.8, art = 'normal_he
     noiseGain.connect(filter);
     noiseSource.start(t);
     noiseSource.stop(t + noiseDur);
+    diagnosticSources.push({ source: noiseSource, startAt: t, stopAt: t + noiseDur });
   }
 
   filter.connect(g);
@@ -168,6 +171,7 @@ function playLuteNote(ac, midi, { at = 0, dur = 0.5, vel = 0.8, art = 'normal_he
   const end = t + totalDur;
   osc1.stop(end + 0.02);
   osc2.stop(end + 0.02);
+  diagnosticSources.push({ source: osc1, startAt: t, stopAt: end + 0.02 }, { source: osc2, startAt: t, stopAt: end + 0.02 });
 
   const srcs = [osc1, osc2, ...(oscSub ? [oscSub] : [])];
   const v = { id, src: osc1, srcs, g, end };
@@ -182,6 +186,7 @@ function playLuteNote(ac, midi, { at = 0, dur = 0.5, vel = 0.8, art = 'normal_he
       g2.disconnect();
     } catch (e) {}
   };
+  for (const source of diagnosticSources) registerAudioVoiceSource(soundToken, source.source, source.startAt, source.stopAt);
 
   live.push(v);
   while (live.length > MAX_VOICES) fade(live.shift(), 0.04);

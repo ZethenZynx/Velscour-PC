@@ -7,7 +7,7 @@ import { addMarkBonusChest } from './markchests.js';
 import { input } from '../core/input.js';
 import { camera } from '../core/view.js';
 import { profileEnd, profileRecord, profileStart } from '../core/perfdiagnostics.js';
-import { sfx, playMusic, stopMusic, setAmbience, stopAmbience, footsteps, stopIronExpressWhistleSfx } from '../core/audio.js';
+import { sfx, playMusic, stopMusic, setAmbience, stopAmbience, footsteps, stopIronExpressWhistleSfx, audioDiagnosticsEnabled, recordAudioDiagnosticMarker } from '../core/audio.js';
 import { rand, pick, randi, chance, escapeHtml, dist, dist2, RNG, makeCanvas, fmtInt, swapKey, hexToRgb, clamp, shuffle } from '../core/util.js';
 import { biomeTileSet, loadBiomeArt, mixedTileSet, keepTileSets } from '../core/assets.js';
 import { loadArtFor, enemyImage, markArtCaches, trimArtCaches } from '../core/enemyart.js';
@@ -432,6 +432,13 @@ export const game = {
 
   setWorld(world, start, oldWorld) {
     const p = G.player;
+    if (oldWorld && oldWorld !== world && audioDiagnosticsEnabled()) {
+      const from = { worldId: oldWorld.id, kind: oldWorld.kind, environment: oldWorld.biome?.name || oldWorld.kind, depth: oldWorld.depth ?? null };
+      const to = { worldId: world.id, kind: world.kind, environment: world.biome?.name || world.kind, depth: world.depth ?? null };
+      if (oldWorld._audioDiagnosticCombat === true) recordAudioDiagnosticMarker('combat-end', { ...from, reason: 'area-transition', transitionTo: to, inCombat: false });
+      recordAudioDiagnosticMarker('area-exit', { ...from, reason: 'area-transition', transitionTo: to, inCombat: false });
+      oldWorld._audioDiagnosticCombat = false;
+    }
     if (oldWorld?.map?.ghostTrain && oldWorld !== world) stopIronExpressWhistleSfx();
     if (oldWorld?.keep && !world?.keep) releaseKeepArt();
     UI.hideRiftCompletion();

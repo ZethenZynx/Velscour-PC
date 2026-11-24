@@ -398,7 +398,7 @@ export class World {
     if (audioDiagnosticsEnabled()) {
       const inCombat = this.creatures.some((creature) => creature.team === 'enemy' && !creature.dead && (creature.awake || creature.state === 'act'));
       if (this._audioDiagnosticCombat !== inCombat) {
-        recordAudioDiagnosticMarker(inCombat ? 'combat-start' : 'combat-end', { worldId: this.id, environment: this.biome?.name || this.kind, depth: this.depth ?? null });
+        recordAudioDiagnosticMarker(inCombat ? 'combat-start' : 'combat-end', { worldId: this.id, environment: this.biome?.name || this.kind, depth: this.depth ?? null, inCombat });
         this._audioDiagnosticCombat = inCombat;
       }
     } else this._audioDiagnosticCombat = null;

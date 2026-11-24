@@ -6,6 +6,7 @@
 // Songs and beds stream through <audio> elements routed into the Web Audio graph, so they're never fully decoded.
 import { G } from '../state.js';
 import { AUDIO_VOLUME_GROUPS, audioGroupForSound, normalizeAudioSettings } from './audio-settings.js';
+import { summarizeAudioDiagnosticEvents } from './audio-diagnostics.mjs';
 
 let ac = null, master, sfxBus, musicBus, ambBus, noiseBuf, pulseWave, activeOutputBus = null;
 const categoryBuses = {};
@@ -14,7 +15,7 @@ let currentPlaybackRecord = null;
 let audioRecording = null;
 let nextPlaybackId = 0;
 const liveSoundInstances = [];
-const audioMetrics = { discarded: 0, duplicateSuppressed: 0, distanceCulled: 0, offscreenCulled: 0, cancelledAfterCombat: 0, playbackErrors: 0 };
+const audioMetrics = { discarded: 0, duplicateSuppressed: 0, distanceCulled: 0, offscreenCulled: 0, cancelledAfterCombat: 0, sampleVoiceSuppressed: 0, playbackErrors: 0 };
 const peakByCategory = {};
 const metricsByCategory = {};
 let audioProcessingMs = 0, audioProcessingSamples = 0, audioProcessingWorstMs = 0;
@@ -108,16 +109,16 @@ export function audioActiveByCategory() {
 
 /** Register a non-sfx Web Audio voice (for example the Bard sampler) with the same limits and diagnostics. */
 export function beginAudioVoice(sound, category, source, durationSeconds = 1, { combat = false } = {}) {
+  const diagnostic = beginDiagnostic(sound, { category, source, combat });
   const audio = G.settings.audio = normalizeAudioSettings(G.settings.audio);
-  if (audio.muted.master || audio.volumes.master <= 0 || audio.muted[category] || audio.volumes[category] <= 0) return null;
+  if (audio.muted.master || audio.volumes.master <= 0 || audio.muted[category] || audio.volumes[category] <= 0) { finishRequestedDiagnostic(diagnostic, 'muted'); return null; }
   const now = ac?.currentTime || 0;
   for (let i = liveSoundInstances.length - 1; i >= 0; i--) if (liveSoundInstances[i].endsAt <= now) liveSoundInstances.splice(i, 1);
-  if (liveSoundInstances.filter((item) => item.sound === sound).length >= audio.maxIdenticalSounds) { recordAudioMetric('duplicateSuppressed', category); return null; }
-  if (combat && liveSoundInstances.filter((item) => item.combat).length >= audio.maxCombatSounds) { recordAudioMetric('discarded', category); return null; }
+  if (liveSoundInstances.filter((item) => item.sound === sound).length >= audio.maxIdenticalSounds) { recordAudioMetric('duplicateSuppressed', category); finishRequestedDiagnostic(diagnostic, 'duplicate-suppressed'); return null; }
+  if (combat && liveSoundInstances.filter((item) => item.combat).length >= audio.maxCombatSounds) { recordAudioMetric('discarded', category); finishRequestedDiagnostic(diagnostic, 'channel-limit'); return null; }
   const playback = { id: ++nextPlaybackId, sound, category, combat, endsAt: now + Math.max(0.05, durationSeconds), route: null };
   liveSoundInstances.push(playback);
-  const diagnostic = beginDiagnostic(sound, { category, source });
-  if (diagnostic) { diagnostic.playbackId = playback.id; diagnostic.asset = `sampler:${sound}`; diagnosticEvent('actual-start', diagnostic, { category, playbackId: playback.id, asset: diagnostic.asset }); }
+  if (diagnostic) { diagnostic.playbackId = playback.id; diagnostic.asset = `sampler:${sound}`; diagnosticEvent('playback-registered', diagnostic, { category, playbackId: playback.id, asset: diagnostic.asset }); }
   if (audioRecording?.active) peakByCategory[category] = Math.max(peakByCategory[category] || 0, liveSoundInstances.filter((item) => item.category === category).length);
   return { playback, diagnostic };
 }
@@ -125,7 +126,12 @@ export function beginAudioVoice(sound, category, source, durationSeconds = 1, { 
 export function finishAudioVoice(token, reason = 'ended') {
   if (!token) return;
   token.playback.endsAt = ac?.currentTime || 0;
-  if (token.diagnostic) { token.diagnostic.sealed = true; finishDiagnostic(token.diagnostic, reason); }
+  if (token.diagnostic) { token.diagnostic.sealed = true; if (!token.diagnostic.sources) finishDiagnostic(token.diagnostic, reason); }
+}
+
+/** Add a real Web Audio source to a registered voice's diagnostics after scheduling it. */
+export function registerAudioVoiceSource(token, source, startAt, stopAt) {
+  trackDiagnosticSource(source, startAt, stopAt, token?.diagnostic);
 }
 
 /** Optional, disabled-by-default one-shot tracing for audio investigations. */
@@ -169,7 +175,10 @@ export function clearAudioDiagnosticRecording() {
 
 export function recordAudioDiagnosticMarker(type, detail = {}) {
   if (!audioRecording?.active) return false;
-  if (audioRecording.events.length < 20000) audioRecording.events.push({ type, timeUtc: new Date().toISOString(), perfMs: performance.now(), ...detail });
+  const world = G.world;
+  if (audioRecording.events.length < 20000) audioRecording.events.push({ type, timeUtc: new Date().toISOString(), perfMs: performance.now(),
+    worldId: detail.worldId ?? world?.id ?? null, environment: detail.environment ?? world?.biome?.name ?? world?.kind ?? null,
+    inCombat: detail.inCombat ?? (world?._audioDiagnosticCombat === true), ...detail });
   return true;
 }
 
@@ -197,7 +206,8 @@ export function audioDiagnosticReport() {
       potentiallyOrphaned: lifetimes.filter((item) => item.durationMs > 5000).slice(0, 100),
       stillActiveWhenRecordingStopped: audioRecording.activeAtStop || [],
       audioProcessingSpikes: events.filter((event) => event.type === 'processing-spike').sort((a, b) => b.durationMs - a.durationMs).slice(0, 100),
-      totalRequests: [...sounds.values()].reduce((a, b) => a + b, 0) },
+      totalRequests: [...sounds.values()].reduce((a, b) => a + b, 0),
+      lifecycle: summarizeAudioDiagnosticEvents(events) },
     eventLimit: 20000, truncated: events.length >= 20000, events,
   };
 }
@@ -227,7 +237,8 @@ function diagnosticEvent(type, record, details = {}) {
   if (!audioDiagnosticSink || !record) return;
   try { audioDiagnosticSink({ type, timeUtc: new Date().toISOString(), perfMs: performance.now(), id: record.id, sound: record.sound, asset: record.asset,
     assetPath: record.assetPath || null, category: record.category || null, playbackId: record.playbackId || null,
-    source: record.source, stack: record.stack, activeInstances: activeDiagnostics.size,
+    source: record.source, stack: record.stack, worldId: record.worldId ?? null, environment: record.environment ?? null,
+    inCombat: record.inCombat ?? null, combatAudio: record.combatAudio ?? null, activeInstances: activeDiagnostics.size,
     activeSources: record.sources, ...details }); } catch { /* diagnostics must never affect sound playback */ }
 }
 function diagnosticSourceActive(record) {
@@ -238,7 +249,9 @@ function beginDiagnostic(sound, context) {
   if (!audioDiagnosticSink) return null;
   const record = { id: ++nextDiagnosticId, sound, asset: `procedural:${sound}`, source: context?.source || 'unattributed',
     assetPath: null, category: context?.category || null, sourceActive: context?.sourceActive,
-    stack: new Error().stack, sources: 0, sealed: false };
+    worldId: context?.worldId ?? G.world?.id ?? null, environment: context?.environment ?? G.world?.biome?.name ?? G.world?.kind ?? null,
+    inCombat: context?.inCombat ?? (G.world?._audioDiagnosticCombat === true), combatAudio: context?.combat ?? null,
+    stack: new Error().stack, sources: 0, sourceSerial: 0, sealed: false };
   activeDiagnostics.set(record.id, record);
   diagnosticEvent('play', record, { sourceActive: diagnosticSourceActive(record) });
   return record;
@@ -248,15 +261,30 @@ function finishDiagnostic(record, reason = 'ended') {
   activeDiagnostics.delete(record.id);
   diagnosticEvent('stop', record, { reason, sourceActive: diagnosticSourceActive(record) });
 }
-function trackDiagnosticSource(source, record = currentDiagnostic) {
+function trackDiagnosticSource(source, startAt = ac?.currentTime || 0, stopAt = null, record = currentDiagnostic) {
   if (!audioDiagnosticSink || !record || !source) return;
   record.sources++;
-  diagnosticEvent('source-start', record);
+  const sourceId = ++record.sourceSerial;
+  const scheduledAt = Number.isFinite(startAt) ? startAt : ac?.currentTime || 0;
+  diagnosticEvent('source-scheduled', record, { sourceId, audioTime: scheduledAt,
+    scheduledInMs: Math.max(0, (scheduledAt - (ac?.currentTime || 0)) * 1000), expectedStopAt: Number.isFinite(stopAt) ? stopAt : null });
+  let started = false;
+  let startTimer = setTimeout(() => {
+    if (ac?.state === 'running' && (ac.currentTime + 0.015 >= scheduledAt) && activeDiagnostics.has(record.id)) {
+      started = true;
+      diagnosticEvent('source-start', record, { sourceId, audioTime: scheduledAt, inferredFromEnd: false });
+    }
+  }, Math.max(0, (scheduledAt - (ac?.currentTime || 0)) * 1000) + 20);
   const previous = source.onended;
   source.onended = (event) => {
     try { previous?.call(source, event); } finally {
+      clearTimeout(startTimer);
+      if (!started && (ac?.currentTime || 0) >= scheduledAt) {
+        started = true;
+        diagnosticEvent('source-start', record, { sourceId, audioTime: scheduledAt, inferredFromEnd: true });
+      }
       record.sources = Math.max(0, record.sources - 1);
-      diagnosticEvent('source-stop', record);
+      diagnosticEvent('source-stop', record, { sourceId, audioTime: ac?.currentTime ?? null, endedBeforeStart: !started });
       if (record.sealed && record.sources === 0) finishDiagnostic(record);
     }
   };
@@ -288,7 +316,7 @@ function noise(t, dur, { type = 'lowpass', f0 = 1000, f1 = f0, q = 1, vol = 0.5,
   filt.frequency.setValueAtTime(f0, t); filt.frequency.exponentialRampToValueAtTime(Math.max(20, f1), t + dur);
   const g = ac.createGain(); env(g, t, a, vol, dur);
   src.connect(filt); filt.connect(g); g.connect(activeOutputBus || sfxBus); trackPlaybackEnd(t + dur + 0.05);
-  trackIronExpressWhistleSource(src); trackDiagnosticSource(src); src.start(t, Math.random() * 0.5); src.stop(t + dur + 0.05);
+  trackIronExpressWhistleSource(src); src.start(t, Math.random() * 0.5); src.stop(t + dur + 0.05); trackDiagnosticSource(src, t, t + dur + 0.05);
 }
 
 function tone(t, dur, { wave = 'sine', f0 = 440, f1 = f0, vol = 0.3, a = 0.005, detune = 0 } = {}) {
@@ -297,7 +325,7 @@ function tone(t, dur, { wave = 'sine', f0 = 440, f1 = f0, vol = 0.3, a = 0.005, 
   o.frequency.setValueAtTime(f0, t); o.frequency.exponentialRampToValueAtTime(Math.max(20, f1), t + dur);
   const g = ac.createGain(); env(g, t, a, vol, dur);
   o.connect(g); g.connect(activeOutputBus || sfxBus); trackPlaybackEnd(t + dur + 0.05);
-  trackIronExpressWhistleSource(o); trackDiagnosticSource(o); o.start(t); o.stop(t + dur + 0.05);
+  trackIronExpressWhistleSource(o); o.start(t); o.stop(t + dur + 0.05); trackDiagnosticSource(o, t, t + dur + 0.05);
 }
 
 function trackIronExpressWhistleSource(source) {
@@ -321,7 +349,7 @@ const SOUNDS = {
   bones: (t, p) => { for (let i = 0; i < 4; i++) tone(t + i * 0.035, 0.05, { wave: 'square', f0: R(700, 1300) * p, f1: 300, vol: 0.06 }); },
   fire: (t, p) => noise(t, 0.35, { f0: 2400 * p, f1: 300, vol: 0.35, a: 0.03 }),
   cold: (t, p) => { tone(t, 0.25, { f0: 2200 * p, f1: 3400, vol: 0.07 }); noise(t, 0.2, { type: 'highpass', f0: 5000, f1: 2500, vol: 0.18 }); },
-  light: (t, p) => { const o = ac.createOscillator(); o.type = 'sawtooth'; const g = ac.createGain(); env(g, t, 0.003, 0.12, 0.2); for (let i = 0; i < 8; i++) o.frequency.setValueAtTime(R(150, 1800) * p, t + i * 0.02); o.connect(g); g.connect(activeOutputBus || sfxBus); trackPlaybackEnd(t + 0.3); trackDiagnosticSource(o); o.start(t); o.stop(t + 0.25); noise(t, 0.15, { type: 'highpass', f0: 3000, vol: 0.2 }); },
+  light: (t, p) => { const o = ac.createOscillator(); o.type = 'sawtooth'; const g = ac.createGain(); env(g, t, 0.003, 0.12, 0.2); for (let i = 0; i < 8; i++) o.frequency.setValueAtTime(R(150, 1800) * p, t + i * 0.02); o.connect(g); g.connect(activeOutputBus || sfxBus); trackPlaybackEnd(t + 0.3); o.start(t); o.stop(t + 0.25); trackDiagnosticSource(o, t, t + 0.25); noise(t, 0.15, { type: 'highpass', f0: 3000, vol: 0.2 }); },
   holy_bolt: (t, p) => {
     noise(t, 0.2, { type: 'bandpass', f0: 4200, f1: 700, q: 1.2, vol: 0.22, a: 0.002 });
     for (let i = 0; i < 3; i++) noise(t + 0.025 + i * 0.035, 0.045, { type: 'highpass', f0: R(2800, 5200), f1: 900, vol: 0.12, a: 0.001 });
@@ -514,7 +542,7 @@ export function sfx(name, vol = 1, pitch = 1, context = null) {
   const route = createSpatialRoute(categoryBuses[category] || sfxBus, context, distance, audio);
   const playback = { id: ++nextPlaybackId, sound: name, category, combat, endsAt: now + 0.2, route: route.cleanup };
   liveSoundInstances.push(playback);
-  if (diagnostic) { diagnostic.category = category; diagnostic.playbackId = playback.id; diagnosticEvent('actual-start', diagnostic, { category, playbackId: playback.id }); }
+  if (diagnostic) { diagnostic.category = category; diagnostic.combatAudio = combat; diagnostic.playbackId = playback.id; }
   if (audioRecording?.active) peakByCategory[category] = Math.max(peakByCategory[category] || 0, liveSoundInstances.filter((item) => item.category === category).length);
   if (['rareItem', 'questAchievement'].includes(category) && audio.notificationDucking) duckForNotification(now, audio);
   const previousDiagnostic = currentDiagnostic;
@@ -528,7 +556,15 @@ export function sfx(name, vol = 1, pitch = 1, context = null) {
   const started = audioRecording?.active ? performance.now() : 0;
   try {
     const p = pitch * (0.92 + Math.random() * 0.16);
-    if (playSample(name, vol * route.attenuation, p, now, route.node)) return true;
+    const sampleResult = playSample(name, vol * route.attenuation, p, now, route.node);
+    if (sampleResult === 'limited') {
+      recordAudioMetric('sampleVoiceSuppressed', category);
+      const liveIndex = liveSoundInstances.indexOf(playback);
+      if (liveIndex >= 0) liveSoundInstances.splice(liveIndex, 1);
+      route.cleanup?.();
+      return finishRequestedDiagnostic(diagnostic, 'sample-voice-limit');
+    }
+    if (sampleResult) return true;
     voice(vol * route.attenuation, () => fn(now, p), route.node);
     return true;
   } catch (e) { recordAudioMetric('playbackErrors', category); if (diagnostic) diagnosticEvent('error', diagnostic, { message: String(e?.message || e) }); return false; }
@@ -613,7 +649,7 @@ export function levelUpFanfare() {
   liveSoundInstances.push(playback);
   activeOutputBus = categoryBuses.questAchievement || sfxBus;
   currentDiagnostic = diagnostic; currentPlaybackRecord = playback; currentSoundName = 'levelup-fanfare';
-  if (diagnostic) { diagnostic.playbackId = playback.id; diagnosticEvent('actual-start', diagnostic, { category: 'questAchievement', playbackId: playback.id }); }
+  if (diagnostic) diagnostic.playbackId = playback.id;
   const t0 = now + 0.02, ts = t0 + 0.55;
   try {
     // dread swell into the toll
@@ -630,7 +666,7 @@ export function levelUpFanfare() {
       const o = ac.createOscillator(); o.type = 'sawtooth'; o.frequency.value = NOTE(n); o.detune.value = dt;
       const g = ac.createGain(); g.gain.setValueAtTime(0.0001, ts); g.gain.exponentialRampToValueAtTime(0.03 - i * 0.004, ts + 0.6);
       g.gain.exponentialRampToValueAtTime(0.0001, ts + 3.4);
-      o.connect(g); g.connect(lp); trackDiagnosticSource(o); trackPlaybackEnd(ts + 3.5); o.start(ts); o.stop(ts + 3.5);
+      o.connect(g); g.connect(lp); trackPlaybackEnd(ts + 3.5); o.start(ts); o.stop(ts + 3.5); trackDiagnosticSource(o, ts, ts + 3.5);
     }));
     noise(ts + 0.3, 2.6, { type: 'bandpass', f0: 380, f1: 180, q: 4, vol: 0.12, a: 0.8 });   // a breath in the dark
   } catch (e) { audioMetrics.playbackErrors++; }
@@ -676,6 +712,10 @@ const SAMPLES = {
   iron_express_whistle: { s: ['iron_express_whistle'], ext: 'wav', v: 0.72, max: 1 },
   step_stone: STEP('stone'), step_dirt: STEP('dirt'), step_water: STEP('water'), step_wood: STEP('wood'),
 };
+// Footstep surfaces have sample sets, but the sound router also requires a procedural
+// registry entry before it checks those sets. Reuse the generic footstep fallback.
+for (const name of ['step_stone', 'step_dirt', 'step_water', 'step_wood']) SOUNDS[name] = SOUNDS.step;
+export const hasSoundDefinition = (name) => typeof SOUNDS[name] === 'function';
 
 async function loadSamples() {
   try {
@@ -751,7 +791,7 @@ function playSample(name, vol, p, now, bus = sfxBus) {
   if (!ready.length) return false;
   const live = voices[name] || (voices[name] = []);
   for (let i = live.length - 1; i >= 0; i--) if (live[i] < now) live.splice(i, 1);
-  if (live.length >= (d.max || 3)) return true;   // enough of this sound already playing
+  if (live.length >= (d.max || 3)) return 'limited';
   const buf = ready[Math.floor(Math.random() * ready.length)];
   const src = ac.createBufferSource(); src.buffer = buffers[buf]; src.playbackRate.value = p;
   const g = ac.createGain(); g.gain.value = d.v * vol;
@@ -760,8 +800,8 @@ function playSample(name, vol, p, now, bus = sfxBus) {
   trackIronExpressWhistleSource(src);
   if (currentDiagnostic) currentDiagnostic.asset = `sample:${buf}`;
   if (currentDiagnostic) currentDiagnostic.assetPath = `${AUDIO}${manifest?.sfxFiles?.[buf] || `${buf}.${d.ext || 'mp3'}`}`;
-  trackDiagnosticSource(src);
   const endAt = now + buffers[buf].duration / p;
+  trackDiagnosticSource(src, now, endAt);
   trackPlaybackEnd(endAt); live.push(endAt);
   if (d.layer) voice(vol * 0.6, () => SOUNDS[d.layer](now, p), bus);
   return true;
