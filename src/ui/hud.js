@@ -19,7 +19,8 @@ import { pixelSprite } from '../gfx/pixelart.js';
 import { ELITE_AFFIXES } from '../data/enemies.js';
 import { DUNGEON_AFFIX_BY_ID } from '../data/dungeonaffixes.js';
 import { dungeonAffixIconURL } from './dungeonaffixicons.js';
-import { appendEnemyHistory, loadEnemyHistory, saveEnemyHistory } from './enemyhistory.js';
+import { appendEnemyHistory, createEnemyHistorySaveQueue, loadEnemyHistory } from './enemyhistory.js';
+import { profileEnd, profileRecord, profileStart } from '../core/perfdiagnostics.js';
 
 const TAUNT_KEY = 'velscour_taunts_v1'; // Velscour's level-up deck: the last mood and the lines already shown
 import { Meter } from '../game/dpsmeter.js';
@@ -38,6 +39,7 @@ const SLOT_MAP = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 'hp', 'mp', 'rejuv',
 
 /** [x, y, w, h] of a sprite's non-transparent pixels (monster sheets carry lots of padding), memoised per image. */
 const boxes = new WeakMap();
+const thumbnails = new WeakMap();
 const pct = (v, total) => (v / total) * 100 + '%';
 function opaqueBox(img) {
   let b = boxes.get(img);
@@ -63,6 +65,8 @@ function enemyThumbnail(monster) {
   try {
     const img = monster.spriteImage?.();
     if (!img?.width || !img?.height) return '';
+    const cached = thumbnails.get(img);
+    if (cached) return cached;
     const [sx, sy, sw, sh] = opaqueBox(img), size = 64, pad = 2;
     const scale = Math.min((size - pad * 2) / sw, (size - pad * 2) / sh);
     const dw = sw * scale, dh = sh * scale, canvas = document.createElement('canvas');
@@ -70,7 +74,9 @@ function enemyThumbnail(monster) {
     const ctx = canvas.getContext('2d');
     ctx.imageSmoothingEnabled = false;
     ctx.drawImage(img, sx, sy, sw, sh, (size - dw) / 2, size - pad - dh, dw, dh);
-    return canvas.toDataURL('image/png');
+    const thumbnail = canvas.toDataURL('image/png');
+    thumbnails.set(img, thumbnail);
+    return thumbnail;
   } catch { return ''; }
 }
 
@@ -85,6 +91,13 @@ export const HUD = {
   enemyHistoryImages: new Map(),
   init() {
     UI.hud = this;
+    if (!this.enemyHistoryFlushBound) {
+      this.enemyHistoryFlushBound = () => this.enemyHistorySaver?.flush();
+      window.addEventListener('pagehide', this.enemyHistoryFlushBound);
+      document.addEventListener('visibilitychange', () => {
+        if (document.visibilityState === 'hidden') this.enemyHistoryFlushBound();
+      });
+    }
     CharacterPortrait.init($('#hud'));
     const geo = A.hudGeo;
     // the bar's aspect (and how much room it takes at the bottom) comes from the art's geometry
@@ -812,7 +825,9 @@ export const HUD = {
       }
     }
     this.updateStats(dt);
+    const minimapStart = profileStart();
     drawMinimap(w, dt, $('#minimap'));
+    if (minimapStart) profileRecord('minimap', profileEnd(minimapStart));
   },
 
   /** The stats plaque: level, attack, sheet DPS and the real 30 s average, refreshed every 0.1 s. */
@@ -856,6 +871,7 @@ export const HUD = {
   ensureEnemyHistory() {
     if (this.enemyHistoryLoaded) return;
     this.enemyHistory = loadEnemyHistory();
+    this.enemyHistorySaver = createEnemyHistorySaveQueue(this.enemyHistory);
     this.enemyHistoryIndex = this.enemyHistory.length - 1;
     this.enemyHistoryLoaded = true;
     this.paintEnemyHistoryControls();
@@ -887,7 +903,7 @@ export const HUD = {
     if (removedOldest && this.enemyHistoryReviewing) this.enemyHistoryIndex = Math.max(0, this.enemyHistoryIndex - 1);
     else if (!this.enemyHistoryReviewing) this.enemyHistoryIndex = this.enemyHistory.length - 1;
     // At most 100 compact records are stored; if a browser denies storage, live targeting still works.
-    saveEnemyHistory(this.enemyHistory);
+    this.enemyHistorySaver?.schedule();
     this.paintEnemyHistoryControls();
   },
   navigateEnemyHistory(direction) {
@@ -925,7 +941,11 @@ export const HUD = {
     const live = isPlayerTargetable;
     const at = p.attackTarget && p.attackTarget.target;
     const cur = live(G.hover) ? G.hover : live(at) ? at : live(G.lastHit) ? G.lastHit : null;
-    if (cur) this.recordEnemy(cur);
+    if (cur) {
+      const historyStart = profileStart();
+      this.recordEnemy(cur);
+      if (historyStart) profileRecord('enemyHistory', profileEnd(historyStart));
+    }
     if (cur && !this.enemyHistoryReviewing) this.tb = cur;
     const historical = this.enemyHistoryReviewing ? this.enemyHistory[this.enemyHistoryIndex] : (!cur && !this.tb ? this.enemyHistory.at(-1) : null);
     const t = historical || this.tb;

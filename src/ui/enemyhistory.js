@@ -37,6 +37,24 @@ export function saveEnemyHistory(history, storage = globalThis.localStorage) {
   catch { return false; }
 }
 
+/** Coalesce encounter writes so discovering several enemies cannot serialize and write the full history every frame. */
+export function createEnemyHistorySaveQueue(history, storage = globalThis.localStorage, delayMs = 750, timers = globalThis) {
+  let timer = null;
+  const flush = () => {
+    if (timer !== null) { timers.clearTimeout(timer); timer = null; }
+    return saveEnemyHistory(history, storage);
+  };
+  return {
+    schedule() {
+      if (timer !== null) timers.clearTimeout(timer);
+      timer = timers.setTimeout(() => { timer = null; saveEnemyHistory(history, storage); }, delayMs);
+      return true;
+    },
+    flush,
+    pending: () => timer !== null,
+  };
+}
+
 /** Adds each encountered creature once, retaining the latest 100 records. */
 export function appendEnemyHistory(history, snapshot) {
   if (!snapshot?.key || history.some((entry) => entry.key === snapshot.key)) return { added: false, removedOldest: false };

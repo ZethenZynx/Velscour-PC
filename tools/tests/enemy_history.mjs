@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 import {
-  appendEnemyHistory, ENEMY_HISTORY_LIMIT, ENEMY_HISTORY_STORAGE_KEY,
+  appendEnemyHistory, createEnemyHistorySaveQueue, ENEMY_HISTORY_LIMIT, ENEMY_HISTORY_STORAGE_KEY,
   loadEnemyHistory, normalizeEnemyHistory, saveEnemyHistory,
 } from '../../src/ui/enemyhistory.js';
 
@@ -30,8 +30,32 @@ assert.equal(restored[4].thumbnail, 'data:image/png;base64,abc', 'recorded artwo
 assert.equal(stored.has(ENEMY_HISTORY_STORAGE_KEY), true);
 assert.deepEqual(normalizeEnemyHistory('invalid'), [], 'invalid stored data safely falls back to empty history');
 
+let timerId = 0;
+const timersPending = new Map();
+const fakeTimers = {
+  setTimeout(fn) { const id = ++timerId; timersPending.set(id, fn); return id; },
+  clearTimeout(id) { timersPending.delete(id); },
+};
+let writes = 0;
+const countedStorage = { setItem(key, value) { writes++; stored.set(key, value); } };
+const queuedHistory = [];
+const saver = createEnemyHistorySaveQueue(queuedHistory, countedStorage, 750, fakeTimers);
+saver.schedule(); saver.schedule();
+assert.equal(timersPending.size, 1, 'encounter saves coalesce into one pending write');
+assert.equal(writes, 0, 'queued writes do not synchronously serialize during target updates');
+const [timer, runSave] = [...timersPending.entries()][0];
+timersPending.delete(timer); runSave();
+assert.equal(writes, 1, 'coalesced history is persisted once after the delay');
+saver.schedule();
+assert.equal(saver.flush(), true, 'pending save can be flushed before the page is hidden');
+assert.equal(saver.pending(), false, 'flush clears its scheduled timer');
+assert.equal(writes, 2, 'flush persists the most recent history immediately');
+
 const hud = await readFile(new URL('../../src/ui/hud.js', import.meta.url), 'utf8');
-assert.match(hud, /if \(cur\) this\.recordEnemy\(cur\)/, 'encounters are recorded during target updates');
+assert.match(hud, /if \(cur\) \{[\s\S]*?this\.recordEnemy\(cur\)/, 'encounters are recorded during target updates');
+assert.match(hud, /const cached = thumbnails\.get\(img\)/, 'enemy thumbnail canvases are reused per source sprite');
+assert.match(hud, /this\.enemyHistorySaver\?\.schedule\(\)/, 'new encounters batch local-storage writes');
+assert.match(hud, /enemyHistorySaver\?\.flush\(\)/, 'pending encounter history flushes when leaving the page');
 assert.match(hud, /if \(cur && !this\.enemyHistoryReviewing\) this\.tb = cur/, 'new targets do not interrupt history review');
 assert.match(hud, /tb-history-position/, 'history position is displayed');
 const html = await readFile(new URL('../../index.html', import.meta.url), 'utf8');

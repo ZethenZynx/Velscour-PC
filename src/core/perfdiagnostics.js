@@ -4,7 +4,7 @@ import { vfxStats } from '../gfx/vfx.js';
 import { audioActiveCount } from './audio.js';
 
 const CAP = 9000; // 60 seconds at up to 150 Hz
-const KEYS = ['frameMs', 'gapMs', 'updateMs', 'renderMs', 'worldMs', 'aiMs', 'pathMs', 'collisionMs', 'hazardMs', 'lootMs', 'vfxMs', 'uiMs', 'eventsMs', 'environmentMs'];
+const KEYS = ['frameMs', 'gapMs', 'updateMs', 'renderMs', 'worldMs', 'aiMs', 'pathMs', 'collisionMs', 'hazardMs', 'lootMs', 'vfxMs', 'uiMs', 'enemyHistoryMs', 'minimapMs', 'eventsMs', 'environmentMs'];
 const COUNT_KEYS = ['enemies', 'inactiveEnemies', 'deadCreatures', 'corpses', 'projectiles', 'hazards', 'traps', 'groundItems', 'lootLabels', 'particles', 'decals', 'gore', 'damageText', 'audio', 'spatialCandidates', 'collisionPairs', 'pathSearches'];
 let history = null, cursor = 0, count = 0, frameSerial = 0, prevRaf = 0, nextPaint = 0, latestCounts = null;
 let frameStarted = 0, rafGap = 16.667, updateMs = 0, renderMs = 0, phases = null;
@@ -78,7 +78,7 @@ export function profileBeginFrame(rafNow) {
   prevRaf = now;
   frameStarted = performance.now();
   updateMs = renderMs = 0;
-  phases = { worldMs: 0, aiMs: 0, pathMs: 0, collisionMs: 0, hazardMs: 0, lootMs: 0, vfxMs: 0, uiMs: 0, eventsMs: 0, environmentMs: 0 };
+  phases = { worldMs: 0, aiMs: 0, pathMs: 0, collisionMs: 0, hazardMs: 0, lootMs: 0, vfxMs: 0, uiMs: 0, enemyHistoryMs: 0, minimapMs: 0, eventsMs: 0, environmentMs: 0 };
   return true;
 }
 
@@ -123,6 +123,7 @@ export function profileFinishFrame(world) {
   history.pathMs[at] = phases.pathMs; history.collisionMs[at] = phases.collisionMs;
   history.hazardMs[at] = phases.hazardMs; history.lootMs[at] = phases.lootMs;
   history.vfxMs[at] = phases.vfxMs; history.uiMs[at] = phases.uiMs;
+  history.enemyHistoryMs[at] = phases.enemyHistoryMs; history.minimapMs[at] = phases.minimapMs;
   history.eventsMs[at] = phases.eventsMs; history.environmentMs[at] = phases.environmentMs;
   if ((frameSerial++ % 15) === 0) {
     latestCounts = readCounts(world);
@@ -165,6 +166,7 @@ function paintPanel(lastFrameMs) {
   const items = [
     ['AI', phases?.aiMs], ['Pathfinding', phases?.pathMs], ['Collision', phases?.collisionMs],
     ['Hazards', phases?.hazardMs], ['Loot', phases?.lootMs], ['VFX', phases?.vfxMs], ['HUD', phases?.uiMs],
+    ['Enemy history (HUD subphase)', phases?.enemyHistoryMs], ['Minimap (HUD subphase)', phases?.minimapMs],
     ['Events / world scripts', phases?.eventsMs], ['Environment', phases?.environmentMs],
   ];
   const frameStats = stat(times);
