@@ -18,6 +18,13 @@ export const MILESTONES = [
 let R = null;
 
 function blank() { return { tabs: Array.from({ length: VAULT_TABS }, () => Array(VAULT_SIZE).fill(null)), codex: {}, lines: 0 }; }
+function unsealLegacyGear(value, depth = 0) {
+  if (!value || typeof value !== 'object' || depth > 8) return false;
+  let changed = false;
+  if (value.type === 'gear' && Object.prototype.hasOwnProperty.call(value, 'sealed')) { delete value.sealed; changed = true; }
+  for (const child of Object.values(value)) if (child && typeof child === 'object' && unsealLegacyGear(child, depth + 1)) changed = true;
+  return changed;
+}
 function collectLegacyHeirlooms(value, found, depth = 0) {
   if (!value || typeof value !== 'object' || depth > 10) return;
   if (value.type === 'gear' && value.relic === 'heir' && HEIRLOOMS.some((h) => h.id === value.rid)) found.add('h:' + value.rid);
@@ -56,9 +63,12 @@ export function reliquary() {
   if (!R || !Array.isArray(R.tabs)) R = blank();
   while (R.tabs.length < VAULT_TABS) R.tabs.push([]);
   for (const t of R.tabs) while (t.length < VAULT_SIZE || t.length % 12 !== 0) t.push(null);
+  let legacyGearChanged = false;
+  for (const tab of R.tabs) if (unsealLegacyGear(tab)) legacyGearChanged = true;
   R.codex = R.codex || {};
   R.lines = R.lines || 0;
   migrateLegacyHeirloomDiscoveries(R);
+  if (legacyGearChanged) saveReliquary();
   return R;
 }
 export function saveReliquary() { try { localStorage.setItem(KEY, JSON.stringify(reliquary())); } catch (e) { /* storage full or blocked: the vault lives on for this visit */ } }

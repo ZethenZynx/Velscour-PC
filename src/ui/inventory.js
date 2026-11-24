@@ -22,7 +22,6 @@ import { heroPortrait, heroLook } from '../core/gearart.js';
 import { heldPortraitArgs } from '../gfx/heldart.js';
 import { tabRow, sheetButtons, useSheet, unloadTab } from './sheets.js';
 import { openBannerCustomizer } from './bannercustomizer.js';
-import { openSeal } from './sealed.js';
 import { glyphOf, COVENANT_BY_ID, POWERS, powerText } from '../data/relics.js';
 import { noteFind, openTabs } from '../game/reliquary.js';
 import { marksTotal, marksFree, capXp } from '../game/marks.js';
@@ -55,7 +54,6 @@ export function equipFromBag(idx, slot) {
   const c = G.char, it = c.bag[idx];
   if (!it || it.type !== 'gear') return false;
   if (it.unid) { UI.log('Identify it first (buy it from the Gambler).', '#ff8080'); return false; }
-  if (it.sealed) { UI.log('Break the seal first.', '#ffdf8a'); return false; }
   if ((it.req || 1) > c.level) { UI.log(`Requires level ${it.req}.`, '#ff8080'); sfx('error'); return false; }
   const to = slot && fitsSlot(it, slot, c.classId) ? slot : slotFor(c.equip, it, c.classId);
   const reqStat = itemReqStat(it);
@@ -157,7 +155,6 @@ export function socketGem(gemIdx, target, fromWhere = null) {
   const gem = container ? container[gemIdx] : null;
   const it = getItem(target);
   if (!gem || gem.type !== 'gem' || !it || it.type !== 'gear') return false;
-  if (it.sealed) { UI.log('Break the seal first: nothing goes into a sealed treasure.', '#ffdf8a'); sfx('error'); return false; }
   if (it.gems.length >= it.sockets) { UI.log(it.sockets ? 'No free sockets. Visit the Jeweler to add more.' : 'This item has no sockets. The Jeweler can add some.', '#ff8080'); sfx('error'); return false; }
   const was = glyphOf(it);
   it.gems.push({ gem: gem.gem, tier: gem.tier });
@@ -178,7 +175,6 @@ export function dropFromBag(idx, where = 'bag') {
   const it = container[idx], p = G.player;
   if (!it || !G.world) return false;
   if (it.locked) { UI.log('That item is locked. Unlock it first (its panel in the inventory).', '#ffd860'); sfx('error'); return false; }
-  if (it.type === 'gear' && it.sealed === undefined) it.sealed = false; // already opened: it doesn't seal again on the floor
   container[idx] = null;
   const g = new GroundItem(p.x, p.y, it.type === 'potion' ? 'potion' : 'item', { item: it });
   g.t = -1.5; g.dropped = true; // not picked straight back up (auto-pickup leaves it alone: a click still takes it)
@@ -351,9 +347,7 @@ function bagTip(idx) {
             ? 'Right-click or double-tap to store'
             : G.ui.reliquary && G.ui.reliquary.active
               ? 'Right-click or double-tap to store in Reliquary'
-              : it.sealed
-                ? 'Right-click or double-tap to break the seal'
-                : it.type === 'gear'
+              : it.type === 'gear'
                   ? 'Right-click or double-tap to equip'
                   : it.type === 'gem'
                     ? 'Drag onto gear to socket'
@@ -463,7 +457,6 @@ function quickUse(idx, where = 'bag') {
   const c = G.char, container = where === 'gemBag' && c.gemBag ? c.gemBag : c.bag;
   const it = container[idx];
   if (!it) return;
-  if (it.sealed && where === 'bag' && !(G.ui.stash && G.ui.stash.active) && !(G.ui.reliquary && G.ui.reliquary.active)) { openSeal(idx); return; }
   if (G.ui.vendor && G.ui.vendor.active) { G.ui.vendor.sell({ where, idx }); return; }
   if (G.ui.jewelBox && G.ui.jewelBox.active) {
     if (it.type === 'gem') { G.ui.jewelBox.store(idx, where); return; }
@@ -593,13 +586,11 @@ function getBagActions(idx, where = 'bag') {
   const it = container[idx];
   if (!it) return [];
   const acts = [];
-  if (it.sealed) {
-    acts.push({ label: 'Break Seal', fn: () => openSeal(idx), cls: 'small red' });
-  } else if (it.type === 'gear') {
+  if (it.type === 'gear') {
     acts.push({ label: 'Equip', fn: () => equipFromBag(idx) });
     if (VANITY_SLOTS.includes(it.slot)) acts.push({ label: 'Wear as look', fn: () => wearLook(idx) });
   } else if (it.type === 'gem') {
-    const targets = [...SLOTS.map((s) => ({ where: 'equip', slot: s })), ...c.bag.map((b, i) => ({ where: 'bag', idx: i }))].filter((r) => { const x = getItem(r); return x && x.type === 'gear' && !x.sealed && x.gems.length < x.sockets; });
+    const targets = [...SLOTS.map((s) => ({ where: 'equip', slot: s })), ...c.bag.map((b, i) => ({ where: 'bag', idx: i }))].filter((r) => { const x = getItem(r); return x && x.type === 'gear' && x.gems.length < x.sockets; });
     if (targets.length) acts.push({ label: `Socket (${targets.length})`, fn: () => pickSocketTarget(idx, targets, 'bag') });
     if (G.ui.jewelBox && G.ui.jewelBox.active) acts.push({ label: 'Store in Jewel Box', fn: () => G.ui.jewelBox.store(idx, 'bag') });
   } else if (it.type === 'banner_kit') {
@@ -608,7 +599,7 @@ function getBagActions(idx, where = 'bag') {
   if (it.type === 'sheet') {
     sheetButtons((lbl, fn, cls) => acts.push({ label: lbl, fn, cls }), { where: 'bag', idx }, it);
   }
-  if (G.ui.vendor && G.ui.vendor.active && !it.sealed && !(it.type === 'gear' && it.relic === 'heir')) {
+  if (G.ui.vendor && G.ui.vendor.active && !(it.type === 'gear' && it.relic === 'heir')) {
     acts.push({ label: `Sell (${fmtInt(Math.max(1, Math.floor(itemValue(it) / 4)))}g)`, fn: () => G.ui.vendor.sell({ where: 'bag', idx }) });
   }
   if (G.ui.stash && G.ui.stash.active) {
@@ -638,7 +629,7 @@ function getGemBagActions(idx) {
   const c = G.char, it = c.gemBag && c.gemBag[idx];
   if (!it) return [];
   const acts = [];
-  const targets = [...SLOTS.map((s) => ({ where: 'equip', slot: s })), ...c.bag.map((b, i) => ({ where: 'bag', idx: i }))].filter((r) => { const x = getItem(r); return x && x.type === 'gear' && !x.sealed && x.gems.length < x.sockets; });
+  const targets = [...SLOTS.map((s) => ({ where: 'equip', slot: s })), ...c.bag.map((b, i) => ({ where: 'bag', idx: i }))].filter((r) => { const x = getItem(r); return x && x.type === 'gear' && x.gems.length < x.sockets; });
   if (targets.length) acts.push({ label: `Socket (${targets.length})`, fn: () => pickSocketTarget(idx, targets, 'gemBag') });
   if (G.ui.jewelBox && G.ui.jewelBox.active) acts.push({ label: 'Store in Jewel Box', fn: () => G.ui.jewelBox.store(idx, 'gemBag') });
   if (G.ui.vendor && G.ui.vendor.active) acts.push({ label: `Sell (${fmtInt(Math.max(1, Math.floor(itemValue(it) / 4)))}g)`, fn: () => G.ui.vendor.sell({ where: 'gemBag', idx }) });
@@ -943,8 +934,8 @@ export function renderInventory(body, panel) {
 
   if (G.ui.vendor && G.ui.vendor.active) {
     const sellAllBtn = el('button', 'btn small', 'Sell all');
-    sellAllBtn.title = 'Sell every piece of gear in your bag (gems and sealed treasures are kept). Asks once.';
-    sellAllBtn.disabled = !c.bag.some((b) => b && b.type === 'gear' && !b.sealed && !b.locked);
+    sellAllBtn.title = 'Sell every unlocked, eligible piece of gear in your bag (gems are kept). Asks once.';
+    sellAllBtn.disabled = !c.bag.some((b) => b && b.type === 'gear' && !b.locked && b.relic !== 'heir');
     sellAllBtn.onclick = () => { sfx('ui'); G.ui.vendor.sellAll(); };
     actions.appendChild(sellAllBtn);
   }

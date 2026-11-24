@@ -16,7 +16,7 @@ assert.equal(emptyEquipSlot(c, gear('ring')), 'ring2', 'ring selects the next em
 for (const slot of ['ring2', 'ring3', 'ring4']) c.equip[slot] = gear('ring');
 assert.equal(emptyEquipSlot(c, gear('ring')), null, 'full matching slots are left unchanged');
 
-assert.equal(emptyEquipSlot(character(), gear('head', { sealed: true })), null, 'sealed gear is not auto-equipped');
+assert.equal(emptyEquipSlot(character(), gear('head', { sealed: true })), 'head', 'legacy seal flags do not block ordinary gear');
 assert.equal(emptyEquipSlot(character(), gear('head', { unid: true })), null, 'unidentified gear is not auto-equipped');
 assert.equal(emptyEquipSlot(character(), gear('head', { locked: true })), null, 'locked gear is not auto-equipped');
 assert.equal(emptyEquipSlot(character(), { type: 'gem', slot: 'head' }), null, 'non-gear is ignored');

@@ -199,19 +199,18 @@ export function unboundTick(V, dt) {
 }
 /** His death: the court falls with him, and the spoils on top of his hoard: one Unbound Heirloom (one the Codex lacks
  *  first, so four wins find all four), the first win always and then one in four the Crown of the Demon Lord (both open,
- *  never sealed), UNBOUND.abyssal Abyssal items and UNBOUND.marks Infernal Marks. Before the items and Marks a player
+ *  ordinary gear), UNBOUND.abyssal Abyssal items and UNBOUND.marks Infernal Marks. Before the items and Marks a player
  *  who had killed him ten times asked what the point was: rifts paid better. */
 export function unboundSpoils(V, lvl, drop) {
   const c = G.char, p = G.player;
   for (const b of V.court) if (!b.dead) { b.dead = true; b.hp = 0; courtDeath(V, b, false); }
-  const open = (it) => { if (it) it.sealed = false; return it; };
   const first = !(c.unbound.wins > 0);
-  const heir = open(makeAccountHeirloom(lvl, { unboundOnly: true }));
+  const heir = makeAccountHeirloom(lvl, { unboundOnly: true });
   drop(heir);
-  const crown = (first || chance(UNBOUND.crown)) ? open(makeAccountHeirloom(lvl, { id: 'crown_demon' })) : null;
+  const crown = (first || chance(UNBOUND.crown)) ? makeAccountHeirloom(lvl, { id: 'crown_demon' }) : null;
   if (crown) drop(crown);
   const rar = rarityAt(lvl, ABYSSAL);
-  for (let i = 0; i < UNBOUND.abyssal; i++) drop(open(rollGroundItem(lvl, { rarity: rar, maxRarity: ABYSSAL, mf: p ? p.st.magicFind : 0 })));
+  for (let i = 0; i < UNBOUND.abyssal; i++) drop(rollGroundItem(lvl, { rarity: rar, maxRarity: ABYSSAL, mf: p ? p.st.magicFind : 0 }));
   grantMarks(UNBOUND.marks, 'for Velscour Unbound');
   UI.log(`<b style="color:#20e0ff">Velscour Unbound's spoils</b>: ${heir ? `<b>${itemName(heir)}</b>, ` : ''}${crown ? `<b>${itemName(crown)}</b>, ` : ''}${UNBOUND.abyssal} <b style="color:${RARITY[rar].color}">${RARITY[rar].name}</b> items, a Covenant piece, two Sigil Stones and ${UNBOUND.marks} Infernal Marks.`, '#a0f0ff');
   const E = endgame(); E.unboundWins++; saveEndgame();

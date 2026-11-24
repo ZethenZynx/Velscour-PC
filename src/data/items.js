@@ -98,7 +98,6 @@ export function itemBaseDisplayName(item) {
 export function canWearVanity(c, item, slot) {
   if (!c || !item || item.type !== 'gear') return { ok: false, reason: 'Invalid item.' };
   if (item.unid) return { ok: false, reason: 'Identify it first (buy it from the Gambler).' };
-  if (item.sealed) return { ok: false, reason: 'Break the seal first.' };
 
   if (slot === 'head') {
     if (item.slot !== 'head') return { ok: false, reason: 'This slot only accepts helmets.' };
@@ -717,21 +716,12 @@ function ringName(item) {
   return `${AUGMENTS[a.id].word} ${item.baseName} of ${augTarget(a)}`;
 }
 
-/**
- * Green and better can drop sealed (ui/sealed.js): no name, no colour, no stats until the player breaks the seal. At
- * to fill with them. A Green+ item that drops sooner arrives open, like any other item.
- */
-export const SEAL_RARITY = RARITY_EPIC;
-export const SEAL_GAP = 15 * 60;
-export const SEALED_COLOR = '#ffdf8a';
-
 /** Heirlooms, Covenants and Glyphwords (data/relics.js): their colours, and the hook that adds their stats. */
 export const RELIC_COLORS = { heir: '#d9b45a', cov: '#35e0b8', glyph: '#f2e2b0' };
 export const RELIC_NAMES = { heir: 'Heirloom', cov: 'Covenant', glyph: 'Glyphword' };
 export const RELIC_HOOK = { stats: null, glyph: null };
 
 export function itemName(item) {
-  if (item.sealed) return 'Sealed Treasure';
   if (item.relic && item.uname) return item.uname + (item.upg ? ` +${item.upg}` : '');
   const gw = item.type === 'gear' && RELIC_HOOK.glyph && RELIC_HOOK.glyph(item);
   if (gw) return gw.name + (item.upg ? ` +${item.upg}` : '');
@@ -752,7 +742,6 @@ export function itemBaseLine(item) {
   return `${MATERIALS[item.tier].name} ${item.baseName}`;
 }
 export function itemColor(item) {
-  if (item.sealed) return SEALED_COLOR;
   if (item.type === 'gem') return GEMS[item.gem].sigil ? '#ffd88a' : GEMS[item.gem].special ? '#ff9a2a' : '#c8f0ff';
   if (item.type === 'potion') return '#ffffff';
   if (item.type === 'sheet') return item.inked ? '#ffd88a' : '#e8dcc0';

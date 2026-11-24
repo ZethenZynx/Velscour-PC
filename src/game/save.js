@@ -325,10 +325,10 @@ function migrateToLv100Rebalance(c) {
   c.rebalancedV1 = true;
 }
 
-/** Every gear item anywhere in a save (worn, bag, stash, vanity, sealed contents...). */
+/** Every gear item anywhere in a character save (worn, bag, stash, vanity, nested containers). */
 function eachGear(o, fn, depth = 0) {
   if (!o || typeof o !== 'object' || depth > 6) return;
-  if (o.type === 'gear' && Array.isArray(o.affixes)) fn(o);
+  if (o.type === 'gear') fn(o);
   for (const k in o) if (o[k] && typeof o[k] === 'object') eachGear(o[k], fn, depth + 1);
 }
 function rescaleFlatDmg(it, a) {
@@ -339,6 +339,11 @@ function rescaleFlatDmg(it, a) {
 
 /** Fill in fields added by later versions. */
 export function migrate(c) {
+  // Legacy sealed gear is already fully rolled equipment; removing the flag
+  // restores ordinary use without changing its stats, identity, or location.
+  eachGear(c, (item) => { delete item.sealed; });
+  delete c.sealT;
+  delete c.unsealed;
   c.townVictoryFireworksDone = !!c.townVictoryFireworksDone;
   c.townVictoryFireworksPending = !!c.townVictoryFireworksPending && !c.townVictoryFireworksDone;
   const savedDepth = Number(c.depth);

@@ -371,7 +371,7 @@ const BUILD = {
     const price = Math.round((90 + lvlOf(world) * 14) * goldScale(lvlOf(world)));
     n.use = () => {
       if (e.sold) { n.say('My case is empty now.', 2.5); return; }
-      choices(n, 'Relic Collector', `One sealed relic recovered from this depth. Price: ${price.toLocaleString()} gold.`, [{ label: `Buy relic · ${price.toLocaleString()} gold`, run: () => {
+      choices(n, 'Relic Collector', `One relic recovered from this depth. Price: ${price.toLocaleString()} gold.`, [{ label: `Buy relic · ${price.toLocaleString()} gold`, run: () => {
         const c = G.char; if (!c || c.gold < price || e.sold) { UI.log('You cannot afford that relic.', '#ff8080'); sfx('error'); return; }
         c.gold -= price; e.sold = true; world.addLoot(new GroundItem(n.x + 0.5, n.y, 'item', { item: rollGroundItem(lvlOf(world) + 2, { world, mf: world.player?.st.magicFind || 0, bonus: 1 }) })); n.say('A fair exchange. Keep it safe.', 2.5); UI.refresh(); sfx('gold');
       } }]);
@@ -466,7 +466,7 @@ const BUILD = {
     world.npcs.push(n); const e = { kind: 'desperate_scavenger', x: at[0], y: at[1], n, guards: [], traded: false };
     n.use = () => {
       if (e.traded) { n.say('That was my last usable thing.', 2.5); return; }
-      choices(n, 'Desperate Scavenger', 'I can trade a sealed gem I found for some gold. No haggling.', [{ label: `Buy a gem · ${Math.round(60 + lvlOf(world) * 10)} gold`, run: () => {
+      choices(n, 'Desperate Scavenger', 'I can trade a gem I found for some gold. No haggling.', [{ label: `Buy a gem · ${Math.round(60 + lvlOf(world) * 10)} gold`, run: () => {
         const c = G.char, cost = Math.round(60 + lvlOf(world) * 10); if (!c || c.gold < cost || e.traded) { sfx('error'); return; }
         c.gold -= cost; e.traded = true; world.addLoot(new GroundItem(n.x + 0.5, n.y, 'item', { item: rollGroundGem(lvlOf(world) + 1, world) })); UI.refresh(); sfx('gold');
       } }]);

@@ -1,0 +1,62 @@
+// Malakor offers fragments rather than explanations. Keep this deck unique
+// enough that a player will not hear the same fragment twice in succession.
+export const MALAKOR_LINES = Object.freeze([
+  'The tower remembers every footstep. It has forgotten the feet.',
+  'A crown is only a promise made by a skull.',
+  'There is a door beneath the door you cannot find.',
+  'I once followed a star. It led me back to the same grave.',
+  'The ash falls upward when the old names are spoken.',
+  'Do not trust a mirror that blinks first.',
+  'Some keys are cut for locks that have not been built.',
+  'The river carries no bodies downstream. Ask yourself why.',
+  'I have heard the moon counting. It is not counting nights.',
+  'A bell rang beneath the earth. None of the buried were surprised.',
+  'The candle at the end of the hall is always behind you.',
+  'If the shadows gather, leave them room to pass.',
+  'The old king left no heir. Only an empty chair that still gives orders.',
+  'Names are hooks. Be careful what you answer to.',
+  'I found a map with my footprints already drawn upon it.',
+  'The well is deeper on the nights it is dry.',
+  'There are seven ways out. The eighth is the one that lets you leave.',
+  'The dead do not haunt the house. The house remembers them aloud.',
+  'A red thread runs through every bargain. You only see it at the end.',
+  'The stars have moved. The old astrologers have not.',
+  'Someone keeps sweeping the dust from a sealed staircase.',
+  'When the fire goes blue, do not ask who fed it.',
+  'The quietest armor belonged to the loudest sinner.',
+  'I knew a saint who prayed for a locked door. It opened inward.',
+  'The road bends where the mapmaker began to weep.',
+  'Every empty vessel has a preferred name.',
+  'A raven brought me a message in a language it had not learned yet.',
+  'The mountain is hollow. Something inside is practicing your voice.',
+  'Do not count the steps after midnight. They count back.',
+  'A promise can outlive the mouth that made it.',
+  'The graveyard has one plot that the rain avoids.',
+  'I saw a door standing in a field. The field was on the other side.',
+  'The last page of the book is warm, though no one has opened it.',
+  'A blind smith forged a chain with no beginning.',
+  'The hounds will not cross a threshold drawn in salt and regret.',
+  'If you meet your own reflection on the road, let it pass first.',
+  'The bells in the drowned chapel ring only for the living.',
+  'An empire can fit inside a single unspoken word.',
+  'I traded a shadow once. The buyer came back for the light.',
+  'The oldest tree in the wood grew from a soldier’s last excuse.',
+  'A key turned in a lock somewhere. No door admitted it.',
+  'The wind has been carrying a name for three hundred years.',
+  'There is a throne where the fire goes to kneel.',
+  'The candle remembers every room it has burned in.',
+  'Some footsteps arrive before the traveler.',
+  'I buried a question. Something answered from underneath.',
+  'The black lake reflects a sky that has not happened yet.',
+  'A debt paid in full still leaves an echo in the ledger.',
+  'The door was not locked. It was waiting for the right fear.',
+  'When the dust settles, look for the footprints facing inward.',
+  'The world ends quietly, one familiar thing at a time.',
+]);
+
+export function nextMalakorLine(previous = -1, random = Math.random) {
+  if (!MALAKOR_LINES.length) return { index: -1, text: '' };
+  let index = Math.floor(random() * MALAKOR_LINES.length);
+  if (index === previous) index = (index + 1) % MALAKOR_LINES.length;
+  return { index, text: MALAKOR_LINES[index] };
+}

@@ -70,7 +70,7 @@ function passesFilter(it, f) {
     if (it.gem === 'sig') return true;
     return (it.tier ?? 0) >= minTier;
   }
-  if (it.type !== 'gear' || it.sealed) return true;
+  if (it.type !== 'gear') return true;
   const row = (FILTER_ROWS || []).find((r) => r.test && r.test(it));
   const min = row ? (f[row.k] ?? 0) : 0;
   return min >= 0 && (it.rarity || 0) >= min;
@@ -85,4 +85,4 @@ export function filterPasses(it) {
 export function labelFilterPasses(it) {
   return passesFilter(it, activeLabelFilter());
 }
-export const filterKeeps = (it) => { const f = activeFilter(); return !!(f && f.keep && it && !it.sealed && filterPasses(it)); };
+export const filterKeeps = (it) => { const f = activeFilter(); return !!(f && f.keep && it && filterPasses(it)); };

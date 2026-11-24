@@ -1,5 +1,4 @@
 // The spectator's features (things to do while the hero plays): gilded critters to tap, the Divine Smite meter,
-// sealed Epic+ treasures and their reveal, auto-play waiting in town while sealed treasures fill the bag, the
 // stance dial, the three-portal choice at a cleared exit (auto-play's countdown), and Greed settings/rewards.
 // Taps go through the real input (mouse clicks, or touch taps with `mobile`) and must never move the hero or take
 // over from auto-play. Screenshots: spectate_*.png.
@@ -174,53 +173,7 @@ const check = (ok, msg) => { console.log(`${ok ? 'ok  ' : 'FAIL'} ${msg}`); if (
   check(hitR.smite === 0 && !hitR.armed && hitR.smites === 1, 'SMITE spent the meter');
   check(!(hitR.override > 0), 'aiming SMITE never took over from auto-play');
 
-  // ---------------------------------------------------------------- 6. sealed treasures
-  const seal = await page.evaluate(async () => {
-    const { G } = window.VELSCOUR;
-    const { rollItem, itemName } = await import('/src/data/items.js');
-    const { GroundItem } = await import('/src/game/loot.js');
-    const { addToBag } = await import('/src/game/player.js');
-    const out = {};
-    const epic = rollItem(80, { rarity: 3 }), rare = rollItem(80, { rarity: 2 }), myth = rollItem(80, { rarity: 5 });
-    for (const it of [epic, rare, myth]) { G.char.sealT = 1e9; new GroundItem(0, 0, 'item', { item: it }); }
-    out.epic = epic.sealed === true; out.rare = !rare.sealed; out.myth = myth.sealed === true; out.name = itemName(myth);
-    // the seal clock: an Epic+ that drops before SEAL_GAP of dungeon time has passed since the last seal arrives open
-    const soon = rollItem(80, { rarity: 4 }); new GroundItem(0, 0, 'item', { item: soon }); out.gap = soon.sealed === false;
-    // an opened item dropped again stays open
-    const leg = rollItem(80, { rarity: 4 }); leg.sealed = false; new GroundItem(0, 0, 'item', { item: leg }); out.reopen = leg.sealed === false;
-    G.char.bag.fill(null);
-    addToBag(G.char, myth); addToBag(G.char, epic);
-    window._myth = myth;
-    const { Auto } = await import('/tools/tests/auto_player.js');
-    Auto.toggle(false);
-    window.VELSCOUR.game.update(1 / 30);
-    out.chip = !document.querySelector('#sealed-btn').classList.contains('hidden') && document.querySelector('#sealed-text').textContent;
-    // auto-play never equips, sells or stashes one
-    Auto.optimizeGear();
-    out.kept = G.char.bag.includes(myth) && G.char.bag.includes(epic);
-    return out;
-  });
-  check(seal.epic && seal.myth && seal.rare, 'Epic+ drops arrive sealed, Rare does not');
-  check(seal.gap, 'a second Epic+ within the seal gap arrives open');
-  check(seal.name === 'Sealed Treasure', 'a sealed item hides its name');
-  check(seal.reopen, 'an opened item dropped again stays open');
-  check(seal.chip === '2 SEALED', `the HUD shows the sealed count (${seal.chip})`);
-  check(seal.kept, 'auto-play leaves sealed treasures alone');
-  await press('#sealed-btn');
-  await page.waitForTimeout(900);
-  await shot('spectate_seal_spin' + tag);
-  await page.waitForTimeout(2600);
-  await shot('spectate_seal_landed' + tag);
-  const land = await page.evaluate(() => ({ landed: !!document.querySelector('.rv-box.landed.rv-r5'), open: window._myth.sealed === false, next: [...document.querySelectorAll('.rv-btns button')].map((b) => b.textContent) }));
-  check(land.landed && land.open, 'the reel lands on the Mythic and opens it');
-  check(land.next.some((t) => /Next seal \(1\)/.test(t)), `the card offers the next seal (${land.next.join(', ')})`);
-  await page.click('.rv-btns button.red');
-  await page.waitForTimeout(3600);
-  const second = await page.evaluate(async () => { const { G } = window.VELSCOUR; return G.char.bag.filter((b) => b && b.sealed).length; });
-  check(second === 0, 'Next seal opened the second one');
-  await page.evaluate(async () => { const { close } = await import('/src/ui/sealed.js'); close(); });
-
-  // ---------------------------------------------------------------- 7. stance
+  // ---------------------------------------------------------------- 6. stance
   const st = await page.evaluate(async () => {
     const { G } = window.VELSCOUR;
     const { Auto } = await import('/tools/tests/auto_player.js');
@@ -259,34 +212,6 @@ const check = (ok, msg) => { console.log(`${ok ? 'ok  ' : 'FAIL'} ${msg}`); if (
   check(after.depth === pc.depth + 1 && after.biome === want, `descended into the chosen portal (${after.biome}, wanted ${want})`);
   check(told.omen === undefined || (told.omen === 'none' ? !after.omen : after.omen === told.omen), `the depth keeps the omen its portal showed (${told.omen} -> ${after.omen})`);
   check(after.pending === undefined, 'the promised omen is spent');
-
-  // ---------------------------------------------------------------- 6b. auto-play waits in town while seals fill the bag
-  const wait = await page.evaluate(async () => {
-    const { G, game } = window.VELSCOUR;
-    const { Auto } = await import('/tools/tests/auto_player.js');
-    const { rollItem } = await import('/src/data/items.js');
-    const { GroundItem } = await import('/src/game/loot.js');
-    Auto.toggle(false);
-    G.char.bag.fill(null);
-    for (let i = 0; i < G.char.bag.length; i++) { const it = rollItem(60, { rarity: 3 + (i % 3) }); G.char.sealT = 1e9; new GroundItem(0, 0, 'item', { item: it }); G.char.bag[i] = it; }
-    G.char.gold = 100;
-    game.enterTown();
-    Auto.toggle(true);
-    for (let i = 0; i < 30 * 90; i++) { game.update(1 / 30); if (i % 300 === 0) await new Promise((r) => setTimeout(r, 0)); }
-    return { kind: G.world.kind, status: Auto.status, urgent: document.querySelector('#sealed-btn').classList.contains('urgent'), sealed: G.char.bag.filter((b) => b && b.sealed).length };
-  });
-  check(wait.kind === 'town' && /break the seals/.test(wait.status) && wait.sealed === 60, `auto-play waits in town with a bag full of seals ("${wait.status}")`);
-  check(wait.urgent, 'the SEALED button pleads');
-  await shot('spectate_town_wait' + tag);
-  const go = await page.evaluate(async () => {
-    const { G, game } = window.VELSCOUR;
-    const { openNextSeal, close } = await import('/src/ui/sealed.js');
-    openNextSeal(); close(); // one seal broken: auto-play sells, stashes or wears it, and a slot is free
-    for (let i = 0; i < 30 * 120 && G.world.kind === 'town'; i++) { game.update(1 / 30); if (i % 300 === 0) await new Promise((r) => setTimeout(r, 0)); }
-    await new Promise((r) => setTimeout(r, 1500));
-    return { kind: G.world.kind, free: G.char.bag.filter((b) => !b).length };
-  });
-  check(go.kind === 'dungeon', `with one seal broken auto-play trades and goes on (free slots ${go.free})`);
 
   // ---------------------------------------------------------------- 11. Greed configuration and endgame rewards
   const gr = await page.evaluate(async () => {

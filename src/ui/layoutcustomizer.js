@@ -19,7 +19,6 @@ const DEFINITIONS = [
   ['rift-tracker', 'Rift tracker', '#rift-bar', .76, .2],
   ['notifications', 'Notifications and event announcements', '#center-msg', .5, .42], ['adventurers-log', "Adventurer's Log", '#game-chat', .02, .58],
   ['game-log', 'Combat and loot messages', '#log', .02, .69], ['hud-buttons', 'HUD menu buttons', '#hud-buttons', .96, .62],
-  ['sealed-loot', 'Sealed loot indicator', '#sealed-btn', .9, .58],
   ['damage-numbers', 'Floating damage numbers', null, .5, .5, 'canvas'],
 ];
 const DEFAULTS = new Map(DEFINITIONS.map(([id, label, selector, x, y, mode]) => [id, { id, label, selector, x, y, mode }]));

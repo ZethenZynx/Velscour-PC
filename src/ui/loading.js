@@ -8,7 +8,6 @@ import { G } from '../state.js';
 export const LORE_TIPS = [
   "The deeper you delve, the stronger the Defiance becomes. Slay floor champions to shatter the wall and open the way.",
   "Hold Shift to attack in place, or configure Skill Macros to automatically maintain your buffs while near enemies.",
-  "Sealed legendary items contain unrolled latent power. Break their seals in town before venturing into combat.",
   "Herrington Hollow's Reliquary is shared across all your heroes. Stash high-tier gear for your other characters.",
   "Shatter barrels, crates, and bone piles in the labyrinth to clear choked corridors and uncover hidden paths.",
   "Ancient Shrines bestow immense temporary blessings. Seek them out before confronting dangerous raid bosses.",

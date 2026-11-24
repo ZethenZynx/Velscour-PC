@@ -28,7 +28,7 @@ const mobile = process.argv[2] === 'mobile';
     for (let i = 0; i < 90; i++) {
       const a = i * 2.4, r = 1.2 + (i % 12) * 0.8;
       const rarity = i % 15 === 0 ? 4 : i % 7 === 0 ? 2 : i % 2;
-      const item = rollItem(40, { rarity }); item.sealed = false;
+      const item = rollItem(40, { rarity });
       const [x, y] = w.map.randomNear(p.x + Math.cos(a) * r, p.y + Math.sin(a) * r, 1);
       const g = new GroundItem(x, y, 'item', { item, fades: fadeOf(item) });
       g.vz = 0; g.t = 1; w.addLoot(g);
@@ -86,7 +86,7 @@ const mobile = process.argv[2] === 'mobile';
     w.loot.length = 0;
     const mk = (item, extra = {}) => { const g = new GroundItem(p.x + 40, p.y + 40, 'item', { item, fades: fadeOf(item), ...extra }); g.vz = 0; w.addLoot(g); return g; };
     const common = mk(rollItem(40, { rarity: 0 })), uncommon = mk(rollItem(40, { rarity: 1 })), rare = mk(rollItem(40, { rarity: 2 })), gem = mk(rollGem(40));
-    const epic = mk(Object.assign(rollItem(40, { rarity: 3 }), { sealed: false })), sealed = mk(Object.assign(rollItem(40, { rarity: 4 }), { sealed: true }));
+    const epic = mk(rollItem(40, { rarity: 3 })), legendary = mk(rollItem(40, { rarity: 4 }));
     const sigil = mk(rollSigil(40)), relic = mk(Object.assign(rollItem(40, { rarity: 0 }), { relic: 'x' }));
     const own = mk(rollItem(40, { rarity: 0 }), { fades: 0, dropped: true }), chest = mk(rollItem(40, { rarity: 0 }), { fades: 0 });
     const targeted = mk(rollItem(40, { rarity: 0 })); p.lootTarget = targeted;
@@ -99,7 +99,7 @@ const mobile = process.argv[2] === 'mobile';
     run(130); const at130 = [has(rare), has(gem)];
     run(200); const at200 = has(gem);
     run(100000);
-    const stays = { epic: has(epic), sealed: has(sealed), sigil: has(sigil), relic: has(relic), own: has(own), chest: has(chest), targeted: has(targeted), key: has(key) };
+    const stays = { epic: has(epic), legendary: has(legendary), sigil: has(sigil), relic: has(relic), own: has(own), chest: has(chest), targeted: has(targeted), key: has(key) };
     // a monster's drops carry the clock
     w.loot.length = 0; p.lootTarget = null;
     for (let i = 0; i < 25; i++) dropLoot(w, { x: p.x + 40, y: p.y + 40, level: 40, rank: 'unique' });
@@ -107,7 +107,7 @@ const mobile = process.argv[2] === 'mobile';
     const wrong = gear.filter((l) => (l.item.rarity <= 2 && !l.item.relic && l.item.slot !== 'ring' && !l.fades) || (l.item.rarity >= 3 && l.fades)).length;
     // the hard cap
     w.loot.length = 0;
-    const keeper = mk(Object.assign(rollItem(40, { rarity: 4 }), { sealed: false }));
+    const keeper = mk(rollItem(40, { rarity: 4 }));
     const firstCommon = mk(rollItem(40, { rarity: 0 }));
     for (let i = 0; i < 400; i++) mk(rollItem(40, { rarity: i % 3 }));
     const cap = { n: w.loot.length, keeper: has(keeper), firstCommon: has(firstCommon) };

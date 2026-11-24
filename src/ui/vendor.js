@@ -10,7 +10,7 @@ import { emptyEquipSlot } from '../game/autoequip.js';
 import { noteFind } from '../game/reliquary.js';
 import {
   rollItem, rollGem, rollRarity, makeGem, itemValue, itemSellValue, itemName, itemColor, upgradeCost, socketCost, enchantCost, unsocketCost,
-  rerollAffixes, addAffix, RARITY, RARITY_EPIC, RARITY_LEGENDARY, RARITY_MYTHIC, rarityAt, qualityAtDepth, POTION_PRICE, POTION_INFO, GEMS, gemName, SLOT_NAMES, WEAPONS, MAX_GEM_TIER, gemFuseCost, gemRefineCost, slotFor, gemMaxTier, sigilFuseCost,
+  rerollAffixes, addAffix, RARITY, RARITY_EPIC, rarityAt, qualityAtDepth, POTION_PRICE, POTION_INFO, GEMS, gemName, SLOT_NAMES, WEAPONS, MAX_GEM_TIER, gemFuseCost, gemRefineCost, slotFor, gemMaxTier, sigilFuseCost,
 } from '../data/items.js';
 import { CLASSES } from '../data/classes.js';
 import { potionIcon } from '../core/assets.js';
@@ -18,9 +18,6 @@ import { VENDORS } from '../world/town.js';
 import { depthLevel } from '../data/depth.js';
 import { sheetItem, bannerKitItem, BANNER_KIT_PRICE, goldLvl } from '../data/items.js';
 import { SHEET_PRICE } from '../data/tabs.js';
-import { marksFree, deductMarks } from '../game/marks.js';
-import { Marks } from './marks.js';
-import { campaignVictoryRecorded } from '../game/endgame.js';
 import { POTION_BELT_CAPACITY, potionPurchaseQuote } from '../game/potionpurchase.js';
 
 const VBY = Object.fromEntries(VENDORS.map((v) => [v.id, v]));
@@ -56,11 +53,6 @@ export const Vendor = {
   },
 
   open(vid) {
-    if (vid === 'infernal' && !campaignVictoryRecorded()) {
-      UI.log('<b style="color:#ff5533">Malakor the Ash-Wanderer</b> will appear after Velscour is defeated at Depth 100.', '#ff8060');
-      sfx('error');
-      return false;
-    }
     UI.closeAll();
     this.active = vid;
     this.shopSel = null;
@@ -83,14 +75,6 @@ export const Vendor = {
     body.appendChild(el('div', 'vendor-greet', `“${escapeHtml(v.greet)}”`));
     const goldRow = el('div', 'row');
     goldRow.appendChild(el('span', 'gold-text', `◉ ${fmtInt(c.gold)} gold`));
-    if (this.active === 'infernal') {
-      const freeMarks = marksFree();
-      const markSpan = el('span', 'gold-text', `★ ${fmtInt(freeMarks)} Infernal Mark${freeMarks === 1 ? '' : 's'}`);
-      markSpan.style.cssText = 'color:#ff5533;font-weight:bold;margin-left:14px;cursor:pointer;';
-      markSpan.title = 'Click to view Infernal Marks panel';
-      markSpan.onclick = () => Marks.open();
-      goldRow.appendChild(markSpan);
-    }
     body.appendChild(goldRow);
     const sellZone = el('div', 'shop-sellzone', 'Drop a backpack item here to sell · Right-click an item to sell it');
     droppable(sellZone, (data) => (data.type === 'item' ? this.sell(data) : false), (data) => data.type === 'item');
@@ -105,7 +89,6 @@ export const Vendor = {
       case 'enchant': this.serviceBox(body, 'enchant'); break;
       case 'socket': this.serviceBox(body, 'socket'); body.appendChild(el('div', 'vendor-sub', '<b>Rings</b> <span class="dim">· each ring augments your skills</span>')); this.shopGrid(body, this.stock.rings || []); break;
       case 'gamble': this.gambleBox(body); break;
-      case 'infernal': this.infernalBox(body); break;
     }
   },
 
@@ -191,7 +174,6 @@ export const Vendor = {
     if (ref.where === 'equip') { UI.log('Unequip it first.', '#ff8080'); return false; }
     if (it.locked) { UI.log('That item is locked. Unlock it first (its panel in the inventory).', '#ffd860'); sfx('error'); return false; }
     if (it.type === 'gear' && it.relic === 'heir') { UI.log('Heirlooms have no vendor value.', '#ffd860'); sfx('error'); return false; }
-    if (it.sealed) { UI.log('Break the seal first: nobody buys a sealed treasure.', '#ffdf8a'); sfx('error'); return false; }
     const n = it.type === 'gem' ? 1 : 1;
     const price = sellPrice(itemSellValue(it) * n);
     const sellIt = () => {
@@ -214,18 +196,18 @@ export const Vendor = {
     return true;
   },
 
-  /** Sell every piece of gear in the bag after one confirmation (gems and sealed treasures stay). */
+  /** Sell every eligible piece of gear in the bag after one confirmation (gems stay). */
   sellAll() {
     const c = G.char;
-    const sold = c.bag.map((it, i) => ({ it, i })).filter(({ it }) => it && it.type === 'gear' && it.relic !== 'heir' && !it.sealed && !it.locked);
+    const sold = c.bag.map((it, i) => ({ it, i })).filter(({ it }) => it && it.type === 'gear' && it.relic !== 'heir' && !it.locked);
     if (!sold.length) { UI.log('No gear in your bag to sell.', '#ff8080'); sfx('error'); return false; }
     const price = (it) => sellPrice(itemSellValue(it));
     const total = sold.reduce((a, { it }) => a + price(it), 0);
-    const gems = sold.reduce((a, { it }) => a + it.gems.length, 0), sealed = c.bag.filter((b) => b && b.sealed).length;
+    const gems = sold.reduce((a, { it }) => a + it.gems.length, 0);
     const kinds = RARITY.map((r) => ({ r, n: sold.filter(({ it }) => it.rarity === r.id).length })).filter((k) => k.n).reverse()
       .map((k) => `<span style="color:${k.r.color}">${k.n} ${k.r.name}</span>`).join(' · ');
     UI.confirm('Sell all gear?', `Sell <b>${sold.length}</b> piece${sold.length > 1 ? 's' : ''} of gear for <span class="gold-text">${fmtInt(total)} gold</span>?<br>${kinds}` +
-      `<br><span class="dim">Gems in your Gem Bag are kept${gems ? `; ${gems} socketed gem${gems > 1 ? 's go' : ' goes'} with ${gems > 1 ? 'their' : 'its'} gear` : ''}. Equipped gear, locked items${sealed ? ' and sealed treasures are' : ' are'} not sold.</span>`, () => {
+      `<br><span class="dim">Gems in your Gem Bag are kept${gems ? `; ${gems} socketed gem${gems > 1 ? 's go' : ' goes'} with ${gems > 1 ? 'their' : 'its'} gear` : ''}. Equipped gear and locked items are not sold.</span>`, () => {
       let n = 0, gold = 0;
       for (const { it, i } of sold) if (c.bag[i] === it) { c.bag[i] = null; gold += price(it); n++; } // still where it was
       c.gold += gold;
@@ -391,8 +373,7 @@ export const Vendor = {
       b.onclick = () => { c.gold -= cost; fn(); changed(); };
       box.appendChild(b);
     };
-    if (it && it.sealed) box.appendChild(el('div', 'dim', 'Break the seal first: no socket, upgrade or enchantment goes onto a sealed treasure.'));
-    else if (it && it.type === 'gear') {
+    if (it && it.type === 'gear') {
       if (kind === 'upgrade') {
         if ((it.upg || 0) >= 10) box.appendChild(el('div', 'dim', 'This item is fully upgraded (+10).'));
         else btn(`Upgrade to +${(it.upg || 0) + 1}`, upgradeCost(it), true, () => { it.upg = (it.upg || 0) + 1; sfx('thud'); UI.log(`${escapeHtml(itemName(it))} upgraded!`, '#ffd34a'); });
@@ -497,151 +478,6 @@ export const Vendor = {
     body.appendChild(row);
   },
 
-  /** Malakor the Ash-Wanderer: trade Infernal Marks for Sealed Chests. */
-  infernalBox(body) {
-    const c = G.char;
-    const free = marksFree();
-
-    const banner = el('div', 'dim', 'The wanderer trades relics salvaged from the deepest abysses. Exchange your <b>Infernal Marks</b> for sealed coffers. Break the seal in your backpack or via the HUD button to reveal the treasure within!');
-    banner.style.cssText = 'margin-bottom:12px;font-size:13px;line-height:1.4;';
-    body.appendChild(banner);
-
-    const qualityCap = qualityAtDepth(c.depth || 1);
-    const topQuality = () => { const pool = RARITY.filter((q) => q.id >= RARITY_MYTHIC && q.id <= qualityCap); return pool.length ? pool[Math.floor(Math.random() * pool.length)].id : RARITY_MYTHIC; };
-    const chestOffers = [
-      {
-        id: 'mystery',
-        name: 'Sealed Mystery Casket',
-        cost: 1,
-        desc: `An iron-bound coffer pulled from the outer depths. Contains gear up to your highest unlocked quality, scaled to your level.`,
-        rarityText: `${RARITY[RARITY_EPIC].name}+`,
-        rollRarity: () => {
-          const mf = G.player?.st?.magicFind || 0;
-          const r = Math.random();
-          if (r < Math.min(0.12, 0.03 * (1 + mf / 200))) return topQuality();
-          if (r < Math.min(0.40, 0.20 * (1 + mf / 150))) return 4;
-          return 3;
-        },
-      },
-      {
-        id: 'weapon',
-        name: 'Sealed Armament Coffer',
-        cost: 2,
-        desc: `A heavy warded coffer containing a weapon or offhand up to your highest unlocked quality.`,
-        rarityText: `${RARITY[RARITY_EPIC].name}+ Weapon / Offhand`,
-        slot: () => (Math.random() < 0.75 ? 'weapon' : 'offhand'),
-        rollRarity: () => {
-          const mf = G.player?.st?.magicFind || 0;
-          const r = Math.random();
-          if (r < Math.min(0.15, 0.04 * (1 + mf / 200))) return topQuality();
-          if (r < Math.min(0.45, 0.25 * (1 + mf / 150))) return 4;
-          return 3;
-        },
-      },
-      {
-        id: 'armor',
-        name: 'Sealed Armor Vault',
-        cost: 2,
-        desc: `A runed lockbox containing armor up to your highest unlocked quality (helm, chest, legs, boots, or gloves).`,
-        rarityText: `${RARITY[RARITY_EPIC].name}+ Armor`,
-        slot: () => pick(['head', 'body', 'legs', 'feet', 'hands']),
-        rollRarity: () => {
-          const mf = G.player?.st?.magicFind || 0;
-          const r = Math.random();
-          if (r < Math.min(0.15, 0.04 * (1 + mf / 200))) return topQuality();
-          if (r < Math.min(0.45, 0.25 * (1 + mf / 150))) return 4;
-          return 3;
-        },
-      },
-      {
-        id: 'reliquary',
-        name: 'Sealed Abyssal Reliquary',
-        cost: 5,
-        desc: `A forbidden relic chest pulsing with dark brimstone. The quality is capped by your campaign progress.`,
-        rarityText: `High quality (depth capped)`,
-        rollRarity: () => {
-          const mf = G.player?.st?.magicFind || 0;
-          const r = Math.random();
-          return r < Math.min(0.35, 0.15 * (1 + mf / 150)) ? topQuality() : 4;
-        },
-      },
-    ];
-
-    const list = el('div', 'infernal-chest-list');
-    list.style.cssText = 'display:flex;flex-direction:column;gap:8px;margin-top:6px;';
-
-    for (const offer of chestOffers) {
-      const row = el('div', 'service-box row');
-      row.style.cssText += ';align-items:center;padding:10px;background:rgba(25,10,12,0.5);border:1px solid rgba(255,80,40,0.3);';
-
-      const ic = el('div', 'bslot r3 sealed');
-      Object.assign(ic.style, { width: '42px', height: '42px', flex: 'none' });
-      ic.appendChild(itemCell({ type: 'gear', sealed: true, rarity: offer.id === 'reliquary' ? RARITY_LEGENDARY : RARITY_EPIC }));
-      row.appendChild(ic);
-
-      const info = el('div', '');
-      info.style.cssText = 'flex:1;margin-left:12px;margin-right:12px;';
-      info.innerHTML = `<div style="font-size:14px;font-weight:bold;color:#ffdf8a">${escapeHtml(offer.name)} <span style="font-size:11px;color:#ff6644;font-weight:normal">(${offer.rarityText})</span></div><div class="dim" style="font-size:12px;margin-top:2px;line-height:1.3">${offer.desc}</div>`;
-      row.appendChild(info);
-
-      const btn = el('button', 'btn small', `Trade <b>${offer.cost} Mark${offer.cost > 1 ? 's' : ''}</b>`);
-      btn.style.cssText = 'flex:none;white-space:nowrap;min-width:115px;color:#ffd860;';
-      const bagFull = c.bag.filter((x) => !x).length < 1;
-      const canAfford = free >= offer.cost;
-      btn.disabled = !canAfford || bagFull;
-      if (bagFull) {
-        btn.title = 'Inventory is full';
-      } else if (!canAfford) {
-        btn.title = `Requires ${offer.cost} unspent Infernal Marks (you have ${free})`;
-      }
-      btn.onclick = () => this.buySealedChest(offer);
-      row.appendChild(btn);
-
-      list.appendChild(row);
-    }
-
-    body.appendChild(list);
-  },
-
-  buySealedChest(offer) {
-    const c = G.char;
-    if (!c) return false;
-    if (marksFree() < offer.cost) {
-      UI.log(`Not enough unspent Infernal Marks (need ${offer.cost}, have ${marksFree()}).`, '#ff8080');
-      sfx('error');
-      return false;
-    }
-    if (c.bag.filter((x) => !x).length < 1) {
-      UI.log('Inventory is full! Free up a slot first.', '#ff8080');
-      sfx('error');
-      return false;
-    }
-    if (!deductMarks(offer.cost)) {
-      UI.log('Failed to deduct Infernal Marks.', '#ff8080');
-      sfx('error');
-      return false;
-    }
-
-    const lvl = Math.max(c.level, depthLevel(c.depth || 1));
-    const slot = offer.slot ? offer.slot() : undefined;
-    const rarity = Math.min(offer.rollRarity(), qualityAtDepth(c.depth || 1));
-    const it = rollItem(lvl, {
-      slot,
-      rarity,
-      maxRarity: qualityAtDepth(c.depth || 1),
-      mf: (G.player?.st?.magicFind || 0) + 50,
-      bonus: 0.5,
-    });
-    it.sealed = true;
-    addToBag(c, it);
-
-    sfx('levelup', 0.7);
-    sfx('shadow', 0.8);
-    UI.log(`The wanderer passes you a <b style="color:#ffdf8a">Sealed Treasure</b> (${escapeHtml(offer.name)})! Break the seal to unveil it.`, '#ffd860');
-    changed();
-    this.render();
-    return true;
-  },
 };
 
 /** What fusing three of a gem stack costs (Sigils follow the gold curve of their depth). */

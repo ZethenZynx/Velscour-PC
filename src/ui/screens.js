@@ -881,7 +881,7 @@ export function lootFilterDialog(onDone) {
     'Loot Filter',
     lootFilter(),
     'Use the loot filter',
-    'With the filter on, auto-pickup and walk-over pickup take only what passes. Clicking or tapping an item still picks it up, and sealed treasures always pass.',
+    'With the filter on, auto-pickup and walk-over pickup take only what passes. Clicking or tapping an item still picks it up.',
     onDone
   );
 }
@@ -912,7 +912,6 @@ export function helpDialog() {
     <div><kbd>G</kbd> MADNESS · <kbd>F</kbd> CLASS ULTIMATE (Smite, Cataclysm, Supernova, etc.), then click where it should strike (both fill as you fight) · <kbd>H</kbd> HEARTHSTONE (two-way town portal) · <kbd>F12</kbd> How to Play</div>
     <div><b style="color:#ffe2a0">While the hero plays</b></div>
     <div>Click or tap <b style="color:#ffd040">gilded critters</b> before they get away (follow the red arrows): each is worth a big sum of experience (a Golden Scarab, a pile of gold). </div>
-    <div>Now and then a Green or better item drops <b style="color:#ffdf8a">sealed</b>: break the seals from the SEALED button or the inventory. The inventory panel shows the available space.</div>
     <div><b>Loot filter</b> (Settings): pick which weapons, off-hands, armor and rings (by rarity) and whether gems get picked up, by auto-pickup and by walking over them.</div>
     <div>After defeating Velscour, configure <b style="color:#ffc040">Greed</b> at the Portal to the Depths. Each level adds one endgame affix and increases enemy populations, champion leaders, gold, experience, and loot rewards. Your selection does not reset on death.</div>
     <div><b style="color:#ffe2a0">Goal</b></div>

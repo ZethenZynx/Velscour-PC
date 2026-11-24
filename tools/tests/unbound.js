@@ -246,14 +246,14 @@ const gearN = +((process.argv.find((a) => a.startsWith('gear=')) || 'gear=60').s
       const { HEIRLOOM_BY_ID } = await import('/src/data/relics.js'), { endgame } = await import('/src/game/endgame.js');
       const rel = w.loot.filter((l) => l.kind === 'item' && l.item.relic).map((l) => l.item);
       const k = w.loot.find((l) => l.kind === 'item' && l.item.rid === 'crown_demon');
-      return { dead: w.boss.dead, exit: ex.active, label: ex.label, msg: G.ui.msgEl.textContent, rids: rel.map((i) => i.rid), unbound: rel.filter((i) => HEIRLOOM_BY_ID[i.rid] && HEIRLOOM_BY_ID[i.rid].unbound).map((i) => i.rid), sealed: rel.filter((i) => i.sealed).map((i) => i.rid),
+      return { dead: w.boss.dead, exit: ex.active, label: ex.label, msg: G.ui.msgEl.textContent, rids: rel.map((i) => i.rid), itemSealFlags: rel.filter((i) => Object.hasOwn(i, "sealed")).length, unbound: rel.filter((i) => HEIRLOOM_BY_ID[i.rid] && HEIRLOOM_BY_ID[i.rid].unbound).map((i) => i.rid),
         hoard: rel.filter((i) => i.relic === 'cov').length + rel.filter((i) => i.relic === 'heir' && !HEIRLOOM_BY_ID[i.rid].unbound).length, wins: c.unbound.wins, best: c.unbound.best, acct: endgame().unboundWins - G.wins0, cleared: Object.keys(c.cleared).length, deepest: c.deepest, crownAt: k ? [k.x, k.y] : null,
-        abyssal: w.loot.filter((l) => l.kind === 'item' && l.item.rarity === 6 && !l.item.relic && !l.item.sealed).length, marks: endgame().marks.pts - G.marks0 };
+        abyssal: w.loot.filter((l) => l.kind === 'item' && l.item.rarity === 6 && !l.item.relic ).length, marks: endgame().marks.pts - G.marks0 };
     });
     console.log(JSON.stringify(end));
     check(end.dead && end.exit && end.label === 'Exit — to town' && /UNBOUND HAS FALLEN/.test(end.msg), `he dies: '${end.msg}', the exit reads '${end.label}'`);
     check(end.unbound.includes('crown_demon') && end.unbound.length === 2 && end.hoard >= 2, `the drops: the Crown (first win), ${end.unbound.filter((r) => r !== 'crown_demon')[0]}, and his hoard (${end.rids.join(', ')})`);
-    check(!end.unbound.some((r) => end.sealed.includes(r)), 'the Unbound relics arrive open (never sealed)');
+    check(end.itemSealFlags === 0, 'Unbound rewards have no legacy sealed-item flags');
     check(end.wins === 1 && end.acct === 1 && end.best > 0, `the win counts: c.unbound ${end.wins} win, best ${end.best} s; the account's unboundWins +${end.acct}`);
     check(!end.cleared && end.deepest === 509, 'no depth cleared, the deepest untouched');
     check(end.abyssal >= 3 && end.marks >= 20, `the win pays: ${end.abyssal} open Abyssal items and +${end.marks} Infernal Marks (a rift Guardian: one item, 1-8 Marks)`);

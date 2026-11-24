@@ -58,7 +58,7 @@ const rounds = +(process.argv[3] || 40);
     out.pass = Object.fromEntries(Object.entries(items).map(([k, it]) => [k, filterPasses(it)]));
     out.want = Object.fromEntries(Object.entries(items).map(([k, it]) => [k, want(it)]));
     f.gems = false; out.gemOff = want(items.gem) || filterPasses(items.gem); f.gems = true;
-    const sealed = rollItem(20, { slot: 'body', rarity: 3 }); sealed.sealed = true; f.armor = -1; out.sealedPasses = filterPasses(sealed) && want(sealed); f.armor = 3;
+    f.armor = -1; out.disabledArmorFilter = !filterPasses(items.body3) && !want(items.body3); f.armor = 3;
     // keepers stay out of the sale and go to the chest; the rest is sold
     c.bag.fill(null); c.stash.fill(null);
     c.bag[0] = items.ring1; c.bag[1] = items.body3; c.bag[2] = items.body2; c.bag[3] = items.ring0;
@@ -89,7 +89,7 @@ const rounds = +(process.argv[3] || 40);
   for (const k in exp) if (f.pass[k] !== exp[k] || f.want[k] !== exp[k]) fails.push(`filter ${k}: pass ${f.pass[k]} want ${f.want[k]}, expected ${exp[k]}`);
   if (!f.offByDefault) fails.push('the filter should start off');
   if (f.gemOff) fails.push('gems off still picks up gems');
-  if (!f.sealedPasses) fails.push('sealed treasures must always pass');
+  if (!f.disabledArmorFilter) fails.push('disabled armor filter failed to reject ordinary gear');
   if (!f.sellOk) fails.push('sellJunk kept ' + f.afterSell + ' (keepers only: what passes the filter)');
   if (!f.stashOk) fails.push('stashExtras stored ' + f.stashed);
   if (!f.playerStoredKept) fails.push('auto-play took the player\'s stored gear out (and sold it)');

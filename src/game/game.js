@@ -18,7 +18,7 @@ import { loadGearArt } from '../core/gearart.js';
 import { loadHeld } from '../gfx/heldart.js';
 import { preloadBarFx } from '../gfx/artfx.js';
 import { SKILLS } from '../data/skills.js';
-import { setClassItems, setRingContext, SEAL_GAP } from '../data/items.js';
+import { setClassItems, setRingContext } from '../data/items.js';
 import { BREACH_BIOME, BREACH_WALLS } from '../data/biomes.js';
 import { BIOMES, BETA_BIOMES, BIOME_BY_ID, TOWN_BIOME, ACT2_TOWN_BIOME, drawBiome, biomeChoices, biomesForDepth, takeBiome, mixPartner, recordBiomeVisit } from '../data/biomes.js';
 import { ARCH } from '../data/enemies.js';
@@ -479,8 +479,10 @@ export const game = {
     const world = new World('town', { map: t.map, tileset, biome: TOWN_BIOME, depth: 0, townTiles, buildings: t.buildings, props: t.props, wallHangings: t.wallHangings });
     world.raining = rollTownWeather();
     world.npcs = t.npcs
-      .filter((n) => n.vendor?.id !== 'infernal' || campaignVictoryRecorded())
-      .map((n) => ({ vendor: n.vendor, x: n.x, y: n.y, reach: 1.8, flip: n.flip, aura: n.aura, auraCol: n.auraCol, use: () => Vendor.open(n.vendor.id) }));
+      .filter((n) => !n.malakor || campaignVictoryRecorded())
+      .map((n) => n.malakor
+        ? { ...n, reach: 1.8, talkText: '', talkT: 0, talkAge: 0, lastRiddleIndex: -1 }
+        : { vendor: n.vendor, x: n.x, y: n.y, reach: 1.8, flip: n.flip, aura: n.aura, auraCol: n.auraCol, use: () => Vendor.open(n.vendor.id) });
     // the storage chest, beside the well
     {
       let [x, y] = [t.start[0] + 1.5, t.start[1] - 0.5];
@@ -586,7 +588,7 @@ export const game = {
     });
     world.raining = false;
     world.ambientFx = { type: 'sand', color: '#f3c778' };
-    world.npcs = t.npcs.filter((n) => n.vendor?.id !== 'infernal' || campaignVictoryRecorded()).map((n) => ({
+    world.npcs = t.npcs.map((n) => ({
       vendor: n.vendor,
       x: n.x,
       y: n.y,
@@ -3195,7 +3197,6 @@ export const game = {
       spectateTick(w, dt); // gilded critters, the SMITE reticle (game/spectate.js)
       footsteps(p, w.kind === 'town' ? 'dirt' : STEP_SURFACE[w.biome && w.biome.id] || 'stone');
       Meter.tick(dt);
-      if (w.kind === 'dungeon' && G.char) G.char.sealT = (G.char.sealT ?? SEAL_GAP) + dt; // the sealed treasure clock (loot.js)
     } else {
       input.endFrame();
     }

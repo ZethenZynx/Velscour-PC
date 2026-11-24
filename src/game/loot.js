@@ -6,7 +6,7 @@ import { sfx } from '../core/audio.js';
 import { spawn, glowSprite, floatText, addLight, elem } from '../gfx/vfx.js';
 import { replacementIcon } from '../core/replacementart.js';
 import { pixelSprite, gemIcon, goldIcon, ringIcon } from '../gfx/pixelart.js';
-import { rollItem, rollGem, itemName, itemColor, goldPile, goldScale, MATERIALS, GEMS, potionItem, RARITY_COLORS, RARITY_RARE, RARITY_LEGENDARY, qualityAtDepth, rarityAt, SEAL_RARITY, SEALED_COLOR, SEAL_GAP } from '../data/items.js';
+import { rollItem, rollGem, itemName, itemColor, goldPile, goldScale, MATERIALS, GEMS, potionItem, RARITY_COLORS, RARITY_RARE, RARITY_EPIC, RARITY_LEGENDARY, qualityAtDepth, rarityAt } from '../data/items.js';
 import { potionIcon } from '../core/assets.js';
 import { artIcon } from '../core/classart.js';
 import { gearIcon } from '../core/gearart.js';
@@ -161,20 +161,13 @@ export function sigilIcon(rank, size = 48) {
 // Seconds a monster's lesser drop waits on the ground (Orange, Light Blue, Yellow; a gem). A long fight drops hundreds that
 // keys, what the hero dropped, chest and quest rewards don't fade. 0: never.
 const FADE = [45, 60, 120];
-export const fadeOf = (it) => (it.relic || it.sealed ? 0 : it.type === 'gem' ? (GEMS[it.gem].sigil ? 0 : 180) : it.type === 'gear' ? FADE[it.rarity] || 0 : 0);
+export const fadeOf = (it) => (it.relic ? 0 : it.type === 'gem' ? (GEMS[it.gem].sigil ? 0 : 180) : it.type === 'gear' ? FADE[it.rarity] || 0 : 0);
 
 export class GroundItem {
   constructor(x, y, kind, data = {}) {
     this.x = x; this.y = y; this.z = 0;
     this.kind = kind; // gold | orb_hp | orb_mp | orb_rejuv | orb_fury | item | potion
     Object.assign(this, data);
-    // a Green-quality or better item hits the floor sealed, once (dropFromBag marks items that were already opened), when the seal
-    // clock allows one (SEAL_GAP); otherwise it arrives open
-    if (kind === 'item' && this.item.type === 'gear' && this.item.rarity >= SEAL_RARITY && this.item.sealed === undefined) {
-      const c = G.char, ready = !c || (c.sealT ?? SEAL_GAP) >= SEAL_GAP;
-      this.item.sealed = ready;
-      if (ready && c) c.sealT = 0;
-    }
     const a = rand(TAU), s = rand(0.5, 1.6);
     this.vx = Math.cos(a) * s; this.vy = Math.sin(a) * s; this.vz = rand(90, 150);
     this.t = 0;
@@ -204,7 +197,7 @@ export class GroundItem {
       this.vz -= 420 * dt; this.z += this.vz * dt;
       const nx = this.x + this.vx * dt, ny = this.y + this.vy * dt;
       if (world.map.walkable(nx, ny)) { this.x = nx; this.y = ny; }
-      if (this.z <= 0) { this.z = 0; this.vz = this.vz < -60 ? -this.vz * 0.3 : 0; if (this.kind === 'item' && this.item.rarity >= SEAL_RARITY) sfx('pickup'); }
+      if (this.z <= 0) { this.z = 0; this.vz = this.vz < -60 ? -this.vz * 0.3 : 0; if (this.kind === 'item' && this.item.type === 'gear' && this.item.rarity >= RARITY_EPIC) sfx('pickup'); }
     }
     const p = world.player;
     if (!p || p.dead) return true;
@@ -251,13 +244,13 @@ export class GroundItem {
     }
     const img = this.icon();
     if (!img) return;
-    const art = this.kind === 'item' && !this.item.sealed && ((this.item.art && artIcon(this.item)) || gearIcon(this.item) || heldIcon(this.item));
+    const art = this.kind === 'item' && ((this.item.art && artIcon(this.item)) || gearIcon(this.item) || heldIcon(this.item));
     const s = this.kind === 'gold' ? 20 : art ? 30 : this.kind === 'key' ? 26 : 22;
     ctx.fillStyle = 'rgba(0,0,0,0.35)';
     ctx.beginPath(); ctx.ellipse(px, py + 1, 9, 4, 0, 0, TAU); ctx.fill();
     ctx.save();
     ctx.translate(px, py - s * 0.45);
-    if (this.kind === 'item' && this.item.type === 'gear' && !art && !this.item.sealed) ctx.rotate(-0.6); // catalog and gear art are drawn upright / diagonal already
+    if (this.kind === 'item' && this.item.type === 'gear' && !art) ctx.rotate(-0.6); // catalog and gear art are drawn upright / diagonal already
     ctx.drawImage(img, -s / 2, -s / 2, s, s);
     ctx.restore();
   }
@@ -283,28 +276,6 @@ export function keyIcon(size = 48) {
   x.fillStyle = KEY_COLOR; x.beginPath(); x.arc(-12 * s, 0, 3 * s, 0, TAU); x.fill(); // the void-stone
   x.fillStyle = '#ffffff'; x.fillRect(-13.5 * s, -1.5 * s, 1.5 * s, 1.5 * s);
   x.restore();
-  iconCache.set(key, c);
-  return c;
-}
-/** A sealed treasure: a little iron-bound casket with a wax seal (the same for every sealed item, by design). */
-function sealedIcon(size) {
-  const key = 'sealed|' + size;
-  let c = iconCache.get(key);
-  if (c) return c;
-  c = document.createElement('canvas'); c.width = c.height = size;
-  const x = c.getContext('2d'), s = size / 48;
-  const g = x.createRadialGradient(24 * s, 24 * s, 2, 24 * s, 24 * s, 26 * s);
-  g.addColorStop(0, 'rgba(255,223,138,0.55)'); g.addColorStop(1, 'rgba(255,223,138,0)');
-  x.fillStyle = g; x.fillRect(0, 0, size, size);
-  x.fillStyle = '#5a3418'; x.fillRect(9 * s, 20 * s, 30 * s, 18 * s); // box
-  x.fillStyle = '#7a4a22'; x.beginPath(); x.moveTo(9 * s, 20 * s); x.quadraticCurveTo(24 * s, 6 * s, 39 * s, 20 * s); x.fill(); // lid
-  x.fillStyle = '#c8a050';
-  for (const bx of [12, 33]) x.fillRect(bx * s, 12 * s, 3 * s, 26 * s); // gilded bands
-  x.fillRect(9 * s, 19 * s, 30 * s, 2.5 * s);
-  x.strokeStyle = '#2a1608'; x.lineWidth = 1.5 * s; x.strokeRect(9 * s, 20 * s, 30 * s, 18 * s);
-  x.fillStyle = '#b0182a'; x.beginPath(); x.arc(24 * s, 27 * s, 5.5 * s, 0, TAU); x.fill(); // the wax seal
-  x.fillStyle = '#e04050'; x.beginPath(); x.arc(23 * s, 26 * s, 2.2 * s, 0, TAU); x.fill();
-  x.fillStyle = SEALED_COLOR; x.font = `bold ${9 * s}px serif`; x.textAlign = 'center'; x.textBaseline = 'middle'; x.fillText('?', 24 * s, 27.5 * s);
   iconCache.set(key, c);
   return c;
 }
@@ -349,7 +320,6 @@ export function bannerKitIcon(size = 48) {
 }
 /** Inventory icon canvas for any item. */
 export function itemIcon(item, size = 48) {
-  if (item.sealed) return sealedIcon(size);
   if (item.type === 'gem' && GEMS[item.gem].sigil) return sigilIcon(item.tier, size);
   if (item.type === 'gem') return gemIcon(item.gem, GEMS[item.gem].color, item.tier, size);
   if (item.type === 'potion') return potionIcon(item.color, size);
@@ -521,7 +491,6 @@ const labelRank = (l) => {
   if (l.kind === 'key') return 9;
   if (l.kind !== 'item') return 0; // gold, potions
   const it = l.item;
-  if (it.sealed) return 8;
   if (it.type === 'gem') return labelFilterPasses(it) ? 3 : -1;
   if (it.type !== 'gear') return 3; // sheets
   return labelFilterPasses(it) ? it.rarity || 0 : -1; // the ground-label filter controls unprompted names

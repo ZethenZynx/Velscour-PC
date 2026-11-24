@@ -48,7 +48,7 @@ export function bestItem(C, slot, base, ilvl, legend, gems) {
   it.sockets = it.maxSockets;
   it.gems = gems.slice(0, it.sockets).map((gem) => ({ gem, tier: MAX_GEM_TIER }));
   it.legendary = legend;
-  delete it.unid; delete it.sealed;
+  delete it.unid;
   return it;
 }
 

@@ -48,8 +48,7 @@ export function itemCell(item) {
     d.appendChild(s);
   }
   if (item.unid) d.appendChild(el('span', 'upg', '?'));
-  if (item.sealed) d.classList.add('sealed');
-  if (item.type === 'gear' && !item.sealed) {
+  if (item.type === 'gear') {
     const tier = Math.max(1, Math.min(RARITY.length, Number(item.rarity) + 1 || 1));
     const badge = el('span', 'quality-tier', 'T' + tier);
     badge.title = `Tier ${tier}`;
@@ -64,7 +63,6 @@ export function rarityClass(item) {
   if (!item) return '';
   if (item.type === 'gem') return GEMS[item.gem].sigil ? 'rsig' : ''; // Gems keep their own artwork; gear quality tiers do not tint their slots.
   if (item.type !== 'gear') return 'r0';
-  if (item.sealed) return 'rs';
   if (item.relic) return 'r' + item.relic;
   return glyphOf(item) ? 'rglyph' : 'r' + item.rarity;
 }
@@ -100,8 +98,6 @@ export function itemTooltip(item, opts = {}) {
     h += `<div class="tt-base">Banner Customization Kit · Lancer Only</div>`;
     h += `<div class="dim">Sold by Fortunato the Gambler. Open the kit to tailor the cloth silhouette, field colors, heraldic patterns, and crest of your 3D War Banner.</div>`;
     h += `<div class="tt-sep"></div><div class="dim">${G.touch ? 'Tap' : 'Right-click'} or select <b>Customize Banner</b> to open the banner studio.</div>`;
-  } else if (item.sealed) {
-    h += `<div class="tt-base">${RARITY[3].name} or better · Item Level ${item.ilvl}</div><div style="color:${col}">What lies inside is anyone's guess until the seal is broken.</div><div class="tt-sep"></div><div class="dim">${G.touch ? 'Tap' : 'Click'} <b>Break the Seal</b>, or the SEALED button on the HUD. It can't be sold or worn sealed.</div>`;
   } else {
     if (item.unid) {
       h += `<div class="tt-base">${SLOT_NAMES[item.slot]} · Item Level ${item.ilvl}</div><div class="dim">Its true nature is revealed once purchased.</div>`;
@@ -149,7 +145,7 @@ export function itemTooltip(item, opts = {}) {
       }
     }
   }
-  if (!opts.price && !item.locked && !item.sealed && ['gear', 'gem', 'sheet', 'banner_kit'].includes(item.type)) {
+  if (!opts.price && !item.locked && ['gear', 'gem', 'sheet', 'banner_kit'].includes(item.type)) {
     const stackNote = item.type === 'gem' && (item.count || 1) > 1 ? ' each' : '';
     h += `<div class="tt-price">Vendor value: ${fmtInt(itemSellValue(item))} gold${stackNote}</div>`;
   }
@@ -170,7 +166,7 @@ export function itemTooltip(item, opts = {}) {
 export function itemGearTip(item, opts = {}) {
   if (!item) return { html: '' };
   const c = G.char;
-  const canCompare = item.type === 'gear' && !item.sealed && !item.unid;
+  const canCompare = item.type === 'gear' && !item.unid;
   const equippedSlot = canCompare && item.slot === 'ring' && c?.equip
     ? RING_SLOTS.find((slot) => c.equip[slot])
     : canCompare && item.slot && c?.equip

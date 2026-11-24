@@ -259,66 +259,43 @@ try {
 
   const endgameTown = await evaluate(`(async () => {
     const { game } = window.VELSCOUR;
-    const [{ G }, { campaignVictoryRecorded, unlockEndgame, resetEndgameCache }, { Heresies }, { Vendor }] = await Promise.all([
-      import('/src/state.js'), import('/src/game/endgame.js'), import('/src/ui/heresies.js'), import('/src/ui/vendor.js')
+    const [{ G }, { campaignVictoryRecorded, unlockEndgame, resetEndgameCache }, { Heresies }] = await Promise.all([
+      import('/src/state.js'), import('/src/game/endgame.js'), import('/src/ui/heresies.js')
     ]);
     const character = G.char;
     character.depth = 101; character.level = 100; character.cleared ||= {}; character.cleared[100] = true;
     await game.enterTown();
-    const before = {
-      unlocked: campaignVictoryRecorded(),
-      altarVisible: G.world.npcs.some((n) => n.altar),
-      merchantVisible: G.world.npcs.some((n) => n.vendor?.id === 'infernal'),
-      altarOpened: Heresies.open(),
-      merchantOpened: Vendor.open('infernal'),
-    };
-    before.altarPanel = !!document.querySelector('.heresy-panel');
-    before.merchantPanel = !!document.querySelector('.vendor-panel');
+    const before = { unlocked: campaignVictoryRecorded(), altarVisible: G.world.npcs.some((n) => n.altar), malakorVisible: G.world.npcs.some((n) => n.malakor) };
     await game.enterAct2Town();
     before.act2AltarVisible = G.world.npcs.some((n) => n.altar);
-    before.act2MerchantVisible = G.world.npcs.some((n) => n.vendor?.id === 'infernal');
-    unlockEndgame();
-    resetEndgameCache();
+    before.act2MalakorVisible = G.world.npcs.some((n) => n.malakor);
+    unlockEndgame(); resetEndgameCache();
     const persisted = campaignVictoryRecorded();
     await game.enterAct2Town();
-    const act2After = {
-      altarVisible: G.world.npcs.some((n) => n.altar),
-      merchantVisible: G.world.npcs.some((n) => n.vendor?.id === 'infernal'),
-    };
+    const act2After = { altarVisible: G.world.npcs.some((n) => n.altar), malakorVisible: G.world.npcs.some((n) => n.malakor) };
     await game.enterTown();
-    const after = {
-      persisted,
-      altarVisible: G.world.npcs.some((n) => n.altar),
-      merchantVisible: G.world.npcs.some((n) => n.vendor?.id === 'infernal'),
-      otherVendors: G.world.npcs.filter((n) => n.vendor && n.vendor.id !== 'infernal').length,
-      altarOpened: Heresies.open(),
-      altarPanel: !!document.querySelector('.heresy-panel'),
-    };
+    const malakor = G.world.npcs.find((n) => n.malakor);
+    const after = { persisted, altarVisible: G.world.npcs.some((n) => n.altar), malakorVisible: !!malakor, malakorIsNonVendor: !!malakor && !malakor.vendor && !malakor.sign, otherVendors: G.world.npcs.filter((n) => n.vendor).length, altarOpened: Heresies.open(), altarPanel: !!document.querySelector('.heresy-panel') };
     Heresies.close();
-    after.merchantOpened = Vendor.open('infernal');
-    after.merchantPanel = !!document.querySelector('.vendor-panel');
+    after.noMalakorTradePanel = !document.querySelector('.vendor-panel');
     return { before, after, act2After };
   })()`);
   assert.equal(endgameTown.before.unlocked, false, 'level 100 and depth 100 do not unlock campaign-gated town features');
-  assert.equal(endgameTown.before.altarVisible, false, 'Altar of Heresy is absent from town before the campaign clear');
-  assert.equal(endgameTown.before.merchantVisible, false, 'Malakor is absent from town before the campaign clear');
-  assert.equal(endgameTown.before.altarOpened, false, 'alternate Altar of Heresy UI path is blocked before the campaign clear');
-  assert.equal(endgameTown.before.merchantOpened, false, 'direct Malakor vendor opening is blocked before the campaign clear');
-  assert.equal(endgameTown.before.altarPanel, false, 'Altar of Heresy panel remains closed while locked');
-  assert.equal(endgameTown.before.merchantPanel, false, 'merchant panel remains closed while locked');
-  assert.equal(endgameTown.before.act2AltarVisible, false, 'Altar of Heresy is hidden in Act II before the campaign clear');
-  assert.equal(endgameTown.before.act2MerchantVisible, false, 'Malakor is hidden in Act II before the campaign clear');
-  assert.equal(endgameTown.after.persisted, true, 'the existing campaign-clear flag persists after reloading its cached state');
-  assert.equal(endgameTown.after.altarVisible, true, 'the Altar of Heresy appears after the campaign clear');
-  assert.equal(endgameTown.after.merchantVisible, true, 'Malakor appears after the campaign clear');
-  assert.equal(endgameTown.act2After.altarVisible, true, 'Altar of Heresy appears in Act II after the campaign clear');
-  assert.equal(endgameTown.act2After.merchantVisible, true, 'Malakor appears in Act II after the campaign clear');
+  assert.equal(endgameTown.before.altarVisible, false, 'Altar of Heresy is absent before campaign completion');
+  assert.equal(endgameTown.before.malakorVisible, false, 'Malakor is absent before campaign completion');
+  assert.equal(endgameTown.before.act2AltarVisible, false, 'Altar of Heresy is hidden in Act II before campaign completion');
+  assert.equal(endgameTown.before.act2MalakorVisible, false, 'Malakor is never placed in Act II');
+  assert.equal(endgameTown.after.persisted, true, 'campaign-clear state persists');
+  assert.equal(endgameTown.after.altarVisible, true, 'Altar of Heresy appears after campaign completion');
+  assert.equal(endgameTown.after.malakorVisible, true, 'Malakor appears in Herrington Hollow after campaign completion');
+  assert.equal(endgameTown.after.malakorIsNonVendor, true, 'Malakor is a non-merchant NPC');
+  assert.equal(endgameTown.act2After.altarVisible, true, 'Altar of Heresy appears in Act II after campaign completion');
+  assert.equal(endgameTown.act2After.malakorVisible, false, 'Malakor remains exclusive to Herrington Hollow');
   assert.ok(endgameTown.after.otherVendors > 0, 'other town vendors remain available');
   assert.equal(endgameTown.after.altarOpened, true, 'the unlocked Altar of Heresy still opens');
   assert.equal(endgameTown.after.altarPanel, true, 'the unlocked Altar of Heresy panel renders');
-  assert.equal(endgameTown.after.merchantOpened, true, 'the unlocked Malakor vendor still opens');
-  assert.equal(endgameTown.after.merchantPanel, true, 'Malakor trading panel renders after unlock');
-  console.log('PASS: Altar and Malakor remain hidden and inaccessible at level/depth 100 until the saved Velscour defeat flag is set.');
+  assert.equal(endgameTown.after.noMalakorTradePanel, true, 'Malakor opens no merchant panel');
+  console.log('PASS: Altar gating remains intact; Malakor appears only as a wandering Herrington Hollow NPC after campaign completion.');
 
   const breachState = await evaluate(`(async () => {
     const { G, game } = window.VELSCOUR;

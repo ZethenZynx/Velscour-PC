@@ -928,7 +928,7 @@
       gemFuseCost, gemRefineCost, gemStats, gemName, makeGem,
       sigilStats, sigilFuseCost, sigilMult,
       powerLevel, affixValue, statLabel, HOLLOW,
-      SEAL_RARITY, SEAL_GAP, SEALED_COLOR, RELIC_COLORS, BANNER_KIT_PRICE
+      RELIC_COLORS, BANNER_KIT_PRICE
     } from './src/data/items.js';
     import {
       TUNE, POWERS, HEIRLOOMS, COVENANTS, GLYPHWORDS,
@@ -1679,7 +1679,7 @@
             <button type="button" class="wiki-pill ${sec === 'weapons' ? 'active' : ''}" data-ars-sec="weapons">Weapons (${Object.keys(WEAPONS).length})</button>
             <button type="button" class="wiki-pill ${sec === 'offhands' ? 'active' : ''}" data-ars-sec="offhands">Off-Hands (${Object.keys(OFFHANDS).length})</button>
             <button type="button" class="wiki-pill ${sec === 'armor' ? 'active' : ''}" data-ars-sec="armor">Armor &amp; Materials (${Object.keys(ARMORS).length} + ${MATERIALS.length})</button>
-            <button type="button" class="wiki-pill ${sec === 'mechanics' ? 'active' : ''}" data-ars-sec="mechanics">Vanity &amp; Sealed</button>
+            <button type="button" class="wiki-pill ${sec === 'mechanics' ? 'active' : ''}" data-ars-sec="mechanics">Vanity &amp; Endgame</button>
             <button type="button" class="wiki-pill ${sec === 'rarity' ? 'active' : ''}" data-ars-sec="rarity">20 Quality Tiers</button>
           </div>
         </div>
@@ -1854,33 +1854,17 @@
         `;
       }
 
-      // 4. Vanity Wardrobe, Sealed Treasures & Artisan Mechanics
-      if ((sec === 'all' || sec === 'mechanics') && (!state.q || matchesQuery('vanity transmog sealed treasure casket key banner kit upgrade socket enchant hollow', state.q))) {
-        const sealedUrl = itemIcon({ sealed: true }, 48).toDataURL();
+      // 4. Vanity Wardrobe & Artisan Mechanics
+      if ((sec === 'all' || sec === 'mechanics') && (!state.q || matchesQuery('vanity transmog key banner kit upgrade socket enchant hollow', state.q))) {
         const keyUrl = keyIcon(48).toDataURL();
         const bannerUrl = bannerKitIcon(48).toDataURL();
 
         html += `
           <div class="wiki-section-header">
-            <h2>🎭 Vanity Wardrobe, Sealed Treasures &amp; Endgame Reliquaries</h2>
-            <span class="wiki-section-sub">Cosmetic appearance overrides, wax-sealed Epic+ drops, Abyssal Keys &amp; Blacksmith upgrades</span>
+            <h2>🎭 Vanity Wardrobe &amp; Endgame Reliquaries</h2>
+            <span class="wiki-section-sub">Cosmetic appearance overrides, Abyssal Keys &amp; Blacksmith upgrades</span>
           </div>
           <div class="wiki-grid">
-            <article class="wiki-card">
-              <div style="display:flex;align-items:center;gap:12px">
-                <div class="gear-icon-frame" style="border-color:${SEALED_COLOR}">
-                  <img src="${sealedUrl}" alt="Sealed Treasure">
-                </div>
-                <div>
-                  <h3 style="font-family:var(--font-title);font-size:15.5px;color:${SEALED_COLOR}">Sealed Treasures</h3>
-                  <span class="wiki-badge gold">Tier ${SEAL_RARITY + 1}+ (Epic &amp; Above)</span>
-                </div>
-              </div>
-              <p style="font-size:14px;color:var(--text-dim)">
-                Once every <b>${Math.round(SEAL_GAP / 60)} minutes</b> of active dungeon play, an Epic-or-better drop lands as a gilded wax-sealed casket. Sealed items never despawn on the ground and conceal their identity, rarity, and stats until you <b>Break the Seal</b>.
-              </p>
-            </article>
-
             <article class="wiki-card">
               <div style="display:flex;align-items:center;gap:12px">
                 <div class="gear-icon-frame" style="border-color:var(--violet)">
@@ -1892,7 +1876,7 @@
                 </div>
               </div>
               <p style="font-size:14px;color:var(--text-dim)">
-                Heroes can equip cosmetic overrides in <b>${VANITY_SLOTS.map((s) => SLOT_NAMES[s]).join(', ')}</b> (plus toggle <em>Hide Helmet</em>) with zero stat changes. Weapon &amp; Off-hand vanity items must match your equipped weapon/off-hand base family and be identified &amp; unsealed. Lancers can also buy <b>Banner Kits</b> (${BANNER_KIT_PRICE}g) from Fortunato.
+                Heroes can equip cosmetic overrides in <b>${VANITY_SLOTS.map((s) => SLOT_NAMES[s]).join(', ')}</b> (plus toggle <em>Hide Helmet</em>) with zero stat changes. Weapon &amp; Off-hand vanity items must match your equipped weapon/off-hand base family and be identified. Lancers can also buy <b>Banner Kits</b> (${BANNER_KIT_PRICE}g) from Fortunato.
               </p>
             </article>
 

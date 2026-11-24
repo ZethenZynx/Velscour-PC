@@ -62,7 +62,6 @@ const stances = (process.env.BAL_STANCE || 'balanced').split(',');
       Auto.spendSkills(); Auto.arrangeBar(); p.recompute(); p.hp = p.maxHp; p.mana = p.maxMana;
       c.deaths = 0; c.kills = 0; c.stance = stance;
       G.godMode = god; G.raidLog = [];
-      G.autoOpenSeals = true; // nobody is watching: auto-play breaks sealed treasures itself instead of waiting in town
       window.__bal = { blocks: {}, startDepth: D, maxDepth: D, deathsAt: [], pots: 0, lost: 0, kiteT: 0, t: 0 };
       Auto.toggle(true);
       game.enterDungeon();

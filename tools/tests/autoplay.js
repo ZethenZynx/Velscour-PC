@@ -20,7 +20,6 @@ const handsOff = process.argv.includes('handsoff');
     if (filter) Object.assign((await import('/src/game/lootfilter.js')).lootFilter(), { on: true, weapon: 3, offhand: 3, armor: 3, ring: 1, gems: true, upgrades: true, keep: true });
     const { Auto } = await import('/tools/tests/auto_player.js');
     const { G } = window.VELSCOUR;
-    G.autoOpenSeals = true; // nobody is watching: auto-play breaks sealed treasures itself instead of waiting in town
     G.settings.autoGear = !handsOff;
     Auto.toggle(true);
     return Object.values(G.char.equip).map((it) => it && it.uid).join();
@@ -44,7 +43,7 @@ const handsOff = process.argv.includes('handsoff');
           sim += 1 / 30;
         }
         // hands off: the "player" sells the bag's gear when auto-play waits in town with a full bag
-        if (handsOff && Auto.sealWaiting) G.char.bag = G.char.bag.map((b) => (b && b.type === 'gear' && !b.sealed ? (sold++, null) : b));
+        if (handsOff && Auto.status.startsWith('Waiting in town: bag full')) G.char.bag = G.char.bag.map((b) => (b && b.type === 'gear' ? (sold++, null) : b));
         await new Promise((r) => setTimeout(r, 0)); // let timers (portal loading, death screen) run
         if (performance.now() - t0 > 60000) break;
       }

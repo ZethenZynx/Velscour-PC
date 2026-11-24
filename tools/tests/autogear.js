@@ -6,7 +6,7 @@
 // 2. On: every piece of gear auto-play buys from a shop gets worn at once (equipBar). Gear upgraded at the blacksmith
 //    (+N) is never sold or dropped: a town round puts it in the storage chest, it stays there unless it's an upgrade,
 //    and a full chest sells the other gear auto-play stored first.
-// 3. Sell all: Cancel sells nothing; one confirmation sells all bag gear, keeps gems, sealed treasures and equipped
+// 3. Sell all: Cancel sells nothing; one confirmation sells all bag gear, keeps gems and equipped
 //    gear. Shots of the button and the dialog.
 const { openGame, report } = require('./harness');
 const mobile = process.argv[2] === 'mobile';
@@ -27,7 +27,7 @@ const mobile = process.argv[2] === 'mobile';
     for (let t = 0; t < secs * 30 && G.world.kind === 'town'; t++) {
       G.dt = 1 / 30; G.time += G.dt; G.frame++; game.update(1 / 30);
       seen.add(Auto.status);
-      if (Auto.sealWaiting) { waited = true; if (freeAt && t > freeAt * 30) { const i = G.char.bag.findIndex((b) => b && b.type === 'gear'); G.char.bag[i] = null; } } // the player sells one
+      if (Auto.status.startsWith('Waiting in town: bag full')) { waited = true; if (freeAt && t > freeAt * 30) { const i = G.char.bag.findIndex((b) => b && b.type === 'gear'); G.char.bag[i] = null; } } // the player sells one
       if (t % 60 === 0) await new Promise((r) => setTimeout(r, 0));
     }
     Auto.toggle(false);
@@ -44,7 +44,7 @@ const mobile = process.argv[2] === 'mobile';
     window.uids = () => JSON.stringify([c.bag.map((b) => b && b.uid), Object.values(c.equip).map((b) => b && b.uid), c.stash.map((b) => b && b.uid)]);
     G.settings.autoGear = false;
     c.level = 20; c.gold = 200000; c.potions.hp = 0; G.player.recompute();
-    const best = items.rollItem(30, { slot: 'weapon', rarity: 4 }); best.req = 1; best.sealed = false;
+    const best = items.rollItem(30, { slot: 'weapon', rarity: 4 }); best.req = 1;
     addToBag(c, best); addToBag(c, items.rollItem(18, { slot: 'body', rarity: 3 })); addToBag(c, items.makeGem('ruby', 3));
     window.before = window.uids();
     Auto.manageHero();
@@ -116,8 +116,8 @@ const mobile = process.argv[2] === 'mobile';
     const { Auto } = await import('/tools/tests/auto_player.js');
     const c = G.char, out = {};
     c.bag = c.bag.map(() => null); c.stash = c.stash.map(() => null);
-    const ring = window.ring = items.rollItem(8, { slot: 'ring', rarity: 2 }); ring.upg = 8; ring.sealed = false;
-    const junk = window.junk = items.rollItem(3, { slot: 'feet', rarity: 0 }); junk.sealed = false;
+    const ring = window.ring = items.rollItem(8, { slot: 'ring', rarity: 2 }); ring.upg = 8;
+    const junk = window.junk = items.rollItem(3, { slot: 'feet', rarity: 0 });
     addToBag(c, ring); addToBag(c, junk);
     out.dropPick = c.bag[Auto.worstBag(1e12)] === junk;
     c.bag[c.bag.indexOf(junk)] = null;
@@ -159,14 +159,14 @@ const mobile = process.argv[2] === 'mobile';
     const { addToBag } = await import('/src/game/player.js');
     const c = G.char;
     c.bag = c.bag.map(() => null);
-    for (let i = 0; i < 12; i++) addToBag(c, Object.assign(items.rollItem(20 + i, { rarity: i % 6 }), { sealed: false }));
-    addToBag(c, Object.assign(items.rollItem(30, { rarity: 4 }), { sealed: true }));
+    for (let i = 0; i < 12; i++) addToBag(c, items.rollItem(20 + i, { rarity: i % 6 }));
+    addToBag(c, items.rollItem(30, { rarity: 4 }));
     const g = items.makeGem('topaz', 2); g.count = 4; addToBag(c, g);
     c.bag.find((b) => b && b.type === 'gear').gems = [{ gem: 'ruby', tier: 1 }];
     G.ui.vendor.open('weapons');
   });
   await page.waitForTimeout(400);
-  const pre = await page.evaluate(() => { const c = window.VELSCOUR.G.char; return { gold: c.gold, gear: c.bag.filter((b) => b && b.type === 'gear' && !b.sealed).length, equip: Object.values(c.equip).filter(Boolean).map((b) => b.uid).join() }; });
+  const pre = await page.evaluate(() => { const c = window.VELSCOUR.G.char; return { gold: c.gold, gear: c.bag.filter((b) => b && b.type === 'gear').length, equip: Object.values(c.equip).filter(Boolean).map((b) => b.uid).join() }; });
   const btn = page.locator('.btn', { hasText: /^Sell all$/ }).first();
   await btn.scrollIntoViewIfNeeded();
   check(await btn.isVisible(), 'Sell all button shows in the inventory at a vendor');
@@ -175,15 +175,15 @@ const mobile = process.argv[2] === 'mobile';
   await page.waitForTimeout(200);
   await shot(`autogear_sellall_confirm${mobile ? '_mobile' : ''}`);
   await page.locator('.dialog-box button', { hasText: 'Cancel' }).click();
-  const cancelled = await page.evaluate(() => window.VELSCOUR.G.char.bag.filter((b) => b && b.type === 'gear' && !b.sealed).length);
+  const cancelled = await page.evaluate(() => window.VELSCOUR.G.char.bag.filter((b) => b && b.type === 'gear').length);
   check(cancelled === pre.gear, `Cancel sells nothing (${cancelled}/${pre.gear} gear left)`);
   await btn.click();
   await page.locator('.dialog-box button', { hasText: 'Sell all' }).click();
   await page.waitForTimeout(200);
-  const post = await page.evaluate(() => { const c = window.VELSCOUR.G.char; return { gold: c.gold, gear: c.bag.filter((b) => b && b.type === 'gear' && !b.sealed).length, sealed: c.bag.filter((b) => b && b.sealed).length, gems: c.bag.filter((b) => b && b.type === 'gem').map((b) => b.count || 1), equip: Object.values(c.equip).filter(Boolean).map((b) => b.uid).join(), disabled: [...document.querySelectorAll('.btn')].find((b) => b.textContent === 'Sell all')?.disabled, dialogs: document.querySelectorAll('.dialog-box').length }; });
+  const post = await page.evaluate(() => { const c = window.VELSCOUR.G.char; return { gold: c.gold, gear: c.bag.filter((b) => b && b.type === 'gear').length, gems: c.bag.filter((b) => b && b.type === 'gem').map((b) => b.count || 1), equip: Object.values(c.equip).filter(Boolean).map((b) => b.uid).join(), disabled: [...document.querySelectorAll('.btn')].find((b) => b.textContent === 'Sell all')?.disabled, dialogs: document.querySelectorAll('.dialog-box').length }; });
   console.log(JSON.stringify({ pre, post }));
   check(post.gear === 0 && post.gold > pre.gold, `one confirmation sold ${pre.gear} pieces for ${post.gold - pre.gold} gold`);
-  check(post.gems.join() === '4' && post.sealed === 1, 'gems and the sealed treasure are kept');
+  check(post.gems.join() === '4', 'gems are kept while ordinary gear is sold');
   check(post.equip === pre.equip, 'equipped gear is not sold');
   check(post.disabled === true && post.dialogs === 0, 'the button greys out with no gear left, dialog closed');
   await shot(`autogear_sellall_done${mobile ? '_mobile' : ''}`);

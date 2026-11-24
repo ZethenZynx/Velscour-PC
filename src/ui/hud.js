@@ -27,7 +27,6 @@ import { heroDamage } from '../game/heroDamage.js';
 import { madnessReady, madnessOn, unleashMadness } from '../game/mayhem.js';
 import { smiteReady, smiteArmed, toggleSmite, getUltimate } from '../game/smite.js';
 import { hearthReady, hearthChanneling, hearthOf, hearthSecondsLeft, useHearth } from '../game/hearth.js';
-import { sealedCount, openNextSeal } from './sealed.js';
 import { defianceText } from '../game/defiance.js';
 import { capXp } from '../game/marks.js';
 import { CharacterPortrait } from './characterportrait.js';
@@ -117,7 +116,6 @@ export const HUD = {
     UI.tip($('#smite-btn'), ultTip);
     UI.tip($('#smite-track'), ultTip);
     $('#hearth-btn').addEventListener('pointerdown', (e) => { e.stopPropagation(); e.preventDefault(); useHearth(); });
-    $('#sealed-btn').addEventListener('click', (e) => { e.stopPropagation(); sfx('ui'); openNextSeal(); });
     const toggleXpDetails = (e) => { e.stopPropagation(); $('#xp-text')?.classList.toggle('show-full'); };
     $('#xp-track')?.addEventListener('pointerdown', toggleXpDetails);
     $('#xp-text')?.addEventListener('pointerdown', toggleXpDetails);
@@ -633,9 +631,6 @@ export const HUD = {
       if (txt) txt.textContent = hChan ? 'Hearth — hold still…' : hReady ? 'Hearth — ready' : hVal >= 1 ? 'Hearth — charged' : `Hearth ${v}`;
     });
 
-    // sealed treasures waiting in the bag (ui/sealed.js)
-    const nSeal = sealedCount(c);
-    set('sealed', nSeal, (v) => { $('#sealed-btn').classList.toggle('hidden', !v); $('#sealed-text').textContent = `${v} SEALED`; });
     const mk = capXp(c), need = mk ? mk.need : xpToNext(c.level), xpNow = mk ? mk.xp : c.xp;   // at the cap: towards the next Infernal Mark
     set('xp', Math.round((xpNow / need) * 1000) / 10, (v) => { $('#xp-fill').style.width = v + '%'; });
     set('xpmk', !!mk, (v) => { $('#xp-fill').classList.toggle('mk-xp', v); });

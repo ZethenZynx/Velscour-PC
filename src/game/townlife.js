@@ -25,6 +25,7 @@ import { townFacingFlip, EMOTIONS } from './townsfolkvisuals.js';
 import { townObject } from '../world/town.js';
 import { spawn } from '../gfx/vfx.js';
 import { setupHomunculus } from './homunculus.js';
+import { nextMalakorLine } from '../data/malakor.js';
 
 export const TOWN_EVENT_CHANCE = 0.35;
 export const TOWN_EVENTS = Object.keys(EVENT_LINES);
@@ -213,6 +214,26 @@ export function startTownLife(world, t, c, visit) {
     if (a.wild && p && !a.fleeing && dist(p.x, p.y, a.x, a.y) < (a.species === 'deer' ? 5 : 3)) animalBolt(d, a);
   };
 
+  // Malakor is a quiet visitor, not a service NPC. He uses the same town
+  // pathfinding and speech bubble as other townsfolk, but never opens a shop.
+  const malakor = world.npcs.find((n) => n.malakor);
+  if (malakor) {
+    Object.assign(malakor, { id: 'malakor', role: 'wanderer', group: 'old', walking: false, running: false, animT: rand(0, 5), walkT: 0, emotion: null, emotionT: 0, emoteClock: 0, icon: null, iconT: 0, iconAge: 0, path: null, goal: null, speed: 0.58, busy: null, nextT: rand(2, 5), alpha: 1, stuckT: 0, lastRiddleIndex: Number.isInteger(malakor.lastRiddleIndex) ? malakor.lastRiddleIndex : -1 });
+    malakor.update = (dt) => d.tickAgent(malakor, dt);
+    malakor.use = () => {
+      if (malakor.talkT > 0) return;
+      if (malakor.busy && malakor.busy !== true) release(malakor.busy);
+      malakor.busy = null; malakor.goal = malakor.path = null; malakor.walking = false;
+      const p = G.player;
+      if (p) d.face(malakor, p.x, p.y);
+      const line = nextMalakorLine(malakor.lastRiddleIndex);
+      malakor.lastRiddleIndex = line.index;
+      const duration = d.say(malakor, line.text, null);
+      malakor.nextT = duration + rand(2, 4);
+    };
+    d.agents.push(malakor);
+  }
+
   // ------------------------------------------------------------------ scenes
   d.run = (gen, agents = [], tag = '') => {
     const s = { it: gen, wait: 0, cond: null, condT: 0, agents, tag, done: false };
@@ -285,6 +306,7 @@ export function startTownLife(world, t, c, visit) {
 // ====================================================================== everyday routines
 function pickRoutine(d, a) {
   const { t } = d;
+  if (a.malakor) return d.run(malakorWander(d, a), [a]);
   if (a.hidden) { // come out of the house
     const b = a.home, [x, y] = b ? (b.sx ? [b.x0 + 3.5, b.y0 + 1.5] : [b.x0 + 1.5, b.y0 + 3.5]) : d.randomSpot();
     d.show(a, ...(d.map.walkable(x, y) ? [x, y] : d.map.randomNear(x, y, 1.5)));
@@ -318,6 +340,23 @@ function pickRoutine(d, a) {
   if (r < 0.68 && a.home) return d.run(goHome(d, a), [a]);
   if (r < 0.73 && (a.group === 'old' || chance(0.3))) return d.run(nap(d, a), [a]);
   return d.run(wander(d, a), [a]);
+}
+
+function* malakorWander(d, a) {
+  // The cached road set already excludes terrain collisions. Keep a buffer
+  // around portals and other clickable town services so he never blocks them.
+  const services = [...d.vendors, ...d.world.npcs.filter((n) => n.stash || n.altar), ...(d.world.portals || [])];
+  // Use deterministic, bounded sampling from the town's map instead of
+  // recalculating pathfinding or scanning all props every update.
+  let target = null;
+  for (let i = 0; i < 24; i++) {
+    const q = d.randomSpot();
+    if (!q || !d.map.walkable(q[0], q[1]) || !d.map.circleFree(q[0], q[1], 0.3)) continue;
+    if (services.some((n) => Math.hypot((n.x ?? n[0]) - q[0], (n.y ?? n[1]) - q[1]) < 3.4)) continue;
+    target = q; break;
+  }
+  if (target) yield d.go(a, target[0], target[1]);
+  yield rand(5, 11);
 }
 
 function pickChat(a, b) {

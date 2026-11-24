@@ -393,7 +393,7 @@ const handsOff = (step) => !gearOn() && step.vendor !== 'alchemist';
 const upgraded = (it) => it.type === 'gear' && ((it.upg || 0) > 0 || !!it.relic || !!glyphOf(it)); // +N gear and relics are kept (the chest)
 /** What auto-play puts in the storage chest: gems, valuable gear (Mythic/Legendary/Abyssal), keepers, +N gear, and good gear the hero is still
  *  too low-level to wear. */
-const forChest = (it, c) => !it.sealed && !it.locked && (
+const forChest = (it, c) => !it.locked && (
   it.type === 'gem' ||
   isValuableGear(it) ||
   (it.type === 'gear' && (it.req || 1) > c.level && (it.rarity || 0) >= 2)
@@ -401,7 +401,7 @@ const forChest = (it, c) => !it.sealed && !it.locked && (
 /** Gamble only with this many gambles' worth of gold: a miss sells back for ~5% of its price. */
 const GAMBLE_GOLD = 20;
 function bagFree(c) { return c.bag.reduce((a, b) => a + (b ? 0 : 1), 0); }
-/** In town with no free bag slot left after trading (sealed treasures, or nothing auto-play may sell or stash): wait for the player. */
+/** In town with no free bag slot left after trading: wait for the player to make room. */
 function bagWait(c) { return bagFree(c) === 0; }
 function sellPrice(it) { return Math.max(1, Math.floor(itemValue(it) / 4)) * (it.type === 'gem' ? (it.count || 1) : 1); }
 function vendorNpc(w, id) { return w.npcs.find((n) => n.vendor && n.vendor.id === id); }
@@ -526,7 +526,7 @@ export const Auto = {
 
   reset() {
     this.world = null; this.nav = null; this.path = null; this.goal = null; this.thinkT = 0; this.navT = 0;
-    this.town = null; this.sealWaiting = false; this.transitT = 0; this.stuck = { t: 0, x: 0, y: 0, n: 0 }; this.jiggle = null;
+    this.town = null; this.transitT = 0; this.stuck = { t: 0, x: 0, y: 0, n: 0 }; this.jiggle = null;
     this.target = null; this.dodge = null; this.open = null; this.openSkip = 0; this.retreat = false; this.ignore = new WeakSet(); this.lastSig = '';
     this.screenT = 0; this.lastCast = {}; this.stall = null; this.banT = 0; this.shun = new WeakMap(); this.giveUp = new WeakSet();
     this.lootFor = null; this.lootT = 0; this.lootDry = 0; this.lootBusy = -99; this.lootSpent = new WeakMap(); this.stalls = new WeakMap(); this.hunts = new WeakMap(); this.edgeT = 0; this.dangerList = null;
@@ -810,7 +810,7 @@ export const Auto = {
       const cur = simulate(p, () => () => { });
       let best = -1, bs = equipBar(cur), bslot = null, bmove = null;
       c.bag.forEach((it, i) => {
-        if (!it || it.type !== 'gear' || it.unid || it.sealed || it.locked || !canEquipItem(c, it)) return;
+        if (!it || it.type !== 'gear' || it.unid || it.locked || !canEquipItem(c, it)) return;
         const f = fitScore(p, it, undefined, placed);
         if (f.s > bs) { bs = f.s; best = i; bslot = f.slot; bmove = f.move; }
       });
@@ -887,7 +887,7 @@ export const Auto = {
     const it = g.item, free = bagFree(c), f = activeFilter();
     const gemFree = (c.gemBag || []).filter(b => !b).length;
     if (it.type === 'gem') return filterPasses(it) && (gemFree > 0 || (c.gemBag || c.bag).some((b) => b && b.type === 'gem' && b.gem === it.gem && b.tier === it.tier));
-    if (it.type !== 'gear' || it.sealed || isValuableGear(it)) return free > 0 || this.worstBag(itemValue(it)) >= 0;
+    if (it.type !== 'gear' || isValuableGear(it)) return free > 0 || this.worstBag(itemValue(it)) >= 0;
     if (f) { // the player's loot filter (game/lootfilter.js) decides, plus upgrades to wear unless that's off too
       if (!filterPasses(it) && !(f.upgrades && canEquipItem(c, it) && this.isUpgrade(it))) return false;
       return free > 0 || this.worstBag(itemValue(it)) >= 0;
@@ -908,7 +908,7 @@ export const Auto = {
     const c = G.char;
     if (!gearOn()) return -1;
     let wi = -1, wv = than * 0.8;
-    c.bag.forEach((b, i) => { if (b && b.type === 'gear' && !b.sealed && !b.locked && !isValuableGear(b) && !filterKeeps(b) && !upgraded(b) && sellPrice(b) * 4 < wv) { wv = sellPrice(b) * 4; wi = i; } });
+    c.bag.forEach((b, i) => { if (b && b.type === 'gear' && !b.locked && !isValuableGear(b) && !filterKeeps(b) && !upgraded(b) && sellPrice(b) * 4 < wv) { wv = sellPrice(b) * 4; wi = i; } });
     return wi;
   },
   makeRoom(it) {
@@ -2222,25 +2222,19 @@ export const Auto = {
     while (T.phase === 'walk' && T.t === 0 && T.steps[T.i] && !T.steps[T.i].chat && this.idle(T.steps[T.i])) T.i++;
     const step = T.steps[T.i];
     if (!step) {
-      // the bag is full of what auto-play can't sell or stash (sealed treasures...): wait here until the player makes
-      // room (breaks a seal, sells, drops). A seal broken meanwhile is trade goods: run the errands again for it.
-      if (G.autoOpenSeals && bagFree(c) < BAG_LOW && c.bag.some((b) => b && b.sealed)) { for (const b of c.bag) if (b && b.sealed) b.sealed = false; T.i = 0; T.steps = this.townPlan(); return; } // tests: open them and shop again
-      const sealedN = (c.bag || []).filter((b) => b && b.sealed).length;
-      this.sealWaiting = gearOn() && bagWait(c);   // hands off the gear: back down with a full bag, gear left on the ground
+      // When gear management is off, preserve the prior behavior: continue and leave new gear behind.
       if (!gearOn() && !bagFree(c) && !T.fullNote) { T.fullNote = true; G.ui.log('Your bag is full: auto-play goes on and leaves new gear on the ground (gold, potions and gems still come along). Make room whenever you like.', '#ffdf8a'); }
-      if (this.sealWaiting) {
-        if (T.sealedN !== undefined && sealedN < T.sealedN) { T.sealedN = sealedN; T.i = 0; T.steps = this.townPlan(); return; }
-        T.sealedN = sealedN;
-        this.setStatus(sealedN ? `Waiting in town: bag full — break the seals on ${sealedN} treasure${sealedN > 1 ? 's' : ''}` : 'Waiting in town: bag full — free a slot to go on');
-        if (!T.sealNote) {
-          T.sealNote = true;
-          G.ui.centerMsg('YOUR BAG IS FULL', sealedN ? 'Break the seals on your treasures: auto-play waits in town' : 'Free a bag slot: auto-play waits in town', 4);
-          G.ui.log(`Auto-play waits in town: the bag is full${sealedN ? ` (<b style="color:#ffdf8a">${sealedN} sealed treasure${sealedN > 1 ? 's' : ''}</b>). Tap SEALED (or open them in the inventory) to break the seals` : '. Sell, stash or drop something'} and it goes on once a slot is free.`, '#ffdf8a');
+      if (gearOn() && bagWait(c)) {
+        this.setStatus('Waiting in town: bag full - free a slot to go on');
+        if (!T.fullNote) {
+          T.fullNote = true;
+          G.ui.centerMsg('YOUR BAG IS FULL', 'Free a bag slot: auto-play waits in town', 4);
+          G.ui.log('Auto-play waits in town: the bag is full. Sell, stash or drop something and it goes on once a slot is free.', '#ffdf8a');
           sfx('error');
         }
         return;
       }
-      T.sealNote = false;
+      T.fullNote = false;
       if (this.townSocial(dt)) return;
       // done: through the portal (Hearthstone return portal has absolute priority to restore progress!)
       const hearth = w.portals.find((q) => q.hearth);
@@ -2361,7 +2355,7 @@ export const Auto = {
     const steps = [];
     if (c.stash && c.stash.some((b) => b && this.stashUpgrade(b))) steps.push({ stash: true, label: 'Checking the storage chest', fn: () => this.unstash() });
     const gear = (k) => () => this.gearGain(Vendor.stock[k]);
-    steps.push({ vendor: 'weapons', label: 'Selling loot', want: () => c.bag.some((b) => b && b.type !== 'gem' && b.type !== 'sheet' && !b.sealed && !upgraded(b)) || this.gearGain(Vendor.stock.weapons), fn: () => { this.sellJunk(); if (this.buyGear(Vendor.stock.weapons)) this.sellJunk(); } }); // sell what the new piece replaced too: a nearly full bag has no slot for it
+    steps.push({ vendor: 'weapons', label: 'Selling loot', want: () => c.bag.some((b) => b && b.type !== 'gem' && b.type !== 'sheet' && !upgraded(b)) || this.gearGain(Vendor.stock.weapons), fn: () => { this.sellJunk(); if (this.buyGear(Vendor.stock.weapons)) this.sellJunk(); } }); // sell what the new piece replaced too: a nearly full bag has no slot for it
     steps.push({ vendor: 'alchemist', label: 'Buying potions', want: () => this.potionsWanted(), fn: () => this.buyPotions() });
     steps.push({ vendor: 'armor', label: 'Browsing armor', want: gear('armor'), fn: () => { if (this.buyGear(Vendor.stock.armor)) this.sellJunk(); } });
     const hasGems = ((c.gemBag || []).concat(c.bag || [])).some((b) => b && b.type === 'gem');
@@ -2393,8 +2387,8 @@ export const Auto = {
   },
   /** Stored gear to take out: an upgrade now, or what auto-play put away until the hero could wear it (to wear or sell).
    *  What the player stored stays put: auto-play would sell it. Gems remain stored. */
-  stashUpgrade(it) { return it.type === 'gear' && !it.sealed && !it.locked && canEquipItem(G.char, it) && ((it.autoStash === true && bagFree(G.char) >= 12) || this.isUpgrade(it)); },
-  /** Storage chest: take out stored gear that's an upgrade now. Never pulls out gems or locked/sealed items. */
+  stashUpgrade(it) { return it.type === 'gear' && !it.locked && canEquipItem(G.char, it) && ((it.autoStash === true && bagFree(G.char) >= 12) || this.isUpgrade(it)); },
+  /** Storage chest: take out stored gear that's an upgrade now. Never pulls out gems or locked items. */
   unstash() {
     const c = G.char;
     c.stash.forEach((it, i) => {
@@ -2473,7 +2467,7 @@ export const Auto = {
     let gold = 0, n = 0;
     const future = {};
     c.bag.forEach((it, i) => {
-      if (!it || it.type === 'gem' || it.sealed || it.locked || it.type === 'sheet' || isValuableGear(it) || filterKeeps(it) || upgraded(it)) return; // only the player breaks a seal or sells what's locked; keepers and +N gear go to the chest; gems are never sold; valuable gear is never sold
+      if (!it || it.type === 'gem' || it.locked || it.type === 'sheet' || isValuableGear(it) || filterKeeps(it) || upgraded(it)) return; // locked gear is never moved; keepers and +N gear go to the chest; gems are never sold; valuable gear is never sold
       if (it.type === 'gear' && (it.req || 1) > c.level && (it.req || 1) <= c.level + 6 && it.rarity >= 2 && !future[it.slot]) {
         const s = fitScore(p, it).s;
         if (s > simulate(p, () => () => { }) + 0.02) { future[it.slot] = true; return; }
@@ -2609,7 +2603,7 @@ export const Auto = {
       for (const r of gw.sig) need[r] = (need[r] || 0) + 1;
       if (!Object.entries(need).every(([r, n]) => (have[r] || 0) >= n)) continue;
       const n = gw.sig.length;
-      const fits = (it) => it && it.type === 'gear' && it.rarity === 0 && !it.relic && !it.locked && !it.sealed && gw.slots.includes(it.slot) && it.maxSockets >= n && it.sockets <= n && !it.gems.length && canEquipItem(c, it) && it.ilvl >= lvl - 12;
+      const fits = (it) => it && it.type === 'gear' && it.rarity === 0 && !it.relic && !it.locked && gw.slots.includes(it.slot) && it.maxSockets >= n && it.sockets <= n && !it.gems.length && canEquipItem(c, it) && it.ilvl >= lvl - 12;
       let idx = c.bag.findIndex(fits);
       if (idx < 0) {
         for (const list of [Vendor.stock.weapons, Vendor.stock.armor]) {

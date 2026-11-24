@@ -467,14 +467,6 @@ function rollAct2Town(tileset, seed, isLastTry) {
       props: ['broken_cart_wheel', 'rolled_carpet_stack', 'reed_crate'],
       mat: 52,
     },
-    {
-      id: 'infernal',
-      name: 'travelling_merchant',
-      offset: [-6.5, 3.5],
-      tent: 'canvas_tent',
-      props: ['giant_skull', 'bronze_brazier', 'fossil_ribcage'],
-      mat: 21, // dried_wadi_bed
-    },
   ];
 
   for (const cfg of STALL_CONFIGS) {

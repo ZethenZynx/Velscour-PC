@@ -1,5 +1,5 @@
 // Regression test suite for PR #7: Storage Expansions, Gem Bag, Jewel Box, Hearthstone,
-// Town Portal Floor Picker, Travelling Merchant Malakor, Walkover Scatter & 10-Grade Gem Filter.
+// Town Portal Floor Picker, Malakor Wanderer, Walkover Scatter & 10-Grade Gem Filter.
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 
@@ -98,14 +98,17 @@ const { Player, addToBag } = await import('../../src/game/player.js');
 const { addToJewelBox, sortJewelBox } = await import('../../src/ui/jewelbox.js');
 const { socketGem, renderInventory } = await import('../../src/ui/inventory.js');
 const { Vendor, fuseAll, fuseGem } = await import('../../src/ui/vendor.js');
+const { GroundItem } = await import('../../src/game/loot.js');
 const {
   BAG_ROW_COST, GEM_BAG_COLS, GEM_BAG_BASE_ROWS, GEM_BAG_MAX_ROWS, GEM_BAG_ROW_GOLD_COST, gemBagRows, nextGemBagRowCost, buyGemBagRow,
   buyStashRow, buyJewelBoxRow, buyReliquaryRow,
 } = await import('../../src/data/bag.js');
 const { grantMarks, marksFree, deductMarks, markBonuses } = await import('../../src/game/marks.js');
 const { endgame, resetEndgameCache, unlockEndgame } = await import('../../src/game/endgame.js');
-const { reliquary } = await import('../../src/game/reliquary.js');
+const { reliquary, saveReliquary, resetReliquaryCache } = await import('../../src/game/reliquary.js');
 const { generateTown, VENDORS } = await import('../../src/world/town.js');
+const { MALAKOR_LINES, nextMalakorLine } = await import('../../src/data/malakor.js');
+const { startTownLife } = await import('../../src/game/townlife.js');
 const { walkOverProp } = await import('../../src/data/walkover.js');
 const { filterPasses } = await import('../../src/game/lootfilter.js');
 const {
@@ -340,25 +343,63 @@ G.game = game;
   assert.ok(c.gemBag.some((g) => g && g.gem === 'topaz' && g.tier === 2), '9 tier-0 gems fuse up to a tier-2 gem');
 }
 
-// 5. Town Generation: Malakor the Ash-Wanderer & Infernal Marks Sealed Chest shop
+// 5. Malakor is a post-campaign wandering NPC; sealed gear is migrated intact.
 {
   store.clear();
   const c = newCharData('necromancer', 'Shopper');
   G.char = c;
   G.player = new Player(c);
   G.world = { kind: 'dungeon', depth: 101 };
-  grantMarks(50, 'test');
-
-  assert.ok(VENDORS.some((v) => v.id === 'infernal' && v.travelling), 'Malakor registered in VENDORS');
+  assert.ok(!VENDORS.some((v) => v.id === 'infernal'), 'Malakor is no longer registered as a merchant');
   const town = generateTown(null, 12345);
-  const malakor = town.npcs.find((n) => n.vendor && n.vendor.id === 'infernal');
-  assert.ok(malakor, 'Malakor spawns in Herrington Hollow');
-  assert.ok(town.map.walkable(Math.floor(malakor.x), Math.floor(malakor.y)) || town.map.randomNear(malakor.x, malakor.y, 1.8), 'Malakor stands adjacent to walkable plaza tiles');
+  const malakor = town.npcs.find((n) => n.malakor);
+  assert.ok(malakor && !malakor.vendor && !malakor.sign, 'Malakor spawns as a non-vendor visitor');
+  assert.ok(town.map.walkable(malakor.x, malakor.y), 'Malakor starts on accessible terrain');
+  assert.ok(MALAKOR_LINES.length >= 50, 'Malakor has at least 50 cryptic lines');
+  assert.equal(new Set(MALAKOR_LINES).size, MALAKOR_LINES.length, 'all Malakor dialogue entries are unique');
+  const firstLine = nextMalakorLine(-1, () => 0);
+  const nextLine = nextMalakorLine(firstLine.index, () => firstLine.index / MALAKOR_LINES.length);
+  assert.notEqual(firstLine.index, nextLine.index, 'Malakor does not repeat the immediately previous line');
 
-  const beforeMarks = marksFree();
-  assert.equal(Vendor.buySealedChest({ id: 'ashen', name: 'Ashen Coffer', cost: 2, rollRarity: () => 3 }), true, 'Malakor sells Sealed Epic Chest for Marks');
-  assert.ok(marksFree() < beforeMarks, 'Marks deducted on Sealed Chest purchase');
-  assert.ok(c.bag.some((it) => it && it.sealed), 'Sealed chest placed in hero bag');
+  const townWorld = {
+    kind: 'town', map: town.map, props: town.props.slice(), portals: [town.portal], creatures: [],
+    npcs: town.npcs.map((n) => n.malakor ? { ...n } : { vendor: n.vendor, x: n.x, y: n.y }),
+  };
+  const life = startTownLife(townWorld, town, c, 0);
+  const townMalakor = townWorld.npcs.find((n) => n.malakor);
+  townMalakor.nextT = 0;
+  life.update(0.01); life.update(0.01);
+  assert.ok(townMalakor.goal && town.map.walkable(...townMalakor.goal), 'Malakor begins wandering on walkable terrain');
+  assert.equal(typeof townMalakor.vendor, 'undefined', 'the wandering NPC has no vendor registration');
+  townMalakor.use();
+  assert.ok(MALAKOR_LINES.includes(townMalakor.talkText) && townMalakor.talkT > 0, 'interacting displays a timed cryptic speech bubble');
+
+  const newDrop = rollItem(80, { rarity: 4 });
+  new GroundItem(1, 1, 'item', { item: newDrop });
+  assert.equal(Object.hasOwn(newDrop, 'sealed'), false, 'new Epic gear drops are immediately usable');
+
+  const oldGear = { type: 'gear', name: 'Kept Blade', affixes: [{ s: 'flatDmg', v: 77 }], sealed: true, ilvl: 42, rarity: 4 };
+  const wornGear = { type: 'gear', name: 'Kept Helm', affixes: [{ s: 'armor', v: 12 }], sealed: true, ilvl: 9, rarity: 2 };
+  const storedGear = { type: 'gear', name: 'Kept Ring', affixes: [{ s: 'life', v: 21 }], sealed: true, ilvl: 25, rarity: 3 };
+  c.bag[0] = oldGear; c.sealT = 9; c.unsealed = 2;
+  c.equip.head = wornGear; c.stash[0] = storedGear;
+  migrate(c);
+  assert.equal(c.bag[0], oldGear, 'legacy item object remains in its original slot');
+  assert.deepEqual(oldGear.affixes, [{ s: 'flatDmg', v: 77 }], 'legacy item rolls are preserved exactly');
+  assert.equal(oldGear.ilvl, 42, 'legacy item level is unchanged');
+  assert.equal(oldGear.rarity, 4, 'legacy item rarity is unchanged');
+  assert.equal(Object.hasOwn(oldGear, 'sealed'), false, 'legacy gear becomes ordinary usable equipment');
+  assert.equal(Object.hasOwn(wornGear, 'sealed'), false, 'equipped legacy gear migrates without rerolling');
+  assert.equal(Object.hasOwn(storedGear, 'sealed'), false, 'character storage gear migrates without rerolling');
+  assert.equal(Object.hasOwn(c, 'sealT'), false, 'obsolete sealing timer is removed');
+  assert.equal(Object.hasOwn(c, 'unsealed'), false, 'obsolete opening counter is removed');
+
+  resetReliquaryCache();
+  const vault = reliquary();
+  const vaultGear = { type: 'gear', name: 'Kept Vault Blade', affixes: [{ s: 'flatDmg', v: 19 }], sealed: true, ilvl: 16, rarity: 3 };
+  vault.tabs[0][0] = vaultGear; saveReliquary(); resetReliquaryCache();
+  assert.equal(Object.hasOwn(reliquary().tabs[0][0], 'sealed'), false, 'account Reliquary gear migrates on load');
+  assert.equal(reliquary().tabs[0][0].affixes[0].v, 19, 'Reliquary gear stats are preserved');
 }
 
 // 6. Hearthstone channel, movement interruption, two-way portal, refill & return
