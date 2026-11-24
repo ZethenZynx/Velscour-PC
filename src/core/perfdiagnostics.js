@@ -152,6 +152,11 @@ export function profileFinishFrame(world) {
   history.vfxMs[at] = phases.vfxMs; history.uiMs[at] = phases.uiMs;
   history.enemyHistoryMs[at] = phases.enemyHistoryMs; history.minimapMs[at] = phases.minimapMs;
   history.eventsMs[at] = phases.eventsMs; history.environmentMs[at] = phases.environmentMs;
+  history.renderSetupMs[at] = phases.renderSetupMs; history.floorDrawMs[at] = phases.floorDrawMs;
+  history.groundDrawMs[at] = phases.groundDrawMs; history.renderSortMs[at] = phases.renderSortMs;
+  history.depthDrawMs[at] = phases.depthDrawMs; history.effectDrawMs[at] = phases.effectDrawMs;
+  history.lightingMs[at] = phases.lightingMs; history.screenOverlayMs[at] = phases.screenOverlayMs;
+  history.automapMs[at] = phases.automapMs;
   if ((frameSerial++ % 15) === 0) {
     latestCounts = readCounts(world);
     history.heapBytes[at] = performance.memory?.usedJSHeapSize || 0;

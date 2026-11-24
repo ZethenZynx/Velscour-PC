@@ -19,6 +19,7 @@ assert.match(profiler, /p50: q\(0\.5\), p95: q\(0\.95\), p99: q\(0\.99\), worst/
 assert.match(profiler, /spatialCandidates.*collisionPairs.*pathSearches/s, 'the workload report includes search and collision counters');
 assert.match(profiler, /peakSampledHeapBytes/, 'the export reports supported heap measurements');
 assert.match(profiler, /renderSetupMs.*floorDrawMs.*groundDrawMs.*renderSortMs.*depthDrawMs.*effectDrawMs.*lightingMs.*screenOverlayMs/s, 'the export separates major rendering stages');
+assert.match(profiler, /history\.renderSetupMs\[at\]\s*=\s*phases\.renderSetupMs[\s\S]*history\.automapMs\[at\]\s*=\s*phases\.automapMs/, 'each render-stage timing is copied into the exported rolling history');
 assert.match(profiler, /resolutionScale.*devicePixelRatio.*canvasWidth.*canvasHeight/s, 'per-frame reports capture adaptive backing-store resolution');
 assert.match(profiler, /renderQueue.*renderViews.*renderCreatures.*renderWalls.*renderProps.*renderLoot/s, 'per-frame counts include visible rendering work');
 assert.match(main, /profileBeginFrame\(now\)/, 'frame sampling is connected to the main loop');
