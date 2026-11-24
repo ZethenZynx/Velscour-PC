@@ -95,5 +95,28 @@ updateVfx(0.01, null);
 assert.deepEqual(effectOrder, [2, 1, 0], 'effect update order remains newest-first');
 assert.deepEqual(effects.map((effect) => effect._id), [0, 1, 2], 'effect draw/list ordering remains oldest-first');
 clearVfx();
+const legacyPersistent = Array.from({ length: 282 }, (_, id) => ({ id, update() { return true; } }));
+const legacyExpired = Array.from({ length: 12 }, () => ({ update() { return false; } }));
+const legacyBroken = [...legacyPersistent, ...legacyExpired];
+let legacyWrite = legacyBroken.length;
+for (let i = legacyBroken.length - 1; i >= 0; i--) if (legacyBroken[i].update()) legacyBroken[--legacyWrite] = legacyBroken[i];
+legacyBroken.length = legacyBroken.length - legacyWrite;
+assert.equal(legacyBroken.length, 282);
+assert.equal(new Set(legacyBroken).size, 270, 'the former reverse compaction duplicated 12 signature layers when 12 effects expired');
+const signatureDraws = Array.from({ length: 282 }, (_, id) => ({
+  _id: id, layer: 'top', updates: 0,
+  update() { this.updates++; return true; },
+  draw() {},
+}));
+effects.push(...signatureDraws, signatureDraws[0]); // include one repeated registration from a legacy session
+for (let i = 0; i < 12; i++) effects.push({ layer: 'top', update() { return false; }, draw() {} });
+for (let frame = 0; frame < 60; frame++) {
+  updateVfx(1 / 60, null);
+  assert.equal(effects.length, signatureDraws.length, 'expired transient effects are removed without losing persistent signature layers');
+  assert.equal(new Set(effects).size, signatureDraws.length, 'persistent effects are never duplicated during compaction');
+}
+assert.ok(signatureDraws.every((effect) => effect.updates === 60), 'each persistent signature layer updates exactly once per frame');
+clearVfx();
+console.log('Historical compaction reproduced 12 duplicate/missing signature layers from 282 live + 12 expired; fixed path retains all 282 unique layers.');
 console.log(JSON.stringify({ ambientProps: { count: props.length, activeEmitters: expectedEmitters + 1, legacyFullScanMs: oldAmbient, cachedCappedMs: ambient, legacyLightRecords, cachedLightRecords }, vfxCleanupMs: vfx }, null, 2));
-console.log('Performance hot-path checks passed. Timings are Node microbenchmarks, not full-game frame measurements.');
+console.log('Performance hot-path and 282 persistent-effect compaction regression checks passed. Timings are Node microbenchmarks, not full-game frame measurements.');

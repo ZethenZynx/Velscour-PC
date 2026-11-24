@@ -35,6 +35,7 @@ export const particles = [];
 export const decals = []; // live decals: growing pools, scorch, frost (capped, drawn every frame)
 const goreDecals = []; // cosmetic blood/gore only; never stamped into cached floor chunks
 let goreClock = 0;
+let effectUpdateEpoch = 0;
 // Finished blood (splats, grown pools) never changes again: it is stamped once into the baked floor chunks
 // (render.js drawFloors -> stampDecals) and costs nothing per frame after that, so it isn't capped like the live ones.
 // Each has a rising `seq`; a chunk remembers the last seq it has stamped.
@@ -923,14 +924,28 @@ export function updateVfx(dt, world) {
   // spawned during update are retained for next frame without array splices.
   const effectEnd = effects.length;
   let effectWrite = effectEnd;
+  const updateEpoch = ++effectUpdateEpoch;
   for (let i = effectEnd - 1; i >= 0; i--) {
     const effect = effects[i];
+    // A defensive identity guard also repairs duplicate references left by an
+    // older runtime or introduced by an external effect registrar.
+    if (effect._vfxUpdateEpoch === updateEpoch) {
+      if (G.settings?.performanceProfiler === true) lifecycle.effectsRemoved++;
+      continue;
+    }
+    effect._vfxUpdateEpoch = updateEpoch;
     if (effect.update(dt)) effects[--effectWrite] = effect;
     else if (G.settings?.performanceProfiler === true) lifecycle.effectsRemoved++;
   }
-  let effectCount = effectEnd - effectWrite;
-  for (let i = effectEnd; i < effects.length; i++) effects[effectCount++] = effects[i];
-  effects.length = effectCount;
+  // Reverse traversal packs surviving effects into the tail. Move that tail
+  // back to the front before truncating; using only the live count here leaves
+  // stale prefix entries in place and duplicates persistent effects whenever
+  // any earlier effect expires (notably class SigLayer renderers).
+  const survivorCount = effectEnd - effectWrite;
+  const addedCount = effects.length - effectEnd;
+  if (effectWrite > 0) effects.copyWithin(0, effectWrite, effectEnd);
+  if (addedCount > 0) effects.copyWithin(survivorCount, effectEnd, effectEnd + addedCount);
+  effects.length = survivorCount + addedCount;
   effectsByLayer.ground.length = effectsByLayer.top.length = 0;
   for (const effect of effects) {
     const bucket = effectsByLayer[effect.layer];
