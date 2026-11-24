@@ -64,15 +64,160 @@ export class TileMap {
   }
   walkable(x, y, blocked = this.block) { return this.walkableTile(Math.floor(x), Math.floor(y), blocked); }
 
-  /** Is a circle at (x,y) radius r free of walls? On a height map its centre must be a hop or a drop from tile `from`
-   * (default: the tile under it), and no corner may hang out over a drop too deep to take; brushing higher ground is
-   * fine (the foot of a cliff, or the edge just dropped from). */
+  /** Is a circle at (x,y) radius r free of walls? Uses circle-vs-cell overlap, so a
+   * diagonal corner cannot tunnel through a wall (or get rejected by a square corner).
+   * On height maps its centre must be a hop or a drop from `from`, and its lower edge
+   * may not hang over a drop too deep to take. */
   circleFree(x, y, r, from, blocked = this.block) {
-    if (!(this.walkable(x - r, y - r, blocked) && this.walkable(x + r, y - r, blocked) && this.walkable(x - r, y + r, blocked) && this.walkable(x + r, y + r, blocked))) return false;
+    if (![x, y, r].every(Number.isFinite) || r < 0 || !this.walkable(x, y, blocked)) return false;
+    const minX = Math.floor(x - r), maxX = Math.floor(x + r), minY = Math.floor(y - r), maxY = Math.floor(y + r), r2 = r * r;
+    for (let ty = minY; ty <= maxY; ty++) for (let tx = minX; tx <= maxX; tx++) {
+      if (this.walkableTile(tx, ty, blocked)) continue;
+      const nx = Math.max(tx, Math.min(x, tx + 1)), ny = Math.max(ty, Math.min(y, ty + 1));
+      if ((x - nx) ** 2 + (y - ny) ** 2 < r2 - 1e-9) return false;
+    }
     if (!this.hgt) return true;
     const H = this.hgt, a = from ?? this.tileIdx(x, y), lo = H[a] - this.drop;
     if (from !== undefined && !this.stepOk(a, this.tileIdx(x, y))) return false;
-    return H[this.tileIdx(x - r, y - r)] >= lo && H[this.tileIdx(x + r, y - r)] >= lo && H[this.tileIdx(x - r, y + r)] >= lo && H[this.tileIdx(x + r, y + r)] >= lo;
+    for (let ty = minY; ty <= maxY; ty++) for (let tx = minX; tx <= maxX; tx++) {
+      const i = ty * this.w + tx;
+      if (!this.inb(tx, ty) || H[i] >= lo) continue;
+      const nx = Math.max(tx, Math.min(x, tx + 1)), ny = Math.max(ty, Math.min(y, ty + 1));
+      if ((x - nx) ** 2 + (y - ny) ** 2 < r2 - 1e-9) return false;
+    }
+    return true;
+  }
+
+  /** Collision-valid location for any moving body, including closed Castle gates. */
+  positionFree(e, x, y, from = undefined) {
+    const r = bodyR(e);
+    if (!this.circleFree(x, y, r, from)) return false;
+    if (this.castleGateLocked && e.isPlayer && this.castleGateTiles?.length) {
+      const r2 = r * r;
+      for (const i of this.castleGateTiles) {
+        const tx = i % this.w, ty = (i / this.w) | 0;
+        const nx = Math.max(tx, Math.min(x, tx + 1)), ny = Math.max(ty, Math.min(y, ty + 1));
+        if ((x - nx) ** 2 + (y - ny) ** 2 < r2 - 1e-9) return false;
+      }
+    }
+    return true;
+  }
+  rememberPosition(e) {
+    if (!e || !Number.isFinite(e.x) || !Number.isFinite(e.y) || !this.positionFree(e, e.x, e.y)) return false;
+    this._recordPosition(e);
+    return true;
+  }
+  _recordPosition(e) {
+    if (Object.getOwnPropertyDescriptor(e, '_lastValidMap')?.enumerable !== false) {
+      Object.defineProperties(e, {
+        _lastValidMap: { value: this, writable: true, configurable: true, enumerable: false },
+        _lastValidX: { value: e.x, writable: true, configurable: true, enumerable: false },
+        _lastValidY: { value: e.y, writable: true, configurable: true, enumerable: false },
+      });
+    } else {
+      e._lastValidMap = this; e._lastValidX = e.x; e._lastValidY = e.y;
+    }
+  }
+  /** Recover an embedded body using only a recent, still-reachable safe point.
+   * A bounded flood fill is the fallback when collision geometry changes under it. */
+  recoverEmbedded(e, maxDistance = 3) {
+    if (!e || !Number.isFinite(e.x) || !Number.isFinite(e.y)) return false;
+    if (this.positionFree(e, e.x, e.y)) {
+      this._recordPosition(e);
+      return false;
+    }
+    const r = bodyR(e), ax = e._lastValidMap === this ? e._lastValidX : NaN, ay = e._lastValidMap === this ? e._lastValidY : NaN;
+    if (Number.isFinite(ax) && Number.isFinite(ay) && Math.hypot(e.x - ax, e.y - ay) <= maxDistance && this.positionFree(e, ax, ay)) {
+      e.x = ax; e.y = ay; this.rememberPosition(e); return true;
+    }
+    // Find a walkable, body-clear tile connected to the last known safe tile. Never
+    // recover to a point across a wall or a currently locked progression gate.
+    if (Number.isFinite(ax) && Number.isFinite(ay) && this.positionFree(e, ax, ay)) {
+      let blocked = this.block;
+      if (this.castleGateLocked && e.isPlayer && this.castleGateTiles?.length) {
+        blocked = this.block.slice();
+        for (const i of this.castleGateTiles) blocked[i] = 1;
+      }
+      const reachable = this.movementReachable([ax, ay], r, blocked), cx = Math.floor(e.x), cy = Math.floor(e.y);
+      let best = null, bestD = Infinity;
+      const reachTiles = Math.ceil(maxDistance) + 1;
+      for (let ty = Math.max(0, cy - reachTiles); ty <= Math.min(this.h - 1, cy + reachTiles); ty++) for (let tx = Math.max(0, cx - reachTiles); tx <= Math.min(this.w - 1, cx + reachTiles); tx++) {
+        const i = ty * this.w + tx, x = tx + 0.5, y = ty + 0.5, d = Math.hypot(x - e.x, y - e.y);
+        if (!reachable[i] || d > maxDistance || d >= bestD || !this.positionFree(e, x, y)) continue;
+        best = [x, y]; bestD = d;
+      }
+      if (best) { e.x = best[0]; e.y = best[1]; this.rememberPosition(e); return true; }
+    }
+    // A character may load into a bad legacy/save position before this map has had
+    // a chance to remember it. Extract only through the tile containing the stuck
+    // point; any additional wall or gate along the recovery segment blocks it.
+    const pr0 = bodyR(e), allowedCells = new Set();
+    const stuckMinX = Math.floor(e.x - pr0), stuckMaxX = Math.floor(e.x + pr0), stuckMinY = Math.floor(e.y - pr0), stuckMaxY = Math.floor(e.y + pr0);
+    for (let ty = stuckMinY; ty <= stuckMaxY; ty++) for (let tx = stuckMinX; tx <= stuckMaxX; tx++) {
+      if (this.walkableTile(tx, ty)) continue;
+      const nx = Math.max(tx, Math.min(e.x, tx + 1)), ny = Math.max(ty, Math.min(e.y, ty + 1));
+      if ((e.x - nx) ** 2 + (e.y - ny) ** 2 < pr0 * pr0 - 1e-9) allowedCells.add(`${tx},${ty}`);
+    }
+    if (this.castleGateLocked && e.isPlayer) for (const i of this.castleGateTiles || []) {
+      const tx = i % this.w, ty = (i / this.w) | 0, nx = Math.max(tx, Math.min(e.x, tx + 1)), ny = Math.max(ty, Math.min(e.y, ty + 1));
+      if ((e.x - nx) ** 2 + (e.y - ny) ** 2 < pr0 * pr0 - 1e-9) allowedCells.add(`${tx},${ty}`);
+    }
+    if (!allowedCells.size) return false;
+    const spacing = 0.12, cells = Math.ceil(maxDistance / spacing);
+    let nearest = null, nearestD = Infinity;
+    for (let oy = -cells; oy <= cells; oy++) for (let ox = -cells; ox <= cells; ox++) {
+      const x = e.x + ox * spacing, y = e.y + oy * spacing, d = Math.hypot(x - e.x, y - e.y);
+      if (d >= nearestD || d > maxDistance || !this.positionFree(e, x, y)) continue;
+      const steps = Math.max(1, Math.ceil(d / 0.08)); let clear = true;
+      for (let k = 1; k <= steps; k++) {
+        const px = x + (e.x - x) * k / steps, py = y + (e.y - y) * k / steps;
+        if (this.positionFree(e, px, py)) continue;
+        const pr = bodyR(e), minX = Math.floor(px - pr), maxX = Math.floor(px + pr), minY = Math.floor(py - pr), maxY = Math.floor(py + pr);
+        let onlyStuckCells = true, collisionCount = 0;
+        for (let ty = minY; ty <= maxY && onlyStuckCells; ty++) for (let tx = minX; tx <= maxX; tx++) {
+          if (this.walkableTile(tx, ty)) continue;
+          const nx = Math.max(tx, Math.min(px, tx + 1)), ny = Math.max(ty, Math.min(py, ty + 1));
+          if ((px - nx) ** 2 + (py - ny) ** 2 < pr * pr - 1e-9) {
+            collisionCount++;
+            if (!allowedCells.has(`${tx},${ty}`)) { onlyStuckCells = false; break; }
+          }
+        }
+        if (onlyStuckCells && this.castleGateLocked && e.isPlayer) for (const i of this.castleGateTiles || []) {
+          const tx = i % this.w, ty = (i / this.w) | 0, nx = Math.max(tx, Math.min(px, tx + 1)), ny = Math.max(ty, Math.min(py, ty + 1));
+          if ((px - nx) ** 2 + (py - ny) ** 2 < pr * pr - 1e-9) {
+            collisionCount++;
+            if (!allowedCells.has(`${tx},${ty}`)) { onlyStuckCells = false; break; }
+          }
+        }
+        if (!onlyStuckCells || !collisionCount) { clear = false; break; }
+      }
+      if (clear) { nearest = [x, y]; nearestD = d; }
+    }
+    if (nearest) { e.x = nearest[0]; e.y = nearest[1]; this.rememberPosition(e); return true; }
+    return false;
+  }
+
+  /** Collision trace for fixed-vector abilities. Returns the furthest safe point. */
+  traceMovement(e, dx, dy) {
+    const d = Math.hypot(dx, dy);
+    if (!d || !this.positionFree(e, e.x, e.y)) return { x: e.x, y: e.y, distance: 0, blocked: !!d };
+    const steps = Math.max(1, Math.ceil(d / 0.06)), sx = dx / steps, sy = dy / steps;
+    let x = e.x, y = e.y, moved = 0;
+    for (let i = 0; i < steps; i++) {
+      const from = this.hgt ? this.tileIdx(x, y) : undefined;
+      if (!this.positionFree(e, x + sx, y + sy, from)) {
+        let lo = 0, hi = 1;
+        for (let j = 0; j < 8; j++) {
+          const mid = (lo + hi) * 0.5;
+          if (this.positionFree(e, x + sx * mid, y + sy * mid, from)) lo = mid;
+          else hi = mid;
+        }
+        x += sx * lo; y += sy * lo; moved += Math.hypot(sx * lo, sy * lo);
+        break;
+      }
+      x += sx; y += sy; moved += Math.hypot(sx, sy);
+    }
+    return { x, y, distance: moved, blocked: moved + 1e-6 < d };
   }
 
   /**
@@ -112,41 +257,27 @@ export class TileMap {
 
   /** Move a circle with wall sliding. Returns true if moved at all. */
   move(e, dx, dy, ghost = false) {
-    // A Castle's sealed moat crossings are hard movement barriers. Sample only while locked,
-    // and only against those tiles, so a long dash/frame step cannot jump over the gate.
-    if (this.castleGateLocked && e.isPlayer && this.castleGateTiles?.length) {
-      const r = bodyR(e), d = Math.hypot(dx, dy), n = Math.ceil(d / 0.16);
-      for (let k = 1; k <= n; k++) {
-        const x = e.x + dx * k / n, y = e.y + dy * k / n;
-        for (const i of this.castleGateTiles) {
-          const tx = i % this.w, ty = (i / this.w) | 0;
-          if (x + r > tx && x - r < tx + 1 && y + r > ty && y - r < ty + 1) return false;
-        }
-      }
-    }
     if (ghost) {
       const nx = e.x + dx, ny = e.y + dy;
       if (this.isFloor(nx, ny)) { e.x = nx; e.y = ny; return true; }
       return false;
     }
-    const r = bodyR(e);
-    let moved = false;
-    const from = this.hgt ? this.tileIdx(e.x, e.y) : undefined;
-    if (!this.circleFree(e.x, e.y, r, from)) {
-      // already overlapping a wall or prop (knocked, spawned or pushed there): any step onto open floor lets it out
-      const nx = e.x + dx, ny = e.y + dy;
-      if (this.walkable(nx, ny) && (!this.hgt || this.stepOk(from, this.tileIdx(nx, ny)))) { e.x = nx; e.y = ny; return true; }
-      return false;
-    }
-    if (dx !== 0) {
-      const nx = e.x + dx;
-      if (this.circleFree(nx, e.y, r, from)) { e.x = nx; moved = true; }
-    }
-    if (dy !== 0) {
-      const ny = e.y + dy;
-      if (this.circleFree(e.x, ny, r, this.hgt ? this.tileIdx(e.x, e.y) : undefined)) { e.y = ny; moved = true; }
-    }
-    return moved;
+    if (!this.positionFree(e, e.x, e.y)) { this.recoverEmbedded(e); return false; }
+    const moveAxis = (amount, axis) => {
+      if (!amount) return false;
+      const steps = Math.max(1, Math.ceil(Math.abs(amount) / 0.12)), part = amount / steps;
+      let movedAxis = false;
+      for (let i = 0; i < steps; i++) {
+        const nx = e.x + (axis === 'x' ? part : 0), ny = e.y + (axis === 'y' ? part : 0);
+        const from = this.hgt ? this.tileIdx(e.x, e.y) : undefined;
+        if (!this.positionFree(e, nx, ny, from)) break;
+        e.x = nx; e.y = ny; movedAxis = true;
+      }
+      return movedAxis;
+    };
+    const movedX = moveAxis(dx, 'x'), movedY = moveAxis(dy, 'y'), moved = movedX || movedY;
+    if (moved) this.rememberPosition(e);
+    return !!moved;
   }
 
   /**
@@ -155,25 +286,21 @@ export class TileMap {
    * along walls and around corners. Returns the distance actually travelled.
    */
   dashPositionFree(e, x, y, from, r) {
-    if (this.castleGateLocked && e.isPlayer && this.castleGateTiles?.length) {
-      for (const i of this.castleGateTiles) {
-        const tx = i % this.w, ty = (i / this.w) | 0;
-        if (x + r > tx && x - r < tx + 1 && y + r > ty && y - r < ty + 1) return false;
-      }
-    }
-    return this.circleFree(x, y, r, from);
+    return this.positionFree(e, x, y, from);
   }
   dashStep(e, dx, dy, r) {
     if (!dx && !dy) return 0;
     const from = this.hgt ? this.tileIdx(e.x, e.y) : undefined;
     if (!this.dashPositionFree(e, e.x + dx, e.y + dy, from, r)) return 0;
     e.x += dx; e.y += dy;
+    this.rememberPosition(e);
     return Math.hypot(dx, dy);
   }
   moveDash(e, dx, dy) {
     const distance = Math.hypot(dx, dy);
     if (!distance) return 0;
-    const steps = Math.max(1, Math.ceil(distance / 0.1));
+    if (!this.positionFree(e, e.x, e.y)) { this.recoverEmbedded(e); return 0; }
+    const steps = Math.max(1, Math.ceil(distance / 0.06));
     const sx = dx / steps, sy = dy / steps, r = bodyR(e);
     let travelled = 0;
 
@@ -203,6 +330,7 @@ export class TileMap {
       }
       if (lo > 0.02) {
         e.x = ox + sx * lo; e.y = oy + sy * lo;
+        this.rememberPosition(e);
         travelled += Math.hypot(e.x - ox, e.y - oy);
       }
       // No collision-free position remains in this direction; later substeps
@@ -216,29 +344,31 @@ export class TileMap {
   moveStraight(e, dx, dy, ghost = false) {
     const d = Math.hypot(dx, dy);
     if (!d) return false;
-    const r = bodyR(e), steps = Math.max(1, Math.ceil(d / 0.12));
-    if (this.castleGateLocked && e.isPlayer && this.castleGateTiles?.length) {
-      for (let k = 1; k <= steps; k++) {
-        const x = e.x + dx * k / steps, y = e.y + dy * k / steps;
-        for (const i of this.castleGateTiles) {
-          const tx = i % this.w, ty = (i / this.w) | 0;
-          if (x + r > tx && x - r < tx + 1 && y + r > ty && y - r < ty + 1) return false;
-        }
-      }
-    }
-    const from = this.hgt ? this.tileIdx(e.x, e.y) : undefined;
-    if (!this.circleFree(e.x, e.y, r, from)) {
+    if (ghost) {
       const nx = e.x + dx, ny = e.y + dy;
-      if (this.walkable(nx, ny) && (!this.hgt || this.stepOk(from, this.tileIdx(nx, ny)))) { e.x = nx; e.y = ny; return true; }
-      return false;
+      if (!this.isFloor(nx, ny)) return false;
+      e.x = nx; e.y = ny; return true;
     }
-    // Sample the line so a large frame step cannot cross a thin wall or a closed gate.
-    for (let k = 1; k <= steps; k++) {
-      const x = e.x + dx * k / steps, y = e.y + dy * k / steps;
-      if (ghost ? !this.isFloor(x, y) : !this.circleFree(x, y, r, from)) return false;
+    if (!this.positionFree(e, e.x, e.y)) { this.recoverEmbedded(e); return false; }
+    const steps = Math.max(1, Math.ceil(d / 0.06)), sx = dx / steps, sy = dy / steps;
+    let moved = false;
+    for (let k = 0; k < steps; k++) {
+      const from = this.hgt ? this.tileIdx(e.x, e.y) : undefined;
+      const nx = e.x + sx, ny = e.y + sy;
+      if (!this.positionFree(e, nx, ny, from)) {
+        let lo = 0, hi = 1;
+        for (let j = 0; j < 7; j++) {
+          const mid = (lo + hi) * 0.5;
+          if (this.positionFree(e, e.x + sx * mid, e.y + sy * mid, from)) lo = mid;
+          else hi = mid;
+        }
+        if (lo > 0.01) { e.x += sx * lo; e.y += sy * lo; moved = true; }
+        break;
+      }
+      e.x = nx; e.y = ny; moved = true;
     }
-    e.x += dx; e.y += dy;
-    return true;
+    if (moved) this.rememberPosition(e);
+    return moved;
   }
 
   /** Grid ray-march line of sight. */

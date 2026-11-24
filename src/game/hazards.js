@@ -755,30 +755,21 @@ export class Leap {
     this.E = elem(this.el);
     this.src.channel = this;
     this.sx = this.src.x; this.sy = this.src.y;
-    const d = dist(this.sx, this.sy, this.tx, this.ty);
-    // clamp landing to floor along the path
-    const a = angleTo(this.sx, this.sy, this.tx, this.ty);
-    let best = 0;
-    if (this.world.biome?.id === 'castle') {
-      const { map } = this.world, r = this.src.isPlayer ? bodyR(this.src) : 0;
-      for (let s = 0.2; s <= d + 1e-6; s += 0.2) {
-        const x = this.sx + Math.cos(a) * s, y = this.sy + Math.sin(a) * s;
-        if (!map.walkable(x, y) || r && !map.circleFree(x, y, r)) break;
-        best = s;
-      }
-    } else {
-      for (let s = 0; s <= d; s += 0.2) if (this.world.map.walkable(this.sx + Math.cos(a) * s, this.sy + Math.sin(a) * s)) best = s;
-    }
-    this.tx = this.sx + Math.cos(a) * best; this.ty = this.sy + Math.sin(a) * best;
+    const d = dist(this.sx, this.sy, this.tx, this.ty), a = angleTo(this.sx, this.sy, this.tx, this.ty);
+    const trace = this.world.map.traceMovement(this.src, Math.cos(a) * d, Math.sin(a) * d);
+    this.tx = trace.x; this.ty = trace.y;
+    this.world.map.rememberPosition(this.src);
     this.src.face(a);
     this.src.invuln = this.dur;
   }
   update(dt) {
     const s = this.src;
-    if (s.dead) return false;
+    if (s.dead || s.channel !== this) { if (!s.dead) s.z = 0; return false; }
     this.t += dt;
     const k = (this.k = Math.min(1, this.t / this.dur));
-    s.x = this.sx + (this.tx - this.sx) * k; s.y = this.sy + (this.ty - this.sy) * k;
+    const nx = this.sx + (this.tx - this.sx) * k, ny = this.sy + (this.ty - this.sy) * k;
+    const dx = nx - s.x, dy = ny - s.y, moved = this.world.map.moveStraight(s, dx, dy);
+    if (k < 1 && Math.hypot(dx, dy) > 0.01 && !moved) this.t = this.dur;
     s.z = 4 * (this.fx === 'dragon' || this.fx === 'meteor' ? 120 : 70) * k * (1 - k);
     if (!this.lance && chance(dt * 30)) trail(this.fx === 'dragon' || this.fx === 'meteor' ? 'fireball' : 'bolt', s.x, s.y, s.z + 20, this.E, dt);
     if (k >= 1) {
@@ -831,6 +822,7 @@ export class Dash {
   update(dt) {
     const s = this.src;
     if (s.dead) { if (s.channel === this) s.channel = null; return false; }
+    if (s.channel !== this) { s.moving = false; return false; }
     this.t += dt;
     const step = Math.min(this.left, this.speed * dt);
     const travelled = step > 0 ? this.world.map.moveDash(s, Math.cos(this.ang) * step, Math.sin(this.ang) * step) : 0;

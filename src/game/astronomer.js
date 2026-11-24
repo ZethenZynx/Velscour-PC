@@ -17,7 +17,6 @@ import { ASTRO, drawSun, drawMoon, drawBlackHole, drawChartStar, drawPlanet, pla
 import { SKILLS } from '../data/skills.js';
 import { hit, aoe } from './combat.js';
 import { Projectile, NovaWave, Area, explode, lineTargets } from './hazards.js';
-import { bodyR } from '../world/map.js';
 
 export const ASTRONOMER = 'arcane_sorcerer';
 export const CHART_N = 5;           // stars that complete a constellation
@@ -81,17 +80,18 @@ export function chartOf(p) {
 const onFloor = (w, x, y) => w && w.map && w.map.isFloor(x, y);
 function clampPt(p, tx, ty, range) {
   const w = p.world, a = angleTo(p.x, p.y, tx, ty);
+  const from = w.map.hgt ? w.map.tileIdx(p.x, p.y) : undefined;
   let d = Math.min(range, dist(p.x, p.y, tx, ty)), x = p.x + Math.cos(a) * d, y = p.y + Math.sin(a) * d;
   if (w.biome?.id === 'castle') {
     let open = 0;
-    for (let s = 0.2; s <= d + 1e-6; s += 0.2) {
+    for (let s = 0.06; s <= d + 1e-6; s += 0.06) {
       const nx = p.x + Math.cos(a) * s, ny = p.y + Math.sin(a) * s;
-      if (!w.map.walkable(nx, ny) || !w.map.circleFree(nx, ny, bodyR(p))) break;
+      if (!w.map.positionFree(p, nx, ny, from)) break;
       open = s;
     }
     return [p.x + Math.cos(a) * open, p.y + Math.sin(a) * open];
   }
-  while (d > 0 && !onFloor(w, x, y)) { d -= 0.25; x = p.x + Math.cos(a) * d; y = p.y + Math.sin(a) * d; }
+  while (d > 0 && (!w.map.positionFree(p, x, y, from) || !onFloor(w, x, y))) { d = Math.max(0, d - 0.06); x = p.x + Math.cos(a) * d; y = p.y + Math.sin(a) * d; }
   return [x, y];
 }
 /** The basic attack's average hit: the least a star is worth. */
@@ -265,7 +265,7 @@ export function astroCast(p, sk, L, tx, ty, c) {
       const [x, y] = clampPt(p, tx, ty, 6.5 * (m.range ?? 1));
       addEffect(new Portal(p.x, p.y, 1), 'ground'); addEffect(new Portal(x, y, 1), 'ground');
       addEffect(new Beam(p.x, p.y, x, y, ASTRO.violet, 5, 0.3, { z: 20 }));
-      p.x = x; p.y = y; p.path = null; p.moveTarget = null;
+      p.x = x; p.y = y; p.path = null; p.moveTarget = null; w.map.rememberPosition(p);
       if (m.nova) w.addHazard(new NovaWave({ world: w, src: p, x, y, r: 2.2 * area, dmg, el, fx: 'void', o }));
       sfx('portal', 0.7);
       return true;

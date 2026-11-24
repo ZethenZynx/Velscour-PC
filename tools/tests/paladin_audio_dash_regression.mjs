@@ -110,8 +110,9 @@ function runTileDash(map, [x, y], [tx, ty], maxDistance = 10) {
 const tileMap = new TileMap(7, 5);
 tileMap.t.fill(1); tileMap.block[2 * tileMap.w + 3] = 1;
 const blockedPlayer = { x: 1.5, y: 2.5, r: 0.25, isPlayer: true };
-assert.equal(tileMap.moveStraight(blockedPlayer, 2, 0.8), false, 'actual map collision stops at a wall');
-assert.deepEqual([blockedPlayer.x, blockedPlayer.y], [1.5, 2.5], 'a blocked straight move does not wall-slide sideways');
+assert.equal(tileMap.moveStraight(blockedPlayer, 2, 0.8), true, 'actual map collision advances to the nearest valid body position');
+assert.ok(blockedPlayer.x < 3 && blockedPlayer.y > 2.5, 'a blocked straight move stops safely at the wall without passing through it');
+assert.equal(tileMap.positionFree(blockedPlayer, blockedPlayer.x, blockedPlayer.y), true, 'the blocked movement endpoint remains collision-valid');
 assert.match(mapSource, /moveDash\(e, dx, dy\)/, 'cursor dashes use the dedicated collision-safe sliding movement');
 
 // Direct walls stop at the last valid body position; diagonal movement projects onto a

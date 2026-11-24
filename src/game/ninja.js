@@ -167,16 +167,16 @@ class MirrorShades {
 /** Iaido: he is past them before the blade is seen; they come apart when it is sheathed. */
 function iaido(p, sk, tx, ty, C) {
   const w = p.world, { dmg, o, el, ang } = C, x0 = p.x, y0 = p.y;
-  let d = 0;
   const max = 8 * (sk.m.range ?? 1);
-  while (d < max && w.map.walkable(x0 + Math.cos(ang) * (d + 0.25), y0 + Math.sin(ang) * (d + 0.25))) d += 0.25;
+  const trace = w.map.traceMovement(p, Math.cos(ang) * max, Math.sin(ang) * max), d = trace.distance;
   if (d < 1) return false;
-  const x1 = x0 + Math.cos(ang) * d, y1 = y0 + Math.sin(ang) * d, victims = lineTargets(w, p.team, x0, y0, x1, y1, 0.9);
+  const x1 = trace.x, y1 = trace.y, victims = lineTargets(w, p.team, x0, y0, x1, y1, 0.9);
   for (let i = 0; i < 4; i++) { // the shadows he leaves along the way
     const u = i / 4;
     w.addHazard(new AfterImage(p, { x: x0 + (x1 - x0) * u, y: y0 + (y1 - y0) * u, life: 0.35 + u * 0.25, a: 0.3 + u * 0.3, acro: i === 2 ? { t: 0.1, dur: 0.2, spins: 1, h: 0, dir: 1 } : null }));
   }
   p.x = x1; p.y = y1; p.path = null; p.moveTarget = null; p.lunge = 1; p.invuln = Math.max(p.invuln || 0, 0.4);
+  w.map.rememberPosition(p);
   cutBetween(x0, y0, x1, y1, { width: 3, dur: 0.5, color: WHITE });
   sfx('swing', 1);
   for (const t of victims) { t.status.stun = { t: Math.max(t.status.stun ? t.status.stun.t : 0, t.rank === 'boss' ? 0.2 : 0.5) }; }
@@ -200,7 +200,7 @@ class HeavensDrop {
   constructor(p, t, C, r) { Object.assign(this, { p, tgt: t, C, r, t: 0, up: 0.5, down: 0.16 }); p.channel = this; p.invuln = Math.max(p.invuln || 0, 0.8); flip(p, 0.66, 3, 0); }
   update(dt) {
     const p = this.p, t = this.tgt, w = this.world;
-    if (p.dead) { p.z = 0; if (t) t.z = 0; return false; }
+    if (p.dead || p.channel !== this) { p.z = 0; if (t) t.z = 0; return false; }
     this.t += dt;
     const u = this.t / this.up, d = (this.t - this.up) / this.down;
     p.z = u < 1 ? 150 * (1 - (1 - u) * (1 - u)) : 150 * Math.max(0, 1 - d * d);
@@ -229,7 +229,7 @@ function heavensDrop(p, sk, tx, ty, C) {
   cutBetween(p.x, p.y, t.x, t.y, { width: 4, dur: 0.3 });
   const d = Math.max(0, dist(p.x, p.y, t.x, t.y) - 0.7);
   const nx = p.x + Math.cos(a) * d, ny = p.y + Math.sin(a) * d;
-  if (w.map.walkable(nx, ny) && w.map.los(p.x, p.y, nx, ny)) { p.x = nx; p.y = ny; }
+  if (w.map.positionFree(p, nx, ny) && w.map.los(p.x, p.y, nx, ny)) { p.x = nx; p.y = ny; w.map.rememberPosition(p); }
   p.path = null; p.moveTarget = null; p.face(a);
   w.addHazard(new HeavensDrop(p, heavy ? null : t, C, 1.6 * (sk.m.r ?? 1) * C.area));
   if (heavy) later(w, 0.66, () => { if (!t.dead) hit(p, t, roll(C.dmg) * 1.6, C.el, { ...C.o, melee: true, cut: true }); });
@@ -245,7 +245,7 @@ class HundredCuts {
   }
   update(dt) {
     const p = this.p, w = this.world, { dmg, o, el } = this.C;
-    if (p.dead) return false;
+    if (p.dead || p.channel !== this) return false;
     this.t += dt;
     if (this.done >= 0) { // the pause, then the sheathing
       if (this.t - this.done < 0.3) return true;
@@ -266,12 +266,14 @@ class HundredCuts {
       const foes = foesAt(p, this.x, this.y, this.r + 0.5);
       if (!foes.length) { this.i = this.n; break; }
       const t = foes[(this.i * 5 + 1) % foes.length], a = angleTo(p.x, p.y, t.x, t.y) + rand(-0.2, 0.2), ox = p.x, oy = p.y;
-      const ok = (x, y) => w.map.walkable(x, y) && w.map.los(t.x, t.y, x, y); // never the far side of a wall
+      const ok = (x, y) => w.map.positionFree(p, x, y) && w.map.los(t.x, t.y, x, y); // never the far side of a wall
       let nx = t.x + Math.cos(a) * 1.1, ny = t.y + Math.sin(a) * 1.1;
       if (!ok(nx, ny)) { nx = t.x - Math.cos(a) * 0.6; ny = t.y - Math.sin(a) * 0.6; }
       if (!ok(nx, ny)) { nx = t.x; ny = t.y; }
       w.addHazard(new AfterImage(p, { life: 0.45, a: 0.6, acro: { t: rand(0.05, 0.25), dur: 0.3, spins: 1, h: rand(8, 26), dir: this.i % 2 ? 1 : -1 } }));
-      p.x = nx; p.y = ny; p.face(a); p.lunge = 1; flip(p, 0.15, 0.5, 14, this.i % 2 ? 1 : -1);
+      if (w.map.positionFree(p, nx, ny)) { p.x = nx; p.y = ny; w.map.rememberPosition(p); }
+      else { nx = p.x; ny = p.y; }
+      p.face(a); p.lunge = 1; flip(p, 0.15, 0.5, 14, this.i % 2 ? 1 : -1);
       cutBetween(ox, oy, nx, ny, { width: 4, dur: 0.45, color: this.i % 3 ? CYAN : WHITE });
       hit(p, t, roll(dmg), el, { ...o, ang: a, melee: true, cut: true, multiHit: true, hitIndex: this.i, hitCount: this.n });
       this.hits.set(t, (this.hits.get(t) || 0) + 1);
@@ -279,7 +281,7 @@ class HundredCuts {
     }
     if (this.i >= this.n) { // back to where he began, blade out
       w.addHazard(new AfterImage(p, { life: 0.4, a: 0.6 }));
-      if (w.map.walkable(this.home[0], this.home[1])) { p.x = this.home[0]; p.y = this.home[1]; }
+      if (w.map.positionFree(p, this.home[0], this.home[1])) { p.x = this.home[0]; p.y = this.home[1]; w.map.rememberPosition(p); }
       p.path = null; p.moveTarget = null; this.done = this.t;
       sparkle(p.x, p.y, 34, WHITE, 10, 0.3);
     }
@@ -358,8 +360,8 @@ class Grapple {
     Object.assign(this, { p, tgt: t, C, heavy, t: -i * 0.07, out: 0.16, pull: 0.24, hx: p.x, hy: p.y, sx: t.x, sy: t.y, bit: false });
     const a = angleTo(t.x, t.y, p.x, p.y), spread = (i - 2) * 0.35;
     this.dest = heavy ? [t.x + Math.cos(a) * 1, t.y + Math.sin(a) * 1] : [p.x + Math.cos(a + Math.PI + spread) * 1.05, p.y + Math.sin(a + Math.PI + spread) * 1.05];
-    const M = p.world.map, from = heavy ? p : t; // what cannot be reached in a straight line stays where it is
-    if (!M.walkable(this.dest[0], this.dest[1]) || !M.los(from.x, from.y, this.dest[0], this.dest[1])) this.dest = [from.x, from.y];
+    const M = p.world.map, from = heavy ? p : t, mover = heavy ? p : t; // what cannot be reached in a straight line stays where it is
+    if (!M.positionFree(mover, this.dest[0], this.dest[1]) || !M.los(from.x, from.y, this.dest[0], this.dest[1])) this.dest = [from.x, from.y];
     this.px = p.x; this.py = p.y;
     const self = this;
     addEffect(new Rope(p, () => [self.hx, self.hy, self.hz], { dur: this.out + this.pull + i * 0.07 + 0.05, taut: () => self.bit }));
@@ -372,9 +374,9 @@ class Grapple {
     if (this.t < this.out) { const u = this.t / this.out; this.hx = p.x + (t.x - p.x) * u; this.hy = p.y + (t.y - p.y) * u; this.hz = 30 - 8 * u; return true; }
     if (!this.bit) { this.bit = true; sparkle(t.x, t.y, 24, WHITE, 5, 0.2); sfx('hit', 0.6); t.status.stun = { t: t.rank === 'boss' ? 0.3 : 1.2 }; this.sx = t.x; this.sy = t.y; }
     const u = Math.min(1, (this.t - this.out) / this.pull), e = u * u * (3 - 2 * u), [dx, dy] = this.dest;
-    if (this.heavy) { // too heavy: the rope takes him to it
+    if (this.heavy) { // too heavy: the rope takes him to it, but collision still applies
       const nx = this.px + (dx - this.px) * e, ny = this.py + (dy - this.py) * e;
-      if (w.map.walkable(nx, ny)) { p.x = nx; p.y = ny; }
+      w.map.moveStraight(p, nx - p.x, ny - p.y);
       p.z = 30 * Math.sin(Math.PI * u); p.path = null; p.moveTarget = null;
     } else {
       const nx = this.sx + (dx - this.sx) * e, ny = this.sy + (dy - this.sy) * e;
@@ -436,10 +438,13 @@ class Backflip {
   constructor(p, x, y) { Object.assign(this, { p, sx: p.x, sy: p.y, x, y, t: 0, dur: 0.42 }); p.channel = this; p.invuln = Math.max(p.invuln || 0, 0.45); flip(p, 0.42, 1, 0, -1); }
   update(dt) {
     const p = this.p;
-    if (p.dead) { p.z = 0; return false; }
+    if (p.dead || p.channel !== this) { p.z = 0; return false; }
     this.t += dt;
     const u = Math.min(1, this.t / this.dur);
-    p.x = this.sx + (this.x - this.sx) * u; p.y = this.sy + (this.y - this.sy) * u; p.z = 4 * 52 * u * (1 - u);
+    const nx = this.sx + (this.x - this.sx) * u, ny = this.sy + (this.y - this.sy) * u;
+    const dx = nx - p.x, dy = ny - p.y, moved = p.world.map.moveStraight(p, dx, dy);
+    if (u < 1 && Math.hypot(dx, dy) > 0.01 && !moved) this.t = this.dur;
+    p.z = 4 * 52 * Math.min(1, this.t / this.dur) * (1 - Math.min(1, this.t / this.dur));
     if (u >= 1) { p.z = 0; p.channel = null; return false; }
     return true;
   }
@@ -449,15 +454,14 @@ function backflip(p, sk, tx, ty, C) {
   const w = p.world, { dmg, o, el, area } = C, m = sk.m;
   const foe = w.nearestHostile(p.team, tx, ty, 3, false) || w.nearestHostile(p.team, p.x, p.y, 8, false);
   const toward = foe ? angleTo(p.x, p.y, foe.x, foe.y) : angleTo(p.x, p.y, tx, ty), away = toward + Math.PI;
-  let d = 0;
-  const far = 6.5 * (m.range ?? 1); // as far back as the floor goes: never over a wall
-  while (d < far && w.map.walkable(p.x + Math.cos(away) * (d + 0.25), p.y + Math.sin(away) * (d + 0.25))) d += 0.25;
+  const far = 6.5 * (m.range ?? 1), trace = w.map.traceMovement(p, Math.cos(away) * far, Math.sin(away) * far);
+  const d = trace.distance; // stop at the nearest body-clear point before a wall
   const r = 1.8 * (m.r ?? 1) * area, ox = p.x, oy = p.y;
   w.addHazard(new Area({ world: w, src: p, x: ox, y: oy, r, dur: 5, tick: 0.5, dmg: dmg.map((v) => v * 0.3), el, fx: 'caltrop', slow: true, o: { ...o, bleed: true } }));
   w.addHazard(new CaltropField(p, ox, oy, r, 5));
   p.face(toward);
   shadowTrail(p, 0.42, { a: 0.45 });
-  w.addHazard(new Backflip(p, p.x + Math.cos(away) * d, p.y + Math.sin(away) * d));
+  w.addHazard(new Backflip(p, trace.x, trace.y));
   for (let i = -2; i <= 2; i++) later(w, 0.12 + (i + 2) * 0.03, () => { // five shuriken from the top of the flip
     if (p.dead) return;
     w.addHazard(new Projectile({ world: w, src: p, x: p.x, y: p.y, ang: toward + i * 0.16, speed: 14, range: 9, fx: 'shuriken', el, dmg, o, z: 30, r: 0.3, size: 1, skin: sk.name }));

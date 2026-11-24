@@ -136,11 +136,12 @@ function backstab(p, sk, tx, ty, C, ambush) {
   let bx = p.x, by = p.y;
   for (const da of [0, 0.9, -0.9, 1.8, -1.8, Math.PI]) {
     const x = t.x + Math.cos(a + da) * 0.85, y = t.y + Math.sin(a + da) * 0.85;
-    if (w.map.walkable(x, y) && w.map.los(t.x, t.y, x, y)) { bx = x; by = y; break; }
+    if (w.map.positionFree(p, x, y) && w.map.los(t.x, t.y, x, y)) { bx = x; by = y; break; }
   }
   w.addHazard(new AfterImage(p, { life: 0.4, a: 0.6 }));
   smoke(p.x, p.y, 10, '#16101a', 6, 10);
   p.x = bx; p.y = by; p.path = null; p.moveTarget = null;
+  w.map.rememberPosition(p);
   const back = angleTo(p.x, p.y, t.x, t.y);
   p.face(back); p.lunge = 1;
   smoke(p.x, p.y, 10, '#16101a', 4, 8);

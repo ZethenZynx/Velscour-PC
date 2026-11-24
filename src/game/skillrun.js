@@ -53,19 +53,19 @@ function statusOpts(m) {
 function clampTarget(w, p, tx, ty, range, canLand = (x, y) => w.map.isFloor(x, y)) {
   const a = angleTo(p.x, p.y, tx, ty);
   let d = Math.min(range, dist(p.x, p.y, tx, ty));
+  const safe = (x, y) => w.map.positionFree(p, x, y) && canLand(x, y);
   if (w.biome?.id === 'castle') {
     // Blink and other targeted movement must stop at the first wall or sealed crossing,
     // rather than finding a valid landing point on the far side of it.
-    const safe = (x, y) => w.map.walkable(x, y) && w.map.circleFree(x, y, bodyR(p)) && canLand(x, y);
     let open = 0;
-    for (let s = 0.2; s <= d + 1e-6; s += 0.2) {
+    for (let s = 0.06; s <= d + 1e-6; s += 0.06) {
       if (!safe(p.x + Math.cos(a) * s, p.y + Math.sin(a) * s)) break;
       open = s;
     }
     return [p.x + Math.cos(a) * open, p.y + Math.sin(a) * open];
   }
   let x = p.x + Math.cos(a) * d, y = p.y + Math.sin(a) * d;
-  while (d > 0 && !canLand(x, y)) { d -= 0.25; x = p.x + Math.cos(a) * d; y = p.y + Math.sin(a) * d; }
+  while (d > 0 && !safe(x, y)) { d = Math.max(0, d - 0.06); x = p.x + Math.cos(a) * d; y = p.y + Math.sin(a) * d; }
   return [x, y];
 }
 
@@ -338,14 +338,13 @@ export function castSkill(p, sk, L, tx, ty, opts = {}) {
     case 'blink': {
       // The Sky Ship map marks its solid hull and fittings as floor for rendering,
       // so Blink must use its walk map and keep the whole player body on deck.
-      const canLand = w.biome?.id === 'skyship'
-        ? (x, y) => w.map.walkable(x, y) && w.map.circleFree(x, y, bodyR(p))
-        : undefined;
+      const from = w.map.hgt ? w.map.tileIdx(p.x, p.y) : undefined;
+      const canLand = (x, y) => w.map.walkable(x, y) && w.map.circleFree(x, y, bodyR(p), from);
       const [x, y] = clampTarget(w, p, tx, ty, 6.5 * (m.range ?? 1), canLand);
       smoke(p.x, p.y, 10, fx === 'smoke' || fx === 'shadow' ? '#201820' : E.dark, 6, 8);
       sparkle(p.x, p.y, 20, E.glow, 10, 0.4);
       if (fx === 'lightning') addEffect(Bolt(p.x, p.y, 20, x, y, 20, E.glow, 0.25, 3));
-      p.x = x; p.y = y; p.path = null; p.moveTarget = null;
+      p.x = x; p.y = y; p.path = null; p.moveTarget = null; w.map.rememberPosition(p);
       sparkle(x, y, 20, E.glow, 14, 0.5);
       addEffect(new Ring(x, y, 0.1, 1.2, 0.3, E.glow, 3));
       if (m.nova) w.addHazard(new NovaWave({ world: w, src: p, x, y, r: 2.2 * area, dmg, el, fx: fx === 'feather' ? 'crow' : fx, o }));

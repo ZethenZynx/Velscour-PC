@@ -785,6 +785,10 @@ export class Player extends Creature {
   // ------------------------------------------------------------------ update
   update(dt) {
     const c = this.char, st = this.st;
+    if (!this.dead && this.world?.map?.recoverEmbedded?.(this)) {
+      if (this.channel instanceof Leap) this.z = 0;
+      this.channel = null; this.moveTarget = null; this.path = null; this.moving = false;
+    }
     this.animT += dt;
     const gfx = this.gearFx();
     if (gfx) updateGearFx(this, gfx.fx, gfx.col, dt);
