@@ -67,8 +67,19 @@ assert.equal(shouldReleaseCastle3D({ id: 'catacombs' }, { keep: false }), true, 
 assert.equal(shouldReleaseTownSheets({ id: 'catacombs' }, null, true), false, 'townfolk sheets survive late cleanup during Keep entry');
 
 const artSource = await readFile(new URL('../../src/gfx/keepart.js', import.meta.url), 'utf8');
-assert.match(artSource, /sacredFlameEmblem/);
-assert.match(artSource, /id === 'tess_a'.*id === 'tess_b1'/s);
+const keepUiSource = await readFile(new URL('../../src/ui/keep.js', import.meta.url), 'utf8');
+assert.doesNotMatch(artSource, /sacredFlameEmblem|badgeW|badgeH/, 'the former programmatic emblem overlay is removed');
+assert.match(artSource, /sacred_flame_navy\.png/);
+assert.match(artSource, /sacred_flame_ivory\.png/);
+assert.match(artSource, /tess_a: sacredNavy, tess_b: sacredNavy, tess_a1: sacredIvory, tess_b1: sacredIvory/,
+  'all original Keep banner IDs resolve to the complete replacement artwork');
+assert.match(keepUiSource, /m\?\.img \|\| A\.banners/, 'Furnish thumbnails show the replacement art too');
+for (const asset of ['sacred_flame_navy.png', 'sacred_flame_ivory.png']) {
+  const bytes = await readFile(new URL(`../../assets/tiles/tkeep/decor/${asset}`, import.meta.url));
+  assert.equal(bytes.readUInt32BE(16), 256, `${asset} retains the source sprite width`);
+  assert.equal(bytes.readUInt32BE(20), 512, `${asset} retains the source sprite height`);
+  assert.equal(bytes[25], 6, `${asset} is RGBA with a transparent background`);
+}
 for (const sprite of ['07_knight_ivory_mantle', '41_friar', '09_knight_silver_censer', '14_knight_dusk_lancer', '42_priest', '13_knight_frostbound']) {
   await access(new URL(`../../assets/sprites/people/${sprite}.webp`, import.meta.url));
 }

@@ -40,7 +40,7 @@ function thumb(kind, id, w = 52, h = 64) {
   }
   if (!A) return c;
   const list = kind === 'banner' ? A.meta.banners : kind === 'glass' ? A.meta.glass : A.meta.rugs, m = list.find((d) => d.id === id);
-  const img = kind === 'banner' ? A.banners : kind === 'glass' ? A.glass : A.rugs;
+  const img = kind === 'banner' ? (m?.img || A.banners) : kind === 'glass' ? A.glass : A.rugs;
   if (m) fit(img, ...m.r);
   return c;
 }

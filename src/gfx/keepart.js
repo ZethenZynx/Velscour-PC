@@ -14,32 +14,6 @@ const DECOR_DIR = KEEP_DIR + 'decor/';
 const R = 2;   // decoration canvases are drawn at 2x (k = 0.5) so they stay crisp zoomed in
 let A = null, loading = null;
 const loadImg = (src) => new Promise((ok, no) => { const i = new Image(); i.onload = () => ok(i); i.onerror = () => no(new Error(src)); i.src = src; });
-const keepEmblems = new Map();
-
-/** Shared Sacred Flame heraldry for the original blue and ivory Keep standards. */
-function sacredFlameEmblem(ivory) {
-  const key = ivory ? 'ivory' : 'navy';
-  if (keepEmblems.has(key)) return keepEmblems.get(key);
-  const c = makeCanvas(96, 128), x = c.getContext('2d');
-  const field = ivory ? '#e7dfc9' : '#102544', gold = '#d5ad61', shade = ivory ? '#c5b99d' : '#09172b';
-  // A pointed heater shield conceals the former T while reading as sewn-on heraldry.
-  x.beginPath(); x.moveTo(15, 18); x.lineTo(81, 18); x.lineTo(77, 76); x.quadraticCurveTo(70, 99, 48, 116); x.quadraticCurveTo(26, 99, 19, 76); x.closePath();
-  x.fillStyle = gold; x.fill();
-  x.beginPath(); x.moveTo(20, 23); x.lineTo(76, 23); x.lineTo(72, 74); x.quadraticCurveTo(66, 93, 48, 107); x.quadraticCurveTo(30, 93, 24, 74); x.closePath();
-  x.fillStyle = shade; x.fill();
-  x.beginPath(); x.moveTo(24, 27); x.lineTo(72, 27); x.lineTo(68, 72); x.quadraticCurveTo(63, 88, 48, 100); x.quadraticCurveTo(33, 88, 28, 72); x.closePath();
-  x.fillStyle = field; x.fill();
-  // Three rising tongues join into one flame, above a simple altar line.
-  x.fillStyle = gold; x.beginPath();
-  x.moveTo(48, 82); x.bezierCurveTo(37, 74, 43, 62, 47, 54); x.bezierCurveTo(50, 62, 55, 66, 54, 73);
-  x.bezierCurveTo(63, 63, 58, 52, 56, 43); x.bezierCurveTo(75, 63, 71, 82, 61, 89);
-  x.quadraticCurveTo(48, 98, 35, 89); x.bezierCurveTo(25, 81, 30, 65, 40, 58);
-  x.bezierCurveTo(37, 69, 40, 77, 48, 82); x.closePath(); x.fill();
-  x.fillStyle = field; x.beginPath(); x.moveTo(48, 86); x.bezierCurveTo(43, 81, 48, 74, 51, 69); x.bezierCurveTo(57, 78, 55, 84, 48, 88); x.fill();
-  x.strokeStyle = gold; x.lineWidth = 3; x.beginPath(); x.moveTo(36, 94); x.lineTo(60, 94); x.stroke();
-  keepEmblems.set(key, c);
-  return c;
-}
 
 /** Everything the keep draws: the baked set, the decor atlases, the Castle Keep pack's props. Safe to call again. */
 export function loadKeepArt() {
@@ -49,8 +23,16 @@ export function loadKeepArt() {
     loadBaked(KEEP_DIR),
     fetch(DECOR_DIR + 'decor.json').then((r) => r.json()),
     loadImg(DECOR_DIR + 'banners.webp'), loadImg(DECOR_DIR + 'glass.webp'), loadImg(DECOR_DIR + 'rugs.webp'),
+    loadImg(DECOR_DIR + 'sacred_flame_navy.png'), loadImg(DECOR_DIR + 'sacred_flame_ivory.png'),
     loadImg('assets/tiles/castle_keep/scatter.webp'), fetch('assets/tiles/castle_keep/pack.json').then((r) => r.json()),
-  ]).then(([baked, meta, banners, glass, rugs, scat, pack]) => {
+  ]).then(([baked, meta, banners, glass, rugs, sacredNavy, sacredIvory, scat, pack]) => {
+    // Keep existing saved decoration IDs, but replace their source art completely.
+    // The old banner atlas remains available for unrelated standards and heraldry.
+    const sacredById = { tess_a: sacredNavy, tess_b: sacredNavy, tess_a1: sacredIvory, tess_b1: sacredIvory };
+    for (const entry of meta.banners) {
+      const img = sacredById[entry.id];
+      if (img) { entry.img = img; entry.r = [0, 0, img.width, img.height]; }
+    }
     A = { baked, meta, banners, glass, rugs, scat, pack, cache: new Map() };
     return A;
   }).catch((e) => { loading = null; throw e; });
@@ -108,17 +90,12 @@ export function bannerSprite(id, s, standLv) {
   const g = s.axis === 'x' ? ground(s.a, s.c + 0.08, standLv) : ground(s.c + 0.08, s.a, standLv);
   const box = rectOf(P); box[0] -= 6; box[2] += 6; box[3] += 6;
   const spr = spriteCanvas(box, g, (x, x0, y0) => {
+    const img = m.img || A.banners;
     // its shadow on the stone, then the cloth, shaded darker toward its foot and at the edges
     x.globalAlpha = 0.38; x.filter = 'brightness(0)';
-    onFace(x, A.banners, m.r, { O: [P.O[0] + 2.5, P.O[1] + 2], U: P.U, V: P.V }, x0, y0);
+    onFace(x, img, m.r, { O: [P.O[0] + 2.5, P.O[1] + 2], U: P.U, V: P.V }, x0, y0);
     x.filter = 'none'; x.globalAlpha = 1;
-    onFace(x, A.banners, m.r, P, x0, y0);
-    if (id === 'tess_a' || id === 'tess_b' || id === 'tess_a1' || id === 'tess_b1') {
-      const badge = sacredFlameEmblem(id === 'tess_a1' || id === 'tess_b1');
-      const zc = zt - hLv * 0.54, badgeW = w * 0.72, badgeH = hLv * 0.54;
-      const heraldry = facePlane(s.axis, s.a, s.c + 0.075, badgeW, zc + badgeH / 2, zc - badgeH / 2);
-      onFace(x, badge, [0, 0, badge.width, badge.height], heraldry, x0, y0);
-    }
+    onFace(x, img, m.r, P, x0, y0);
     x.globalCompositeOperation = 'source-atop';
     const gr = x.createLinearGradient(0, 0, 0, x.canvas.height);
     gr.addColorStop(0, 'rgba(255,240,210,0.06)'); gr.addColorStop(0.55, 'rgba(0,0,0,0.08)'); gr.addColorStop(1, 'rgba(0,0,0,0.34)');
