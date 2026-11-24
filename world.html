@@ -91,7 +91,7 @@
     import { DUNGEON_AFFIXES, MAX_AFFIX_SECTIONS } from './src/data/dungeonaffixes.js';
     import { GREED_LEVELS } from './src/game/greed.js';
     import { DUNGEON_EVENTS } from './src/game/dungeonevents.js';
-    import { HERESIES, HERESY_MAX_RANK, HERESY_MILESTONES } from './src/data/heresies.js';
+    import { HERESIES, HERESY_MAX_RANK, HERESY_MILESTONES, heresyMods } from './src/data/heresies.js';
     import { MAX_BREACH_FLOOR, breachObjectiveCount } from './src/data/breach.js';
     import { RIFT_INSTABILITIES, PYLONS } from './src/data/rifts.js';
     import { MAX_UNBOUND_DEPTH } from './src/game/unbound.js';
@@ -153,7 +153,11 @@
       {title:'Infinite Depth Progression',text:`The fixed campaign ends at depth ${FINAL_DEPTH}. Endless endgame depths begin at ${ENDGAME_START_DEPTH}; the depth system has no designed finite cap (safe integer ceiling ${MAX_DEPTH.toLocaleString()}).`},
       {title:'Dungeon Affixes',text:`The catalog defines ${DUNGEON_AFFIXES.length} active affixes across distinct categories. At Depth 101+, the selected Greed level sets the exact affix count; there is no five-depth automatic escalation.`},
       {title:'Greed',text:'After defeating Velscour, select Greed 0-5 in the Portal to the Depths. Each level adds that many randomized affixes and the matching gold, XP, and loot bonuses. The selection persists through death.'},
-      {title:'Altar of Heresy',text:`${HERESIES.length} heresies are defined, with a maximum combined rank of ${HERESY_MAX_RANK}. Milestones and effects are calculated from the game's heresy data.`},
+      {title:'Altar of Heresy',text:`${HERESIES.length} modifiers form a ${HERESY_MAX_RANK}-rank progression. The rank is the sum of the selected modifiers; each generated dungeon locks its rank, rewards and encounter rolls at entry. Abyssal Rifts and Velscour Unbound remain excluded.`},
+      {title:'Heresy rank rewards',text:`Existing rank 1-26 values are preserved and each bonus extends linearly: magic find +4 percentage points per rank; gold x(1 + 0.04r); loot quantity x(1 + 0.02r); XP x(1 + 0.02r); sigils x(1 + 0.05r); relic chance x(1 + 0.04r). At rank 75: +${heresyMods(75).mf}% magic find, x${heresyMods(75).gold.toFixed(2)} gold, x${heresyMods(75).loot.toFixed(2)} loot, +${Math.round((heresyMods(75).xp - 1) * 100)}% XP, x${heresyMods(75).sigil.toFixed(2)} sigils and x${heresyMods(75).relic.toFixed(2)} relic chance. Greed and Heresy quantity bonuses are additive and do not alter gear tier eligibility.`},
+      {title:'Heresy modifiers',text:HERESIES.map((h)=>`${h.name} (${h.rank}): ${h.desc}`).join(' | ')},
+      {title:'Heresy milestones',text:HERESY_MILESTONES.map((m)=>`Rank ${m.rank} — ${m.name}: ${m.text}`).join(' | ')},
+      {title:'Heresy encounters',text:'Rank 30 can add a Heretical Treasure Chest after a Boss Room victory; rank 40 can introduce a named champion; rank 50 can reveal a voluntary Forbidden Sanctum challenge; rank 60 can summon one Retribution miniboss. Rank 75, the completed campaign and unlocked endgame open the Throne of Damnation. Encounter rolls are fixed per generated area, and permanent Throne rewards are saved account-character side.'},
       {title:'Abyssal Rifts',text:`Rift runs use the game's current quota, timer, instability, and pylon systems (${RIFT_INSTABILITIES.length} instability entries; ${PYLONS.length} pylon types).`},
       {title:'Eternal Breach',text:`The Breach has ${MAX_BREACH_FLOOR} floors. Its objective count scales from ${breachObjectiveCount(1)} at the opening through ${breachObjectiveCount(MAX_BREACH_FLOOR)} at the final floor.`},
       {title:'Unbound Exploration',text:`The Unbound system has a maximum depth of ${MAX_UNBOUND_DEPTH} and retains its own access and key-spending rules.`},

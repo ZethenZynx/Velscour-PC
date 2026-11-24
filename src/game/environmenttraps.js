@@ -191,7 +191,8 @@ function makeSite(world, kind, x, y, id, rng, variant, mount = null) {
     k: world.tileset?.k || 0.4, flip: mount ? (mount.wallX === 1 || mount.wallY === -1) : rng() < 0.5,
   };
   world.props.push(fixture);
-  const site = { id, kind, type, x, y, fixture, tint, rng, next: 8 + rng() * 8, warning: 0, dotLeft: 0, dotTick: 0, dotHit: new Set(), disabled: false,
+  const intervalScale = world.heresyTrapIntervalMul || 1;
+  const site = { id, kind, type, x, y, fixture, tint, rng, next: (8 + rng() * 8) * intervalScale, warning: 0, dotLeft: 0, dotTick: 0, dotHit: new Set(), disabled: false,
     wallX: mount?.wallX || 0, wallY: mount?.wallY || 0, fireX: mount?.fireX || 0, fireY: mount?.fireY || 0, fireRange: mount?.range || 0 };
   if (kind === 'dartTrap' && type.trigger === 'pressure') {
     const plateArt = trapArtFor('pressurePlate', variant), plateImage = A.environmentTrapAtlases?.[plateArt.sheet];
@@ -357,7 +358,7 @@ export function setupEnvironmentalTraps(world, start) {
           const dartApproached = site.kind === 'dartTrap' && site.type.trigger === 'proximity' && world.creatures.some((target) => !target.dead && targetOnDartLane(site, target));
           const periodic = site.type.trigger !== 'pressure' && site.type.trigger !== 'proximity';
           if (site.next <= 0 && (periodic || triggered || dartApproached)) {
-            site.warning = 1.1; site.next = 8 + rng() * 8; setSiteVisualState(site, 'warning', true);
+            site.warning = 1.1; site.next = (8 + rng() * 8) * (world.heresyTrapIntervalMul || 1); setSiteVisualState(site, 'warning', true);
             sfx(({ fire: 'fire', cold: 'cold', light: 'light', poison: 'poison', arcane: 'arcane', shadow: 'shadow', phys: 'thud' })[site.type.element] || 'thud', 0.22);
           }
         }

@@ -264,6 +264,9 @@ export class Monster extends Creature {
         this.rank === 'boss' && !(this.regenSuppress > 0) && this.hp < this.maxHp) {
       this.heal(this.maxHp * DUNGEON_AFFIX_CONFIG.boss_regeneration.healthPerSecond * dt);
     }
+    if (this.heresyRegen > 0 && !(this.regenSuppress > 0) && this.hp < this.maxHp) {
+      this.heal(this.maxHp * this.heresyRegen * dt);
+    }
     // Only non-boss monsters with the existing 'regen' affix regenerate out of combat.
     if (this.affixes && this.affixes.includes('regen') && !(this.regenSuppress > 0) && this.hp < this.maxHp && this.rank !== 'boss') {
       const capPerSec = (monsterBase(this.level || 1).hp || 100) * 0.01;
@@ -299,7 +302,7 @@ export class Monster extends Creature {
     const bossEnrage = this.rank === 'boss' && dungeonAffixes.includes('boss_enrage') && this.hp < this.maxHp * 0.6 ? 1.3 : 1;
     const finalStand = this.rank === 'boss' && dungeonAffixes.includes('final_stand') && this.hp < this.maxHp * 0.1 ? 1.6 : 1;
     const leaderBuffRate = this.enemyLeaderBuff?.until > (this.world?.time || 0) ? this.enemyLeaderBuff.attackRate || 1 : 1;
-    this.cd -= dt * partyAttackSpeed * berserkAttackSpeed * rapidFire * bossEnrage * finalStand * (this.packLeaderAttackRate || 1) * leaderBuffRate * (this.rageT > 0 ? 1.2 : 1);
+    this.cd -= dt * partyAttackSpeed * berserkAttackSpeed * rapidFire * bossEnrage * finalStand * (this.heresyAttackRate || 1) * (this.packLeaderAttackRate || 1) * leaderBuffRate * (this.rageT > 0 ? 1.2 : 1);
     if (this.spell && (this.spellCd -= dt) <= 0) this.castSpell();
 
     // fear: run away

@@ -41,7 +41,7 @@ import { relicProc } from './relicprocs.js';
 import { noteFind, codexMf } from './reliquary.js';
 import { markBonuses, gainMarkXp } from './marks.js';
 import { endgame, saveEndgame, canEarnInfernalMarks } from './endgame.js';
-import { heresyHero, heresyAllows } from './heresies.js';
+import { heresyHero, heresyAllows, heresyAbilityCostMul, heresyCooldownMul, heresyShrineDurationMul } from './heresies.js';
 
 // XP for the next level across the Level 1-100 progression curve.
 const xpCurve = (L) => (45 * L * L + 35 * L) * (1 + Math.pow(L / 25, 1.25));
@@ -164,13 +164,13 @@ export class Player extends Creature {
     const rawCdr = (add.cdr || 0) + buffCdr / 2 + mk.cdr;
     const st = {
       str, dex, vit, int, legendary, procs: rb.procs,
-      armor: Math.round((itemArmorSum + (add.armor || 0) + str + (c.level - 1) * 1.5) * (1 + ((add.armorPct || 0) + buffArmor) / 100)),
+      armor: Math.round((itemArmorSum + (add.armor || 0) + str + (c.level - 1) * 1.5) * (1 + ((add.armorPct || 0) + buffArmor) / 100) * hh.armorMul),
       res: {
-        fire: (add.resFire || 0) + (add.resAll || 0) + buffRes + Math.round((c.level - 1) * 0.2),
-        cold: (add.resCold || 0) + (add.resAll || 0) + buffRes + Math.round((c.level - 1) * 0.2),
-        light: (add.resLight || 0) + (add.resAll || 0) + buffRes + Math.round((c.level - 1) * 0.2),
-        poison: (add.resPoison || 0) + (add.resAll || 0) + buffRes + Math.round((c.level - 1) * 0.2),
-        magic: Math.round(((add.resAll || 0) + buffRes + Math.round((c.level - 1) * 0.2)) * 0.75),
+        fire: (add.resFire || 0) + (add.resAll || 0) + buffRes + Math.round((c.level - 1) * 0.2) - hh.resPenalty,
+        cold: (add.resCold || 0) + (add.resAll || 0) + buffRes + Math.round((c.level - 1) * 0.2) - hh.resPenalty,
+        light: (add.resLight || 0) + (add.resAll || 0) + buffRes + Math.round((c.level - 1) * 0.2) - hh.resPenalty,
+        poison: (add.resPoison || 0) + (add.resAll || 0) + buffRes + Math.round((c.level - 1) * 0.2) - hh.resPenalty,
+        magic: Math.round(((add.resAll || 0) + buffRes + Math.round((c.level - 1) * 0.2) - hh.resPenalty) * 0.75),
       },
       critChance: clamp(critRaw, 0, 75), critOver,
       critDmg: 50 + (add.critDmg || 0) + buffCritDmg + mk.critDmg + critOver * CRIT_OVER,
@@ -359,7 +359,7 @@ export class Player extends Creature {
 
   heal(n, quiet) {
     if (this.dead || n <= 0) return;
-    n *= 1 + Math.max(0, this.st?.markHealing || 0) / 100;
+    n *= (1 + Math.max(0, this.st?.markHealing || 0) / 100) * heresyHero(this.char).healingMul;
     const before = this.hp;
     if (G.world?.dungeonAffixes?.includes('cursed_fortune')) n *= 0.75;
     if (this.affixHealPenaltyT > 0) n *= 0.75;
@@ -371,7 +371,7 @@ export class Player extends Creature {
 
   addBuff(b) {
     if (b && b.t > 0) {
-      const scale = b.id?.startsWith('shrine_') ? 1 + (this.st?.markShrineDuration || 0) / 100
+    const scale = b.id?.startsWith('shrine_') ? (1 + (this.st?.markShrineDuration || 0) / 100) * heresyShrineDurationMul(this.char, this.world)
         : b.id === 'fury' ? 1 + (this.st?.markPotionDuration || 0) / 100 : 1;
       if (scale > 1) b = { ...b, t: b.t * scale, max: (b.max || b.t) * scale };
     }
@@ -606,8 +606,9 @@ export class Player extends Creature {
     const L = this.skillLevel(sk);
     if (!L) return 'unlearned';
     if ((this.cooldowns[sk.id] || 0) > 0) return 'cooldown';
-    if (sk.classId === 'barbarian' && ((sk.kind === 'whirl' && this.rage < whirlwindRageCost(L)) || this.rage < rageCost(sk, L))) return 'rage';
-    if (this.mana < Math.max(1, Math.round(manaCost(sk, L) * (1 - Math.min(80, this.st.markManaCost || 0) / 100) * 10) / 10)) return 'mana';
+    const heresyCost = heresyAbilityCostMul(this.char, this.world);
+    if (sk.classId === 'barbarian' && ((sk.kind === 'whirl' && this.rage < whirlwindRageCost(L) * heresyCost) || this.rage < rageCost(sk, L) * heresyCost)) return 'rage';
+    if (this.mana < Math.max(1, Math.round(manaCost(sk, L) * heresyCost * (1 - Math.min(80, this.st.markManaCost || 0) / 100) * 10) / 10)) return 'mana';
     return null;
   }
 
@@ -616,7 +617,8 @@ export class Player extends Creature {
     if (this.dead || !sk) return false;
     if (sk.kind === 'dash' && (!Number.isFinite(tx) || !Number.isFinite(ty) || dist(this.x, this.y, tx, ty) <= 0.05)) return false;
     const L = this.skillLevel(sk);
-    if (sk.classId === 'barbarian' && ((sk.kind === 'whirl' && this.rage < whirlwindRageCost(L)) || this.rage < rageCost(sk, L))) {
+    const heresyCostMul = heresyAbilityCostMul(this.char, this.world);
+    if (sk.classId === 'barbarian' && ((sk.kind === 'whirl' && this.rage < whirlwindRageCost(L) * heresyCostMul) || this.rage < rageCost(sk, L) * heresyCostMul)) {
       if ((this.noRageT || 0) <= 0) { floatText(this.x, this.y, 60, 'Need Rage', '#ff9933', 12); this.noRageT = 0.8; }
       return false;
     }
@@ -631,7 +633,7 @@ export class Player extends Creature {
     }
     if ((this.cooldowns[sk.id] || 0) > 0) return false;
     const aug = this.augFor(sk), quick = aug && aug.haste ? 1 - Math.min(0.6, 0.25 * aug.haste) : 1;
-    const cost = Math.max(1, Math.round(manaCost(sk, L) * (1 - Math.min(80, this.st.markManaCost || 0) / 100) * quick * 10) / 10);
+    const cost = Math.max(1, Math.round(manaCost(sk, L) * heresyCostMul * (1 - Math.min(80, this.st.markManaCost || 0) / 100) * quick * 10) / 10);
     if (this.mana < cost) {
       if ((this.noManaT || 0) <= 0) { floatText(this.x, this.y, 60, 'Not enough mana', '#6a8aff', 12); sfx('error'); this.noManaT = 0.8; }
       return false;
@@ -655,13 +657,13 @@ export class Player extends Creature {
     const morph = skillMorphFor(this, sk);
     const morphCdMul = morph && morph.cdPct ? 1 - morph.cdPct / 100 : 1;
     const dungeonCooldownMul = this.world && this.world.dungeonAffixes?.includes('spell_fatigue') ? 1.25 : 1;
-    this.cooldowns[sk.id] = cooldown(sk) * (1 - this.st.cdr / 100) * quick * morphCdMul * dungeonCooldownMul;
+    this.cooldowns[sk.id] = cooldown(sk) * (1 - this.st.cdr / 100) * quick * morphCdMul * dungeonCooldownMul * heresyCooldownMul(this.char, this.world);
     this.aim = [tx, ty];
     this.lastEl = (morph && morph.el) || sk.el;
     if (sk.id === 'barbarian.0.0') this.bashCastSerial++;
     const ok = castSkill(this, sk, L, tx, ty);
     if (ok === false) { this.mana += cost; this.cooldowns[sk.id] = 0; return false; }
-    if (rageCost(sk, L)) { this.rage -= rageCost(sk, L); this.char.rage = this.rage; }
+    if (rageCost(sk, L)) { this.rage -= rageCost(sk, L) * heresyCostMul; this.char.rage = this.rage; }
     if (this.world && this.world.dungeonAffixes?.includes('curse_of_slowness')) this.affixSlowUntil = (this.world.time || 0) + DUNGEON_AFFIX_CONFIG.playerCurses.slowDuration;
     // Attacks build Rage; no passive regeneration. Hits award most of the resource.
     if (this.classId === 'barbarian' && sk.attack) this.gainRage(sk.id === 'barbarian.0.0' ? 3 : sk.kind === 'whirl' ? 0 : 0.7);
@@ -822,7 +824,7 @@ export class Player extends Creature {
     if (this.channel && this.world && !this.world.hazards.includes(this.channel)) { if (this.channel instanceof Leap) this.z = 0; this.channel = null; }
     // regen: natural baseline HP regen only recovers in town; outside town only gear/buff regen applies
     const inTown = this.world && this.world.kind === 'town';
-    const healingMul = this.world && this.world.dungeonAffixes?.includes('healing_suppression') ? 0.7 : this.world && this.world.dungeonAffixes?.includes('cursed_fortune') ? 0.75 : 1;
+    const healingMul = (this.world && this.world.dungeonAffixes?.includes('healing_suppression') ? 0.7 : this.world && this.world.dungeonAffixes?.includes('cursed_fortune') ? 0.75 : 1) * heresyHero(c).healingMul;
     const effectiveRegen = (heresyAllows('regen', c) ? ((inTown ? Math.max(st.naturalLifeRegen || 0, this.maxHp * 0.25) : 0) + (st.bonusLifeRegen || 0)) : 0) * healingMul;
     st.lifeRegen = (inTown ? ((st.naturalLifeRegen || 0) + (st.bonusLifeRegen || 0)) : (st.bonusLifeRegen || 0)) * healingMul;
     if (this.hp < this.maxHp && effectiveRegen > 0) this.hp = Math.min(this.maxHp, this.hp + effectiveRegen * dt);

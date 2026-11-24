@@ -343,7 +343,7 @@ export function spawnNemesis(world, [x, y], N) {
 
 // ------------------------------------------------------------------------------------------------ treasure imp
 /** Treasure Imp coins respect the same additive Greed gold bonus as other endgame ground rewards. */
-const impGold = (world, lvl, base) => Math.round(base * goldScale(lvl) * rand(0.7, 1.5) * ((1 + (((G.player && G.player.st.goldFind) || 0) + ((G.player && G.player.st.markGold) || 0)) / 100) * (world.goldMul || 1) + (world.greedGoldPct || 0) / 100));
+const impGold = (world, lvl, base) => Math.round(base * goldScale(lvl) * rand(0.7, 1.5) * ((1 + (((G.player && G.player.st.goldFind) || 0) + ((G.player && G.player.st.markGold) || 0)) / 100) * (world.goldMul || 1) + ((world.greedGoldPct || 0) + (world.heresyGoldPct || 0)) / 100));
 const IMP_JACKPOT_REWARDS = new Set(['gold', 'relic', 'merchant', 'hoarder', 'jackpot', 'jewel', 'alchemist', 'sigil', 'set', 'enchanted', 'mystic', 'fortune', 'artisan', 'abyssal']);
 function impEncounteredInArea(world) {
   return hasTreasureImpArea(treasureImpAreaKey(world), G.char?.treasureImpRandomAreas);

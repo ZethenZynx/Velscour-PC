@@ -116,6 +116,8 @@ export function hit(src, tgt, amount, el = 'phys', o = {}) {
   if (src && (src.affixSummonerPactT || 0) > 0) dmg *= 1.2;
   if (src && src.rank === 'boss' && src.affixVengefulStacks) dmg *= 1 + Math.min(0.5, src.affixVengefulStacks * 0.05);
   if (src && src.rank === 'boss' && sourceAffixes.includes('final_stand') && src.hp < src.maxHp * 0.1) dmg *= 1.5;
+  if (src?.team === 'enemy' && world?.heresy?.ids?.includes('blood_frenzy') && src.hp < src.maxHp * 0.5) dmg *= 1.25;
+  if (src?.team === 'enemy' && src.rank === 'boss' && world?.heresy?.ids?.includes('final_defiance') && src.hp < src.maxHp * 0.25) dmg *= 1.25;
   if (world.affixSurgeUntil > world.time && world.affixSurgeId && sourceAffixes.includes(world.affixSurgeId)) dmg *= 1.25;
   if (enemyAttack && sourceAffixes.includes('critical') && tgt.team !== 'enemy' &&
       chance(DUNGEON_AFFIX_CONFIG.critical.chance)) {
@@ -183,6 +185,7 @@ export function hit(src, tgt, amount, el = 'phys', o = {}) {
     if (tgt.affixAdaptiveRes?.[el]) dmg *= 1 - Math.min(0.3, tgt.affixAdaptiveRes[el]);
     if (tgt.affixLastStand && tgt.hp < tgt.maxHp * 0.35) { dmg *= 0.7; if (!tgt.affixLastStandShown) { tgt.affixLastStandShown = true; addEffect(new Ring(tgt.x, tgt.y, 0.35, 0.9, 0.25, '#ff6262', 2)); floatText(tgt.x, tgt.y, 48, 'LAST STAND', '#ff6262', 9); } }
     if (tgt.dmgReduce) dmg *= 1 - clamp(tgt.dmgReduce, 0, 0.75);
+    if (tgt.team === 'enemy' && tgt.heresyDamageReduction) dmg *= 1 - clamp(tgt.heresyDamageReduction, 0, 0.5);
     if (el === 'holy' && (tgt.undead || tgt.demon)) dmg *= 1.5;
     const C = tgt.curses;
     if (C.amp && C.amp.t > 0) dmg *= 1 + C.amp.amt / 100;
@@ -493,6 +496,14 @@ export function kill(tgt, src, info = {}) {
   tgt.hp = 0;
   const world = tgt.world;
   const worldAffixes = new Set(Array.isArray(world && world.dungeonAffixes) ? world.dungeonAffixes : []);
+  const heresyIds = world?.heresy?.ids || [];
+  if (tgt.team === 'enemy' && heresyIds.includes('death_echo') && !tgt.heresyEchoed && chance(0.18)) {
+    tgt.heresyEchoed = true;
+    tgt.dead = false; tgt.hp = Math.max(1, tgt.maxHp * 0.3); tgt.status = {}; tgt.regenSuppress = 0;
+    floatText(tgt.x, tgt.y, 68, 'DEATH ECHO', '#bb8aff', 10);
+    addEffect(new Ring(tgt.x, tgt.y, 0.2, 1.8, 0.55, '#a25bd8', 3));
+    return;
+  }
   if (tgt.team === 'enemy' && worldAffixes.has('reanimation') && !tgt.affixReanimated && chance(DUNGEON_AFFIX_CONFIG.onDeath.reanimateChance)) {
     tgt.affixReanimated = true; tgt.dead = false; tgt.hp = Math.max(1, tgt.maxHp * 0.35); tgt.status = {}; tgt.regenSuppress = 0;
     floatText(tgt.x, tgt.y, 65, 'REANIMATED', '#8feaff', 11);
@@ -513,6 +524,23 @@ export function kill(tgt, src, info = {}) {
   }
   if (tgt.onDeath) tgt.onDeath(src);
   if (tgt.onKilled) tgt.onKilled(src, info);
+
+  if (tgt.team === 'enemy' && heresyIds.includes('unstable_remains') && chance(0.22) && world) {
+    const x = tgt.x, y = tgt.y, radius = 2.0;
+    addEffect(new Telegraph({ kind: 'circle', x, y, r: radius, dur: 1.1, color: '#ff6738' }), 'ground');
+    world.addHazard({ t: 1.1, update(dt) {
+      this.t -= dt;
+      if (this.t > 0) return true;
+      const source = { team: 'enemy', world, x, y, level: tgt.level || world.depth || 1, dmg: tgt.dmg || 0, rank: 'normal' };
+      for (const target of world.query(x, y, radius + 0.7, (creature) => creature.team !== 'enemy' && !creature.dead)) {
+        const cap = target.maxHp * (target.rank === 'boss' ? 0.0125 : 0.05);
+        hit(source, target, cap, 'fire', { aoe: true, affixHazard: true, crit: false, noVariance: true, noArc: true });
+      }
+      explosionFx(x, y, radius, 'fire', 'explosion');
+      sfx('fire', 0.25);
+      return false;
+    }, draw() {} });
+  }
 
   if (world && tgt.team === 'enemy' && !tgt.affixNoDeathEffects) {
     const pushField = (id, el, radius, damage, duration = 3.5, delayT = 0, o = {}, fxOverride = null) => {

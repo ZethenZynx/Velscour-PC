@@ -7,13 +7,13 @@ import { sfx } from '../core/audio.js';
 import { UI } from './ui.js';
 import { HERESIES, HERESY_MILESTONES, HERESY_MAX_RANK, heresyMods } from '../data/heresies.js';
 import { heresiesOf, heresyRankOf, setHeresy, worldRank } from '../game/heresies.js';
-import { campaignVictoryRecorded } from '../game/endgame.js';
+import { campaignVictoryRecorded, endgameUnlocked } from '../game/endgame.js';
 import { Marks } from './marks.js';
 
 /** The rank's rewards as chips: drops, magic find, gold, XP, Sigils, relics. */
 function rewardChips(rank) {
   const M = heresyMods(rank);
-  return [['Drops', `x${M.loot.toFixed(2)}`], ['Magic find', `+${M.mf}%`], ['Gold', `x${M.gold.toFixed(2)}`], ['XP', `+${Math.round((M.xp - 1) * 100)}%`], ['Sigils', `x${M.sigil.toFixed(2)}`], ['Relics', `x${M.relic.toFixed(2)}`]]
+  return [['Equipment drops', `x${M.loot.toFixed(2)}`], ['Magic find', `+${M.mf}%`], ['Gold', `x${M.gold.toFixed(2)}`], ['Experience', `+${Math.round((M.xp - 1) * 100)}%`], ['Sigils', `x${M.sigil.toFixed(2)}`], ['Relics', `x${M.relic.toFixed(2)}`]]
     .map(([k, v]) => `<span class="hx-chip"><i>${k}</i><b>${v}</b></span>`).join('');
 }
 
@@ -35,7 +35,7 @@ export const Heresies = {
         const pairedWindow = Marks.activePair;
         this.active = false; Marks.activePair = false;
         if (pairedWindow && UI.isOpen('marks')) UI.closePanel('marks');
-      }, cls: 'heresy-panel', width: 'min(520px, 96vw)', layoutManaged: true,
+      }, cls: 'heresy-panel', width: 'min(660px, 96vw)', layoutManaged: true,
     });
     Marks.open({ keepExisting: true, paired: true });
     return true;
@@ -43,18 +43,20 @@ export const Heresies = {
   close() { UI.closePanel('heresies'); },
   render(body) {
     const c = G.char, on = heresiesOf(c), rank = heresyRankOf(c), w = G.world;
-    const scroll = body.scrollTop;
+    const milestoneIcons = { 10: '\u2691', 20: '\u2726', 30: '\u269c', 40: '\u2694', 50: '\u25c8', 60: '\u2620' };
+    const scroll = body.querySelector('.hx-scroll')?.scrollTop || 0;
     body.innerHTML = '';
     // the rank, its bar and what it pays
     const head = el('div', 'hx-head');
     head.innerHTML = `<div class="hx-rank">Heresy rank <b>${rank}</b><span class="dim"> / ${HERESY_MAX_RANK}</span></div>
-      <div class="hx-bar"><div style="width:${(100 * rank) / HERESY_MAX_RANK}%"></div>${HERESY_MILESTONES.map((m) => `<span class="hx-tick${rank >= m.rank ? ' done' : ''}" style="left:${(100 * m.rank) / HERESY_MAX_RANK}%"></span>`).join('')}</div>
+      <div class="hx-bar"><div style="width:${(100 * rank) / HERESY_MAX_RANK}%"></div>${HERESY_MILESTONES.map((m) => `<span class="hx-tick${rank >= m.rank ? ' done' : ''}${m.rank === HERESY_MILESTONES.find((q) => q.rank > rank)?.rank ? ' next' : ''}" style="left:${(100 * m.rank) / HERESY_MAX_RANK}%" title="Rank ${m.rank}: ${escapeHtml(m.name)}"><i>${milestoneIcons[m.rank] || (m.rank === HERESY_MAX_RANK ? '\u265b' : m.icon)}</i><b>${m.rank}</b></span>`).join('')}</div>
       <div class="hx-chips${rank ? '' : ' dim'}">${rewardChips(rank)}</div>`;
     body.appendChild(head);
     // when they take hold (a level already built keeps the set it was built with)
     const here = w && w.kind === 'dungeon' && !w.rift && !w.unbound ? worldRank(w) : null;
     const built = here !== null && (w.heresy ? w.heresy.ids : []).join() !== on.join();
     body.appendChild(el('div', 'hx-note', `Your choices take hold from the <b>next level</b> you enter (every depth, the Endless Torment and the Eternal Breach), never in Abyssal Rifts or Velscour Unbound.${built ? ` <span class="hx-warn">This level was built at Heresy ${here}: your changes wait for the next one.</span>` : ''}`));
+    const scrollArea = el('div', 'hx-scroll');
     // one row per Heresy: the whole row is the toggle
     const list = el('div', 'hx-list');
     for (const H of HERESIES) {
@@ -69,17 +71,28 @@ export const Heresies = {
         if (G.game && G.game.autosave) G.game.autosave();
         UI.refresh();
       });
+      row.querySelector('.hx-pips').title = `Adds ${H.rank} Heresy ranks`;
       list.appendChild(row);
     }
-    body.appendChild(list);
+    scrollArea.appendChild(list);
+    const milestoneRows = HERESY_MILESTONES.map((m) => `<div class="hx-mile${rank >= m.rank ? ' done' : ''}${m.rank === HERESY_MILESTONES.find((q) => q.rank > rank)?.rank ? ' next' : ''}"><span class="hx-mile-icon" title="${escapeHtml(m.name)}">${milestoneIcons[m.rank] || (m.rank === HERESY_MAX_RANK ? '\u265b' : m.icon)}</span><span><b>Rank ${m.rank} · ${escapeHtml(m.name)}</b><small>${escapeHtml(m.text)}</small></span></div>`).join('');
+    const milestoneDetails = el('details', 'hx-milestone-details');
+    milestoneDetails.innerHTML = `<summary>Milestone rewards <span>${HERESY_MILESTONES.filter((m) => rank >= m.rank).length} / ${HERESY_MILESTONES.length} reached</span></summary><div class="hx-miles">${milestoneRows}</div>`;
+    scrollArea.appendChild(milestoneDetails);
+    body.appendChild(scrollArea);
     const foot = el('div', 'hx-foot');
-    foot.appendChild(el('div', 'hx-miles', HERESY_MILESTONES.map((m) => `<div class="hx-mile${rank >= m.rank ? ' done' : ''}"><b>Rank ${m.rank}</b> ${escapeHtml(m.text)}</div>`).join('')));
     if (rank) {
       const off = el('button', 'btn small hx-clear', 'Renounce all');
       off.onclick = () => { for (const id of heresiesOf(c)) setHeresy(id, false); sfx('ui'); if (G.game && G.game.autosave) G.game.autosave(); UI.refresh(); };
       foot.appendChild(off);
     }
+    const throneReady = rank >= HERESY_MAX_RANK && campaignVictoryRecorded() && endgameUnlocked(c);
+    const throne = el('button', `btn small hx-throne${throneReady ? '' : ' disabled'}`, throneReady ? 'Enter the Throne of Damnation' : `Throne of Damnation · Rank ${HERESY_MAX_RANK} + Endgame`);
+    throne.disabled = !throneReady;
+    throne.title = throneReady ? 'Begin the final Heresy challenge.' : `Requires Heresy rank ${HERESY_MAX_RANK} and unlocked endgame progression.`;
+    throne.onclick = () => { if (throneReady) G.game?.enterHeresyThrone?.(); };
+    foot.appendChild(throne);
     body.appendChild(foot);
-    body.scrollTop = scroll;
+    const restored = body.querySelector('.hx-scroll'); if (restored) restored.scrollTop = scroll;
   },
 };

@@ -21,6 +21,7 @@ import { SKILLS } from '../data/skills.js';
 import { setClassItems, setRingContext, SEAL_GAP } from '../data/items.js';
 import { BREACH_BIOME, BREACH_WALLS } from '../data/biomes.js';
 import { BIOMES, BETA_BIOMES, BIOME_BY_ID, TOWN_BIOME, ACT2_TOWN_BIOME, drawBiome, biomeChoices, biomesForDepth, takeBiome, mixPartner, recordBiomeVisit } from '../data/biomes.js';
+import { ARCH } from '../data/enemies.js';
 import { resolveLevelCheatName } from './velscourcheats.js';
 import { CLASSES } from '../data/classes.js';
 import { generateDungeon, isRaidDepth } from '../world/dungeon.js';
@@ -162,7 +163,7 @@ import { titleScreen, hide as hideScreen, deathScreen, victoryScreen, pauseMenu,
 import { LoadingScreen } from '../ui/loading.js';
 // the Endgame (docs/ENDGAME.md): Heresies, Abyssal Rifts, Velscour Unbound, Infernal Marks
 import { endgameUnlocked, campaignVictoryRecorded, unlockEndgame, endgame, canEarnInfernalMarks } from './endgame.js';
-import { heresySpawns, heresyWorld, heresyBegin, heresyTick, heresiesOf, heresyRank, worldRank, MARKS_RANK } from './heresies.js';
+import { heresySpawns, heresyWorld, heresyBegin, heresyTick, heresyMonster, heresiesOf, heresyRank, HERESY_MAX_RANK, worldRank, MARKS_RANK, spawnHeresyEncounters } from './heresies.js';
 import { createRiftRun, riftTick, riftOpen, riftDepth, riftLevel, fmtTime, riftLeave, activatePylon, activateRiftExit, riftDeathPenalty, RIFT_QUOTA, RIFT_DENSITY } from './rifts.js';
 import { PYLONS } from '../data/rifts.js';
 import { unboundReady, spendKeys, keysOf, canEnterUnbound, spendUnboundKey, unboundWaypoints, MAX_UNBOUND_DEPTH, isUnboundCheckpointFloor, unboundDepth } from './unbound.js';
@@ -1596,7 +1597,13 @@ export const game = {
     const destination = resolveDepthDestination(depth, c?.breach?.best, biome.id);
     const greedPopulationEligible = depth > FINAL_DEPTH && endgameUnlocked(c) && destination.kind !== 'breach' && destination.id !== 'throne';
     const generatedSpawns = greedPopulationEligible ? greedPacks(gen.spawns, greedOf(c)) : gen.spawns;
-    for (const s of heresySpawns(generatedSpawns, heresies)) {
+    const scheduledSpawns = heresySpawns(generatedSpawns, heresies);
+    for (const s of scheduledSpawns) if (s.heresyRare) {
+      const at = findReachableInteractableSpot(gen.map, gen.start, s.x + 2.2, s.y - 2.2, 4.5, 0.42, 0.42);
+      if (at) { s.x = at[0]; s.y = at[1]; } else s.heresySkip = true;
+    }
+    for (const s of scheduledSpawns) {
+      if (s.heresySkip) continue;
       if (s.rank === 'raid') {
         const superbossId = superbossForDepth(depth);
         const tpl = superbossId ? RAID_BOSSES.find((b) => b.id === superbossId) : undefined;
@@ -1632,6 +1639,10 @@ export const game = {
       }
       assignPackLeader(world, packMembers, biome, depth, s);
     }
+    // Apply rank modifiers before the first simulation tick, including raid bosses,
+    // generated elites and the ordinary packs. heresyTick remains the fallback for
+    // later event spawns.
+    for (const m of world.creatures) heresyMonster(m, heresies);
     world.roster = [...new Set(gen.spawns.filter((s) => s.arch && !['raid', 'boss'].includes(s.rank)).map((s) => s.arch))];
     if (world.dungeonAffixes.includes('twin_guardians') && world.boss && !world.boss.raid) {
       const arch = pick(world.roster) || world.boss.arch;
@@ -1660,6 +1671,7 @@ export const game = {
       if (biome.overworld && !forest && !castle && !forsakenWilds) return;
       if (world.dungeonAffixes.includes('twin_guardians') && world.creatures.some((enemy) => enemy.team === 'enemy' && enemy.rank === 'boss' && !enemy.dead)) return;
       if (m.raid && m.raid.court) return; // one of Velscour Unbound's court: not the fight's end
+      this.awardHeresyBounty(world, m);
       if (forest || castle) world.overworldScenario?.bossDefeated(m);
       exit.active = true; exit.color = '#40a0ff'; exit.label = world.unbound ? 'Exit — to town' : 'Exit — continue';
       if (world.unbound) { // the rematch: no depth cleared, no victory screen; its hoard is Velscour's (game/velscour.js)
@@ -1792,6 +1804,12 @@ export const game = {
       sfx('gate'); UI.refresh(); this.autosave();
     });
     this.setWorld(world, gen.start, old);
+    world.heresyRewardChest = (enemy, pool) => this.awardHeresyEnemyChest(world, enemy, pool);
+    spawnHeresyEncounters(world, (at) => {
+      const portal = { x: at[0], y: at[1], type: 'heresy-sanctum', active: true, color: '#a82b40', reach: 1.7,
+        label: 'Forbidden Sanctum', use: () => this.useHeresySanctum(world, portal) };
+      world.portals.push(portal); return portal;
+    });
     spawnGuaranteedImp(world);
     announceDungeonAffixes(world);
     if (biome.id === 'castle') { world.ambientFx = gen.variant?.look?.ambient || null; c.lastCastle = gen.variant?.id; }
@@ -1844,6 +1862,216 @@ export const game = {
       UI.log('Activate the glowing shrine and complete its objective to open the exit.', '#ffe2a0');
     }
     else if (!c.tips.dungeon) { c.tips.dungeon = true; setTimeout(() => UI.log('Find the exit portal. It stays sealed until the depth\'s guardian is slain. The blue portal returns you to town.', '#ffe2a0'), 1500); }
+    this.autosave();
+  },
+
+  heresyRunKey(world) {
+    return `${world.biome?.id || 'dungeon'}:${world.depth || 1}:${Number(world.environmentTrapSeed || world.chestSeed || 0) >>> 0}`;
+  },
+
+  awardHeresyBounty(world, boss) {
+    const c = G.char, H = world?.heresy;
+    if (!H || H.rank < 30 || !H.encounters?.bounty || world.rift || world.unbound || world.unboundExploration || !(world.raid || boss?.isRaid || boss?.raid)) return false;
+    const key = this.heresyRunKey(world);
+    c.heresyRewards ||= { bountyClaims: {}, sanctumClaims: {}, retributionClaims: {}, throneComplete: false };
+    c.heresyRewards.bountyClaims ||= {};
+    if (c.heresyRewards.bountyClaims[key]) return false;
+    const origin = world.startPos || [G.player.x, G.player.y];
+    const at = findReachableInteractableSpot(world.map, origin, boss.x, boss.y, 8, 0.4, 0.42);
+    if (!at) return false;
+    c.heresyRewards.bountyClaims[key] = true;
+    const chest = {
+      x: at[0], y: at[1], type: 'chest', chestType: 'standard', rare: true, heretical: true,
+      tint: '#9f233f', glow: '#ff6040', label: 'Heretical Treasure Chest', labelColor: '#ff9c78', labelTall: true,
+      eventLabel: true, opened: false, reach: 1.35,
+      use() {
+        if (this.opened || G.world !== world) return;
+        this.opened = true; sfx('chest'); sfx('roar', 0.35);
+        dropChest(world, this, world.depth);
+        addEffect(new Ring(this.x, this.y, 0.2, 2.8, 0.65, '#e3443b', 5));
+        sparkle(this.x, this.y, 30, '#ff9a52', 24, 0.75);
+        floatText(this.x, this.y, 42, "HERESY'S BOUNTY", '#ffbd74', 11);
+        G.game?.autosave?.();
+      },
+    };
+    world.chests.push(chest);
+    G.ui?.log?.('<b style="color:#ff7050">Heresy’s Bounty</b>: a sealed cache has appeared beside the fallen Boss Room guardian.', '#ffb090');
+    this.autosave();
+    return true;
+  },
+
+  awardHeresyEnemyChest(world, enemy, pool) {
+    const at = findReachableInteractableSpot(world.map, world.startPos || [G.player.x, G.player.y], enemy.x, enemy.y, 8, 0.4, 0.42);
+    if (!at) return false;
+    const chest = {
+      x: at[0], y: at[1], type: 'chest', chestType: 'standard', rare: true, heretical: true, heresyPool: pool,
+      tint: pool === 'retribution' ? '#b62d26' : '#8035a8', glow: pool === 'retribution' ? '#ff4828' : '#cb72ff',
+      label: pool === 'retribution' ? 'Retribution Cache' : 'Heretical Champion Cache', labelColor: '#ffb478', labelTall: true,
+      eventLabel: true, opened: false, reach: 1.35,
+      use() {
+        if (this.opened || G.world !== world) return;
+        this.opened = true; sfx('chest'); dropChest(world, this, world.depth);
+        addEffect(new Ring(this.x, this.y, 0.2, 2.7, 0.6, this.glow, 4));
+        sparkle(this.x, this.y, 25, this.glow, 20, 0.7);
+      },
+    };
+    world.chests.push(chest);
+    G.ui?.log?.(pool === 'retribution' ? "<b style=\"color:#ff7650\">The Avenger's cache</b> has been left behind." : "<b style=\"color:#d098ff\">The champion's cache</b> has been left behind.", '#ffbe90');
+    return true;
+  },
+
+  useHeresySanctum(origin, portal) {
+    if (G.world !== origin || !portal?.active) return false;
+    if (!portal.challengeWorld) portal.challengeWorld = this.makeHeresyChallenge('sanctum', origin);
+    if (!portal.challengeWorld) return false;
+    this.enterHeresyChallenge(origin, portal.challengeWorld);
+    return true;
+  },
+
+  enterHeresyThrone() {
+    const c = G.char;
+    if (G.world?.kind !== 'town' || heresyRank(heresiesOf(c)) < HERESY_MAX_RANK || !campaignVictoryRecorded() || !endgameUnlocked(c)) {
+      UI.log(`The Throne of Damnation requires Heresy rank ${HERESY_MAX_RANK}, Velscour’s defeat, and unlocked endgame progression.`, '#ff9a80');
+      sfx('error'); return false;
+    }
+    c.heresyRewards ||= { bountyClaims: {}, sanctumClaims: {}, retributionClaims: {}, throneComplete: false };
+    if (!this.heresyThroneWorld || this.heresyThroneWorld.heresyOwner !== c.id || this.heresyThroneWorld.heresyChallenge?.completed) {
+      this.heresyThroneWorld = this.makeHeresyChallenge('throne', null);
+    }
+    if (!this.heresyThroneWorld) return false;
+    this.enterHeresyChallenge(null, this.heresyThroneWorld);
+    return true;
+  },
+
+  makeHeresyChallenge(kind, origin) {
+    const c = G.char, biome = BIOME_BY_ID.hell || BIOME_BY_ID.obsidian;
+    if (!biome) return null;
+    const depth = Math.max(FINAL_DEPTH + 1, Number(c.depth) || FINAL_DEPTH + 1);
+    const seedSource = origin ? (Number(origin.environmentTrapSeed || origin.depth || 1) >>> 0) : ((Number(c.townSeed) ^ 0x75da9911) >>> 0);
+    const seed = (seedSource ^ (kind === 'throne' ? 0x74a11e75 : 0x50ac7a11)) >>> 0;
+    const tileset = biomeTileSet(biome);
+    const gen = generateDungeon(depth, biome, tileset, seed);
+    const challenge = new World('dungeon', { map: gen.map, tileset, biome, depth, props: gen.props, torches: gen.torches || [], wallHangings: gen.wallHangings || [], environmentTrapSeed: seed, environmentVariant: kind === 'throne' ? 'throne-of-damnation' : `forbidden-sanctum-${seed}` });
+    challenge.heresyOwner = c.id;
+    challenge.startPos = gen.start; challenge.rooms = gen.rooms || []; challenge.roster = [...new Set((gen.spawns || []).map((s) => s.arch).filter(Boolean))];
+    challenge.heresyChallenge = { kind, seed, completed: false, origin };
+    const snapshot = origin?.heresy || { ids: heresiesOf(c), rank: heresyRank(heresiesOf(c)), encounters: null };
+    challenge.heresy = { ids: [...(snapshot.ids || [])], rank: snapshot.rank || 0, encounters: snapshot.encounters ? { ...snapshot.encounters } : null };
+    challenge.dungeonAffixes = origin?.dungeonAffixes ? [...origin.dungeonAffixes] : [];
+    challenge.chests = (gen.chests || []).map((ch) => ({ ...ch, opened: false, reach: 1.2, use() { if (!this.opened) { this.opened = true; dropChest(challenge, this, depth); } } }));
+    const returnPortal = { x: gen.start[0] + 1, y: gen.start[1], type: 'heresy-return', active: true, color: '#3a8aff', reach: 1.6, label: 'Return to the Original Dungeon', use: () => {
+      const back = origin || G.world?.heresyChallenge?.origin;
+      if (!back) { this.enterTown(); return; }
+      const start = back.startPos || [back.player?.x || gen.start[0], back.player?.y || gen.start[1]];
+      const safe = findReachableInteractableSpot(back.map, start, start[0], start[1], 5, 0.4, 0.42) || start;
+      this.setWorld(back, safe, challenge); void warmEnemyArt(back);
+      HUD.setArea(back.biome?.name || 'Dungeon', `Depth ${back.depth || c.depth}${worldRank(back) ? ` · Heresy ${worldRank(back)}` : ''}`, back.dungeonAffixes || []);
+      playMusic('wilds'); setAmbience(back.biome?.id || 'hell');
+    } };
+    const challengeExit = { x: gen.exit[0], y: gen.exit[1], type: 'exit', active: false, color: '#5a5a60', reach: 1.6, label: 'Sealed Challenge Exit', use: () => {
+      if (!challengeExit.active) { floatText(challengeExit.x, challengeExit.y, 60, 'The guardians still stand.', '#ff6040', 12); sfx('error'); return; }
+      returnPortal.use();
+    } };
+    challenge.portals = [returnPortal, challengeExit];
+    challenge.challengeBossesRemaining = kind === 'throne' ? 4 : 3;
+    challenge.challengeFinalReady = false;
+    // Guardians use player-sized reachable floor cells, not raw procedural spawn
+    // coordinates; this keeps every fight completable by walking in either layout.
+    const challengeReach = gen.map.movementReachable(gen.start, 0.24);
+    const candidates = [];
+    for (let i = 0; i < challengeReach.length; i++) if (challengeReach[i]) {
+      const x = i % gen.map.w + 0.5, y = Math.floor(i / gen.map.w) + 0.5;
+      const d = Math.hypot(x - gen.start[0], y - gen.start[1]);
+      if (d >= 4 && gen.map.circleFree(x, y, 0.5)) candidates.push([x, y, d]);
+    }
+    const anchors = [];
+    while (anchors.length < challenge.challengeBossesRemaining && candidates.length) {
+      let best = 0, bestScore = -Infinity;
+      for (let i = 0; i < candidates.length; i++) {
+        const [x, y, fromStart] = candidates[i];
+        const separated = anchors.length ? Math.min(...anchors.map(([ax, ay]) => Math.hypot(ax - x, ay - y))) : fromStart;
+        const score = Math.min(fromStart, separated * (anchors.length ? 1 : 1));
+        if (score > bestScore) { best = i; bestScore = score; }
+      }
+      const [x, y] = candidates.splice(best, 1)[0]; anchors.push([x, y]);
+    }
+    if (anchors.length < challenge.challengeBossesRemaining) {
+      for (let i = anchors.length; i < challenge.challengeBossesRemaining; i++) anchors.push([gen.exit[0], gen.exit[1]]);
+    }
+    challenge.onBossKilled = (boss) => {
+      if (!boss?.heresyChallengeFinal) return;
+      challenge.heresyChallenge.completed = true;
+      challengeExit.active = true; challengeExit.color = '#40a0ff'; challengeExit.label = 'Return from the Sanctum';
+      this.completeHeresyChallenge(challenge, origin);
+    };
+    const names = kind === 'throne' ? ['Cinder Castellan', 'The Ashen Inquisitor', 'Dread Reliquary Knight', 'Throne Warden'] : ['Sanctum Gatekeeper', 'The Pale Cantor', 'Ashen Reliquary Guard'];
+    const styles = ['harrower', 'cantor', 'reaver', 'reaver'];
+    for (let i = 0; i < challenge.challengeBossesRemaining; i++) {
+      const [x, y] = anchors[i];
+      const arch = challenge.roster.find((id) => ARCH[id]?.ai === (styles[i] === 'reaver' ? 'charger' : 'caster')) || challenge.roster[0] || 'demon';
+      const guardian = makeMonster(challenge, arch, biome, depthLevel(depth) + 1, 'unique', x, y);
+      if (!guardian) continue;
+      guardian.name = names[i]; guardian.heresyChampion = styles[i]; guardian.heresyChallengeGuardian = true;
+      guardian.maxHp *= kind === 'throne' ? 2.0 : 1.45; guardian.hp = guardian.maxHp; guardian.dmg *= kind === 'throne' ? 1.4 : 1.2;
+      guardian.aura = styles[i] === 'cantor' ? '#a56be0' : styles[i] === 'reaver' ? '#ffd060' : '#ff572e';
+      heresyMonster(guardian, challenge.heresy.ids); guardian.awake = true;
+      guardian.onKilled = () => {
+        if (!guardian.heresyChallengeGuardian || challenge.challengeFinalReady) return;
+        guardian.heresyChallengeGuardian = false;
+        challenge.challengeBossesRemaining--;
+        if (challenge.challengeBossesRemaining <= 0) this.spawnHeresyFinalBoss(challenge, gen, kind, depth);
+      };
+      challenge.add(guardian);
+    }
+    greedWorld(challenge, c);
+    heresyWorld(challenge, c);
+    return challenge;
+  },
+
+  spawnHeresyFinalBoss(world, gen, kind, depth) {
+    if (world.challengeFinalReady) return null;
+    world.challengeFinalReady = true;
+    const [x, y] = Array.isArray(gen.boss) ? gen.boss : gen.exit;
+    const boss = makeMonster(world, world.roster.find((id) => ARCH[id]?.ai === 'brute') || world.roster[0] || 'demon', world.biome, depthLevel(depth) + 3, 'boss', x, y);
+    if (!boss) return null;
+    boss.name = kind === 'throne' ? "Velscour's Heretical Aspect" : 'The Sanctum Abomination';
+    boss.heresyThroneBoss = kind === 'throne'; boss.heresyChallengeFinal = true; boss.heresyChampion = 'reaver';
+    boss.maxHp *= kind === 'throne' ? 4 : 2.3; boss.hp = boss.maxHp; boss.dmg *= kind === 'throne' ? 1.6 : 1.3; boss.aura = '#ff3e2f';
+    heresyMonster(boss, world.heresy?.ids || []); boss.awake = true;
+    world.boss = boss; world.add(boss); world.onBossAwake = () => UI.centerMsg(boss.name, 'The final guardian enters the fight.', 2.6);
+    floatText(boss.x, boss.y, 85, 'FINAL GUARDIAN', '#ff8250', 12); sfx('boss');
+    return boss;
+  },
+
+  enterHeresyChallenge(origin, challenge) {
+    const start = challenge.startPos || [challenge.player?.x || 0, challenge.player?.y || 0];
+    this.setWorld(challenge, start, G.world);
+    HUD.setArea(challenge.heresyChallenge.kind === 'throne' ? 'The Throne of Damnation' : 'Forbidden Sanctum', `A Heresy challenge · Depth ${challenge.depth}`, challenge.dungeonAffixes || []);
+    playMusic('wilds', { delay: 1 }); setAmbience('hell');
+    UI.centerMsg(challenge.heresyChallenge.kind === 'throne' ? 'THE THRONE OF DAMNATION' : 'FORBIDDEN SANCTUM', 'Defeat every guardian to claim the sanctum’s treasure.', 3);
+    return challenge;
+  },
+
+  completeHeresyChallenge(world, origin) {
+    const c = G.char, state = c.heresyRewards ||= { bountyClaims: {}, sanctumClaims: {}, retributionClaims: {}, throneComplete: false };
+    const key = world.heresyChallenge.kind === 'throne' ? 'throne' : this.heresyRunKey(origin || world);
+    const first = world.heresyChallenge.kind === 'throne' ? !state.throneComplete : !(state.sanctumClaims ||= {})[key];
+    if (world.heresyChallenge.kind === 'throne') {
+      if (!state.throneComplete) {
+        state.throneComplete = true;
+        c.achievements ||= {}; c.achievements.throneOfDamnation = true;
+        c.unlockedTitles ||= []; if (!c.unlockedTitles.includes('The Damned Crown')) c.unlockedTitles.push('The Damned Crown');
+        c.cosmetics ||= {}; c.cosmetics.damnationCrown = true;
+      }
+    } else {
+      state.sanctumClaims ||= {}; state.sanctumClaims[key] = true;
+    }
+    const rewardChest = { x: world.boss?.x || world.startPos[0], y: world.boss?.y || world.startPos[1], rare: true, heretical: true, chestType: 'standard' };
+    if (first) dropChest(world, rewardChest, world.depth);
+    else if (world.heresyChallenge.kind === 'throne') dropChest(world, { ...rewardChest, heretical: false, rare: false }, world.depth);
+    const title = world.heresyChallenge.kind === 'throne' ? 'THE THRONE IS SILENCED' : 'SANCTUM CONQUERED';
+    UI.centerMsg(title, first ? 'Exclusive rewards secured. The return portal is open.' : world.heresyChallenge.kind === 'throne' ? 'The return portal is open; repeat treasure is limited to ordinary eligible loot.' : 'The return portal is open; this Sanctum’s one-time treasure was already claimed.', 4);
+    UI.log(first && world.heresyChallenge.kind === 'throne' ? '<b style="color:#ffd060">The Damned Crown</b> title and Throne achievement permanently unlocked.' : 'Eligible treasure has been secured.', '#ffbd74');
     this.autosave();
   },
 
@@ -2070,13 +2298,21 @@ export const game = {
     if (!gen.map.walkable(tp[0], tp[1])) tp = gen.map.randomNear(sx, sy, 2);
     const exit = { x: gen.exit[0], y: gen.exit[1], type: 'exit', active: false, color: '#4a3a5a', reach: 2, label: 'Sealed — the Breach Heart', use: () => this.useExit(world, exit) };
     world.portals = [{ x: tp[0], y: tp[1], type: 'town', active: true, color: '#3a8aff', reach: 1.6, label: 'Town Portal', use: () => this.useTownPortal() }]; // the exit appears when the Heart is won
-    for (const s of heresySpawns(gen.spawns, heresyBegin(world, c))) { // Twinned Packs reach the Breach too (game/heresies.js)
+    const breachHeresies = heresyBegin(world, c);
+    const breachSpawns = heresySpawns(gen.spawns, breachHeresies);
+    for (const s of breachSpawns) if (s.heresyRare) {
+      const at = findReachableInteractableSpot(gen.map, gen.start, s.x + 2.2, s.y - 2.2, 4.5, 0.42, 0.42);
+      if (at) { s.x = at[0]; s.y = at[1]; } else s.heresySkip = true;
+    }
+    for (const s of breachSpawns) { // Twinned Packs reach the Breach too (game/heresies.js)
+      if (s.heresySkip) continue;
       const packMembers = [];
       for (let i = 0; i < s.n; i++) {
         const [x, y] = i === 0 ? [s.x, s.y] : gen.map.randomNear(s.x, s.y, 1.6);
         const rank = i === 0 ? s.rank : 'normal';
         const m = makeMonster(world, s.arch, B, lvl + (rank === 'normal' ? 0 : 1), rank, x, y, Math.random() < 0.25 ? 1 : 0, gen.looks.pick(s.arch));
         breachMonster(m);
+        heresyMonster(m, breachHeresies);
         world.add(m); packMembers.push(m);
       }
       assignPackLeader(world, packMembers, B, depth, s);
@@ -2094,6 +2330,12 @@ export const game = {
       sfx('gate'); UI.refresh(); this.autosave();
     });
     this.setWorld(world, gen.start, old);
+    world.heresyRewardChest = (enemy, pool) => this.awardHeresyEnemyChest(world, enemy, pool);
+    spawnHeresyEncounters(world, (at) => {
+      const portal = { x: at[0], y: at[1], type: 'heresy-sanctum', active: true, color: '#a82b40', reach: 1.7,
+        label: 'Forbidden Sanctum', use: () => this.useHeresySanctum(world, portal) };
+      world.portals.push(portal); return portal;
+    });
     spawnGuaranteedImp(world);
     world.night = true;
     HUD.setArea('The Eternal Breach', `Floor ${floor} · as deadly as Depth ${depth}${worldRank(world) ? ` · Heresy ${worldRank(world)}` : ''}`);   // (the floor in the name ran under a phone's boss bar)

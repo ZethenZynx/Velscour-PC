@@ -472,6 +472,26 @@ function chestArtFallback() {
   return fallbackChestArt;
 }
 
+function drawHeresyChestSeal(ctx, x, y, floorY, chestH) {
+  // A small, sharp rune is deliberately painted over the shared chest art so the
+  // reward reads as infernal without adding an asset, blur pass, or animated layer.
+  const cy = floorY - chestH * 0.42;
+  ctx.save();
+  ctx.translate(x, cy);
+  ctx.fillStyle = 'rgba(38,5,13,.92)';
+  ctx.strokeStyle = '#ffb45c';
+  ctx.lineWidth = 1.5;
+  ctx.beginPath();
+  ctx.moveTo(0, -8); ctx.lineTo(7, -3); ctx.lineTo(5, 6); ctx.lineTo(0, 9); ctx.lineTo(-5, 6); ctx.lineTo(-7, -3); ctx.closePath();
+  ctx.fill(); ctx.stroke();
+  ctx.strokeStyle = '#ff593b'; ctx.lineWidth = 2;
+  ctx.beginPath();
+  ctx.moveTo(-4, 3); ctx.lineTo(-2, -1); ctx.lineTo(0, 3); ctx.lineTo(2, -3); ctx.lineTo(4, 1);
+  ctx.stroke();
+  ctx.fillStyle = '#ffd06a'; ctx.fillRect(-1, -6, 2, 2);
+  ctx.restore();
+}
+
 function drawChest(ctx, c) {
   const x = isoX(c.x, c.y), y = isoY(c.x, c.y);
   if (c.draw) return c.draw(ctx, x, y); // bespoke shrine/remains art (game/happenings.js)
@@ -487,6 +507,7 @@ function drawChest(ctx, c) {
     // Keep the floor anchor and scale fixed between paired states, including taller open lids.
     const k = 46 / closed.w, w = s.w * k, h = s.h * k, floorY = y + 46 / 4;
     ctx.drawImage(s.img, s.sx, s.sy, s.w, s.h, x - w / 2, floorY - h, w, h);
+    if (c.heretical && !c.opened) drawHeresyChestSeal(ctx, x, y, floorY, h);
     if (!c.opened || (c.glowWhileOpen && !c.done)) {
       ctx.globalCompositeOperation = 'lighter'; ctx.globalAlpha = 0.25 + Math.sin(G.time * 3) * 0.15;
       ctx.drawImage(glowSprite(c.glow || (c.rare ? '#c080ff' : '#ffd060')), x - 28, y - 40, 56, 46);
@@ -524,6 +545,7 @@ function drawChest(ctx, c) {
     ctx.drawImage(glowSprite(c.glow || (c.rare ? '#c080ff' : '#ffd060')), x - 24, y - 34, 48, 40);
     if (c.tint) { ctx.globalAlpha = 0.14; ctx.drawImage(glowSprite(c.tint), x - 20, y - 28, 40, 34); }
     ctx.globalAlpha = 1; ctx.globalCompositeOperation = 'source-over';
+    if (c.heretical) drawHeresyChestSeal(ctx, x, y, y + 46 / 4, 46);
   }
   if (c.opened && c.glowWhileOpen && !c.done) {
     ctx.globalCompositeOperation = 'lighter'; ctx.globalAlpha = 0.25 + Math.sin(G.time * 3) * 0.15;
