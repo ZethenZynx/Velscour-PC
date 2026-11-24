@@ -3,14 +3,17 @@ import { G } from '../state.js';
 import { vfxStats } from '../gfx/vfx.js';
 import { audioActiveCount } from './audio.js';
 import { GAME_BUILD_ID, GAME_VERSION } from '../data/build-version.js';
+import { FRAME_BUDGET_MS, summarizeFrameSpikes } from './performance-analysis.js';
 
 const CAP = 27000; // 3 minutes at 150 Hz; longer on typical 60-120 Hz displays
 const HISTORY_MS = 180000;
+const MAX_LONG_TASKS = 128;
 const KEYS = ['frameMs', 'gapMs', 'updateMs', 'renderMs', 'renderSetupMs', 'floorDrawMs', 'groundDrawMs', 'renderSortMs', 'depthDrawMs', 'effectDrawMs', 'ambientTopDrawMs', 'particleDrawMs', 'topHazardDrawMs', 'topEffectDrawMs', 'lightingMs', 'screenOverlayMs', 'skyFrontMs', 'seeThroughMs', 'screenFeedbackMs', 'hudLabelsMs', 'combatTextMs', 'cinematicOverlayMs', 'automapMs', 'worldMs', 'aiMs', 'pathMs', 'collisionMs', 'hazardMs', 'lootMs', 'vfxMs', 'uiMs', 'enemyHistoryMs', 'minimapMs', 'eventsMs', 'environmentMs'];
 const COUNT_KEYS = ['creatures', 'enemies', 'inactiveEnemies', 'offscreenCreatures', 'deadCreatures', 'corpses', 'projectiles', 'hazards', 'traps', 'groundItems', 'lootLabels', 'particles', 'visibleParticles', 'effects', 'groundEffects', 'topEffects', 'decals', 'gore', 'damageText', 'audio', 'spatialCandidates', 'collisionPairs', 'pathSearches', 'renderQueue', 'renderViews', 'renderCreatures', 'renderWalls', 'renderProps', 'renderLoot'];
 let history = null, cursor = 0, count = 0, frameSerial = 0, prevRaf = 0, nextPaint = 0, latestCounts = null;
 let frameStarted = 0, rafGap = 16.667, updateMs = 0, renderMs = 0, phases = null;
 let panel = null, graph = null;
+let longTaskObserver = null, longTasks = [];
 
 export const performanceProfilerEnabled = () => G.settings?.performanceProfiler === true;
 
@@ -27,6 +30,8 @@ function allocateHistory() {
   history.canvasWidth = new Uint32Array(CAP);
   history.canvasHeight = new Uint32Array(CAP);
   history.heapBytes = new Float64Array(CAP);
+  history.visible = new Uint8Array(CAP);
+  history.focused = new Uint8Array(CAP);
   history.telemetry = new Array(CAP);
   history.counts = Object.fromEntries(COUNT_KEYS.map((key) => [key, new Uint32Array(CAP)]));
   cursor = count = frameSerial = 0;
@@ -56,9 +61,11 @@ function dropPanel() {
 }
 
 export function setPerformanceProfilerEnabled(enabled) {
-  if (enabled) { allocateHistory(); mountPanel(); }
+  if (enabled) { allocateHistory(); mountPanel(); startLongTaskObserver(); }
   else {
+    stopLongTaskObserver();
     history = null; latestCounts = null; count = cursor = frameSerial = 0;
+    longTasks = [];
     prevRaf = nextPaint = 0; phases = null;
     dropPanel();
   }
@@ -66,10 +73,40 @@ export function setPerformanceProfilerEnabled(enabled) {
 
 export function resetPerformanceStatistics() {
   if (!performanceProfilerEnabled()) return false;
+  stopLongTaskObserver();
   history = null; latestCounts = null; count = cursor = frameSerial = 0;
+  longTasks = [];
   prevRaf = nextPaint = 0; phases = null;
   allocateHistory(); mountPanel();
+  startLongTaskObserver();
   return true;
+}
+
+function startLongTaskObserver() {
+  if (longTaskObserver || typeof PerformanceObserver === 'undefined') return;
+  try {
+    if (!PerformanceObserver.supportedEntryTypes?.includes('longtask')) return;
+    longTaskObserver = new PerformanceObserver((list) => {
+      for (const entry of list.getEntries()) {
+        longTasks.push({
+          startTimeMs: Number(entry.startTime.toFixed(2)),
+          durationMs: Number(entry.duration.toFixed(2)),
+          name: String(entry.name || 'unknown'),
+          attribution: (entry.attribution || []).slice(0, 4).map((item) => ({
+            name: String(item.name || ''), containerName: String(item.containerName || ''),
+            containerId: String(item.containerId || ''), containerSrc: String(item.containerSrc || ''),
+          })),
+        });
+        if (longTasks.length > MAX_LONG_TASKS) longTasks.splice(0, longTasks.length - MAX_LONG_TASKS);
+      }
+    });
+    longTaskObserver.observe({ type: 'longtask', buffered: false });
+  } catch { longTaskObserver?.disconnect(); longTaskObserver = null; }
+}
+
+function stopLongTaskObserver() {
+  longTaskObserver?.disconnect();
+  longTaskObserver = null;
 }
 
 export function profileStart() {
@@ -158,6 +195,8 @@ export function profileFinishFrame(world) {
   history.canvasHeight[at] = G.canvas?.height || 0;
   history.frameMs[at] = frameMs;
   history.gapMs[at] = rafGap;
+  history.visible[at] = typeof document !== 'undefined' && document.visibilityState === 'visible' ? 1 : 0;
+  history.focused[at] = typeof document !== 'undefined' && document.hasFocus?.() ? 1 : 0;
   history.updateMs[at] = updateMs;
   history.renderMs[at] = renderMs;
   history.worldMs[at] = phases.worldMs; history.aiMs[at] = phases.aiMs;
@@ -264,6 +303,9 @@ export function performanceReport() {
     row.canvasWidth = history.canvasWidth[at];
     row.canvasHeight = history.canvasHeight[at];
     row.elapsedSeconds = Number(((history.timestamps[at] - history.timestamps[first]) / 1000).toFixed(3));
+    row.timestampUtc = new Date((performance.timeOrigin || Date.now() - performance.now()) + history.timestamps[at]).toISOString();
+    row.pageVisible = history.visible[at] === 1;
+    row.pageFocused = history.focused[at] === 1;
     row.heapBytes = history.heapBytes[at]; peakHeapBytes = Math.max(peakHeapBytes, row.heapBytes);
     if (history.samples[at]) {
       for (const key of COUNT_KEYS) row[key] = history.counts[key][at];
@@ -273,12 +315,22 @@ export function performanceReport() {
   }
   const summaries = Object.fromEntries(KEYS.map((key) => [key, stat(ordered(key))]));
   const frameTimes = ordered('frameMs'), intervals = ordered('gapMs');
+  const spikeFrames = summarizeFrameSpikes(frames);
   const quantile = (values, p) => values.length ? values[Math.min(values.length - 1, Math.floor((values.length - 1) * p))] : 0;
   const meanInterval = intervals.length ? intervals.reduce((sum, value) => sum + value, 0) / intervals.length : 0;
   const pacing = Object.fromEntries([[60, 1000 / 60], [30, 1000 / 30], [24, 1000 / 24]].map(([fps, threshold]) => {
-    let framesBelow = 0, delayedIntervalMs = 0;
-    for (const gap of intervals) if (gap > threshold) { framesBelow++; delayedIntervalMs += gap; }
-    return [fps, { framesBelow, percentOfFrames: intervals.length ? Number((framesBelow * 100 / intervals.length).toFixed(2)) : 0, delayedIntervalMs: Number(delayedIntervalMs.toFixed(1)) }];
+    let framesBelow = 0, intervalTimeAboveBudgetMs = 0, excessMsAboveBudget = 0;
+    for (const gap of intervals) if (gap > threshold) {
+      framesBelow++;
+      intervalTimeAboveBudgetMs += gap;
+      excessMsAboveBudget += gap - threshold;
+    }
+    return [fps, {
+      framesBelow,
+      percentOfFrames: intervals.length ? Number((framesBelow * 100 / intervals.length).toFixed(2)) : 0,
+      intervalTimeAboveBudgetMs: Number(intervalTimeAboveBudgetMs.toFixed(1)),
+      excessMsAboveBudget: Number(excessMsAboveBudget.toFixed(1)),
+    }];
   }));
   const samples = frames.filter((frame) => frame.telemetry);
   const lastSample = samples.at(-1), priorSample = samples.length > 1 ? samples.at(-2) : null;
@@ -326,7 +378,14 @@ export function performanceReport() {
       frameTimeMs: { median: quantile(frameTimes, 0.5), p95: quantile(frameTimes, 0.95), p99: quantile(frameTimes, 0.99), worst: frameTimes.at(-1) || 0 },
       intervalCountsAbove60FpsBudget: pacing[60], intervalCountsAbove30FpsBudget: pacing[30], intervalCountsAbove24FpsBudget: pacing[24],
       longProcessingFrames: { over50ms: frameTimes.filter((value) => value > 50).length, over100ms: frameTimes.filter((value) => value > 100).length },
+      spikeThresholdMs: Number(FRAME_BUDGET_MS.toFixed(2)), spikeFrames,
     },
+    longTasks: {
+      supported: typeof PerformanceObserver !== 'undefined' && !!PerformanceObserver.supportedEntryTypes?.includes('longtask'),
+      observedCount: longTasks.length,
+      entries: longTasks.map((task) => ({ ...task, timestampUtc: new Date((performance.timeOrigin || Date.now() - performance.now()) + task.startTimeMs).toISOString() })),
+    },
+    pageState: { visibility: typeof document !== 'undefined' ? document.visibilityState : null, focused: typeof document !== 'undefined' ? document.hasFocus?.() ?? null : null },
     lifecycle: { latest: lastSample?.telemetry || null, ratesPerSecondBetweenLastSamples: objectRatesPerSecond },
     memory: {
       supported: !!performance.memory, latestHeapBytes: performance.memory?.usedJSHeapSize || 0, peakSampledHeapBytes: peakHeapBytes,
@@ -334,7 +393,7 @@ export function performanceReport() {
     },
     availability: { jsHeap: !!performance.memory, gcEvents: false, gpuFrameTime: false, listenerCounts: false, timerCounts: false, offscreenCachesBytes: false },
     frames,
-    note: 'History is bounded to 180 seconds and stores object lifecycle/type breakdowns every 15 frames. This measures main-thread processing and animation-frame cadence, not true display presentation. Browser/GPU frame time, GPU memory, GC events, timer/listener totals, and audio hardware latency are unavailable here and are not fabricated. A missing runtime field means that runtime does not expose it.',
+    note: 'History is bounded to 180 seconds, retains at most 100 worst 60 Hz-budget frame/gap samples, and stores object lifecycle/type breakdowns every 15 frames. Long-task observation is active only while the profiler is enabled and retains at most 128 entries. This measures main-thread processing and animation-frame cadence, not true display presentation. Browser/GPU frame time, GPU memory, GC events, timer/listener totals, and audio hardware latency are unavailable here and are not fabricated. A missing runtime field means that runtime does not expose it.',
   };
 }
 
