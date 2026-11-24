@@ -39,6 +39,7 @@ import { MAP_TERRAIN_COLORS, eternalBreachMapColor, terrainColor, terrainKindFro
 import { profileRecord } from '../core/perfdiagnostics.js';
 
 let lightCanvas = null, glowCanvas = null, vignette = null, vigKey = '';
+const viewTileBounds = {}, actorTileBounds = {};
 const transitionSprites = new Map();
 /**
  * Forget the canvases render.js baked (floor chunks, light falloff, vignette, labels): a GPU reset (the computer
@@ -1040,12 +1041,13 @@ export function renderWorld(ctx, world) {
   const vr = camera.viewRect(40);
   const map = world.map;
 
-  // tile bounds of the view
-  const corners = [[vr.x0, vr.y0 - 40], [vr.x1, vr.y0 - 40], [vr.x0, vr.y1 + 140], [vr.x1, vr.y1 + 140]].map(([wx, wy]) => [(wx / HW + wy / HH) / 2, (wy / HH - wx / HW) / 2]);
-  const tx0 = clamp(Math.floor(Math.min(...corners.map((c) => c[0]))) - 1, 0, map.w - 1);
-  const tx1 = clamp(Math.ceil(Math.max(...corners.map((c) => c[0]))) + 1, 0, map.w - 1);
-  const ty0 = clamp(Math.floor(Math.min(...corners.map((c) => c[1]))) - 1, 0, map.h - 1);
-  const ty1 = clamp(Math.ceil(Math.max(...corners.map((c) => c[1]))) + 1, 0, map.h - 1);
+  // Tile bounds of the view. Reuse one scalar AABB instead of allocating four
+  // corner tuples and four mapped arrays on every rendered frame.
+  isometricTileBounds(vr.x0, vr.y0 - 40, vr.x1, vr.y1 + 140, HW, HH, viewTileBounds);
+  const tx0 = clamp(Math.floor(viewTileBounds.minX) - 1, 0, map.w - 1);
+  const tx1 = clamp(Math.ceil(viewTileBounds.maxX) + 1, 0, map.w - 1);
+  const ty0 = clamp(Math.floor(viewTileBounds.minY) - 1, 0, map.h - 1);
+  const ty1 = clamp(Math.ceil(viewTileBounds.maxY) + 1, 0, map.h - 1);
 
   if (world.sky) skyWorld(ctx, world); // the pirates' galleon and boats, behind the ship
   if (world.wyrm) drawWyrm(ctx, world.wyrm, 'void'); // the Breach's wyrm deep under the islands (gfx/breachdragon.js)
@@ -1082,9 +1084,9 @@ export function renderWorld(ctx, world) {
   const lastVisibleCreatures = frame.visibleCreatures || (frame.visibleCreatures = []);
   for (const c of lastVisibleCreatures) { c.sbox = null; c.targetBox = null; }
   lastVisibleCreatures.length = 0;
-  const creatureBounds = isometricTileBounds({ x0: vr.x0 - 80, x1: vr.x1 + 80, y0: vr.y0 - 40, y1: vr.y1 + 160 }, HW, HH);
+  isometricTileBounds(vr.x0 - 80, vr.y0 - 40, vr.x1 + 80, vr.y1 + 160, HW, HH, actorTileBounds);
   const visibleCreatures = world.grid?.size && world.creaturesInBounds
-    ? world.creaturesInBounds(creatureBounds.minX, creatureBounds.minY, creatureBounds.maxX, creatureBounds.maxY, frame.creatureCandidates || (frame.creatureCandidates = []))
+    ? world.creaturesInBounds(actorTileBounds.minX, actorTileBounds.minY, actorTileBounds.maxX, actorTileBounds.maxY, frame.creatureCandidates || (frame.creatureCandidates = []))
     : world.creatures;
   world._perfCreatureCandidates = visibleCreatures.length;
   sorted.length = 0; top.length = 0; walls.length = 0;
@@ -1128,23 +1130,20 @@ export function renderWorld(ctx, world) {
   // height, so nothing walking behind a wall, building or tree drops out of sight
   const views = frame.views || (frame.views = []);
   let nv = 0;
-  let at = null;
-  const look = (x, y, d, h, hero) => {
+  const look = (x, y, d, h, hero, actorX, actorY) => {
     if (x < vr.x0 - 60 || x > vr.x1 + 60 || y < vr.y0 - 20 || y > vr.y1 + 140) return;
     const v = views[nv] || (views[nv] = {}), k = Math.min(h, 110) / 46;
-    nv++; v.x = x; v.y0 = y - h; v.y1 = y - 4; v.d = d; v.hero = hero; v.at = at;
+    nv++; v.x = x; v.y0 = y - h; v.y1 = y - 4; v.d = d; v.hero = hero; v.ax = actorX; v.ay = actorY;
     v.r = hero ? 24 : 10 * k; v.fall = hero ? 120 : 56 * k; v.hw = hero ? 16 : 8 * k;
   };
-  if (p) { at = [p.x, p.y]; look(ppx, ppy, pd, 62, true); }
+  if (p) look(ppx, ppy, pd, 62, true, p.x, p.y);
   for (const c of visibleCreatures) {
     if (c === p || c.dead || c.static || c.ghostDraw || c.hidden) continue;
-    at = [c.x, c.y];
-    look(isoX(c.x, c.y), isoY(c.x, c.y), c.x + c.y, c.viewH || 46 * (c.scale || 1), false);
+    look(isoX(c.x, c.y), isoY(c.x, c.y), c.x + c.y, c.viewH || 46 * (c.scale || 1), false, c.x, c.y);
   }
   for (const n of world.npcs) {
     if (n.stash || n.hidden || (n.alpha ?? 1) < 0.1) continue;
-    at = [n.x, n.y];
-    look(isoX(n.x, n.y), isoY(n.x, n.y), n.x + n.y, n.viewH || 56, false);
+    look(isoX(n.x, n.y), isoY(n.x, n.y), n.x + n.y, n.viewH || 56, false, n.x, n.y);
   }
   views.length = nv;
   // does rect r [x, y, w, h] at depth d hide someone?
@@ -1258,7 +1257,7 @@ export function renderWorld(ctx, world) {
       if (it.f === 2 || it.f === 11 || !o || typeof o.x !== 'number' || typeof o.y !== 'number') continue;
       it.d = standKey(o.x, o.y) + (it.d - o.x - o.y);
     }
-    for (const v of views) v.d = standKey(...v.at);
+    for (const v of views) v.d = standKey(v.ax, v.ay);
     const occ = frame.occ || (frame.occ = []);
     occ.length = 0;
     if (!world.cave) occludersFor(map, vr, views, occ); // the caves' 3D terrain hides its own (game/caverns.js horizon)
@@ -1591,7 +1590,8 @@ function drawLighting(ctx, world) {
   // The quarter-resolution lighting framebuffer is still expensive at retina
   // resolutions. A sixth-resolution buffer keeps the same falloff and avoids
   // repeated full-screen GPU traffic on memory-limited phones.
-  const divisor = G.touch ? 6 : 4;
+  const qualityTier = G.performanceQualityTier || 0;
+  const divisor = qualityTier >= 2 ? 8 : qualityTier === 1 ? 6 : G.touch ? 6 : 4;
   const lw = Math.ceil(W / divisor), lh = Math.ceil(H / divisor);
   if (!lightCanvas || lightCanvas.width !== lw || lightCanvas.height !== lh) lightCanvas = makeCanvas(lw, lh);
   const lc = lightCanvas.getContext('2d');
@@ -1617,7 +1617,9 @@ function drawLighting(ctx, world) {
   const bld = world.map.c3bld, W_ = world.map.w, ra = world._roofs?.a;
   const roofed = (l) => { if (!bld) return 0; const k = bld[Math.floor(l.y) * W_ + Math.floor(l.x)]; return k > 0 ? (ra?.[k] ?? 1) : 0; };
   let visibleLights=0;
+  const lightBudget = qualityTier >= 2 ? 18 : qualityTier === 1 ? 40 : G.touch ? 64 : 128;
   for (const l of lights) {
+    if (visibleLights >= lightBudget && !l.priority) continue;
     const r = roofed(l);
     if (r >= 0.99) continue;
     if (add(l.x, l.y, l.radius, l.intensity * 0.85 * (1 - r), l.z ?? 20)) visibleLights++;
@@ -1639,14 +1641,17 @@ function drawLighting(ctx, world) {
   ctx.imageSmoothingQuality = 'low';
   ctx.drawImage(lightCanvas, 0, 0, W, H);
   // coloured glow: torches, portals and spells wash their colour over the scene (one more low-res blit)
-  if (G.settings.glow !== false) {
+  if (G.settings.glow !== false && qualityTier < 2) {
     if (!glowCanvas || glowCanvas.width !== lw || glowCanvas.height !== lh) glowCanvas = makeCanvas(lw, lh);
     const gc = glowCanvas.getContext('2d');
     gc.globalCompositeOperation = 'source-over'; gc.globalAlpha = 1;
     gc.clearRect(0, 0, lw, lh);
     gc.globalCompositeOperation = 'lighter';
     let n = 0;
+    let glowLights = 0;
+    const glowBudget = qualityTier === 1 ? 28 : G.touch ? 64 : 128;
     for (const l of lights) {
+      if (glowLights >= glowBudget && !l.priority) continue;
       if (!l.color || roofed(l)) continue;
       const [sx, sy] = camera.tileToScreen(l.x, l.y, l.z ?? 20);
       const cx = (sx * G.dpr) / divisor, cy = (sy * G.dpr) / divisor, rr = l.radius * scale * 0.9;
@@ -1654,6 +1659,7 @@ function drawLighting(ctx, world) {
       gc.globalAlpha = Math.min(1, l.intensity) * 0.55;
       gc.drawImage(glowSprite(l.color), cx - rr, cy - rr, rr * 2, rr * 2);
       n++;
+      glowLights++;
     }
     if (n) {
       ctx.globalCompositeOperation = 'lighter';

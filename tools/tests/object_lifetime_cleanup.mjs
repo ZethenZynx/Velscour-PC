@@ -27,7 +27,7 @@ assert.equal(lifetimeAlpha(108, 110, 108), 1, 'loot remains opaque until the fin
 assert.equal(lifetimeAlpha(109, 110, 108), 0.5, 'loot fades during the final five seconds');
 assert.equal(lifetimeAlpha(110, 110, 108), 0, 'expired loot is fully invisible');
 
-const iso = isometricTileBounds({ x0: 0, y0: 0, x1: 100, y1: 60 }, 50, 25);
+const iso = isometricTileBounds(0, 0, 100, 60, 50, 25, {});
 for (const [x, y] of [[0, 0], [100, 0], [0, 60], [100, 60]]) {
   const tx = (x / 50 + y / 25) / 2, ty = (y / 25 - x / 50) / 2;
   assert.ok(tx >= iso.minX && tx <= iso.maxX && ty >= iso.minY && ty <= iso.maxY, 'isometric bounds contain each projected viewport corner');

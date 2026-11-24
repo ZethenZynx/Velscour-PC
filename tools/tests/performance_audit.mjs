@@ -9,6 +9,7 @@ const root = resolve(dirname(fileURLToPath(import.meta.url)), '../..');
 const suite = [
   ['Central lifetimes and spatial render culling', ['tools/tests/object_lifetime_cleanup.mjs']],
   ['Ground loot memory release after expiry', ['--expose-gc', 'tools/tests/object_lifetime_memory.mjs']],
+  ['Extreme graphics preset and adaptive cosmetic quality', ['tools/tests/extreme_performance.mjs']],
   ['Town update budget and late-dungeon lifecycle cleanup', ['tools/tests/town_performance_lifecycle.mjs']],
   ['Shared VFX cleanup and ambient lighting', ['tools/tests/performance_hotpaths.mjs']],
   ['Storm Tether combat and target-search stress', ['tools/tests/storm_tether_fourth_attempt.mjs']],

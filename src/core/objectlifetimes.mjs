@@ -53,16 +53,18 @@ export function lifetimeAlpha(now, expiresAt, fadeAt) {
 }
 
 /** Conservative tile-space AABB for the isometric projection of a world-pixel rectangle. */
-export function isometricTileBounds(rect, halfTileWidth, halfTileHeight) {
-  const points = [
-    [rect.x0, rect.y0], [rect.x1, rect.y0], [rect.x0, rect.y1], [rect.x1, rect.y1],
-  ];
-  let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
-  for (const [x, y] of points) {
-    const tx = (x / halfTileWidth + y / halfTileHeight) / 2;
-    const ty = (y / halfTileHeight - x / halfTileWidth) / 2;
-    minX = Math.min(minX, tx); minY = Math.min(minY, ty);
-    maxX = Math.max(maxX, tx); maxY = Math.max(maxY, ty);
-  }
-  return { minX, minY, maxX, maxY };
+export function isometricTileBounds(x0, y0, x1, y1, halfTileWidth, halfTileHeight, out = {}) {
+  // Transform the four corners using scalars; render callers pass a reused
+  // output record so viewport culling allocates no arrays or temporary points.
+  const ax = (x0 / halfTileWidth + y0 / halfTileHeight) / 2;
+  const ay = (y0 / halfTileHeight - x0 / halfTileWidth) / 2;
+  const bx = (x1 / halfTileWidth + y0 / halfTileHeight) / 2;
+  const by = (y0 / halfTileHeight - x1 / halfTileWidth) / 2;
+  const cx = (x0 / halfTileWidth + y1 / halfTileHeight) / 2;
+  const cy = (y1 / halfTileHeight - x0 / halfTileWidth) / 2;
+  const dx = (x1 / halfTileWidth + y1 / halfTileHeight) / 2;
+  const dy = (y1 / halfTileHeight - x1 / halfTileWidth) / 2;
+  out.minX = Math.min(ax, bx, cx, dx); out.maxX = Math.max(ax, bx, cx, dx);
+  out.minY = Math.min(ay, by, cy, dy); out.maxY = Math.max(ay, by, cy, dy);
+  return out;
 }

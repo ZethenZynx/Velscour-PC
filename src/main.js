@@ -1,5 +1,5 @@
 // VELSCOUR - entry point.
-import { G, loadSettings } from './state.js';
+import { G, loadSettings, saveSettings } from './state.js';
 import { initInput, input } from './core/input.js';
 import { camera } from './core/view.js';
 import { loadAssets } from './core/assets.js';
@@ -26,6 +26,8 @@ import { controls } from './game/controls.js';
 import { initSpectate } from './game/spectate.js';
 import { applyVolumes, preloadSong, TITLE_SONG } from './core/audio.js';
 import { profileBeginFrame, profileEnd, profileFinishFrame, profileSetRender, profileSetUpdate, setPerformanceProfilerEnabled } from './core/perfdiagnostics.js';
+import { observeAdaptivePerformance, performanceTier } from './core/performancequality.mjs';
+import { applyPerformanceQuality } from './gfx/vfx.js';
 
 function resize() {
   G.W = window.innerWidth;
@@ -188,7 +190,7 @@ function adaptRes(raw) {
   if (ar.t < 2) return;
   const fps = ar.n / ar.t, s = G.resScale || 1, now = performance.now();
   ar.t = ar.n = 0;
-  const minScale = G.touch ? 0.7 : 0.75, cap = G.settings.fpsCap || 0;
+  const minScale = G.settings.graphicsPreset === 'extreme' || G.settings.adaptivePerformance ? 0.5 : G.touch ? 0.7 : 0.75, cap = G.settings.fpsCap || 0;
   // under a frame cap the budget is the cap's, not 60
   const slowFps = cap ? cap * 0.8 : G.touch ? 45 : 50, fastFps = cap ? cap * 0.95 : 57;
   if (fps < slowFps && s > minScale) {
@@ -197,6 +199,32 @@ function adaptRes(raw) {
   } else if (fps > fastFps && s < 1) { if (++ar.good >= ar.need) { G.resScale = Math.min(1, s / 0.85); ar.good = 0; ar.upAt = now; resize(); } }
   else ar.good = 0;
 }
+
+function applyGraphicsQualitySettings() {
+  const tier = performanceTier(G.settings);
+  const changed = tier !== (G.performanceQualityTier || 0);
+  G.performanceQualityTier = tier;
+  if (G.settings.graphicsPreset === 'extreme') G.resScale = Math.min(G.resScale || 1, 0.7);
+  else if (G.settings.graphicsPreset !== 'extreme' && !G.settings.adaptivePerformance) G.resScale = 1;
+  if (changed) applyPerformanceQuality();
+  resize();
+  dropBakes();
+}
+
+function adaptCosmeticQuality(raw) {
+  const result = observeAdaptivePerformance(raw, G.settings, performance.now());
+  if (result.changed) {
+    G.performanceQualityTier = result.tier;
+    applyPerformanceQuality();
+  }
+  if (result.recommend) {
+    G.settings.performanceRecommendationShown = true;
+    saveSettings();
+    UI.log?.('<span style="color:#ffc66b">Sustained low frame rate detected. Try the <b>Extreme Performance</b> preset in Settings &gt; Graphics.</span>');
+  }
+}
+
+window.addEventListener('velscour-graphics-quality-change', applyGraphicsQualitySettings);
 
 let last = performance.now(), lastFrame = 0;   // last: how far the game clock has run; lastFrame: the last animation frame
 function loop(now) {
@@ -217,6 +245,7 @@ function loop(now) {
   const raw = Math.max(0, (now - last) / 1000), dt = Math.min(0.05, raw);
   const profiling = profileBeginFrame(now);
   last = now;
+  adaptCosmeticQuality(raw);
   adaptRes(raw);
   G.time += dt;
   G.dt = dt;
@@ -285,6 +314,7 @@ function reportError(err) {
 
 async function boot() {
   loadSettings();
+  G.performanceQualityTier = performanceTier(G.settings);
   setPerformanceProfilerEnabled(G.settings.performanceProfiler);
   initMouseCursor();
   G.canvas = $('#game');
@@ -293,6 +323,7 @@ async function boot() {
   G.input = input;
   G.controls = controls;
   G.game = game;
+  if (G.settings.graphicsPreset === 'extreme') G.resScale = 0.7;
   resize();
   window.addEventListener('resize', resize);
   window.addEventListener('orientationchange', () => setTimeout(resize, 200));

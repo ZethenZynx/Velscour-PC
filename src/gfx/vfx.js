@@ -12,6 +12,7 @@ import { writeBoltGeometry, appendBoltGeometry } from './lightninggeometry.mjs';
 import { effectOutsideView } from './effectvisibility.mjs';
 import { insertCappedParticle } from './particlecap.mjs';
 import { OBJECT_LIFETIMES } from '../core/objectlifetimes.mjs';
+import { allowParticleType, particleBudget } from '../core/performancequality.mjs';
 
 export const ELEM = {
   phys: { name: 'Physical', core: '#ffffff', glow: '#e0d8c8', dark: '#7a7060', sfx: 'phys' },
@@ -29,7 +30,7 @@ export const ELEM = {
 };
 export const elem = (k) => ELEM[k] || ELEM.phys;
 
-const MAX_P = () => (G.touch ? 1400 : 3000);
+const MAX_P = () => particleBudget(G.touch, G.performanceQualityTier || 0);
 export const particles = [];
 export const decals = []; // live decals: growing pools, scorch, frost (capped, drawn every frame)
 const goreDecals = []; // cosmetic blood/gore only; never stamped into cached floor chunks
@@ -111,6 +112,8 @@ let evict = 0, dead = 0;
 const particleCursor = { get index() { return evict; }, set index(value) { evict = value; } };
 function kill(p) { if (p.life > 0) { p.life = -1; dead++; if (p.spr) spriteGibs--; } }
 export function spawn(p) {
+  const tier = G.performanceQualityTier || 0;
+  if (!allowParticleType(p?.type, tier)) return null;
   p.life = p.life ?? 0.6; p.max = p.life;
   p.z = p.z ?? 0; p.vx = p.vx ?? 0; p.vy = p.vy ?? 0; p.vz = p.vz ?? 0;
   p.g = p.g ?? 0; p.drag = p.drag ?? 0; p.size = p.size ?? 2; p.size1 = p.size1 ?? p.size;
@@ -123,6 +126,22 @@ export function spawn(p) {
     else if (replaced.spr) spriteGibs--;
   }
   return p;
+}
+
+/** Apply a quality transition once; don't pay for filtering on every frame. */
+export function applyPerformanceQuality() {
+  const tier = G.performanceQualityTier || 0, budget = MAX_P();
+  let write = 0;
+  for (const p of particles) {
+    if (!allowParticleType(p.type, tier) || write >= budget) {
+      if (p.life > 0 && p.spr) spriteGibs--;
+      if (p.life <= 0) dead = Math.max(0, dead - 1);
+      continue;
+    }
+    particles[write++] = p;
+  }
+  particles.length = write;
+  evict = write % budget;
 }
 
 export function burst(x, y, z, el, n = 12, speed = 3, opts = {}) {
@@ -805,12 +824,18 @@ const lightPool = [];
  * `priority` guarantees admission even when combat/loot light counts are high.
  */
 export function addLight(x, y, radius, intensity = 1, z = 20, color = null, priority = false) {
-  const max = G.touch ? 96 : 128;
-  if (lights.length >= max && !priority) return;
-  const l = lightPool[lights.length] || (lightPool[lights.length] = {});
+  const tier = G.performanceQualityTier || 0;
+  const max = tier >= 2 ? 32 : tier === 1 ? 64 : G.touch ? 96 : 128;
+  let index = lights.length;
+  if (index >= max) {
+    if (!priority) return;
+    index = lights.findIndex((light) => !light.priority);
+    if (index < 0) return;
+  }
+  const l = lightPool[index] || (lightPool[index] = {});
   l.x = x; l.y = y; l.radius = radius; l.intensity = intensity; l.z = z; l.color = color;
   l.priority = !!priority;
-  lights.push(l);
+  if (index === lights.length) lights.push(l);
 }
 
 export function clearVfx() {

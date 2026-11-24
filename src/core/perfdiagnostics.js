@@ -310,6 +310,8 @@ export function performanceReport() {
     },
     graphicsSettings: {
       resolutionScale: G.resScale || 1, devicePixelRatio: G.dpr || 1, fpsCap: G.settings?.fpsCap ?? null,
+      graphicsPreset: G.settings?.graphicsPreset || 'standard', adaptivePerformance: G.settings?.adaptivePerformance === true,
+      cosmeticQualityTier: G.performanceQualityTier || 0,
       gore: G.settings?.gore ?? null, heldEffects: G.settings?.heldFx ?? null, outlines: G.settings?.outlines ?? null,
       particleQuality: G.settings?.particleQuality ?? null,
     },

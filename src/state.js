@@ -47,6 +47,9 @@ export const G = {
     noSkipCine: false, // Keep previously seen cutscenes at normal speed
     skipCutscenes: false, // Skip cutscene playback and scripted camera transitions
     fpsCap: 0, // frame rate cap: 0 none, 30 (phones run cooler over a long session)
+    graphicsPreset: 'standard', // standard | extreme; quality only, never changes gameplay state
+    adaptivePerformance: false, // opt-in cosmetic quality shedding for sustained slow frames
+    performanceRecommendationShown: false, // one-time nonmodal recommendation guard
     showHeroStats: true, // show/hide the #hero-stats div
     performanceProfiler: false, // opt-in rolling diagnostics; collection and HUD stop completely when disabled
     showTargetBox: true, // show/hide the #target-box div

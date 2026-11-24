@@ -574,6 +574,10 @@ export function settingsDialog() {
   </div>
   <div class="settings-tab-pane" data-pane="graphics">
     <div class="settings-grid">
+      <label title="Extreme Performance lowers cosmetic rendering work while keeping combat, warnings, enemy populations, and rewards unchanged">Graphics preset</label><select data-performance-preset><option value="standard">Standard</option><option value="extreme">Extreme Performance</option></select>
+      <label title="Automatically sheds cosmetic particles and lighting when frame pacing stays low, then restores them gradually">Adaptive performance</label><input type="checkbox" data-adaptive-performance ${st.adaptivePerformance ? 'checked' : ''}>
+      <div class="developer-settings-note">Extreme Performance uses a strict 700-particle desktop budget, removes decorative smoke/glow particles, limits low-resolution lighting, and disables the extra colored glow pass. Adaptive quality changes only after sustained slow frames. Combat logic, visible attack warnings, enemy populations, and rewards are unchanged.</div>
+      <p class="performance-recommendation" data-performance-recommendation ${st.performanceRecommendationShown ? '' : 'hidden'} role="status">Performance has remained below the recommended frame rate. Try <b>Extreme Performance</b> in this tab; you can switch back at any time.</p>
       <label>Camera zoom</label><input type="range" min="0.7" max="1.6" step="0.05" value="${st.zoom}" data-k="zoom">
       <label title="Changes the terrain and walls on the TAB map only; important markers stay clear">TAB Map Transparency</label><div class="map-opacity-control"><input type="range" min="0" max="100" step="1" value="${st.tabMapTransparency ?? 45}" data-k="tabMapTransparency"><output data-map-opacity>${st.tabMapTransparency ?? 45}%</output><button type="button" class="btn small" data-reset-map-opacity>Reset</button></div>
       <label title="30 draws half the frames: smoother than a frame rate that keeps dipping, and a phone stays cooler (a hot phone slows itself down after a long session)">Frame rate cap</label><select data-k="fpsCap"><option value="0">None</option><option value="30">30 fps (cooler phone)</option></select>
@@ -700,6 +704,19 @@ export function settingsDialog() {
   });
   if (!['general', 'audio', 'graphics', 'hud', 'mouseCursor', 'controls', 'developer'].includes(activeSettingsTab)) activeSettingsTab = 'general';
   setTab(activeSettingsTab);
+  const performancePreset = d.box.querySelector('[data-performance-preset]');
+  const adaptivePerformance = d.box.querySelector('[data-adaptive-performance]');
+  performancePreset.value = st.graphicsPreset === 'extreme' ? 'extreme' : 'standard';
+  performancePreset.onchange = () => {
+    st.graphicsPreset = performancePreset.value === 'extreme' ? 'extreme' : 'standard';
+    window.dispatchEvent(new Event('velscour-graphics-quality-change'));
+    saveSettings();
+  };
+  adaptivePerformance.onchange = () => {
+    st.adaptivePerformance = adaptivePerformance.checked;
+    window.dispatchEvent(new Event('velscour-graphics-quality-change'));
+    saveSettings();
+  };
   const cursorSettings = () => (st.mouseCursor ||= { ...MOUSE_CURSOR_DEFAULTS });
   const cursorOutput = (key, value) => {
     const units = { size: '%', transparency: '%', outlineThickness: ' px', glowIntensity: '%', trailLength: ' ms', trailWidth: ' px', particleSize: ' px', particleDensity: '%', fadeSpeed: '×', trailGlow: '%', trailOpacity: '%', locatorSize: ' px' };

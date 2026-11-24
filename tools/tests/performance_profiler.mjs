@@ -27,6 +27,8 @@ assert.match(profiler, /resolutionScale.*devicePixelRatio.*canvasWidth.*canvasHe
 assert.match(profiler, /renderQueue.*renderViews.*renderCreatures.*renderWalls.*renderProps.*renderLoot/s, 'per-frame counts include visible rendering work');
 assert.match(main, /profileBeginFrame\(now\)/, 'frame sampling is connected to the main loop');
 assert.match(main, /profileFinishFrame\(G\.world\)/, 'frame records close after update and rendering');
+assert.match(main, /observeAdaptivePerformance\(raw, G\.settings/, 'adaptive cosmetic quality is driven by sustained frame pacing');
+assert.match(main, /applyPerformanceQuality\(\)/, 'quality changes trim active particle workload immediately');
 assert.match(world, /profileRecord\('ai'/, 'world profiling separates AI work');
 assert.match(world, /profileRecord\('collision'/, 'world profiling separates collision work');
 assert.match(game, /profileRecord\('events'/, 'world event scripts are measured');
@@ -37,6 +39,10 @@ assert.match(render, /drawParticles\(ctx, vr, profiling\)/, 'visible particle co
 assert.match(render, /profileRecord\('effectDraw', performance\.now\(\) - effectDrawStarted\)/, 'the aggregate effect time includes its split sub-stages');
 assert.match(render, /profileRecord\('screenOverlay', performance\.now\(\) - screenOverlayStarted\)/, 'the aggregate screen-space time includes its split sub-stages');
 assert.match(screens, /data-export-performance/, 'the settings screen exposes report export');
+assert.match(screens, /value="extreme">Extreme Performance/, 'the standard graphics settings expose the emergency preset');
+assert.match(screens, /data-adaptive-performance/, 'adaptive cosmetic performance is optional and user controlled');
 assert.match(screens, /rolling performance history of up to three minutes/i, 'the setting describes the actual history duration');
+assert.doesNotMatch(render, /const corners = \[\[vr\.x0/, 'isometric viewport bounds no longer build per-frame corner arrays');
+assert.doesNotMatch(render, /v\.at = at|standKey\(\.\.\.v\.at\)/, 'wall cutaway records no longer allocate a coordinate pair per actor');
 
-console.log('Opt-in profiler wiring, disabled-by-default behavior, three-minute ring history, subsystem timings, counts, and export checks passed.');
+console.log('Profiler, emergency quality preset, adaptive controls, and allocation-free viewport setup checks passed.');
