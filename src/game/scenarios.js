@@ -188,7 +188,7 @@ function makeScenario(world, start, info, need) {
         // The people carrying the quest marker are valid interaction points too; retain the
         // existing chain/escort encounter as the underlying action rather than creating a second quest path.
         npc.use = () => {
-          if (mech === 'escort' && npc.follow) { npc.talkText = 'Lead me to the marked far altar.'; npc.talkT = 2.5; return; }
+          if (mech === 'escort' && npc.follow) { npc.talkText = 'Lead me to the marked far altar.'; npc.talkT = 2.5; npc.talkAge = 0; return; }
           objective.use(objective);
         };
         return npc;

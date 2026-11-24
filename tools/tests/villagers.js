@@ -1,4 +1,4 @@
-// Town villagers: no runtime palette swaps, every scripted line fits its two-line speech bubble untruncated,
+// Town villagers: no runtime palette swaps, every scripted line survives shared multi-line wrapping,
 // clicking talks in a bubble only; screenshots of townsfolk talking.
 // node tools/tests/villagers.js
 const { openGame, report } = require('./harness');
@@ -10,15 +10,17 @@ const { openGame, report } = require('./harness');
     const T = await import('/src/data/townsfolk.js'), S = await import('/src/data/townscripts.js');
     const c = document.createElement('canvas').getContext('2d');
     c.font = '600 11px "Alegreya Sans", "Segoe UI", sans-serif';
-    const lines = (t) => { let n = 1, line = ''; for (const w of t.split(/\s+/)) { const x = line ? line + ' ' + w : w; if (line && c.measureText(x).width > 128) { n++; line = w; } else line = x; } return n; };
+    const { wrapTownSpeech } = await import('/src/game/townspeech.js');
+    const lines = (t) => wrapTownSpeech(t, 236, (s) => c.measureText(s).width);
     const texts = [...S.CHATS, ...S.ADVENTURER_CHATS].flatMap((x) => x.lines.map((l) => l[1]));
     texts.push(...Object.values(S.BARKS).flat().map((l) => l[0]), ...S.ADVENTURER_BARKS.map((l) => l[0]), ...Object.values(S.SHOPPING).flat(2).map((l) => l[0]));
     for (const ev of Object.values(S.EVENT_LINES)) texts.push(ev.intro, ...(ev.beats || []).map((l) => l[1]), ...(ev.vows || []).map((l) => l[1]), ...(ev.crowd || []).map((l) => l[0]));
-    return { hues: T.TOWNSFOLK.filter((p) => p.palette).length, tooLong: [...new Set(texts.filter((t) => lines(t) > 2))].slice(0, 5) };
+    const lossy = [...new Set(texts.filter((t) => lines(t).join(' ').replace(/\s+/g, ' ').trim() !== t.replace(/\s+/g, ' ').trim()))].slice(0, 5);
+    return { hues: T.TOWNSFOLK.filter((p) => p.palette).length, lossy };
   });
-  console.log('runtime recolours', info.hues, 'lines over 2:', JSON.stringify(info.tooLong));
+  console.log('runtime recolours', info.hues, 'lines that lose dialogue:', JSON.stringify(info.lossy));
   if (info.hues) errors.push('townsfolk must not be recoloured at runtime');
-  if (info.tooLong.length) errors.push('speech lines do not fit their bubble');
+  if (info.lossy.length) errors.push('speech wrapping loses dialogue text');
   const said = await page.evaluate(async () => {
     const { G } = window.VELSCOUR, p = G.player;
     const vs = G.world.npcs.filter((n) => n.townsfolkId).slice(0, 4);

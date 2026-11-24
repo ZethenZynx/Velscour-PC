@@ -8,6 +8,7 @@
 // - setupHomunculus (from townlife.js): his poses follow what he says, he hails passing townsfolk by name and they
 //   answer fondly, the axe rack glows (green, then frost) as the story goes on, and in later chapters it mutters.
 import { G } from '../state.js';
+import { townSpeechDuration } from './townspeech.js';
 import { pick, rand, chance, dist } from '../core/util.js';
 import { POOLS, TOPICS, STORY, AFTER, FOLK_HAILS, FOLK_BACK, AXE_MUTTERS, POSES, IDLE_POSES } from '../data/homunculus.js';
 import { CLASSES } from '../data/classes.js';
@@ -118,11 +119,13 @@ export function hSay(d, v, text, pose, dur) {
 function heroSay(text, dur) {
   const p = G.player;
   if (!p) return;
+  dur = Math.max(dur, townSpeechDuration(text));
   p.talkText = text; p.talkT = dur; p.talkAge = 0; p.bubbleLines = 3;
 }
 function axeSay(d, text, dur) {
   const ax = d.axe;
   if (!ax) return;
+  dur = Math.max(dur, townSpeechDuration(text));
   ax.talkText = text; ax.talkT = dur; ax.talkAge = 0;
   for (let i = 0; i < 6; i++) spawn({ type: 'dot', x: ax.x + rand(-0.3, 0.3), y: ax.y + rand(-0.3, 0.3), z: rand(20, 50), vx: rand(-0.2, 0.2), vy: rand(-0.2, 0.2), vz: rand(4, 14), g: -4, life: rand(1, 1.8), size: rand(1.2, 2), color: pick(['#9fffc8', '#b8f0ff', '#e8fff4']) });
 }

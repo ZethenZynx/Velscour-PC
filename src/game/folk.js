@@ -7,6 +7,7 @@ import { rand, pick, chance, dist } from '../core/util.js';
 import { TOWNSFOLK, folkLabel } from '../data/townsfolk.js';
 import { townFacingFlip, EMOTIONS } from './townsfolkvisuals.js';
 import { preloadTownSheets } from './render.js';
+import { townSpeechDuration } from './townspeech.js';
 
 const SCARED = ['Help!', 'Monsters!', 'Save us!', 'Stay back!', 'Hero! Over here!'];
 const CHEER = ['Huzzah!', 'You did it!', 'Bless you, hero!', 'We\'re saved!'];
@@ -25,7 +26,7 @@ export function makeFolk(world, who, x, y, extra = {}) {
       const ic = icon && EMOTIONS[emo]?.icon;
       if (ic) { this.icon = ic; this.iconT = Math.min(dur, 2.8); this.iconAge = 0; }
     },
-    say(text, dur = 3, emo = null) { this.talkText = text; this.talkT = dur; this.talkAge = 0; this.iconT = 0; if (emo) this.feel(emo, dur + 0.5, false); },
+    say(text, dur = 3, emo = null) { dur = Math.max(dur, townSpeechDuration(text)); this.talkText = text; this.talkT = dur; this.talkAge = 0; this.iconT = 0; if (emo) this.feel(emo, dur + 0.5, false); },
     face(px, py) { this.flip = townFacingFlip(px - this.x, py - this.y, this.flip); },
     /** Run `fn` after `s` seconds of game time (paused with the game, unlike setTimeout). */
     after(s, fn) { (this.timers || (this.timers = [])).push([s, fn]); },

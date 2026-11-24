@@ -13,6 +13,7 @@ import { floatText, sparkle, addEffect, Ring } from '../gfx/vfx.js';
 import { sfx } from '../core/audio.js';
 import { UI } from '../ui/ui.js';
 import { heroHears } from './townlife.js';
+import { townSpeechDuration } from './townspeech.js';
 
 const LINES = {
   idle: ['Keep to the road, friend.', 'These woods were safer once.', 'Mind the ruins after dark.', 'I heard wolves at dawn.', 'Bless you for walking this way.', 'My cart broke a mile back.'],
@@ -112,7 +113,7 @@ export function addWanderers(world, spots, n = 5) {
       animT: rand(3), walkT: 0, idleSeed: i % 3, walking: false, talkT: 0, talkText: '', waitT: rand(0, 3), chatT: rand(8, 20),
       path: null, goal: null, mood: 'calm', fleeT: 0,
       bounty,
-      say(t, d = 3, toHero = false) { this.talkText = t; this.talkT = d; if (toHero) heroHears(this, d); },
+      say(t, d = 3, toHero = false) { d = Math.max(d, townSpeechDuration(t)); this.talkText = t; this.talkT = d; this.talkAge = 0; if (toHero) heroHears(this, d); return d; },
       use() {
         const b = this.bounty;
         if (!b || b.state === 'paid') { this.say(pick(LINES.idle), 3, true); return; }
@@ -186,6 +187,7 @@ function payBounty(world, n) {
 function wanderTick(world, n, spots, dt) {
   const map = world.map;
   n.animT += dt;
+  n.talkAge = (n.talkAge || 0) + dt;
   n.talkT = Math.max(0, n.talkT - dt);
   if (!n.walking) n.walkT = 0;
   n.walking = false;

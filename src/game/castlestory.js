@@ -6,9 +6,10 @@
 import { makeFolk } from './folk.js';
 import { TOWNSFOLK } from '../data/townsfolk.js';
 import { pick } from '../core/util.js';
+import { townSpeechDuration } from './townspeech.js';
 
 const NEAR = 5, GAP = 0.4;
-const readTime = (line) => Math.max(3.8, line.length / 15);   // ~15 characters a second
+const readTime = townSpeechDuration;
 
 /** Put the castle's herald and lord into `world` (gen: castleworld.js's result). */
 export function addCastleStory(world, gen) {

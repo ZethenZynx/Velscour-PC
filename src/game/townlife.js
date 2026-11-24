@@ -26,6 +26,7 @@ import { townObject } from '../world/town.js';
 import { spawn } from '../gfx/vfx.js';
 import { setupHomunculus } from './homunculus.js';
 import { nextMalakorLine } from '../data/malakor.js';
+import { townSpeechDuration } from './townspeech.js';
 
 export const TOWN_EVENT_CHANCE = 0.35;
 export const TOWN_EVENTS = Object.keys(EVENT_LINES);
@@ -34,7 +35,7 @@ const NEAR = 12;              // tiles: speech this close to the hero counts aga
 const ADV_NAMES = ['Brannoc', 'Ysra', 'Corvin', 'Talia', 'Mord', 'Elsabet', 'Rurik', 'Senna', 'Hadrik', 'Vey', 'Odo', 'Isolt', 'Kestrel', 'Garm', 'Liesl', 'Thane'];
 const CONFETTI = ['#ff5a5a', '#ffd23c', '#5ab4ff', '#7ae07a', '#ff9ad8', '#ffffff'];
 
-const lineTime = (text) => Math.min(4.6, Math.max(2.3, 1.5 + text.length * 0.055));
+const lineTime = townSpeechDuration;
 const HEAR = 6;
 
 /** A nearby speaker can keep the hero listening through consecutive bubbles. */
@@ -151,6 +152,7 @@ export function startTownLife(world, t, c, visit) {
     if (ic) { a.icon = ic; a.iconT = Math.min(dur, 2.8); a.iconAge = 0; }
   };
   d.say = (a, text, emo, dur = lineTime(text)) => {
+    dur = Math.max(dur, lineTime(text));
     a.talkText = text; a.talkT = dur; a.talkAge = 0;
     if (emo) d.feel(a, emo, dur + 0.6, false);
     a.iconT = 0;
