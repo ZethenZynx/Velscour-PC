@@ -6,14 +6,15 @@ import { el, escapeHtml } from '../core/util.js';
 import { sfx } from '../core/audio.js';
 
 /** Calculate a responsive, untransformed default for the paired Altar/Marks windows. */
-export function heresyPairLayout(viewW, viewH, saved = {}) {
+export function heresyPairLayout(viewW, viewH, saved = {}, naturalHeights = {}) {
   const margin = 12, gap = 14, maxW = Math.max(1, viewW - margin * 2), maxH = Math.max(1, viewH - margin * 2);
   const available = maxW - gap;
   if (available < 1300 || maxH < 520) return { stacked: true, margin, gap };
   // Give the wider three-column altar just over half of the available width;
   // the Marks panel receives every remaining pixel. No UI transform is used.
   const altarW = Math.min(1040, Math.max(680, available * 0.53)), marksW = available - altarW;
-  const altarH = Math.min(1040, maxH), marksH = Math.min(860, maxH);
+  const altarH = Math.max(1, Math.min(maxH, Number(naturalHeights.heresies) || 1));
+  const marksH = Math.max(1, Math.min(maxH, Number(naturalHeights.marks) || 1));
   const groupW = altarW + gap + marksW, groupH = Math.max(altarH, marksH);
   const defaults = {
     heresies: { x: (viewW - groupW) / 2, y: (viewH - groupH) / 2, w: altarW, h: altarH },
@@ -300,7 +301,24 @@ export const UI = {
       const desktop = this.desktopPanels();
       const viewW = Math.max(1, Math.min(host.width, window.innerWidth - host.left));
       const viewH = Math.max(1, Math.min(host.height, window.innerHeight - host.top));
-      const layout = desktop ? heresyPairLayout(viewW, viewH, G.settings.panelPositions || {}) : { stacked: true };
+      const savedPositions = G.settings.panelPositions || {};
+      // Set the final widths and intrinsic heights before calculating the pair's
+      // vertical center. The Altar's open milestone list changes its natural height.
+      const dimensions = desktop ? heresyPairLayout(viewW, viewH) : { stacked: true };
+      let layout = dimensions;
+      if (desktop && !dimensions.stacked) {
+        for (const [panel, name] of [[altar, 'heresies'], [marks, 'marks']]) {
+          panel.root.style.setProperty('position', 'absolute', 'important');
+          panel.root.style.setProperty('width', `${dimensions.panels[name].w}px`, 'important');
+          panel.root.style.setProperty('height', 'auto', 'important');
+          panel.root.style.setProperty('max-height', `${Math.max(1, viewH - dimensions.margin * 2)}px`, 'important');
+          panel.root.style.setProperty('min-height', '0', 'important');
+        }
+        layout = heresyPairLayout(viewW, viewH, savedPositions, {
+          heresies: altar.root.getBoundingClientRect().height,
+          marks: marks.root.getBoundingClientRect().height,
+        });
+      }
       if (layout.resetSavedPositions) {
         if (G.settings.panelPositions) {
           delete G.settings.panelPositions.heresies; delete G.settings.panelPositions.marks;
@@ -312,18 +330,18 @@ export const UI = {
       this.panelsEl.classList.toggle('heresy-marks-stacked', layout.stacked);
       if (desktop && !layout.stacked) {
         for (const [name, panel] of [['heresies', altar], ['marks', marks]]) {
-          const { x, y, w, h } = layout.panels[name];
+          const { x, y, w } = layout.panels[name];
           panel.root.style.setProperty('position', 'absolute', 'important');
           panel.root.style.setProperty('left', `${x}px`, 'important');
           panel.root.style.setProperty('top', `${y}px`, 'important');
           panel.root.style.setProperty('right', 'auto', 'important');
           panel.root.style.setProperty('bottom', 'auto', 'important');
           panel.root.style.setProperty('width', `${w}px`, 'important');
-          panel.root.style.setProperty('height', `${h}px`, 'important');
+          panel.root.style.setProperty('height', 'auto', 'important');
           panel.root.style.setProperty('min-width', '0', 'important');
           panel.root.style.setProperty('min-height', '0', 'important');
           panel.root.style.setProperty('max-width', 'none', 'important');
-          panel.root.style.setProperty('max-height', `${viewH}px`, 'important');
+          panel.root.style.setProperty('max-height', `${Math.max(1, viewH - layout.margin * 2)}px`, 'important');
           panel.root.style.setProperty('translate', 'none', 'important');
           panel.root.style.setProperty('scale', 'none', 'important');
           panel.root.style.setProperty('transform', 'none', 'important');
@@ -338,7 +356,7 @@ export const UI = {
           panel.root.style.setProperty('bottom', 'auto', 'important');
           const heresyPanel = panel.root.dataset.panel === 'heresies';
           panel.root.style.setProperty('width', heresyPanel ? 'min(96vw, 1040px)' : 'min(96vw, 920px)', 'important');
-          panel.root.style.setProperty('height', heresyPanel ? 'min(68vh, 760px)' : 'min(48vh, 480px)', 'important');
+          panel.root.style.setProperty('height', 'auto', 'important');
           panel.root.style.setProperty('max-height', heresyPanel ? 'min(68vh, 760px)' : 'min(48vh, 480px)', 'important');
           panel.root.style.setProperty('min-width', '0', 'important');
           panel.root.style.setProperty('min-height', '0', 'important');

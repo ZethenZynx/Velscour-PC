@@ -85,6 +85,15 @@ export const Heresies = {
     const milestoneRows = HERESY_MILESTONES.map((m) => `<div class="hx-mile${rank >= m.rank ? ' done' : ''}${m.rank === HERESY_MILESTONES.find((q) => q.rank > rank)?.rank ? ' next' : ''}"><span class="hx-mile-icon" title="${escapeHtml(m.name)}">${milestoneIcons[m.rank] || (m.rank === HERESY_MAX_RANK ? '\u265b' : m.icon)}</span><span><b>Rank ${m.rank} · ${escapeHtml(m.name)}</b><small>${escapeHtml(m.text)}</small></span></div>`).join('');
     const milestoneDetails = el('details', 'hx-milestone-details');
     milestoneDetails.innerHTML = `<summary>Milestone rewards <span>${HERESY_MILESTONES.filter((m) => rank >= m.rank).length} / ${HERESY_MILESTONES.length} reached</span></summary><div class="hx-miles">${milestoneRows}</div>`;
+    milestoneDetails.addEventListener('toggle', () => {
+      // Default paired positions are vertically centered against their content.
+      // Keep manually dragged coordinates fixed when the disclosure changes size.
+      const positions = G.settings.panelPositions || {};
+      if (positions.heresies || positions.marks) return;
+      requestAnimationFrame(() => {
+        if (UI.isOpen('heresies') && UI.isOpen('marks')) UI.layoutPanels();
+      });
+    });
     scrollArea.appendChild(milestoneDetails);
     body.appendChild(scrollArea);
     const foot = el('div', 'hx-foot');

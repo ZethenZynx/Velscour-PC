@@ -8,33 +8,41 @@ const columns = heresyModifierColumns();
 assert.deepEqual(columns.map((column) => column.length), [10, 10, 10], 'all 30 modifiers occupy three columns of ten');
 assert.equal(new Set(columns.flat().map((modifier) => modifier.id)).size, 30, 'each modifier appears exactly once');
 
-const wide = heresyPairLayout(1920, 1080);
+const collapsedHeights = { heresies: 720, marks: 640 };
+const expandedHeights = { heresies: 900, marks: 640 };
+const wide = heresyPairLayout(1920, 1080, {}, collapsedHeights);
 assert.equal(wide.stacked, false);
 assert.ok(wide.panels.heresies.x < wide.panels.marks.x, 'the Altar is on the left');
 assert.equal(wide.panels.marks.x - wide.panels.heresies.x - wide.panels.heresies.w, wide.gap, 'default gap is consistent');
 assert.ok(Math.abs((wide.panels.heresies.x + wide.panels.marks.x + wide.panels.marks.w) / 2 - 960) < 1, 'the pair is horizontally centered');
 assert.equal(wide.panels.heresies.y, wide.panels.marks.y, 'both windows share a centered top edge');
 
-const compact = heresyPairLayout(1366, 768);
+const compact = heresyPairLayout(1366, 768, {}, { heresies: 700, marks: 620 });
 assert.equal(compact.stacked, false, 'a compact landscape resolution remains side by side when both fit');
 for (const panel of Object.values(compact.panels)) {
   assert.ok(panel.x >= 0 && panel.y >= 0, 'panel starts inside the viewport');
   assert.ok(panel.x + panel.w <= 1366 && panel.y + panel.h <= 768, 'panel ends inside the viewport');
 }
 assert.equal(heresyPairLayout(700, 900).stacked, true, 'narrow layouts stack instead of overflowing');
+const capped = heresyPairLayout(1920, 1080, {}, { heresies: 1400, marks: 640 });
+assert.equal(capped.panels.heresies.h, 1056, 'small viewports cap oversized content to the visible area');
 
 assert.ok(wide.panels.heresies.w >= 900, 'the Altar uses the available horizontal space');
 assert.ok(wide.panels.marks.w >= 840, 'the Marks panel retains a comfortable desktop width');
-assert.equal(wide.panels.heresies.h, 1040, 'the Altar receives its expanded desktop height');
-const saved = heresyPairLayout(1920, 1080, { heresies: { x: 0, y: 0.1 }, marks: { x: 0.99, y: 0.1 } });
+assert.equal(wide.panels.heresies.h, collapsedHeights.heresies, 'collapsed Altar uses its natural content height');
+const expanded = heresyPairLayout(1920, 1080, {}, expandedHeights);
+assert.equal(expanded.panels.heresies.h, expandedHeights.heresies, 'expanded milestones increase the Altar height to fit content');
+assert.ok(expanded.panels.heresies.y < wide.panels.heresies.y, 'default pair recenters vertically when Altar content expands');
+assert.equal(expanded.panels.marks.y, expanded.panels.heresies.y, 'expanded pair remains aligned without overlap');
+const saved = heresyPairLayout(1920, 1080, { heresies: { x: 0, y: 0.1 }, marks: { x: 0.99, y: 0.1 } }, collapsedHeights);
 assert.equal(saved.panels.heresies.x, 0, 'valid saved Altar coordinates restore');
 assert.equal(saved.panels.marks.x, 0.99 * (1920 - saved.panels.marks.w), 'saved Marks coordinates restore proportionally');
 assert.equal(saved.panels.marks.y, 0.1 * (1080 - saved.panels.marks.h));
 assert.ok(saved.panels.heresies.x + saved.panels.heresies.w <= saved.panels.marks.x, 'valid saved windows remain side by side');
-const obsolete = heresyPairLayout(1920, 1080, { heresies: { x: 0.4, y: 0.2 }, marks: { x: 0.42, y: 0.2 } });
+const obsolete = heresyPairLayout(1920, 1080, { heresies: { x: 0.4, y: 0.2 }, marks: { x: 0.42, y: 0.2 } }, collapsedHeights);
 assert.equal(obsolete.resetSavedPositions, true, 'overlapping legacy positions reset to the expanded defaults');
 assert.equal(obsolete.panels.marks.x - obsolete.panels.heresies.x - obsolete.panels.heresies.w, obsolete.gap, 'legacy reset restores the default gap');
-const clamped = heresyPairLayout(1366, 768, { heresies: { x: 2, y: -1 } });
+const clamped = heresyPairLayout(1366, 768, { heresies: { x: 2, y: -1 } }, { heresies: 720, marks: 640 });
 assert.ok(clamped.panels.heresies.x + clamped.panels.heresies.w <= 1366, 'saved horizontal positions clamp on resize');
 assert.ok(clamped.panels.heresies.y >= 0, 'saved vertical positions clamp on resize');
 
