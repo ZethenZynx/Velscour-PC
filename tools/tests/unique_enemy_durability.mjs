@@ -24,9 +24,14 @@ assert.equal(UNIQUE_MIN_DAMAGE_TAKEN, 0.4);
 for (const depth of depths) {
   const world = sampleWorld(depth);
   const unique = makeMonster(world, 'skeleton', world.biome, depthLevel(depth), 'unique', 0, 0, 0, null);
+  const champion = makeMonster(world, 'skeleton', world.biome, depthLevel(depth), 'champion', 0, 0, 0, null);
+  const boss = makeMonster(world, 'skeleton', world.biome, depthLevel(depth) + 2, 'boss', 0, 0, 0, null);
   const expected = baseHpAtDepth(depth) * UNIQUE_HEALTH_MULTIPLIER;
   const uniqueAffixHealth = unique.affixes.includes('tough') ? 1.5 : 1;
+  const championAffixHealth = champion.affixes.includes('tough') ? 1.5 : 1;
   assert.ok(Math.abs(unique.maxHp / uniqueAffixHealth - expected) <= Math.max(1e-7, expected * 1e-12), `depth ${depth}: unique uses the depth baseline once and the revised rank multiplier once`);
+  assert.ok(unique.maxHp / uniqueAffixHealth > champion.maxHp / championAffixHealth, `depth ${depth}: the unique retains a stronger base multiplier than a comparable champion`);
+  assert.ok(boss.maxHp > unique.maxHp, `depth ${depth}: a dedicated boss remains more durable than the unique`);
   assert.equal(unique.rank, 'unique');
   assert.equal(unique.affixes.length, depth > 50 ? 3 : 2, `depth ${depth}: the existing unique affix count is preserved`);
   assert.ok(unique.affixes.filter((id) => UNIQUE_DEFENSIVE_AFFIXES.includes(id)).length <= 1, `depth ${depth}: unique elite affixes do not stack defensive types`);
