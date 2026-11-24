@@ -641,14 +641,17 @@ export const HUD = {
     set('xpmk', !!mk, (v) => { $('#xp-fill').classList.toggle('mk-xp', v); });
     const clsName = (CLASSES[c.classId] && CLASSES[c.classId].name) || (p && p.cls && p.cls.name) || 'Hero';
     const xpPct = Math.floor(clamp((xpNow / (need || 1)), 0, 1) * 100);
-    const shortText = mk ? `Infernal Mark (${xpPct}%)` : `Level ${c.level} ${clsName}`;
+    const shortText = mk ? `✦ Mark ${xpPct}% · ${fmtInt(mk.earned)} earned` : `Level ${c.level} ${clsName}`;
     const fullText = mk
-      ? `Level ${c.level} ${clsName} · ${fmtInt(xpNow)} / ${fmtInt(need)} XP (${xpPct}% to the next Infernal Mark)`
+      ? `✦ ${fmtInt(mk.earned)} experience-earned Marks · ${fmtInt(xpNow)} / ${fmtInt(need)} XP · ${xpPct}% to the next Mark`
       : `Level ${c.level} ${clsName} · ${fmtInt(xpNow)} / ${fmtInt(need)} XP (${xpPct}%)`;
     set('xpt', `${shortText}|${fullText}`, () => {
       const elText = $('#xp-text');
       if (elText) {
         elText.innerHTML = `<span class="xp-text-short">${escapeHtml(shortText)}</span><span class="xp-text-full">${escapeHtml(fullText)}</span>`;
+        elText.title = mk
+          ? `Level 100 reached. ${fmtInt(xpNow)} of ${fmtInt(need)} XP (${xpPct}%) toward the next Infernal Mark. Lifetime XP-earned Marks for ${c.name}: ${fmtInt(mk.earned)}. Marks accumulate now and can be spent after the Infernal Marks interface is unlocked.`
+          : 'Experience toward the next character level.';
       }
     });
     for (const s of this.slots) {

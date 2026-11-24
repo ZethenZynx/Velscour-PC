@@ -4,7 +4,7 @@ import { el, escapeHtml, fmtInt } from '../core/util.js';
 import { sfx } from '../core/audio.js';
 import { UI } from './ui.js';
 import { endgame, MARK_CATS } from '../game/endgame.js';
-import { CATS, INFERNAL_UPGRADES, MARK_CATEGORIES, INFERNAL_UPGRADE_BY_ID, bonusFor, purchaseCost, maxPurchasable, marksTotal, marksFree, marksIn, purchaseUpgrade, refundCost, refundUpgrade, resetMarks, autoSpend, markXp } from '../game/marks.js';
+import { CATS, INFERNAL_UPGRADES, MARK_CATEGORIES, INFERNAL_UPGRADE_BY_ID, bonusFor, purchaseCost, maxPurchasable, marksTotal, marksFree, marksIn, purchaseUpgrade, refundCost, refundUpgrade, resetMarks, autoSpend, capXp } from '../game/marks.js';
 import { MAX_LEVEL } from '../game/player.js';
 import { SKILLS } from '../data/skills.js';
 import { skillIconURL } from './icons.js';
@@ -96,8 +96,8 @@ export const Marks = {
     };
     body.tabIndex = 0;
     body.classList.add('mk-shell');
-    const xp = m.xp, need = markXp(), pct = Math.min(100, xp / need * 100);
-    body.appendChild(el('div', 'mk-head', `<div class="mk-summary"><div class="mk-tot"><b>${fmtInt(marksTotal())}</b><span>INFERNAL MARKS</span><small>${fmtInt(marksFree())} available</small></div><div class="mk-xp" title="${fmtInt(xp)} / ${fmtInt(need)} XP"><i style="width:${pct.toFixed(1)}%"></i><span>Mark progress ${Math.floor(pct)}% · ${fmtInt(xp)} / ${fmtInt(need)} XP${G.char && G.char.level >= MAX_LEVEL ? '' : ` · begins after level ${MAX_LEVEL}`}</span></div></div><div class="mk-why">Earn Marks only through eligible endgame activities after Velscour falls. Marks are shared by your heroes.</div>`));
+    const xpProgress = capXp(G.char), xp = xpProgress?.xp || 0, need = xpProgress?.need || 0, pct = need ? Math.min(100, xp / need * 100) : 0;
+    body.appendChild(el('div', 'mk-head', `<div class="mk-summary"><div class="mk-tot"><b>${fmtInt(marksTotal())}</b><span>INFERNAL MARKS</span><small>${fmtInt(marksFree())} available</small></div><div class="mk-xp" title="${xpProgress ? `${fmtInt(xp)} / ${fmtInt(need)} XP` : `Experience-earned Marks begin at level ${MAX_LEVEL}`} "><i style="width:${pct.toFixed(1)}%"></i><span>${xpProgress ? `✦ ${fmtInt(xpProgress.earned)} earned · ${Math.floor(pct)}% · ${fmtInt(xp)} / ${fmtInt(need)} XP` : `✦ Experience-earned Marks begin at level ${MAX_LEVEL}`}</span></div></div><div class="mk-why">Experience-earned Marks are tracked per hero from level ${MAX_LEVEL} and join your account-wide balance. Spend Marks here after Velscour falls.</div>`));
     const nav = el('div', 'mk-nav');
     const prev = el('button', 'btn small mk-nav-arrow', '‹'); prev.title = 'Previous category'; prev.onclick = () => this.moveCategory(-1); nav.appendChild(prev);
     for (const cat of MARK_CATEGORIES) {

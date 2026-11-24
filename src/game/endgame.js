@@ -1,5 +1,5 @@
-// The Endgame's shared record (docs/ENDGAME.md): what every hero on this browser shares once any of them has slain
-// Velscour for real: the unlock, the Infernal Marks (game/marks.js), the best Abyssal Rift per class, counters. It lives in
+// The shared account record: endgame unlock, Infernal Mark currency and upgrades, Rift records and counters. Per-hero
+// experience-earned Mark counts and their XP remainder live in each character save. This record lives in
 // its own localStorage key beside the heroes' saves and the Reliquary.
 import { G } from '../state.js';
 import { FINAL_DEPTH } from '../data/depth.js';
@@ -10,7 +10,7 @@ const MARKS_RESET_VERSION = 2;
 export const MARK_CATS = INFERNAL_UPGRADES.map((u) => u.id);
 let E = null;
 
-function blank() { return { v: 1, marksResetVersion: MARKS_RESET_VERSION, unlocked: 0, marks: { pts: 0, xp: 0, spentValue: 0, rewardRemainder: 0, legacyFerocity: 0, spent: Object.fromEntries(MARK_CATS.map((id) => [id, 0])) }, storageRefundV1: { heroes: {}, reliquary: false }, bests: {}, keysFound: 0, unboundWins: 0 }; }
+function blank() { return { v: 1, marksResetVersion: MARKS_RESET_VERSION, markXpMigrationV1: false, unlocked: 0, marks: { pts: 0, xp: 0, spentValue: 0, rewardRemainder: 0, legacyFerocity: 0, spent: Object.fromEntries(MARK_CATS.map((id) => [id, 0])) }, storageRefundV1: { heroes: {}, reliquary: false }, bests: {}, keysFound: 0, unboundWins: 0 }; }
 /** A record with every field present and sane (a damaged one keeps what it can). */
 export function fixEndgame(r) {
   const o = blank();
@@ -18,12 +18,14 @@ export function fixEndgame(r) {
   const version = Number(r.marksResetVersion) || 0;
   const resetLegacyMarks = version < 1;
   o.marksResetVersion = MARKS_RESET_VERSION;
+  o.markXpMigrationV1 = !!r.markXpMigrationV1;
   o.unlocked = Number(r.unlocked) > 0 ? Number(r.unlocked) : 0;
   const m = r.marks && typeof r.marks === 'object' ? r.marks : {};
   // The historical v1 reset removed campaign-era points. Keep that policy for v0 data;
   // the v1 -> v2 upgrade below preserves valid progression and refunds removed Fortune.
   o.marks.pts = resetLegacyMarks ? 0 : Math.max(0, Math.floor(Number(m.pts) || 0));
-  o.marks.xp = resetLegacyMarks ? 0 : Math.max(0, Number(m.xp) || 0);
+  const legacyXp = Number(m.xp);
+  o.marks.xp = resetLegacyMarks || !Number.isFinite(legacyXp) ? 0 : Math.max(0, legacyXp);
   if (!resetLegacyMarks && version < 2) {
     const old = m.spent && typeof m.spent === 'object' ? m.spent : {};
     const oldLife = Math.max(0, Math.floor(Number(old.life) || 0));
@@ -107,7 +109,7 @@ if (typeof addEventListener === 'function') addEventListener('velscour-overhaul-
 export function endgameUnlocked(c = G.char) { return !!(endgame().unlocked || (c && c.cleared && c.cleared[FINAL_DEPTH])); }
 /** Authoritative campaign victory record; unlike cleared[FINAL_DEPTH], this is only written by Velscour's real defeat. */
 export function campaignVictoryRecorded() { return Number(endgame().unlocked) > 0; }
-/** Marks only come from an unlocked endgame activity, never campaign replay or town systems. */
+/** Direct activity rewards come only from an unlocked endgame activity, never campaign replay or town systems. */
 export function canEarnInfernalMarks(world = G.world, c = G.char) {
   if (!endgameUnlocked(c) || !world) return false;
   return !!(world.rift || world.unbound || world.unboundExploration || (world.kind === 'dungeon' && Number(world.depth) > FINAL_DEPTH));

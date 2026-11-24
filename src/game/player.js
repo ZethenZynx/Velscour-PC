@@ -40,7 +40,7 @@ import { computeTalentBonuses, skillMorphFor, applySkillMorph } from '../data/ta
 import { relicProc } from './relicprocs.js';
 import { noteFind, codexMf } from './reliquary.js';
 import { markBonuses, gainMarkXp } from './marks.js';
-import { endgame, saveEndgame, canEarnInfernalMarks } from './endgame.js';
+import { endgame, saveEndgame } from './endgame.js';
 import { heresyHero, heresyAllows, heresyAbilityCostMul, heresyCooldownMul, heresyShrineDurationMul } from './heresies.js';
 
 // XP for the next level across the Level 1-100 progression curve.
@@ -391,16 +391,14 @@ export class Player extends Creature {
     const depth = depthLevel((this.world && this.world.depth) || 1);
     const diff = c.level - depth;
     const pen = !flat && diff > 5 ? Math.max(0.1, 1 - (diff - 5) * 0.1) : 1;
-    // Greed XP is an additive world bonus, including eligible post-level-cap Mark XP.
+    // Greed XP is an additive world bonus, including post-level-cap Mark XP.
     const gain = Math.round(n * pen * (1 + (this.st.xpPct + (this.world?.xpBonusPct || 0)) / 100));
     if (gain > 0 && c.level < MAX_LEVEL) G.ui?.event?.({ category: 'experience.gained', text: `Gained ${gain} experience.`, meta: { data: { amount: gain } } });
     if (c.level >= MAX_LEVEL) {
-      if (canEarnInfernalMarks(this.world, c)) {
-        if (gain > 0) G.ui?.event?.({ category: 'experience.milestone', text: `Added ${gain} progress toward an Infernal Mark.`, meta: { data: { amount: gain, target: 'Infernal Mark' } } });
-        gainMarkXp(gain, this.world);
-      }
+      if (gain > 0) G.ui?.event?.({ category: 'experience.milestone', text: `Added ${gain} progress toward an Infernal Mark.`, meta: { data: { amount: gain, target: 'Infernal Mark' } } });
+      gainMarkXp(gain, this.world, c);
       return;
-    } // post-cap XP advances Marks only during eligible endgame activities
+    } // post-cap XP always advances this hero's experience-earned Marks
     c.xp += gain;
     while (c.level < MAX_LEVEL && c.xp >= xpToNext(c.level)) {
       c.xp -= xpToNext(c.level);
@@ -409,7 +407,7 @@ export class Player extends Creature {
     if (c.level >= MAX_LEVEL && c.xp > 0) {
       const overflow = c.xp;
       c.xp = 0;
-      if (canEarnInfernalMarks(this.world, c)) gainMarkXp(overflow, this.world); // only endgame XP can become Mark progress
+      gainMarkXp(overflow, this.world, c); // preserve XP left over from the level-100 transition
     }
   }
   levelUp() {

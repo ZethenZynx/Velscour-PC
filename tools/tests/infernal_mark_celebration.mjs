@@ -3,7 +3,7 @@ import { readFile } from 'node:fs/promises';
 import { G } from '../../src/state.js';
 
 const store = new Map();
-globalThis.localStorage = { getItem: (key) => store.get(key) ?? null, setItem: (key, value) => store.set(key, String(value)) };
+globalThis.localStorage = { getItem: (key) => store.get(key) ?? null, setItem: (key, value) => store.set(key, String(value)), removeItem: (key) => store.delete(key) };
 store.set('velscour_endgame_v1', JSON.stringify({
   marksResetVersion: 2, unlocked: 1,
   marks: { pts: 0, xp: 0, spentValue: 0, spent: {} },
@@ -14,7 +14,7 @@ resetEndgameCache();
 const marks = await import('../../src/game/marks.js');
 const vfx = await import('../../src/gfx/vfx.js');
 const { infernalMarkRewardSfx } = await import('../../src/core/audio.js');
-G.char = { level: 100 };
+G.char = { id: 'celebration-hero', name: 'Celebration Hero', level: 100, experienceMarks: { earned: 0, xp: 0 } };
 G.world = { kind: 'dungeon', depth: 101 };
 G.player = { x: 4, y: 6, recompute() {} };
 G.ui = null;
@@ -25,7 +25,7 @@ assert.equal(vfx.effects.length, effectsBeforeDirectReward, 'non-XP Mark rewards
 assert.equal(vfx.particles.length, particlesBeforeDirectReward, 'direct grants do not create celebration particles');
 vfx.effects.length = 0; vfx.particles.length = 0; vfx.texts.length = 0;
 
-const count = marks.gainMarkXp(marks.markXp() * 2 + 5, G.world);
+const count = marks.gainMarkXp(marks.markXp(0) + marks.markXp(1) + 5, G.world);
 assert.equal(count, 2, 'multiple Marks from one XP award are credited together');
 assert.equal(vfx.effects.filter((effect) => effect.constructor.name === 'Sigil').length, 1, 'one crimson-gold sigil is created for the combined award');
 assert.equal(vfx.effects.filter((effect) => effect.constructor.name === 'Ring').length, 1, 'one expanding energy ring is created for the combined award');
@@ -47,7 +47,7 @@ assert.equal(vfx.particles.length, 0, 'reduced-flashing mode omits rising partic
 
 const marksSource = await readFile(new URL('../../src/game/marks.js', import.meta.url), 'utf8');
 const audioSource = await readFile(new URL('../../src/core/audio.js', import.meta.url), 'utf8');
-assert.match(marksSource, /announce\(n, 'from the abyss', true\)/, 'the celebration is connected only to successful XP threshold awards');
+assert.match(marksSource, /announce\(n, 'from experience', true\)/, 'the celebration is connected only to successful XP threshold awards');
 assert.match(marksSource, /infernalMarkRewardSfx\(\)/, 'the celebration uses its dedicated sound');
 assert.match(audioSource, /infernal_mark: \(t, p\) =>/, 'the sound is procedural and does not require an external asset');
 assert.match(audioSource, /infernalMarkChimeUntil = ac\.currentTime \+ 0\.9/, 'repeated chimes cannot overlap');

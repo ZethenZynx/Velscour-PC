@@ -692,7 +692,7 @@ function statsBlock() {
   const p = G.player, c = G.char, st = p.st, C = CLASSES[c.classId];
   const box = el('div', 'col character-card');
   const need = xpToNext(c.level), mk = capXp(c);   // at the cap: XP towards the next Infernal Mark
-  box.appendChild(el('div', 'character-identity', `<span class="inv-eyebrow">Character</span><b>${escapeHtml(c.name)}</b><span>Level ${c.level} ${C.name}</span><small>${mk ? `Next Infernal Mark ${fmtInt(mk.xp)} / ${fmtInt(mk.need)} XP` : `XP ${fmtInt(c.xp)} / ${fmtInt(need)}`}</small>`));
+  box.appendChild(el('div', 'character-identity', `<span class="inv-eyebrow">Character</span><b>${escapeHtml(c.name)}</b><span>Level ${c.level} ${C.name}</span><small>${mk ? `Next Infernal Mark ${fmtInt(mk.xp)} / ${fmtInt(mk.need)} XP · ${fmtInt(mk.earned)} earned by experience` : `XP ${fmtInt(c.xp)} / ${fmtInt(need)}`}</small>`));
   box.appendChild(el('div', 'inv-section-title', 'Attributes'));
   const attrs = el('div', '');
   for (const k of ['str', 'dex', 'vit', 'int']) {

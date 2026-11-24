@@ -1,8 +1,9 @@
-// Account-wide Infernal Marks progression and cached, data-driven upgrade effects.
+// Account-wide Infernal Mark currency/upgrades plus per-character XP progression.
 import { G } from '../state.js';
 import { endgame, saveEndgame, MARK_CATS, canEarnInfernalMarks } from './endgame.js';
 import { INFERNAL_UPGRADES, INFERNAL_UPGRADE_BY_ID, MARK_CATEGORIES, bonusFor, purchaseCost, maxPurchasable } from '../data/infernalupgrades.js';
 import { xpToNext, MAX_LEVEL } from './player.js';
+import { writeSave } from './save.js';
 import { sfx, infernalMarkRewardSfx } from '../core/audio.js';
 import { floatText, addEffect, Ring, Sigil, Column, sparkle } from '../gfx/vfx.js';
 
@@ -15,7 +16,10 @@ export const CATS = Object.freeze(Object.fromEntries(INFERNAL_UPGRADES.map((u) =
   color: ({ offensive: '#ff765c', defensive: '#65baff', resources: '#65dcce', loot: '#e7c552', utility: '#b999ff', endgame: '#e87dff' })[u.category],
   desc: u.description, icon: u.icon,
 }])));
-export const markXp = () => xpToNext(MAX_LEVEL);
+const nonNegativeFinite = (v) => Number.isFinite(Number(v)) ? Math.max(0, Number(v)) : 0;
+const experienceEarned = (c) => Math.max(0, Math.floor(nonNegativeFinite(c?.experienceMarks?.earned)));
+/** The next Mark costs the next step of the existing hero-level XP curve. */
+export const markXp = (earned = experienceEarned(G.char)) => xpToNext(MAX_LEVEL + Math.max(0, Math.floor(nonNegativeFinite(earned))));
 export const eff = (n) => 140 * (Math.sqrt(1 + Math.max(0, n) / 100) - 1);
 export const worthNext = (n) => 1 / Math.sqrt(1 + Math.max(0, n) / 100);
 export const bonusAt = (k, n) => bonusFor(k, n);
@@ -172,23 +176,115 @@ export function autoSpend() {
 
 export const riftMarks = (tier) => Math.max(1, Math.ceil(tier / 10));
 let xpDirty = false, xpSaved = 0;
-export function gainMarkXp(xp, world = G.world) {
-  if (!canEarnInfernalMarks(world)) return 0;
-  const m = endgame().marks;
-  m.xp += Math.max(0, xp || 0);
-  let n = 0; const cost = markXp();
-  while (m.xp >= cost) { m.xp -= cost; m.pts++; n++; }
-  if (n) { xpDirty = false; xpSaved = Date.now(); changed(); announce(n, 'from the abyss', true); }
-  else if (xp > 0) { xpDirty = true; if (Date.now() - xpSaved > 5000) saveMarkXp(); }
+/**
+ * Per-character progression replaces the old shared XP remainder. The old remainder can be migrated only once,
+ * to the first level-100 hero that enters after this update. Its historical lifetime count was never recorded, so
+ * we intentionally do not infer one from the shared Mark wallet.
+ */
+export function prepareCharacterMarkProgress(c = G.char) {
+  if (!c) return null;
+  const progress = c.experienceMarks && typeof c.experienceMarks === 'object' && !Array.isArray(c.experienceMarks)
+    ? c.experienceMarks : (c.experienceMarks = { earned: 0, xp: 0 });
+  const earned = Math.max(0, Math.floor(nonNegativeFinite(progress.earned))), xp = nonNegativeFinite(progress.xp);
+  if (progress.earned !== earned) progress.earned = earned;
+  if (progress.xp !== xp) progress.xp = xp;
+  let dirty = false;
+  if (c.level >= MAX_LEVEL && Number(c.xp) > 0) {
+    progress.xp = Math.min(Number.MAX_VALUE, progress.xp + nonNegativeFinite(c.xp));
+    c.xp = 0;
+    dirty = true;
+  }
+  if (c.level >= MAX_LEVEL) {
+    const record = endgame();
+    if (!record.markXpMigrationV1) {
+      const legacy = nonNegativeFinite(record.marks.xp);
+      if (legacy > 0) progress.xp = Math.min(Number.MAX_VALUE, progress.xp + legacy);
+      record.marks.xp = 0;
+      record.markXpMigrationV1 = true;
+      saveEndgame(true);
+      dirty = true;
+    }
+  }
+  if (dirty) xpDirty = true;
+  return progress;
+}
+
+// Exact summation is cheap for ordinary payouts. For artificial, extremely large test/reward values use the
+// Euler–Maclaurin sum of the same smooth curve to avoid a per-Mark loop proportional to the payout.
+const powerDelta = (start, delta, power) => start ** power * Math.expm1(power * Math.log1p(delta / start));
+function curveValue(x) { return (45 * x * x + 35 * x) * (1 + (x / 25) ** 1.25); }
+function curveDerivative(x) {
+  return (90 * x + 35) * (1 + (x / 25) ** 1.25) + (45 * x * x + 35 * x) * (1.25 / 25) * (x / 25) ** 0.25;
+}
+function cumulativeMarkCost(earned, count) {
+  count = Math.max(0, Math.floor(count));
+  if (!count) return 0;
+  const start = MAX_LEVEL + earned;
+  if (count <= 50000) {
+    let total = 0;
+    for (let i = 0; i < count; i++) total += xpToNext(start + i);
+    return total;
+  }
+  const end = start + count - 1;
+  const delta = end - start, q = 25 ** 1.25;
+  const integral = 15 * powerDelta(start, delta, 3) + 17.5 * powerDelta(start, delta, 2)
+    + (45 / (4.25 * q)) * powerDelta(start, delta, 4.25)
+    + (35 / (3.25 * q)) * powerDelta(start, delta, 3.25);
+  // Sum f(start..end) = integral + endpoint correction + first Bernoulli correction.
+  return integral + (curveValue(start) + curveValue(end)) / 2 + (curveDerivative(end) - curveDerivative(start)) / 12;
+}
+function affordableMarkCount(progressXp, earned) {
+  if (progressXp < markXp(earned)) return 0;
+  let low = 0, high = 1;
+  while (high < Number.MAX_SAFE_INTEGER && cumulativeMarkCost(earned, high) <= progressXp) {
+    low = high;
+    high = Math.min(Number.MAX_SAFE_INTEGER, high * 2);
+  }
+  if (high === Number.MAX_SAFE_INTEGER && cumulativeMarkCost(earned, high) <= progressXp) return high;
+  while (low + 1 < high) {
+    const mid = Math.floor(low + (high - low) / 2);
+    if (cumulativeMarkCost(earned, mid) <= progressXp) low = mid;
+    else high = mid;
+  }
+  return low;
+}
+/** Award experience-earned Marks from any legitimate XP source once this character reaches level 100. */
+export function gainMarkXp(xp, _world = G.world, character = G.char) {
+  if (!character || character.level < MAX_LEVEL) return 0;
+  const progress = prepareCharacterMarkProgress(character);
+  const amount = nonNegativeFinite(xp);
+  if (!progress || amount <= 0) return 0;
+  progress.xp = Math.min(Number.MAX_VALUE, progress.xp + amount);
+  const earned = progress.earned;
+  const n = affordableMarkCount(progress.xp, earned);
+  if (n > 0) {
+    const cost = cumulativeMarkCost(earned, n);
+    progress.xp = Math.max(0, progress.xp - cost);
+    progress.earned += n;
+    endgame().marks.pts += n;
+    xpDirty = true;
+    changed();
+    saveMarkXp();
+    announce(n, 'from experience', true);
+  } else {
+    xpDirty = true;
+    if (Date.now() - xpSaved > 5000) saveMarkXp();
+  }
   return n;
 }
 export function saveMarkXp() {
   if (!xpDirty) return true;
-  if (!saveEndgame(true)) return false;
+  const charSaved = G.char ? writeSave(G.char) : true;
+  const endgameSaved = saveEndgame(true);
+  if (!charSaved || !endgameSaved) return false;
   xpDirty = false; xpSaved = Date.now();
   return true;
 }
-export const capXp = (c = G.char) => c && c.level >= MAX_LEVEL ? { xp: endgame().marks.xp, need: markXp() } : null;
+export const capXp = (c = G.char) => {
+  if (!c || c.level < MAX_LEVEL) return null;
+  const progress = prepareCharacterMarkProgress(c);
+  return progress ? { xp: progress.xp, need: markXp(progress.earned), earned: progress.earned } : null;
+};
 
 export function grantMarks(n, why = '', world = G.world) {
   n = Math.max(0, Math.floor(n));

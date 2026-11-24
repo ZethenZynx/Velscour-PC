@@ -278,7 +278,7 @@ G.game = game;
   assert.deepEqual(reloadedExpander.gemBag[0], savedGem, 'stored gems survive save/load');
   assert.equal(reloadedExpander.gold, c.gold, 'the post-purchase gold balance survives save/load');
 
-  // Legacy campaign farming and capped XP cannot grant or progress Marks.
+  // Direct clear rewards remain gated, but all capped-level XP sources now progress this hero's Marks.
   G.world = { kind: 'dungeon', depth: 100 };
   assert.equal(grantMarks(3, 'campaign test'), 0, 'direct Mark rewards are blocked in campaign depths');
   game.awardFloorClear(51);
@@ -286,17 +286,19 @@ G.game = game;
   c.level = 100;
   const { gainMarkXp, markXp } = await import('../../src/game/marks.js');
   const player = new Player(c); G.player = player;
-  const oldMarkXp = endgame().marks.xp;
+  const earnedBefore = c.experienceMarks?.earned || 0;
+  const oldProgressXp = c.experienceMarks?.xp || 0;
   player.gainXp(markXp(), true);
-  assert.equal(marksFree(), m0, 'capped campaign XP cannot award Infernal Marks');
-  assert.equal(endgame().marks.xp, oldMarkXp, 'capped campaign XP does not advance Mark progress');
+  assert.equal(marksFree(), m0 + 1, 'level-100 campaign XP can award an experience-earned Mark before endgame unlock');
+  assert.equal(c.experienceMarks.earned, earnedBefore + 1, 'the earned lifetime count belongs to this character');
+  assert.equal(c.experienceMarks.xp, oldProgressXp, 'overflow is carried into the next, higher virtual-level threshold');
   G.world = { kind: 'dungeon', depth: 101 };
   game.awardFloorClear(101);
-  assert.equal(marksFree(), m0 + 1, 'an eligible endgame depth clear grants its Mark');
+  assert.equal(marksFree(), m0 + 2, 'an eligible endgame depth clear still grants its direct Mark reward');
   assert.equal(gainMarkXp(markXp(), G.world), 1, 'eligible post-campaign endgame XP can award a Mark');
   assert.equal(grantMarks(1, 'rift test', { kind: 'dungeon', depth: 100, rift: {} }), 1, 'an unlocked Rift is an eligible endgame activity');
   assert.equal(grantMarks(2, 'Unbound test', { kind: 'dungeon', depth: 100, unbound: true }), 2, 'Velscour Unbound is an eligible endgame activity');
-  assert.equal(marksFree(), m0 + 5, 'eligible endgame rewards are saved to the shared record');
+  assert.equal(marksFree(), m0 + 6, 'XP and eligible activity rewards share the account-wide Mark wallet');
   G.world = { kind: 'dungeon', depth: 100 };
 
   endgame().unlocked = Date.now();

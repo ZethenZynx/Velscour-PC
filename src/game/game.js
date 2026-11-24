@@ -167,7 +167,7 @@ import { heresySpawns, heresyWorld, heresyBegin, heresyTick, heresyMonster, here
 import { createRiftRun, riftTick, riftOpen, riftDepth, riftLevel, fmtTime, riftLeave, requestRiftReturn, restoreRiftCompletion, activatePylon, riftDeathPenalty, RIFT_QUOTA, RIFT_DENSITY } from './rifts.js';
 import { PYLONS, normalizeRiftTier, riftRewardProgressionDepth, riftHpMul, riftDmgMul } from '../data/rifts.js';
 import { unboundReady, spendKeys, keysOf, canEnterUnbound, spendUnboundKey, unboundWaypoints, MAX_UNBOUND_DEPTH, isUnboundCheckpointFloor, unboundDepth } from './unbound.js';
-import { grantMarks, grantMarksWithBonus, saveMarkXp } from './marks.js';
+import { grantMarks, grantMarksWithBonus, saveMarkXp, prepareCharacterMarkProgress } from './marks.js';
 import { Heresies } from '../ui/heresies.js';
 import { Rifts } from '../ui/rifts.js';
 import { Marks } from '../ui/marks.js';
@@ -323,6 +323,7 @@ export const game = {
     hideScreen();
     initializeCharacterLootFilters(c);
     G.char = c;
+    prepareCharacterMarkProgress(c); // turn capped-level XP and legacy shared remainder into this hero's progress once
     applyUILayoutSettings();
     preloadSkillSheets(c.classId);
     setRingContext(c.classId, c.skills);
@@ -361,7 +362,7 @@ export const game = {
     if (!G.char) return false;
     this.snapshotRiftCompletion(G.char);
     const characterSaved = writeSave(G.char);
-    const marksSaved = saveMarkXp();   // XP towards the next Infernal Mark (game/marks.js)
+    const marksSaved = saveMarkXp();   // post-level-cap per-hero XP progress (game/marks.js)
     saveT = 0;
     return characterSaved && marksSaved;
   },
