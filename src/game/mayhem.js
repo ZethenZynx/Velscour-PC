@@ -9,12 +9,13 @@ import { aoe } from './combat.js';
 import { makeMonster } from './monster.js';
 import { pickMonsterArchetype } from './monsterroster.js';
 import { depthLevel } from '../data/depth.js';
+import { hulkingHealthMultiplier } from './championBalance.mjs';
 
 // ---------------------------------------------------------------- traits
 // name prefix, the extra special moves it brings, and how it changes the monster
 export const TRAITS = {
   hunter: { name: 'Hunting', moves: [], fn: (m) => { m.hunter = true; m.awake = true; m.speed *= 1.15; m.aggroRange = 30; } },
-  tank: { name: 'Hulking', moves: [], fn: (m) => { m.maxHp *= 4.5; m.dmg *= 1.3; m.xp *= 3.5; m.scale = (m.scale || 1) * 1.35; m.r *= 1.2; m.speed *= 0.72; m.res = { ...m.res, phys: (m.res.phys || 0) + 0.25 }; m.tank = true; } },
+  tank: { name: 'Hulking', moves: [], fn: (m) => { const hpMul = hulkingHealthMultiplier(m.rank); m.maxHp *= hpMul; m.dmg *= 1.3; m.xp *= 3.5; m.scale = (m.scale || 1) * 1.35; m.r *= 1.2; m.speed *= 0.72; m.res = { ...m.res, phys: (m.res.phys || 0) + 0.25 }; m.tank = true; if (m.rank === 'champion') m._hulkingChampionAdjusted = true; } },
   gunner: { name: 'Hexfire', moves: ['spiral', 'cross', 'rings', 'wall', 'rain', 'homing'], n: 3, fn: (m) => { m.xp *= 1.6; m.aura = m.aura || '#c040ff'; } },
   phaser: { name: 'Phasing', moves: ['phase'], fn: (m) => { m.xp *= 1.4; } },
   burrower: { name: 'Burrowing', moves: ['burrow'], ok: (m) => !m.fly, fn: (m) => { m.xp *= 1.4; } },

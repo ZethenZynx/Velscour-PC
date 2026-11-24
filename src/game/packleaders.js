@@ -4,6 +4,7 @@ import { PACK_LEADER_CHANCE, PACK_LEADERS } from '../data/packleaders.js';
 import { G } from '../state.js';
 import { angleTo, chance, dist, rand } from '../core/util.js';
 import { addEffect, Ring, Sigil, sparkle, floatText, spawn } from '../gfx/vfx.js';
+import { adjustHulkingWarCaptainHealth, WAR_CAPTAIN_GUARD_DAMAGE_REDUCTION, WAR_CAPTAIN_GUARD_RESIST } from './championBalance.mjs';
 
 const LIVE = (m) => m && !m.dead && m.team === 'enemy';
 const packMembers = (leader) => (leader.world?.creatures || []).filter((m) => LIVE(m) && m.enemyPackId === leader.enemyPackId);
@@ -55,6 +56,7 @@ export function assignPackLeader(world, members, biome = world?.biome, depth = w
   leader.packLeaderRuneColor = cfg.color; leader.packLeaderRuneSprite = null; // future authored sprite slot
   leader.name = `${cfg.name} ${leader.name}`;
   leader.maxHp *= 1.16; leader.hp = Math.min(leader.maxHp, leader.hp * 1.16); leader.dmg *= 1.06;
+  if (id === 'war_captain') adjustHulkingWarCaptainHealth(leader);
   leader.packLeaderResurrections = 0; leader.packLeaderSummons = 0; leader.packLeaderCd = 1.4 + Math.random() * 1.8;
   G.ui?.event?.({ category: 'debug.spawn', text: `${members.length}-enemy pack received a ${cfg.name} leader.`, meta: { data: { groupSize: members.length, leader: id, depth: depth || null } } });
   if (cfg.role === 'front') {
@@ -156,7 +158,7 @@ function useAbility(leader, target) {
       if (leader.hp < leader.maxHp * 0.7 && abilityReady(leader, 'rage', 8)) { leader.packLeaderRageUntil = timeOf(leader) + 5; buff(leader, { damage: 0.12, speed: 0.12, attackRate: 1.12 }, 5, 4.6); pulse(leader); floatText(leader.x, leader.y, 55, 'BLOOD RAGE', '#FF3B66', 9); return true; }
       break;
     case 'war_captain':
-      if (abilityReady(leader, 'guard', 8.5)) { buff(leader, { damageReduction: 0.15, resist: 0.1 }, 4.5); pulse(leader); floatText(leader.x, leader.y, 55, 'HOLD FAST', '#78aaff', 9); return true; }
+      if (abilityReady(leader, 'guard', 8.5)) { buff(leader, { damageReduction: WAR_CAPTAIN_GUARD_DAMAGE_REDUCTION, resist: WAR_CAPTAIN_GUARD_RESIST }, 4.5); pulse(leader); floatText(leader.x, leader.y, 55, 'HOLD FAST', '#78aaff', 9); return true; }
       break;
     case 'battle_drummer':
       if (abilityReady(leader, 'drum', 8)) { buff(leader, { speed: 0.13, attackRate: 1.12 }, 5); pulse(leader, 5.2, '#E8B522'); floatText(leader.x, leader.y, 55, 'WAR BEAT', '#f4d052', 9); return true; }

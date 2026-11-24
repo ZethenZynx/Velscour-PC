@@ -20,6 +20,7 @@ import { ART_BY_ID, REVIVED, greaterSwap, rollLooks, uniqueSwap } from '../data/
 import { skillMorphFor } from '../data/talents.js';
 import { configureEnemyVariety, updateEnemyVariety, executeEnemyAttack, enemyDamageReduction, enemyDamaged, enemyAllyKilled, enemyKilled } from './enemyvariety.js';
 import { UNIQUE_HEALTH_MULTIPLIER, rollUniqueAffixes, uniqueRegenPerSecond } from './uniqueBalance.js';
+import { adjustHulkingChampionHealth, applyToughHealthModifier } from './championBalance.mjs';
 
 const LEASH = 10; // minions fight what's within this many tiles of the hero
 const CHASE = 1.3, CHASE_MAX = 4.6; // monsters' pursuit pace: x1.3, up to 4.6 tiles/s (the hero runs 4.2) unless faster already
@@ -1633,6 +1634,7 @@ export function makeElite(m, rank, depth, world) {
   if (m._eliteRankApplied) return m;
   m._eliteRankApplied = rank;
   m.rank = rank;
+  if (rank === 'champion') adjustHulkingChampionHealth(m);
   const keys = Object.keys(ELITE_AFFIXES).filter((k) => k !== 'multishot' || ['ranged', 'caster'].includes(m.ai));
   if (rank === 'champion') {
     m.maxHp *= 3.5; m.dmg *= 1.35; m.xp *= 3.5; m.aura = '#4a8aff'; m.scale = 1.15;
@@ -1667,7 +1669,7 @@ export function makeElite(m, rank, depth, world) {
   if (m.affixes) {
     if (m.affixes.includes('strong')) m.dmg *= 1.5;
     if (m.affixes.includes('fast')) { m.speed *= 1.4; m.atkCd *= 0.75; }
-    if (m.affixes.includes('tough')) { m.maxHp *= 1.5; for (const k of ['phys', 'fire', 'cold', 'light', 'poison']) m.res[k] = (m.res[k] || 0) + 0.15; }
+    if (m.affixes.includes('tough')) { applyToughHealthModifier(m); for (const k of ['phys', 'fire', 'cold', 'light', 'poison']) m.res[k] = (m.res[k] || 0) + 0.15; }
     if (m.affixes.includes('fiery')) m.res.fire = (m.res.fire || 0) + 0.4;
     if (m.affixes.includes('frozen')) m.res.cold = (m.res.cold || 0) + 0.4;
   }

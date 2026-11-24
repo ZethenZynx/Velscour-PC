@@ -8,6 +8,7 @@ import { heresyMonster } from '../../src/game/heresies.js';
 import { rollGreedAffixes } from '../../src/game/greed.js';
 import { makeElite, makeMonster, monsterBase } from '../../src/game/monster.js';
 import { UNIQUE_DEFENSIVE_AFFIXES, UNIQUE_HEALTH_MULTIPLIER, UNIQUE_MAX_REGEN_PER_SECOND, UNIQUE_MIN_DAMAGE_TAKEN, rollUniqueAffixes, uniqueDamageAfterDefense, uniqueRegenPerSecond } from '../../src/game/uniqueBalance.js';
+import { TOUGH_CHAMPION_HEALTH_MULTIPLIER } from '../../src/game/championBalance.mjs';
 
 const depths = [25, 50, 75, 100, 200, 476, 750, 1000];
 const sampleWorld = (depth, extra = {}) => ({ kind: 'dungeon', depth, biome: { id: 'test', el: 'phys' }, dungeonAffixes: [], ...extra });
@@ -28,7 +29,7 @@ for (const depth of depths) {
   const boss = makeMonster(world, 'skeleton', world.biome, depthLevel(depth) + 2, 'boss', 0, 0, 0, null);
   const expected = baseHpAtDepth(depth) * UNIQUE_HEALTH_MULTIPLIER;
   const uniqueAffixHealth = unique.affixes.includes('tough') ? 1.5 : 1;
-  const championAffixHealth = champion.affixes.includes('tough') ? 1.5 : 1;
+  const championAffixHealth = champion.affixes.includes('tough') ? TOUGH_CHAMPION_HEALTH_MULTIPLIER : 1;
   assert.ok(Math.abs(unique.maxHp / uniqueAffixHealth - expected) <= Math.max(1e-7, expected * 1e-12), `depth ${depth}: unique uses the depth baseline once and the revised rank multiplier once`);
   assert.ok(unique.maxHp / uniqueAffixHealth > champion.maxHp / championAffixHealth, `depth ${depth}: the unique retains a stronger base multiplier than a comparable champion`);
   assert.ok(boss.maxHp > unique.maxHp, `depth ${depth}: a dedicated boss remains more durable than the unique`);

@@ -15,6 +15,7 @@ import { ARCH } from '../data/enemies.js';
 import { depthLevel } from '../data/depth.js';
 import { makeMonster } from './monster.js';
 import { hit } from './combat.js';
+import { applyToughHealthModifier } from './championBalance.mjs';
 
 export { HERESIES, HERESY_BY_ID, HERESY_MAX_RANK, heresyRank, heresyMods, KEYS_RANK, MARKS_RANK };
 
@@ -206,7 +207,7 @@ export function heresyMonster(m, ids) {
       m.affixes.push(k);
       if (k === 'strong') m.dmg *= 1.5;
       if (k === 'fast') { m.speed *= 1.4; m.atkCd *= 0.75; }
-      if (k === 'tough') { m.maxHp *= 1.5; m.hp *= 1.5; for (const e of ['phys', 'fire', 'cold', 'light', 'poison']) m.res[e] = (m.res[e] || 0) + 0.15; }
+      if (k === 'tough') { applyToughHealthModifier(m); for (const e of ['phys', 'fire', 'cold', 'light', 'poison']) m.res[e] = (m.res[e] || 0) + 0.15; }
       if (k === 'fiery') m.res.fire = (m.res.fire || 0) + 0.4;
       if (k === 'frozen') m.res.cold = (m.res.cold || 0) + 0.4;
     }
