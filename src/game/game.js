@@ -25,7 +25,7 @@ import { ARCH } from '../data/enemies.js';
 import { resolveLevelCheatName } from './velscourcheats.js';
 import { CLASSES } from '../data/classes.js';
 import { generateDungeon, isRaidDepth } from '../world/dungeon.js';
-import { findReachableInteractableSpot } from '../core/interactable-hit.js';
+import { exitPortalIsOpen, findReachableInteractableSpot } from '../core/interactable-hit.js';
 import { FINAL_DEPTH, MAX_DEPTH, depthLevel, blockStart, isSuperbossDepth, superbossForDepth, getActForDepth, isActFinaleDepth, ACTS } from '../data/depth.js';
 import { addDefiance, clearDefiance, defianceText, tickBlessing } from './defiance.js';
 import { setupHappenings, announceDungeonAffixes, happeningsTick, eventImpsTick, spawnGuaranteedImp, townHappening, townTick, beginVictoryTownCelebration, recordDepth, markNemesis } from './happenings.js';
@@ -2086,9 +2086,14 @@ export const game = {
 
   useExit(world, exit) {
     const c = G.char;
-    // Repair the portal state from its completed Rift run before checking it.
-    if (world.rift) activateRiftExit(world);
-    if (!exit.active) { floatText(exit.x, exit.y, 70, world.breach ? 'Sealed - the Breach Heart still beats!' : world.rift ? 'Sealed - the Guardian still stands!' : world.biome?.id === 'dark_forest' ? 'Sealed - defeat the Forest Guardian!' : world.biome?.id === 'castle' ? 'Sealed - defeat the Castle Guardian!' : world.biome?.id === 'overworld' ? 'Sealed - defeat the Forsaken Guardian!' : world.overworldScenario ? 'Sealed - complete the shrine trial!' : 'Sealed - slay the guardian!', '#ff6040', 13, { life: 1.6 }); sfx('error'); return; }
+    // Resolve a Rift exit from the live world list. Older active sessions may
+    // retain a linked object that is no longer the visible/registered portal.
+    if (world.rift) {
+      activateRiftExit(world);
+      exit = world.portals?.find((portal) => portal?.type === 'exit' && !portal.hidden) || exit;
+    }
+    const canUseExit = world.rift ? exitPortalIsOpen(exit, world.rift) : !!exit?.active;
+    if (!canUseExit) { floatText(exit?.x || 0, exit?.y || 0, 70, world.breach ? 'Sealed - the Breach Heart still beats!' : world.rift ? 'Sealed - the Guardian still stands!' : world.biome?.id === 'dark_forest' ? 'Sealed - defeat the Forest Guardian!' : world.biome?.id === 'castle' ? 'Sealed - defeat the Castle Guardian!' : world.biome?.id === 'overworld' ? 'Sealed - defeat the Forsaken Guardian!' : world.overworldScenario ? 'Sealed - complete the shrine trial!' : 'Sealed - slay the guardian!', '#ff6040', 13, { life: 1.6 }); sfx('error'); return; }
     if (world.breach) this.breachExit(world);
     else if (world.rift) this.riftExit(world);
     else if (world.unboundExploration && world.unboundExploration.floor < MAX_UNBOUND_DEPTH) this.unboundExit(world);

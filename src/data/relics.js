@@ -269,9 +269,16 @@ export function makeCovenant(ilvl, opts = {}) {
   const pool = Object.values(PIECE_BY_ID).filter((p) => (opts.pieceId ? p.id === opts.pieceId : !opts.setId || p.set === opts.setId) && (!opts.slot || p.slot === opts.slot));
   if (!pool.length) return null;
   const P = pick(pool);
-  const world = G.world;
-  const activityDepth = world?.rift ? riftLootDepth(world.rift.tier) : Number(world?.depth) || ilvl;
-  const maxRarity = Number.isFinite(opts.maxRarity) ? opts.maxRarity : qualityAtDepth(Number.isFinite(opts.depth) ? opts.depth : activityDepth);
+  const world = opts.world || G.world;
+  // Rift gear must always obey the active Rift, even when a caller supplies a
+  // character depth or an overly generous maxRarity. Outside Rifts, preserve
+  // the existing source-provided campaign reward cap.
+  const activityDepth = world?.rift ? riftLootDepth(world.rift.tier)
+    : Number.isFinite(opts.depth) ? opts.depth : Number(world?.depth) || ilvl;
+  const progressionCap = qualityAtDepth(activityDepth);
+  const maxRarity = world?.rift && Number.isFinite(opts.maxRarity)
+    ? Math.min(progressionCap, opts.maxRarity)
+    : Number.isFinite(opts.maxRarity) ? opts.maxRarity : progressionCap;
   const it = rollItem(ilvl, { slot: P.slot, rarity: opts.rarity, maxRarity, base: P.base, generic: true });
   it.cset = P.set;
   return shapeRelic(it, 'cov', P.id, P.name, P.lines, P.slot === 'ring' ? 1 : 3);

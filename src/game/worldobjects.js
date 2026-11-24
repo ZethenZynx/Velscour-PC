@@ -97,7 +97,7 @@ export function eligibleReliquaryGems(gemBag) {
     item?.type === 'gem' && !item.locked ? [{ item, index }] : []);
 }
 export function rollReliquaryEquipment(world) {
-  return rollGroundItem(level(world)+3,{mf:G.player?.st?.magicFind||0});
+  return rollGroundItem(level(world)+3,{world,mf:G.player?.st?.magicFind||0});
 }
 function level(world) { return depthLevel(world.depth || G.char?.depth || 1); }
 function addBuff(p, o, name, color, stats, duration = 45, extra = {}) {
@@ -110,7 +110,7 @@ function addBuff(p, o, name, color, stats, duration = 45, extra = {}) {
 function rewardChest(world, o, count = 1, rarity = null) {
   const p = G.player, depth = world.depth || G.char?.depth || 1;
   for (let i=0;i<count;i++) dropChest(world,{x:o.x+rand(-.35,.35),y:o.y+rand(-.35,.35),rare:true,chestRarity:rarity},depth);
-  if (chance(0.16*rewardScale(o))) world.addLoot(new GroundItem(o.x,o.y+0.3,'item',{item:rollGroundItem(level(world)+2,{rarity:rarityAt(level(world)+2,rar(o.rarity).name==='Mythic'?5:rar(o.rarity).name==='Legendary'?4:3),mf:G.player?.st.magicFind||0})}));
+  if (chance(0.16*rewardScale(o))) world.addLoot(new GroundItem(o.x,o.y+0.3,'item',{item:rollGroundItem(level(world)+2,{world,rarity:rarityAt(level(world)+2,rar(o.rarity).name==='Mythic'?5:rar(o.rarity).name==='Legendary'?4:3),mf:G.player?.st.magicFind||0})}));
 }
 function goldReward(world,o,mult=1) {
   const d=level(world), amount=Math.max(1,Math.round(goldPile(d)*goldScale(d)*mult*rewardScale(o)));
@@ -235,7 +235,7 @@ function useGamble(world,o,cost) {
   const button= o.id==='oracle'?'Reveal choices':o.id==='coin'?'Flip':o.id==='gambler'?'Wager':o.id==='wheel'?'Spin':o.id==='dice'?'Roll':o.id==='trickster'?'Accept the wager':'Play';
   return UI.confirm(o.name,`${titles[o.id]} Wager: ${wager.toLocaleString()} gold.`,()=>{
     if(G.world!==world||o.opened||!safeCost(p,wager))return;used(world,o);
-    if(o.id==='oracle'){const opts=[()=>rewardChest(world,o,1),()=>goldReward(world,o,5),()=>world.addLoot(new GroundItem(o.x,o.y+.3,'item',{item:rollGroundGem(level(world)+4)}))];UI.dialog({title:'Choose your fate',html:'<p>Only one reward can be claimed.</p>',buttons:opts.map((fn,i)=>({label:['Cache','Gold','Gem'][i],fn}))});return;}
+    if(o.id==='oracle'){const opts=[()=>rewardChest(world,o,1),()=>goldReward(world,o,5),()=>world.addLoot(new GroundItem(o.x,o.y+.3,'item',{item:rollGroundGem(level(world)+4,world)}))];UI.dialog({title:'Choose your fate',html:'<p>Only one reward can be claimed.</p>',buttons:opts.map((fn,i)=>({label:['Cache','Gold','Gem'][i],fn}))});return;}
     const win=chance(o.id==='gambler'?.45:o.id==='trickster'?.5:.55);
     if(win){if(o.id==='gambler'||o.id==='coin')goldReward(world,o,6);else if(o.id==='wheel')rewardChest(world,o,2);else rewardChest(world,o,1);}
     else if(o.id==='trickster'||o.id==='dice')beginWaves(world,o,1,1);else UI.log('The wager is lost.','#ff9090');
@@ -249,7 +249,7 @@ function sacrificeEquipment(world,o) {
     if(o.opened||!c.bag[index])return;
     UI.confirm('Confirm sacrifice',`Destroy ${itemName(item)} and receive a randomized replacement?`,()=>{
       if(G.world!==world||o.opened||!c.bag[index])return;c.bag[index]=null;used(world,o);
-      const replacement=rollGroundItem(level(world)+2,{rarity:rarityAt(level(world)+2,rar(o.rarity).name==='Mythic'?5:rar(o.rarity).name==='Legendary'?4:3),mf:G.player.st.magicFind});
+      const replacement=rollGroundItem(level(world)+2,{world,rarity:rarityAt(level(world)+2,rar(o.rarity).name==='Mythic'?5:rar(o.rarity).name==='Legendary'?4:3),mf:G.player.st.magicFind});
       world.addLoot(new GroundItem(o.x,o.y+.3,'item',{item:replacement}));UI.log(`The stone consumes the offering and shapes ${itemName(replacement)}.`,o.color);
     },'Sacrifice','Keep item');
   }})),{label:'Leave'}]});

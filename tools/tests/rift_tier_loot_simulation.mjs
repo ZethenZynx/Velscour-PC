@@ -23,6 +23,9 @@ try {
     assert.equal(groundRewardDepth(G.world, FINAL_DEPTH), lootDepth, `tier ${tier}: effective reward depth`);
     assert.equal(rollGroundItem(100, { rarity: 19, maxRarity: 19 }).rarity, expectedCap,
       `tier ${tier}: forced maximum-quality request is clamped to eligible tier`);
+    const forcedCovenant = makeCovenant(100, { world: G.world, rarity: 19, maxRarity: 19, depth: 2576 });
+    assert.equal(forcedCovenant.rarity, expectedCap,
+      `tier ${tier}: Covenant conversion cannot bypass the Rift cap with a high requested depth`);
 
     let minimum = Infinity, maximum = -Infinity, tier20Count = 0;
     for (let n = 0; n < simulatedDropsPerTier; n++) {

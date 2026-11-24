@@ -37,7 +37,9 @@ export function createRiftRun(world, gen, tier, hooks = {}) {
 /** Keep the portal's usable state derived from the actual completed Rift run. */
 export function activateRiftExit(world) {
   const run = world?.rift;
-  const exit = run?.exitPortal || world?.portals?.find((portal) => portal?.type === 'exit');
+  // The world owns the live portal object. Prefer it over a stale run reference
+  // left by restored or replaced world state, then repair the back-reference.
+  const exit = world?.portals?.find((portal) => portal?.type === 'exit' && !portal.hidden) || run?.exitPortal;
   if (!run?.done || run.failed || !exit || exit.type !== 'exit') return false;
   run.exitPortal = exit;
   exit.riftRun = run;
@@ -175,7 +177,7 @@ export function riftWin(world, m) {
   for (let i = 0; i < scaledCount(RW.items || 4); i++) {
     const isAbyssal = (i === 0 && chance(RW.abyssal)) || (RW.abyssal >= 1 && i < 2);
     const rar = isAbyssal ? ABYSSAL : rarityAt(lvl, 5);
-    drop('item', { item: rollGroundItem(lvl, { rarity: rar, maxRarity: isAbyssal ? ABYSSAL : RARITY_MYTHIC, mf: p ? p.st.magicFind : 0 }) });
+    drop('item', { item: rollGroundItem(lvl, { world, rarity: rar, maxRarity: isAbyssal ? ABYSSAL : RARITY_MYTHIC, mf: p ? p.st.magicFind : 0 }) });
   }
 
   // Abyssal Keys for Unbound Exploration
@@ -187,7 +189,7 @@ export function riftWin(world, m) {
 
   // Sigils, Gems & Gold
   for (let i = 0; i < scaledCount(RW.sigils); i++) drop('item', { item: rollSigil(lootDepth, RW.sigilBonus) });
-  for (let i = 0; i < scaledCount(3); i++) drop('item', { item: rollGroundGem(lvl + 4) });
+  for (let i = 0; i < scaledCount(3); i++) drop('item', { item: rollGroundGem(lvl + 4, world) });
   for (let i = 0; i < 6; i++) drop('gold', { amount: Math.round(goldPile(lvl) * rand(3, 6) * (1 + (((p && p.st.goldFind) || 0) + (p?.st?.markGold || 0)) / 100) * rewardScale) });
 
   // Records

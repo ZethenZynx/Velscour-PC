@@ -18,7 +18,9 @@ export function portalSpriteHit(p, sx, sy, zoom, tileToScreen) {
 }
 
 export function exitPortalIsOpen(p, run = p?.riftRun) {
-  const isLinkedCompletedRift = run?.done && !run?.failed && (!run.exitPortal || run.exitPortal === p);
+  // A Rift has one exit. Treat its registered exit as open from the run state
+  // even if an older saved/session reference still points at a replaced portal.
+  const isLinkedCompletedRift = run?.done && !run?.failed;
   return !!(p && !p.hidden && (p.active || isLinkedCompletedRift));
 }
 

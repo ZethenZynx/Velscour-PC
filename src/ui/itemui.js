@@ -108,7 +108,12 @@ export function itemTooltip(item, opts = {}) {
     } else {
       const gw = glyphOf(item), kind = item.relic || (gw ? 'glyph' : null);
       if (gw) h += `<div class="tt-base" style="color:${RELIC_COLORS.glyph}">'${gw.sig.map((r) => SIGILS[r].name).join(' · ')}'</div>`;
-      const qualityLabel = item.relic === 'cov' ? `<b style="color:${RELIC_COLORS.cov}">Covenant Set · Tier 20</b>` : kind ? `<b style="color:${RELIC_COLORS[kind]}">${RELIC_NAMES[kind]}</b>` : RARITY[item.rarity].name;
+      // Covenant identifies a set, not a fixed quality tier. The previous
+      // hard-coded Tier 20 label made correctly scaled low-Rift pieces look like
+      // max-tier drops even though their actual rarity was lower.
+      const qualityLabel = item.relic === 'cov'
+        ? `<b style="color:${RELIC_COLORS.cov}">Covenant Set · ${RARITY[item.rarity]?.name || 'Tier 1'}</b>`
+        : kind ? `<b style="color:${RELIC_COLORS[kind]}">${RELIC_NAMES[kind]}</b>` : RARITY[item.rarity].name;
       h += `<div class="tt-base">${escapeHtml(itemBaseLine(item))} · ${qualityLabel} ${SLOT_NAMES[item.slot]} · iLvl ${item.ilvl} · <span title="Item level + the rarity's worth in levels: what the item's numbers are rolled at">Power ${powerLevel(item.ilvl, item.rarity)}</span></div>`;
       const fin = finishOf(item), gfx = gearFxOf(item);
       if (fin || gfx) h += `<div class="dim" style="font-style:italic">${fin ? escapeHtml(fin.name) + ' finish' : ''}${fin && gfx ? ' · ' : ''}${gfx ? 'Aura: ' + escapeHtml(gfx.name) : ''}</div>`;

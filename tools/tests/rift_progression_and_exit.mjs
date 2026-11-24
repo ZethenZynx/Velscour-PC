@@ -11,17 +11,18 @@ import { input } from '../../src/core/input.js';
 import { camera } from '../../src/core/view.js';
 import { game } from '../../src/game/game.js';
 import { UI } from '../../src/ui/ui.js';
+import { itemTooltip } from '../../src/ui/itemui.js';
 import { groundDropRarityCap, groundRewardDepth, rollGroundGem, rollGroundItem } from '../../src/game/loot.js';
 import { makeCovenant } from '../../src/data/relics.js';
 
-G.char = { level: 100, depth: FINAL_DEPTH };
+G.char = { level: 100, depth: FINAL_DEPTH, equip: {}, bag: [] };
 for (let tier = 1; tier <= 40; tier++) {
   const lootDepth = riftLootDepth(tier);
   const expectedCap = qualityAtDepth(lootDepth);
   G.world = { kind: 'dungeon', depth: FINAL_DEPTH, rift: { tier } };
   assert.equal(groundRewardDepth(G.world, FINAL_DEPTH), lootDepth, `tier ${tier}: all world rewards use Rift progression`);
   assert.equal(groundDropRarityCap(lootDepth), expectedCap, `tier ${tier}: progression cap`);
-  assert.equal(rollGroundItem(100, { rarity: 19, maxRarity: 19 }).rarity, expectedCap,
+  assert.equal(rollGroundItem(100, { world: G.world, rarity: 19, maxRarity: 19 }).rarity, expectedCap,
     `tier ${tier}: even a forced high-rarity roll respects the Rift cap`);
   for (let n = 0; n < 15; n++) assert.ok(rollGroundItem(100).rarity <= expectedCap, `tier ${tier}: random gear exceeded cap`);
 
@@ -40,13 +41,24 @@ assert.equal(riftLootDepth(16), RARITY[19].minDepth, 'Rift tier 16 reaches the e
 assert.equal(qualityAtDepth(riftLootDepth(15)), 18, 'Rift tier 15 remains below Tier 20');
 assert.equal(qualityAtDepth(riftLootDepth(16)), 19, 'Tier 20 becomes eligible at Rift tier 16');
 G.char.depth = FINAL_DEPTH;
-G.world = { depth: FINAL_DEPTH, rift: { tier: 15 } };
-assert.equal(makeCovenant(100), null, 'Covenant drops remain locked before the Rift reaches Tier 20 eligibility');
+G.world = { depth: FINAL_DEPTH, rift: { tier: 2 } };
+const lowRiftCap = qualityAtDepth(riftLootDepth(2));
+const lowCovenant = makeCovenant(100, { rarity: 19, maxRarity: 19, depth: 2000 });
+assert.ok(lowCovenant, 'Covenant equipment can drop at low Rift tiers');
+assert.equal(lowCovenant.rarity, lowRiftCap,
+  'Covenant must use the low Rift tier cap even when source options request Tier 20');
+const lowCovenantTip = itemTooltip(lowCovenant);
+assert.ok(lowCovenantTip.includes(`Covenant Set · ${RARITY[lowRiftCap].name}`),
+  'Covenant tooltip shows its actual eligible quality rather than always claiming Tier 20');
+assert.ok(!lowCovenantTip.includes('Covenant Set · Tier 20'), 'low-tier Covenant tooltip cannot falsely advertise Tier 20');
 G.char.depth = 2000;
-assert.equal(makeCovenant(100, { depth: G.char.depth }), null,
-  'a high saved campaign depth and explicit caller depth cannot bypass low-tier Rift eligibility');
+G.world.rift.tier = 15;
+const covenantAtFifteen = makeCovenant(100, { rarity: 19, maxRarity: 19, depth: G.char.depth });
+assert.equal(covenantAtFifteen.rarity, qualityAtDepth(riftLootDepth(15)),
+  'high saved campaign depth and explicit depth cannot bypass Rift Tier 15 eligibility');
 G.world.rift.tier = 16;
-assert.equal(makeCovenant(100)?.rarity, 19, 'Covenant drops become eligible when Rift progression reaches the existing Tier 20 unlock');
+assert.equal(makeCovenant(100, { rarity: 19, maxRarity: 19 })?.rarity, 19,
+  'Covenant drops become eligible for Tier 20 when Rift progression reaches its existing unlock');
 
 // The generated exit anchor must be walkable for the player's full collision radius
 // and connected to the start; the same helper is used by Rift generation.
@@ -98,6 +110,18 @@ assert.equal(activateRiftExit({ rift: legacyRun, portals: [legacyExit] }), true,
   'interaction repairs the link for an already-active Rift session');
 assert.equal(legacyExit.riftRun, legacyRun);
 
+// A stale (non-null) run.exitPortal reference was missed by the previous repair:
+// it activated the old object while leaving the visible registered portal sealed.
+const staleExit = { x: 90, y: 90, type: 'exit', active: false };
+const currentExit = { x: 0, y: 0, type: 'exit', active: false };
+const staleRun = { done: true, failed: false, exitPortal: staleExit };
+const staleWorld = { rift: staleRun, portals: [currentExit] };
+assert.equal(activateRiftExit(staleWorld), true);
+assert.equal(staleRun.exitPortal, currentExit, 'completion repairs a stale portal reference to the live world portal');
+assert.equal(staleExit.active, false, 'a detached stale portal is not activated');
+assert.equal(currentExit.active, true, 'the visible portal is the one activated');
+assert.equal(exitPortalIsOpen(currentExit, staleRun), true, 'the live exit remains targetable after repairing the reference');
+
 const oldState = { W: G.W, H: G.H, dpr: G.dpr, touch: G.touch, world: G.world, char: G.char,
   player: G.player, ui: G.ui, paused: G.paused, cine: G.cine, zoom: camera.zoom,
   camX: camera.x, camY: camera.y, mouse: { ...input.mouse }, pointerType: input.lastPointerType,
@@ -126,6 +150,20 @@ try {
   assert.equal(actualExit.active, true, 'opening the dialog does not consume the portal');
   dialogSpec.buttons[2].fn();
   assert.equal(enteredTier, 4, 'confirming destination selects the next unlocked Rift tier');
+
+  const detached = { x: 20, y: 20, type: 'exit', active: false };
+  const visible = { x: 0, y: 0, type: 'exit', active: false, reach: 1.6 };
+  const restoredRun = { tier: 3, done: true, failed: false, exitPortal: detached,
+    result: { next: 4 }, limit: 100 };
+  const restoredWorld = { ...riftWorld, rift: restoredRun, portals: [visible] };
+  game.useExit(restoredWorld, detached);
+  assert.equal(restoredRun.exitPortal, visible, 'exit interaction repairs a stale, non-null session link');
+  assert.equal(visible.active, true, 'exit interaction activates the registered visible portal');
+  assert.match(dialogSpec.title, /Rift Tier 3 Closed/, 'stale-link recovery opens the correct Rift results dialog');
+  const dialogAfterFirstOpen = dialogSpec;
+  game.useExit(restoredWorld, visible);
+  assert.notEqual(dialogSpec, dialogAfterFirstOpen, 'the same unconsumed exit can reopen its results after cancellation');
+  assert.equal(visible.active, true, 'reopening the results does not consume the portal');
 } finally {
   G.W = oldState.W; G.H = oldState.H; G.dpr = oldState.dpr; G.touch = oldState.touch;
   G.world = oldState.world; G.char = oldState.char; G.player = oldState.player; G.ui = oldState.ui;
