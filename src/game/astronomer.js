@@ -854,10 +854,6 @@ class OrreryFx {
     if (!p.world || p.world.kind === 'town') return;
     const cx = isoX(p.x, p.y), cy = (p.screenTop ?? isoY(p.x, p.y) - (p.spriteH || 60) * (p.scale || 1)) - 12, RX = G.touch ? 20 : 25, RY = RX * 0.32;
     const boons = activeBoons(p), busy = ch.stars.length || boons.length || ch.flash > 0;
-    ctx.globalCompositeOperation = 'lighter'; ctx.globalAlpha = busy ? 0.6 : 0.25;
-    ctx.strokeStyle = ch.flash > 0 ? '#ffffff' : ASTRO.glow; ctx.lineWidth = 1;
-    ctx.beginPath(); ctx.ellipse(cx, cy, RX, RY, 0, 0, TAU); ctx.stroke();
-    ctx.globalAlpha = 1; ctx.globalCompositeOperation = 'source-over';
     for (let i = 0; i < CHART_N; i++) { // the chart: lit and unlit slots
       const a = -Math.PI / 2 + (i / CHART_N) * TAU, x = cx + Math.cos(a) * RX, y = cy + Math.sin(a) * RY, lit = i < ch.stars.length;
       if (lit) drawChartStar(ctx, x, y, 0.45, this.t * 2 + i, ASTRO.glow, 1);
@@ -865,10 +861,8 @@ class OrreryFx {
     }
     boons.forEach((k, i) => { // the boons orbit as planets
       const a = this.t * 1.6 + (i / Math.max(1, boons.length)) * TAU, x = cx + Math.cos(a) * RX * 0.62, y = cy - 6 + Math.sin(a) * RY * 0.62;
-      ctx.globalCompositeOperation = 'lighter'; ctx.drawImage(glowSprite(ZODIAC[k].color), x - 7, y - 7, 14, 14); ctx.globalCompositeOperation = 'source-over';
       ctx.fillStyle = ZODIAC[k].color; ctx.beginPath(); ctx.arc(x, y, 2.4, 0, TAU); ctx.fill();
     });
-    if (ch.flash > 0) { ctx.globalCompositeOperation = 'lighter'; ctx.globalAlpha = ch.flash; ctx.drawImage(glowSprite('#ffffff'), cx - RX * 1.5, cy - RX * 1.5, RX * 3, RX * 3); ctx.globalAlpha = 1; ctx.globalCompositeOperation = 'source-over'; }
   }
 }
 export { planetColor };

@@ -3,7 +3,7 @@
 // little). Six feathers and the phoenix folds its wings and STOOPS: a screaming dive that tears into the quarry and
 // rakes the foes beside it. Taking the quarry down by any means grants Hunter's Focus (crit, damage) and a feather.
 // The phoenix is a 3D model (src/gfx/phoenix3d.js) that banks into its turns, beats and glides, and trails embers.
-import { G, stat, power, sigO, toughest, foesNear, headAt, glow, rand, TAU } from './common.js';
+import { G, stat, power, sigO, toughest, foesNear, headAt, rand, TAU } from './common.js';
 import { isoX, isoY, HW, HH, camera } from '../../core/view.js';
 import { sfx } from '../../core/audio.js';
 import { addEffect, Ring, floatText, spawn, burst } from '../../gfx/vfx.js';
@@ -148,7 +148,6 @@ export default {
     for (let i = 0; i < FEATHERS; i++) { // a fan of feathers over her head
       const a = (i - (FEATHERS - 1) / 2) * 0.32, x = cx + Math.sin(a) * 24, y = cy - Math.cos(a) * 10 + 4, lit = i < Math.floor(s.feathers);
       feather(ctx, x, y, a, lit, G.touch ? 1.1 : 1.4);
-      if (lit && s.flash > 0 && i === Math.floor(s.feathers) - 1) glow(ctx, CREAM, x, y, 9, s.flash * 2);
     }
     const q = s.quarry;
     if (q && !q.dead) { // reticle brackets over the quarry
@@ -159,11 +158,9 @@ export default {
       ctx.stroke(); ctx.globalAlpha = 1;
     }
     // the phoenix itself, with its shadow on the floor
-    const hx = isoX(s.hx, s.hy), hy = isoY(s.hx, s.hy), heat = s.feathers / FEATHERS;
+    const hx = isoX(s.hx, s.hy), hy = isoY(s.hx, s.hy);
     ctx.globalAlpha = 0.25; ctx.fillStyle = '#000'; ctx.beginPath(); ctx.ellipse(hx, hy, 11, 4, 0, 0, TAU); ctx.fill(); ctx.globalAlpha = 1;
-    glow(ctx, FLAME, hx, hy - s.hz, 34, 0.3 + 0.25 * heat + s.flash * 0.4);
     if (!drawPhoenix3D(ctx, hx, hy - s.hz, this.pose(s, t))) drawHawk(ctx, hx, hy - s.hz, s.head || 0, s.flap, s.fv, G.touch ? 1.6 : 2);
-    glow(ctx, GOLD, hx, hy - s.hz, 16, 0.15 + 0.2 * heat);
   },
   ground(ctx, p, s, t) {
     const q = s.quarry;

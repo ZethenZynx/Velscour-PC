@@ -2,7 +2,7 @@
 // circle his helm. Eight and he lets fly the TRICK SHOT: a golden boomerang that ricochets from foe to foe (ten at
 // most, back and forth between a few) and draws a glowing web of gold across the field behind it. It snaps back to
 // his hand, and the web SNAPS too: every thread cuts whatever stands across it.
-import { G, later, stat, power, sigO, foesNear, headAt, glow, rand, TAU } from './common.js';
+import { G, later, stat, power, sigO, foesNear, headAt, rand, TAU } from './common.js';
 import { isoX, isoY, camera } from '../../core/view.js';
 import { sfx } from '../../core/audio.js';
 import { addEffect, Beam, Ring, floatText, sparkle, spawn } from '../../gfx/vfx.js';
@@ -21,11 +21,9 @@ function ringDraw(ctx, p, s, front) {
     const a = t * 1.8 + (i / MAX) * TAU, near = Math.sin(a) > 0;
     if (near !== front) continue;
     const x = cx + Math.cos(a) * R, y = cy - 4 + Math.sin(a) * R * 0.42, lit = i < s.n;
-    if (lit) glow(ctx, BLUE, x, y, 11, near ? 0.6 : 0.35);
     drawRang3D(ctx, x, y, { skin: lit ? RANG_SKINS.sig_lit : RANG_SKINS.sig_dim, size: sz, spin: lit ? t * 14 + i : 0.4, head: a + Math.PI / 2, bank: 0.25, alpha: lit ? (near ? 1 : 0.85) : 0.6, blur: lit ? 0.7 : 0 });
   }
   ctx.globalAlpha = 1;
-  if (front && s.n >= MAX) glow(ctx, '#bfe4ff', cx, cy - 4, R * 1.4, 0.25 + 0.15 * Math.sin(t * 10));
 }
 
 class TrickShot {
@@ -79,7 +77,6 @@ class TrickShot {
     const [x, y] = this.pos(), px = isoX(x, y), py = isoY(x, y) - 28, [lx, ly] = this.last || [x - 0.01, y];
     if (Math.hypot(x - lx, y - ly) > 1e-4) this.head = Math.atan2(x - lx + y - ly, x - lx - (y - ly));
     this.last = [x, y];
-    glow(ctx, GOLD, px, py, 16, 0.8);
     drawRang3D(ctx, px, py, { skin: RANG_SKINS.trick_shot, spin: this.spin, head: this.head || 0, bank: 0.3, lift: 28 });
   }
 }

@@ -2,7 +2,7 @@
 // every second swing, a slain champion one more). The seventh rune calls JUDGEMENT: a hammer of light the size of a
 // house falls from the sky on the strongest foe in sight, a cross of light runs out from the impact, and the ground
 // stays consecrated for six seconds (burns foes, heals him while he stands in it).
-import { G, later, stat, power, sigO, toughest, crowd, headAt, glow, rand, TAU } from './common.js';
+import { G, later, stat, power, sigO, toughest, crowd, headAt, rand, TAU } from './common.js';
 import { isoX, isoY, HW, HH, camera } from '../../core/view.js';
 import { sfx } from '../../core/audio.js';
 import { addEffect, Ring, Beam, Column, floatText, burst, sparkle, spawn, addLight, addDecal } from '../../gfx/vfx.js';
@@ -28,9 +28,6 @@ class Hammer {
     const k = Math.min(1, this.t / this.fall);
     ctx.globalAlpha = 0.35 * k; ctx.fillStyle = '#000';
     ctx.beginPath(); ctx.ellipse(px, isoY(this.x, this.y), 30 * k + 6, 12 * k + 3, 0, 0, TAU); ctx.fill();
-    // Keep the falling hammer's light attached to the model. The old broad additive
-    // bloom (80px radius at 0.8 alpha) saturated into a detached white orb above it.
-    glow(ctx, GOLD, px, py - 34, 42, 0.24 * a);
     if (this.t < this.fall) { // light streaming behind it from the sky
       ctx.globalCompositeOperation = 'lighter';
       for (let i = -2; i <= 2; i++) { ctx.globalAlpha = 0.25 * a; ctx.fillStyle = i ? GOLD : '#ffffff'; ctx.fillRect(px + i * 9 - 1.5, py - 420, 3, 300); }
@@ -38,8 +35,6 @@ class Hammer {
     }
     ctx.globalAlpha = 0.95 * a; // the hammer itself: the 3D model (gfx/hammer3d.js) cast in light, turning as it falls
     drawGreatHammer(ctx, px, py, 4.6, hammerPalette(null, true), -0.7 + this.t * 1.6);
-    const cy = py - 17;
-    ctx.globalCompositeOperation = 'lighter'; glow(ctx, '#ffffff', px, cy - 3, 14, 0.22 * a);
     ctx.globalAlpha = 1; ctx.globalCompositeOperation = 'source-over';
   }
 }
@@ -134,33 +129,14 @@ export default {
     later(p.world, 0.05, () => addEffect(new Ring(p.x, p.y, 0.1, 1.6, 0.4, WHITE, 3)));
   },
   draw(ctx, p, s, t) {
-    const [cx, cy0] = headAt(p, 12), cy = cy0 + Math.sin(t * 2) * 1.5, RX = G.touch ? 13 : 16, RY = RX * 0.32, f = s.runes / RUNES;
-    // Show charge with the ring and distinct rune glyphs. Radial glows at each rune
-    // overlap because the halo is compact; together they bloom into the reported orb.
-    ctx.globalCompositeOperation = 'lighter';
-    ctx.strokeStyle = GOLD; ctx.lineWidth = 2; ctx.globalAlpha = 0.45 + 0.4 * f;
-    ctx.beginPath(); ctx.ellipse(cx, cy, RX, RY, 0, 0, TAU); ctx.stroke();
-    ctx.strokeStyle = '#ffffff'; ctx.lineWidth = 0.8; ctx.globalAlpha = 0.6 * f + s.flash * 0.4; ctx.stroke();
+    const [cx, cy0] = headAt(p, 12), cy = cy0 + Math.sin(t * 2) * 1.5, RX = G.touch ? 13 : 16, RY = RX * 0.32;
+    // Keep the charge glyphs, but omit the diffuse head halo that bloomed into a
+    // large white/yellow orb. The visible runes still communicate charge progress.
     ctx.lineWidth = 1.2;
     for (let i = 0; i < RUNES; i++) {
       const a = t * 0.8 + (i / RUNES) * TAU, x = cx + Math.cos(a) * RX, y = cy + Math.sin(a) * RY - 4, lit = i < s.runes;
       ctx.globalAlpha = lit ? 1 : 0.22; ctx.strokeStyle = lit ? (s.ready ? '#ffffff' : '#fff0b0') : '#a08040';
       rune(ctx, x, y, i, G.touch ? 0.8 : 1);
-      ctx.globalCompositeOperation = 'lighter';
-    }
-    ctx.globalAlpha = 1; ctx.globalCompositeOperation = 'source-over';
-  },
-  ground(ctx, p, s, t) {
-    const f = s.runes / RUNES;
-    if (f <= 0) return;
-    const px = isoX(p.x, p.y), py = isoY(p.x, p.y), R = 1.1 + 0.2 * f, RX = R * HW, RY = R * HH;
-    ctx.globalCompositeOperation = 'lighter'; ctx.strokeStyle = GOLD; ctx.lineWidth = 1.2;
-    ctx.globalAlpha = 0.15 + 0.45 * f;
-    ctx.beginPath(); ctx.ellipse(px, py, RX, RY, 0, 0, TAU); ctx.stroke();
-    ctx.beginPath(); ctx.ellipse(px, py, RX * 0.8, RY * 0.8, 0, 0, TAU); ctx.stroke();
-    for (let i = 0; i < s.runes; i++) { // a seven-point star drawn one stroke per rune
-      const a0 = -t * 0.5 + (i / RUNES) * TAU, a1 = a0 + (3 / RUNES) * TAU;
-      ctx.beginPath(); ctx.moveTo(px + Math.cos(a0) * RX * 0.8, py + Math.sin(a0) * RY * 0.8); ctx.lineTo(px + Math.cos(a1) * RX * 0.8, py + Math.sin(a1) * RY * 0.8); ctx.stroke();
     }
     ctx.globalAlpha = 1; ctx.globalCompositeOperation = 'source-over';
   },

@@ -1,7 +1,7 @@
 // Monk: Inner Harmony (Seven Chakras).
 // Attacks and casts align the 7 Chakras over the Monk's head. At 7 chakras, PALM OF ENLIGHTENMENT
 // detonates an immense golden chi shockwave that stuns foes and heals the Monk.
-import { G, stat, power, sigO, crowd, toughest, headAt, glow, rand, TAU } from './common.js';
+import { G, stat, power, sigO, crowd, toughest, headAt, rand, TAU } from './common.js';
 import { isoX, isoY, HW, HH, camera } from '../../core/view.js';
 import { sfx } from '../../core/audio.js';
 import { addEffect, Ring, burst, sparkle } from '../../gfx/vfx.js';
@@ -66,10 +66,7 @@ export default {
   },
   draw(ctx, p, s, t) {
     const [cx, cy0] = headAt(p, 14), cy = cy0 + Math.sin(t * 2.5) * 2;
-    const RX = G.touch ? 13 : 16, RY = RX * 0.35, f = s.chakras / CHAKRAS;
-
-    glow(ctx, GOLD, cx, cy, RX * 1.5, 0.2 + 0.4 * f);
-    ctx.globalCompositeOperation = 'lighter';
+    const RX = G.touch ? 13 : 16, RY = RX * 0.35;
 
     // Seven revolving chakra beads over head
     for (let i = 0; i < CHAKRAS; i++) {
@@ -82,9 +79,6 @@ export default {
       ctx.arc(bx, by, lit ? 3.2 : 2.0, 0, TAU);
       ctx.fill();
 
-      if (lit) glow(ctx, GOLD, bx, by, 7, 0.6);
     }
-    ctx.globalAlpha = 1;
-    ctx.globalCompositeOperation = 'source-over';
   },
 };

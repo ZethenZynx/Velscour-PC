@@ -3,7 +3,7 @@
 // wings launch into the sky and come down one by one on every foe in reach as great lances in every leap's colours (the spear
 // barrage's lances), nose-first along their path; each flings five smaller spears that arc out point-first, stick fast for half a second and burst in
 // blue fire. Highwind (speed, damage) bears him up for a while.
-import { G, later, stat, power, sigO, foesNear, glow, rand, TAU } from './common.js';
+import { G, later, stat, power, sigO, foesNear, rand, TAU } from './common.js';
 import { isoX, isoY, camera } from '../../core/view.js';
 import { sfx } from '../../core/audio.js';
 import { addEffect, Ring, floatText, spawn, addDecal, smoke, addLight } from '../../gfx/vfx.js';
@@ -25,7 +25,6 @@ function lance(ctx, x, y, a, len, lit, t) {
   const hx = ex + dx * 3, hy = ey + dy * 3, nx = -dy * 2.6, ny = dx * 2.6;
   ctx.fillStyle = lit ? '#ffffff' : '#8090b0';
   ctx.beginPath(); ctx.moveTo(ex - dx * 2, ey - dy * 2); ctx.lineTo(hx - nx, hy - ny); ctx.lineTo(hx + dx * 7, hy + dy * 7); ctx.lineTo(hx + nx, hy + ny); ctx.closePath(); ctx.fill();
-  if (lit) glow(ctx, BLUE, hx, hy, 6 + Math.sin(t * 6) * 1.5, 0.7);
   ctx.globalAlpha = 1; ctx.globalCompositeOperation = 'source-over';
 }
 /** Where lance i hangs behind his back (screen offsets from his chest, angle, length). */
@@ -86,7 +85,6 @@ class Splinter {
       return drawLeapLance(ctx, this.si, px, py, this.a, 46, 1, this.t);
     }
     const k = (this.t - this.fly) / this.stick, sink = 5; // stuck fast, the tip buried, glowing hotter until it blows
-    glow(ctx, '#3a6aff', px, py - 6, 10 + 14 * k + Math.sin(this.t * 40) * 2 * k, 0.3 + 0.5 * k);
     drawLeapLance(ctx, this.si, px + Math.cos(this.a) * sink, py + Math.sin(this.a) * sink, this.a, 46, 1, this.t);
   }
 }
@@ -176,7 +174,6 @@ export default {
     const px = isoX(p.x, p.y), py = isoY(p.x, p.y) - (p.z || 0) - 34 * (p.scale || 1), n = Math.floor(s.n);
     if (s.launch > 0.5) return;
     const spread = 0.85 + 0.15 * Math.min(1, s.n / MAX) + s.flash * 0.1;
-    if (n) glow(ctx, BLUE, px, py - 6, 20 + n * 3, 0.15 + n * 0.04);
     for (let i = 0; i < MAX; i++) { const { a, len } = slot(i, t, spread); lance(ctx, px + Math.cos(a) * 4, py + Math.sin(a) * 4, a, len, i < n, t + i); }
   },
 };

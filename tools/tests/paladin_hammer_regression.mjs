@@ -12,25 +12,15 @@ const skills = await readFile(new URL('../../src/data/skilldata.js', import.meta
 
 assert.match(skills, /'Blessed Hammer\|orbit\|holy\|hammer\|spiral n=2 dur=2\.8 pow=0\.82'/, 'Blessed Hammer mechanics remain unchanged');
 assert.match(paladin, /return this\.t < this\.fall \+ 0\.35;/, 'Judgement hammer has a finite fall and fade lifetime');
-assert.match(paladin, /glow\(ctx, GOLD, px, py - 34, 42, 0\.24 \* a\)/, 'Judgement uses a bounded, attached outer glow');
-assert.match(paladin, /glow\(ctx, '#ffffff', px, cy - 3, 14, 0\.22 \* a\)/, 'Judgement uses a restrained white core');
-assert.doesNotMatch(paladin, /glow\(ctx, GOLD, cx, cy, RX/, 'the Paladin charge no longer paints an additive disk over the head');
+assert.doesNotMatch(paladin, /glow\(ctx/, 'Judgement no longer draws diffuse circular glow overlays');
 const haloStart = paladin.indexOf('  draw(ctx, p, s, t) {');
-const haloEnd = paladin.indexOf('  ground(ctx, p, s, t) {', haloStart);
-assert.ok(haloStart >= 0 && haloEnd > haloStart, 'Paladin charge halo draw method is present');
+const haloEndOffset = paladin.slice(haloStart).search(/\r?\n  },\r?\n};/);
+const haloEnd = haloEndOffset < 0 ? -1 : haloStart + haloEndOffset;
+assert.ok(haloStart >= 0 && haloEnd > haloStart, 'Paladin charge indicator draw method is present');
 const haloDraw = paladin.slice(haloStart, haloEnd);
-assert.match(haloDraw, /ctx\.ellipse\(cx, cy, RX, RY/, 'the Paladin keeps the readable charge ring');
 assert.match(haloDraw, /rune\(ctx, x, y, i/, 'individual rune charge indicators remain visible');
-assert.doesNotMatch(haloDraw, /glow\(ctx, GOLD, x, y/, 'overlapping per-rune glow halos cannot bloom into a white orb');
-
-const glowStart = classfx.indexOf('class HeroGlow {');
-const glowEnd = classfx.indexOf('const tierOf', glowStart);
-const heroGlow = classfx.slice(glowStart, glowEnd);
-assert.match(heroGlow, /this\.p\.classId === 'paladin'/, 'Paladin cast glow uses the specifically bounded particle path');
-assert.match(heroGlow, /chance\(dt \* 2 \* this\.k\)/, 'Paladin head-glow particles use a low finite emission rate');
-assert.match(heroGlow, /paladin \? 0\.55 : 1/, 'Paladin radial glow is smaller while other classes retain their original size');
-assert.match(heroGlow, /paladin \? 0\.2 : 0\.55/, 'Paladin radial glow intensity is bounded while other classes remain unchanged');
-assert.match(classfx, /const castN = p\.classId === 'paladin' \? Math\.min\(n, 8\) : n/, 'Paladin cast particles are bounded without changing other classes');
+assert.doesNotMatch(classfx, /HeroGlow|_classGlow|glowSprite/, 'shared class casting does not create or process a circular hero glow');
+assert.match(classfx, /T\.fx\(p\.x, p\.y, castN, k, 'cast', E\)/, 'ordinary cast particles remain active');
 
 const impactStart = paladin.indexOf('function impact(');
 const impactEnd = paladin.indexOf('class Consecration', impactStart);
@@ -41,6 +31,8 @@ const consecrationStart = paladin.indexOf('class Consecration');
 const consecrationEnd = paladin.indexOf('/** A rune of the halo', consecrationStart);
 assert.ok(consecrationStart >= 0 && consecrationEnd > consecrationStart, 'Consecration boundaries are present');
 assert.doesNotMatch(paladin.slice(consecrationStart, consecrationEnd), /sfx\(/, 'Consecration ticks do not replay impact audio');
+assert.match(paladin.slice(consecrationStart, consecrationEnd), /aoe\(w, p, this\.x, this\.y, this\.r/, 'Consecration damage remains');
+assert.match(paladin.slice(consecrationStart, consecrationEnd), /p\.heal\(p\.maxHp \* 0\.012, true\)/, 'Consecration healing remains');
 assert.match(paladin, /if \(!this\.done && this\.t >= this\.fall\) \{ this\.done = true; impact\(/, 'the impact cue can trigger only once per falling hammer');
 assert.match(paladin, /sfx\('judgement_cast'/, 'Judgement retains its separate cast cue');
 assert.match(audio, /noise\(t, 0\.36,[\s\S]*?tone\(t \+ 0\.06, 0\.3/, 'Judgement cast cue ends before the 0.55-second hammer impact');
@@ -69,4 +61,4 @@ assert.match(world, /if \(h\.update\(dt\) === false \|\| h\.dead\) this\.hazards
 
 const orbitCast = skillrun.slice(skillrun.indexOf("case 'orbit':"), skillrun.indexOf("case 'cyclone':"));
 assert.match(orbitCast, /sfx\('swing'\);/, 'Blessed Hammer retains its cast sound');
-console.log('Paladin Judgement audio lifecycle, bounded glow, hammer cleanup, and Blessed Hammer sound checks passed.');
+console.log('Paladin Judgement audio lifecycle, circular-glow removal, hammer cleanup, and Blessed Hammer sound checks passed.');

@@ -1,10 +1,10 @@
-// Class signature effects: every skill cast and hit gets particles themed on its class (the Dragon Knight's flames,
-// the Slime Lord's blue goo, the Paladin's holy glow...), growing more over the top at skill ranks 5/10/15/20.
+// Class signature effects: skill casts and hits get particles themed on their class (the Dragon Knight's flames,
+// the Slime Lord's blue goo, the Paladin's holy motes...), growing with skill ranks 5/10/15/20.
 // Also the Lancer's huge elemental energy lance (EnergyLance) and its tower shields (drawn by shapes.js 'tshield').
 import { G } from '../state.js';
-import { isoX, isoY, camera } from '../core/view.js';
+import { camera } from '../core/view.js';
 import { rand, TAU, chance } from '../core/util.js';
-import { spawn, smoke, addEffect, Ring, Column, Bolt, addLight, addDecal, elem, glowSprite } from './vfx.js';
+import { spawn, smoke, addEffect, Ring, Column, Bolt, addLight, addDecal, elem } from './vfx.js';
 import { glyphSprite } from './notation.js';
 
 const P = (o) => spawn(o);
@@ -91,32 +91,6 @@ const THEMES = {
 const DEF = THEMES.paladin;
 export const CLASS_THEMES = THEMES;
 
-/** Glow that hugs the hero for a moment after each cast, brighter and bigger at higher skill ranks. */
-class HeroGlow {
-  constructor(p, c, k, dur) { Object.assign(this, { p, c, k, t: 0, dur }); }
-  update(dt) {
-    this.t += dt;
-    if (this.p.dead) return false;
-    // Paladin's charge runes and each cast already make their own holy particles.
-    // A second high-rate emitter at the hero repeatedly filled the head glow into
-    // the reported white orb during ordinary rapid casting.
-    if (this.p.classId === 'paladin') {
-      if (chance(dt * 2 * this.k)) P({ type: 'glow', x: this.p.x + rand(-0.2, 0.2), y: this.p.y + rand(-0.2, 0.2), z: 6, vz: rand(24, 44), life: rand(0.2, 0.35), size: rand(1.3, 2.1), size1: 0, color: chance(0.5) ? this.c[0] : this.c[1], add: true });
-    } else if (chance(dt * 30 * this.k)) {
-      rise(this.p.x, this.p.y, 6, chance(0.5) ? this.c[0] : this.c[1], this.k * 0.7, 0.35);
-    }
-    return this.t < this.dur;
-  }
-  draw(ctx) {
-    const paladin = this.p.classId === 'paladin';
-    const f = 1 - this.t / this.dur, px = isoX(this.p.x, this.p.y), py = isoY(this.p.x, this.p.y) - 26;
-    const s = 26 * this.k * (paladin ? 0.55 : 1) * (1 + Math.sin(G.time * 12) * 0.08);
-    ctx.globalCompositeOperation = 'lighter'; ctx.globalAlpha = Math.min(1, f * 1.4) * (paladin ? 0.2 : 0.55);
-    ctx.drawImage(glowSprite(this.c[0]), px - s, py - s * 1.3, s * 2, s * 2.6);
-    ctx.globalAlpha = 1; ctx.globalCompositeOperation = 'source-over';
-  }
-}
-
 const tierOf = (L) => (L >= 20 ? 4 : L >= 15 ? 3 : L >= 10 ? 2 : L >= 5 ? 1 : 0);
 const NAMES = ['', 'Empowered', 'Exalted', 'Ascendant', 'Godlike'];
 export const tierName = (L) => NAMES[tierOf(L)];
@@ -130,8 +104,6 @@ export function classCastFx(p, sk, L, tx, ty) {
   // particles. Keep this shared cast flourish from stacking a cloud at high ranks.
   const castN = p.classId === 'paladin' ? Math.min(n, 8) : n;
   T.fx(p.x, p.y, castN, k, 'cast', E);
-  const g = p._classGlow;
-  if (g && g.t < g.dur) { g.t = 0; g.k = Math.max(g.k, k); } else addEffect(p._classGlow = new HeroGlow(p, T.c, k, 0.45 + tier * 0.12));
   if (tier >= 1) addEffect(new Ring(p.x, p.y, 0.1, 0.9 + tier * 0.3, 0.45, T.c[0], 2 + tier));
   const bard = p.classId === 'bard'; // the Bard's ranks show on his notes and staves instead of a bloom over him
   if (tier >= 2 && !bard) { addEffect(new Ring(p.x, p.y, 0.05, 0.6 + tier * 0.2, 0.55, T.c[1], 2, { fill: true })); addLight(p.x, p.y, 3 + tier, 0.6); }

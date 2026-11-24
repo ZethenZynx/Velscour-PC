@@ -3,7 +3,7 @@
 // he calls it in: a biplane roars across the field low over his targets, its shadow racing over the floor, and drops
 // eight whistling bombs on the painted foes still standing and on whatever is nearest him. The biplane is a three.js
 // model baked to sprites (src/gfx/gunner3d.js); it swoops in, levels off over the targets and climbs away.
-import { G, later, stat, power, sigO, foesNear, headAt, glow, rand, TAU } from './common.js';
+import { G, later, stat, power, sigO, foesNear, headAt, rand, TAU } from './common.js';
 import { isoX, isoY, camera } from '../../core/view.js';
 import { sfx } from '../../core/audio.js';
 import { addEffect, floatText, spawn, smoke, addDecal } from '../../gfx/vfx.js';
@@ -139,7 +139,6 @@ export default {
       ctx.fillStyle = RED; ctx.fillRect(cx + dx * k - 1, cy + dy * k - 1, 2.4, 2.4);
     }
     ctx.restore();
-    if (s.ping > 0) glow(ctx, RED, cx, cy, R * 1.6, s.ping * 0.5);
     ctx.font = `bold ${G.touch ? 6 : 7}px monospace`; ctx.textAlign = 'center'; ctx.fillStyle = s.marks >= MAX - 2 ? RED : '#80ff80';
     ctx.fillText(s.busy > 0 ? 'INBOUND' : `MARK ${s.marks}/${MAX}`, cx, cy + R + 8);
   },

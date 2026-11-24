@@ -2,7 +2,7 @@
 // (kills count double); stop hitting for 2.6 s and it breaks. At 25, 50, 100, 200 and every hundred after, an
 // ANCESTOR answers: a giant ghost of the Barbarian rises behind him, raises its axe and slams the earth, a shockwave
 // that hurls everything back. Each tier hits harder and has its own war cry.
-import { G, stat, power, sigO, headAt, glow, rand, TAU } from './common.js';
+import { G, stat, power, sigO, headAt, rand, TAU } from './common.js';
 import { isoX, isoY, camera } from '../../core/view.js';
 import { sfx } from '../../core/audio.js';
 import { addEffect, Ring, floatText, spawn, smoke, addDecal } from '../../gfx/vfx.js';
@@ -38,7 +38,6 @@ class Ancestor {
     const rise = Math.min(1, t / 0.3), fade = t > this.slam ? 1 - (t - this.slam) / (this.dur - this.slam) : 1;
     const S = 2.3 + this.tier * 0.15, lift = t < this.slam ? Math.sin(Math.min(1, t / this.slam) * Math.PI * 0.5) * 24 : 24 * (1 - Math.min(1, (t - this.slam) / 0.08));
     const px = isoX(p.x, p.y), py = isoY(p.x, p.y);
-    glow(ctx, '#ff3010', px, py - 70 * S * 0.5, 70 * S * 0.6, 0.5 * fade * rise);
     const ox = p.x, oy = p.y, oa = p.alpha, os = p.scale, oz = p.z, top = p.screenTop, sbox = p.sbox;
     p.x = ox - 0.45; p.y = oy - 0.45; p.scale = S * (0.6 + 0.4 * rise); p.z = (oz || 0) + lift; p.ghostDraw = true;
     try {
@@ -83,7 +82,6 @@ export default {
     const big = Math.round((G.touch ? 13 : 16) * k * (n >= 100 ? 1.15 : 1)), sh = n >= 50 ? rand(-1, 1) * (n >= 100 ? 1.5 : 0.8) : 0;
     ctx.textAlign = 'center'; ctx.textBaseline = 'alphabetic'; ctx.lineJoin = 'round';
     ctx.font = `900 ${big}px Cinzel, Georgia, serif`;
-    if (n >= 25) glow(ctx, c, cx, cy - big * 0.35, big * 1.4, 0.35 + 0.3 * s.pop);
     ctx.lineWidth = 4; ctx.strokeStyle = '#140404'; ctx.strokeText(`${n}`, cx + sh, cy + sh);
     ctx.fillStyle = c; ctx.fillText(`${n}`, cx + sh, cy + sh);
     ctx.font = `900 ${G.touch ? 6 : 7}px Georgia, serif`; ctx.lineWidth = 2.5;

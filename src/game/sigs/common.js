@@ -2,7 +2,6 @@
 import { G } from '../../state.js';
 import { rand, TAU, dist } from '../../core/util.js';
 import { isoX, isoY } from '../../core/view.js';
-import { glowSprite } from '../../gfx/vfx.js';
 import { SKILLS } from '../../data/skills.js';
 
 export { G };
@@ -62,13 +61,6 @@ export function crowd(p, r, around = 2.2) {
 export function headAt(p, lift = 12) {
   const top = p.screenTop ?? isoY(p.x, p.y) - (p.spriteH || 60) * (p.scale || 1) - (p.z || 0);
   return [isoX(p.x, p.y), top - lift];
-}
-/** A soft additive glow. */
-export function glow(ctx, color, x, y, r, a = 1) {
-  if (a <= 0) return;
-  ctx.globalCompositeOperation = 'lighter'; ctx.globalAlpha = a;
-  ctx.drawImage(glowSprite(color), x - r, y - r, r * 2, r * 2);
-  ctx.globalAlpha = 1; ctx.globalCompositeOperation = 'source-over';
 }
 /** Small pips under an overhead display: n lit of max. */
 export function pips(ctx, x, y, n, max, color, dim = '#4a4040', gap = 5) {

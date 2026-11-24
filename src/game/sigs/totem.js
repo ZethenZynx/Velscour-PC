@@ -6,7 +6,7 @@
 // The great totem is a 3D model (src/gfx/totem3d.js): it grinds up out of cracked, glowing ground for 1.1 s (dirt,
 // dust, spirit motes, the camera rumbling), then bursts when it stands (its wings snap open, a flash, shock rings,
 // a light column, spirit sparks from each face, rocks and dust flung out) and at the end sinks back in.
-import { G, later, stat, power, sigO, crowd, foesNear, headAt, glow, rand, TAU } from './common.js';
+import { G, later, stat, power, sigO, crowd, foesNear, headAt, rand, TAU } from './common.js';
 import { isoX, isoY, HW, HH, camera } from '../../core/view.js';
 import { sfx } from '../../core/audio.js';
 import { addEffect, addLight, Ring, Bolt, Beam, Column, floatText, spawn, burst, smoke } from '../../gfx/vfx.js';
@@ -17,7 +17,7 @@ const FACES = 4, KINDS = ['bear', 'wolf', 'eagle', 'serpent'], TEAL = '#5ac8a0';
 const PAINT = { bear: '#a0582a', wolf: '#8a92a0', eagle: '#c8402a', serpent: '#4a9a40' };
 const SPIRIT = { bear: '#ffb060', wolf: '#c0d8ff', eagle: '#a8ccff', serpent: '#90ff60' };
 
-/** A carved face on the pole, w x h at (x, y) top-left; `lit` glows its eyes. */
+/** A carved face on the pole, w x h at (x, y) top-left; `lit` lights its eyes. */
 function face(ctx, kind, x, y, w, h, lit) {
   const u = w / 8;
   ctx.fillStyle = '#5a3a20'; ctx.fillRect(x, y, w, h);                       // the log
@@ -41,7 +41,6 @@ function face(ctx, kind, x, y, w, h, lit) {
     ctx.fillStyle = '#1a1008'; ctx.fillRect(x + u * 2.1, y + u * 2, u * 0.5, u * 1.6); ctx.fillRect(x + w - u * 2.5, y + u * 2, u * 0.5, u * 1.6); // slit pupils
     ctx.fillStyle = '#ff3050'; ctx.fillRect(x + w / 2 - u * 0.3, y + u * 4.2, u * 0.6, u * 1.8); ctx.fillRect(x + w / 2 - u * 0.9, y + u * 5.8, u * 0.6, u * 0.8); ctx.fillRect(x + w / 2 + u * 0.3, y + u * 5.8, u * 0.6, u * 0.8); // forked tongue
   }
-  if (lit) glow(ctx, SPIRIT[kind], x + w / 2, y + h * 0.35, w * 0.7, 0.35);
 }
 /** Thunderbird wings that crown a full pole. */
 function wings(ctx, x, y, w, open) {
@@ -92,7 +91,6 @@ class TotemScar {
     gr.addColorStop(0, 'rgba(6,4,2,0.92)'); gr.addColorStop(0.55, 'rgba(14,9,5,0.75)'); gr.addColorStop(1, 'rgba(20,14,8,0)');
     ctx.fillStyle = gr; ctx.beginPath(); ctx.arc(0, 0, rr * 1.35, 0, TAU); ctx.fill();
     ctx.restore();
-    glow(ctx, TEAL, px, py, 46 * open, Math.min(0.55, 0.32 * h));
     ctx.lineCap = 'round'; ctx.lineJoin = 'round';
     for (const pass of [0, 1]) {                                            // cracks: dark scores, then their light
       if (pass) { ctx.globalCompositeOperation = 'lighter'; ctx.strokeStyle = '#7affe0'; ctx.lineWidth = 1.3; ctx.globalAlpha = Math.min(1, h) * open; }
@@ -216,14 +214,12 @@ class GreatTotem {
     } else { const u = Math.min(1, (t - this.dur) / SINK); rise = 1 - u * u; fold = Math.min(1, u * 3); rim = 0.7; jx = Math.sin(t * 60) * 1.2; }
     const glow4 = this.faces.map((_, i) => (t < RISE ? 0.5 + 0.5 * Math.sin(t * 14 + i) : this.cd[i] > 0.95 ? 1 : 0.2));
     const px = isoX(this.x, this.y) + jx, py = isoY(this.x, this.y), H = totemHeight(n, K3);
-    glow(ctx, TEAL, px, py - H * 0.45 * rise, H * 0.6, (0.14 + 0.25 * flash) * rise);
     if (drawTotem3D(ctx, px, py, this.faces, { k, rise, fold, glow: glow4, rune, flash, rim })) return;
     // no WebGL: the flat carved pole
     const W = 36, FH = 30, tall = n * FH;
     ctx.save();
     ctx.beginPath(); ctx.rect(px - 80, py - 400, 160, 400); ctx.clip(); // it grows out of the ground
     const top = py - tall * rise - 6;
-    glow(ctx, TEAL, px, top + tall / 2, tall * 0.8, 0.3);
     this.faces.forEach((kd, i) => face(ctx, kd, px - W / 2, top + i * FH, W, FH, glow4[i] > 0.9));
     wings(ctx, px, top, W * 1.2, 1 - Math.max(0, fold));
     ctx.restore();

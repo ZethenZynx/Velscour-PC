@@ -2,7 +2,7 @@
 // of living flame unfold from his back, wider and brighter, shedding embers. At full heat the heart wakes: a great
 // spectral dragon's head rears up over him, opens its jaws and pours a river of fire over the foes in front, and he
 // is left burning with Wyrmblood (damage, resistances) as the wings gutter out.
-import { G, stat, power, sigO, crowd, foesNear, glow, rand, TAU } from './common.js';
+import { G, stat, power, sigO, crowd, foesNear, rand, TAU } from './common.js';
 import { isoX, isoY, HW, HH, camera } from '../../core/view.js';
 import { sfx } from '../../core/audio.js';
 import { addEffect, Ring, floatText, spawn } from '../../gfx/vfx.js';
@@ -73,7 +73,6 @@ class Wake {
     const p = this.p, t = this.t, sa = screenDir(this.ang), dir = Math.cos(sa) >= 0 ? 1 : -1;
     const rise = Math.min(1, t / 0.5), out = Math.min(1, (this.dur - t) / 0.35), jaw = t < this.breathFrom ? (t / this.breathFrom) * 0.4 : t < this.breathTo ? 0.9 + Math.sin(t * 20) * 0.08 : 0.3;
     const px = isoX(p.x, p.y) - dir * 14, py = isoY(p.x, p.y) - 70 - 30 * rise;
-    glow(ctx, EMBER, px + dir * 20, py, 70, 0.55 * rise * out);
     dragonHead(ctx, px, py, dir, jaw, (G.touch ? 1.3 : 1.6) * (0.6 + 0.4 * rise), 0.9 * out);
   }
 }
@@ -113,9 +112,7 @@ export default {
     if (s.vent > 0) f = Math.max(f, Math.min(1, Math.max(0, s.vent - 0.4) / 1.8)); // the wings gutter out after the breath
     if (f <= 0.02) return;
     const px = isoX(p.x, p.y), py = isoY(p.x, p.y) - (p.z || 0) - 38 * (p.scale || 1), span = 8 + 40 * f, flap = 0.5 + 0.5 * Math.sin(s.flap);
-    glow(ctx, EMBER, px, py - span * 0.3, span * 1.2, 0.2 + 0.35 * f);
     wing(ctx, px - 3, py, -1, span, flap, t);
     wing(ctx, px + 3, py, 1, span, flap, t + 1);
-    glow(ctx, CORE, px, py + 6, 8 + 6 * f, 0.5 * f); // the heart glows through his armor
   },
 };

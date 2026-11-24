@@ -15,7 +15,7 @@
 // the sword fighting) and always in town it rests across his back (bladeOnBack, drawn behind him by
 // Player.drawArtLayer), and it flies off when the fighting starts. While it flies he does not hold it too (heldart.js).
 const look = (p) => runebladeLook((p === G.player && G.char ? G.char.level : p.level) || 1);
-import { G, stat, power, sigO, crowd, toughest, foesNear, glow, rand, TAU } from './common.js';
+import { G, stat, power, sigO, crowd, toughest, foesNear, rand, TAU } from './common.js';
 import { isoX, isoY, camera, HW, HH } from '../../core/view.js';
 import { sfx } from '../../core/audio.js';
 import { addEffect, Ring, Slash, floatText, spawn, burst, bloodSpray, addDecal } from '../../gfx/vfx.js';
@@ -38,7 +38,6 @@ const TREE = ['frost', 'unholy', 'blood', 'frost'];
 function blade(ctx, x, y, a, len, runes, t, scale = 1) {
   const dx = Math.cos(a), dy = Math.sin(a), nx = -dy, ny = dx, W = 3.2 * scale;
   ctx.save();
-  glow(ctx, runes.length ? RC[runes[runes.length - 1]] : '#7ad0ff', x + dx * len * 0.5, y + dy * len * 0.5, len * 0.6, 0.25 + runes.length * 0.06);
   ctx.globalCompositeOperation = 'lighter'; ctx.globalAlpha = 0.55;
   ctx.fillStyle = '#9ab8d8';
   ctx.beginPath(); // the blade: broad, with a long point
@@ -52,7 +51,7 @@ function blade(ctx, x, y, a, len, runes, t, scale = 1) {
   ctx.fillStyle = runes.length === RUNES ? '#ffffff' : '#5a6a8a'; ctx.beginPath(); ctx.arc(x - dx * 10 * scale, y - dy * 10 * scale, 2 * scale, 0, TAU); ctx.fill();
   for (let i = 0; i < RUNES; i++) { // rune slots down the blade
     const k = 0.14 + i * 0.12, rx = x + dx * len * k, ry = y + dy * len * k, r = runes[i];
-    if (r) { glow(ctx, RC[r], rx, ry, 5 * scale, 0.9); ctx.fillStyle = '#ffffff'; }
+    if (r) { ctx.fillStyle = '#ffffff'; }
     else ctx.fillStyle = 'rgba(30,40,60,0.6)';
     const s = 1.3 * scale; ctx.fillRect(rx - s, ry - s, s * 2, s * 2);
     if (r) { ctx.fillStyle = RC[r]; ctx.fillRect(rx - s * 0.5, ry - s * 2, s, s * 4); }
@@ -66,7 +65,6 @@ function runeMarks(ctx, line, runes, face, k, ga) {
   const f = Math.min(1, face * 1.6), s = Math.max(1, 1.6 * k);
   for (let i = 0; i < runes.length && i < RUNES; i++) {
     const u = (i + 0.5) / RUNES, rx = line[0][0] + (line[1][0] - line[0][0]) * u, ry = line[0][1] + (line[1][1] - line[0][1]) * u, r = runes[i];
-    glow(ctx, RC[r], rx, ry, Math.max(4.5, 9 * k), 0.9 * f * ga);
     ctx.globalAlpha = f * ga; ctx.fillStyle = '#ffffff'; ctx.fillRect(rx - s * 0.7, ry - s * 0.7, s * 1.4, s * 1.4);
     ctx.fillStyle = RC[r]; ctx.fillRect(rx - s * 0.35, ry - s * 1.6, s * 0.7, s * 3.2); ctx.globalAlpha = ga;
   }
@@ -78,7 +76,6 @@ function equipped(ctx, p, x, y, a, len, runes, t, spin, tilt) {
   const f = heldFree(it, p.classId), m3 = mode === 'model' && heldModel3DReady(it, p.classId);
   if (!f && !m3) return false;
   const el = f?.element || 'cold', col = runes.length ? RC[runes[runes.length - 1]] : hex(fxColor(el)), ga = ctx.globalAlpha;
-  glow(ctx, col, x + Math.cos(a) * len * 0.5, y + Math.sin(a) * len * 0.5, len * 0.6, (0.18 + runes.length * 0.06 + (f?.rarity || 0) * 0.02) * ga);
   ctx.globalAlpha = ga;
   // the hero's own outline round it (pale gold, and its see-through ring over walls and spells)
   const rim = p.drawRim && ((img, ...r) => { if (m3) dropRims(img); p.drawRim(ctx, img, ...r); });
@@ -98,15 +95,13 @@ export function sword(ctx, p, x, y, a, len, runes, t, scale, spin, tilt) {
   if (equipped(ctx, p, x, y, a, len, runes, t, spin, tilt)) return;
   const L = look(p);
   if (!runeblade3DReady(L.skin)) return blade(ctx, x, y, a, len, runes, t, scale);
-  const col = runes.length ? RC[runes[runes.length - 1]] : L.glow, ga = ctx.globalAlpha;  // glow() resets the alpha
-  glow(ctx, col, x + Math.cos(a) * len * 0.5, y + Math.sin(a) * len * 0.5, len * 0.6, (0.25 + runes.length * 0.06) * ga);
+  const col = runes.length ? RC[runes[runes.length - 1]] : L.glow, ga = ctx.globalAlpha;
   ctx.globalAlpha = ga;
   const v = drawRuneblade3D(ctx, x, y, a, len, { skin: L.skin, palette: L.palette, spin, tilt, glow: col, glowAmt: 0.12 + runes.length * 0.07 });
   if (!v) return;
   const f = Math.min(1, v.face * 1.6), s = Math.max(1, 5 * v.k);  // runes fade edge-on
   for (let i = 0; i < runes.length && i < RUNES; i++) {
     const [rx, ry] = v.slots[i], r = runes[i];
-    glow(ctx, RC[r], rx, ry, Math.max(4.5, 28 * v.k), 0.9 * f * ga);
     ctx.globalAlpha = f * ga; ctx.fillStyle = '#ffffff'; ctx.fillRect(rx - s * 0.7, ry - s * 0.7, s * 1.4, s * 1.4);
     ctx.fillStyle = RC[r]; ctx.fillRect(rx - s * 0.35, ry - s * 1.6, s * 0.7, s * 3.2); ctx.globalAlpha = ga;
   }
@@ -428,7 +423,6 @@ function drawFam(ctx, p, s, t) {
     hx = lerp(hx, B.x, e); hy = lerp(hy, B.y, e) - Math.sin(e * Math.PI) * 18; a = lerpA(a, B.a, e); L = lerp(L, B.len, e);
     spin = lerp(spin, B.spin, e) + e * TAU; tilt = lerp(tilt, B.tilt, e);
   } else drawTrail(ctx, F, col);
-  if (s.flash > 0 && s.runes.length) glow(ctx, tint(s), hx + Math.cos(a) * L * 0.45, hy + Math.sin(a) * L * 0.45, 18, s.flash);
   const u = s.flash > 0 ? 1 - s.flash / 0.5 : 1;  // a full twirl as it takes a rune
   sword(ctx, p, hx, hy, a, L, s.runes, t, (G.touch ? 0.85 : 1) * F.len, spin + TAU * (1 - (1 - u) ** 3), tilt);
 }

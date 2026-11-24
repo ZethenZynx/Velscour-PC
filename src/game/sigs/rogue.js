@@ -2,7 +2,7 @@
 // Every Combo Point she spends (game/rogue.js) fills the blade over her head. At NEED points it is DEATHMARK: a dagger
 // falls out of the sky on the toughest foe near her and daggers burst from the ground under every other, all of them
 // left bleeding.
-import { G, stat, power, sigO, foesNear, toughest, headAt, glow, later, rand } from './common.js';
+import { G, stat, power, sigO, foesNear, toughest, headAt, later, rand } from './common.js';
 import { camera } from '../../core/view.js';
 import { sfx } from '../../core/audio.js';
 import { addEffect, Ring, floatText } from '../../gfx/vfx.js';
@@ -58,7 +58,6 @@ export default {
     const [cx, cy] = headAt(p, 16), W = G.touch ? 30 : 36, f = Math.min(1, s.spent / NEED), x0 = cx - W / 2;
     // a dagger lying over her head, filling with blood from the grip to the point
     const blade = () => { ctx.beginPath(); ctx.moveTo(x0 + 9, cy - 2.6); ctx.lineTo(x0 + W - 6, cy - 2.2); ctx.lineTo(x0 + W, cy); ctx.lineTo(x0 + W - 6, cy + 2.2); ctx.lineTo(x0 + 9, cy + 2.6); ctx.closePath(); };
-    if (f > 0) glow(ctx, RED, x0 + 9 + (W - 9) * f, cy, 7 + s.pop * 5, 0.5 + 0.4 * s.pop);
     ctx.fillStyle = '#1a0c0e'; ctx.strokeStyle = '#000'; ctx.lineWidth = 1;
     blade(); ctx.fill();
     ctx.save(); blade(); ctx.clip(); ctx.fillStyle = f >= 1 ? '#ffd0d0' : RED; ctx.fillRect(x0 + 9, cy - 3, (W - 9) * f, 6); ctx.restore();

@@ -2,7 +2,7 @@
 // (other elements feed the dimmest). Three charges in all three and they CONVERGE: the orbs fly up and come down on
 // the thickest crowd as a meteor, a ring of ice and a storm of lightning, one after the other, under a prism flash.
 // Pour everything into one orb while the others sit empty and it OVERLOADS instead: a nova of its element alone.
-import { G, later, stat, power, sigO, crowd, foesNear, headAt, glow, rand, TAU } from './common.js';
+import { G, later, stat, power, sigO, crowd, foesNear, headAt, rand, TAU } from './common.js';
 import { isoX, isoY, camera } from '../../core/view.js';
 import { sfx } from '../../core/audio.js';
 import { addEffect, Ring, Bolt, floatText, spawn, burst, elem, addDecal } from '../../gfx/vfx.js';
@@ -30,7 +30,6 @@ class Meteor {
   }
   draw(ctx) {
     const k = this.t / this.dur, ox = (1 - k) * -2.2, px = isoX(this.x + ox, this.y + ox), py = isoY(this.x + ox, this.y + ox) - 300 * (1 - k);
-    glow(ctx, '#ff7a10', px, py, 34, 0.9); glow(ctx, '#fff3a0', px, py, 14, 1);
     ctx.fillStyle = '#5a2010'; ctx.beginPath(); ctx.arc(px, py, 7, 0, TAU); ctx.fill();
     ctx.fillStyle = '#ffb040'; ctx.beginPath(); ctx.arc(px - 1.5, py - 1.5, 4, 0, TAU); ctx.fill();
   }
@@ -124,7 +123,6 @@ export default {
     }
     ORBS.forEach((o, i) => {
       const E = elem(o), n = s.ch[o], [x, y] = pos[i], r = 1.6 + n * 1.1 + s.fl[o] * 1.5;
-      glow(ctx, E.glow, x, y, 6 + n * 4 + s.fl[o] * 8, n ? 0.75 : 0.25);
       ctx.globalAlpha = n ? 1 : 0.4; ctx.fillStyle = n ? E.core : E.dark;
       ctx.beginPath(); ctx.arc(x, y, r, 0, TAU); ctx.fill();
       for (let j = 0; j < n; j++) { // each charge is a mote circling its orb

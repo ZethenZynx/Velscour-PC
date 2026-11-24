@@ -1,7 +1,7 @@
 // Ninja: Zanshin, the Unseen Cut.
 // Every cut of his blade (and his shadows') leaves a mark on the foe it passed through, up to PER on each. At NEED
 // cuts he sheathes the blade and every mark opens at once: the more marks a foe carries, the harder it is hit.
-import { G, stat, power, sigO, headAt, glow, later, rand, TAU } from './common.js';
+import { G, stat, power, sigO, headAt, later, rand, TAU } from './common.js';
 import { isoX, isoY, camera } from '../../core/view.js';
 import { sfx } from '../../core/audio.js';
 import { addEffect, Ring, floatText, sparkle } from '../../gfx/vfx.js';
@@ -65,7 +65,6 @@ export default {
     ctx.restore();
     // the tally over his head: sixteen strokes in fours
     const [cx, cy] = headAt(p, 15), gap = G.touch ? 3.2 : 3.8, W = (NEED + 2) * gap;
-    if (s.n) glow(ctx, CYAN, cx, cy, 14 + s.pop * 6, 0.25 + 0.3 * s.pop + (s.busy ? 0.4 : 0));
     for (let i = 0; i < NEED; i++) {
       const x = cx - W / 2 + (i + Math.floor(i / 4)) * gap + gap, lit = i < s.n;
       ctx.globalAlpha = lit ? 1 : 0.4; ctx.strokeStyle = lit ? (s.busy ? '#ffffff' : CYAN) : '#2a3440'; ctx.lineWidth = lit ? 1.6 : 1.2;

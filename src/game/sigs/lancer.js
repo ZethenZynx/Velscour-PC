@@ -2,7 +2,7 @@
 // by every foe he fells and by every wound he takes standing his ground. Full Valor and the banner blazes: CHARGE OF
 // THE ORDER. Five phantom knights on phantom chargers thunder out from behind him, lances levelled, and ride down
 // everything in their path; the Order's oath steels him (Rallied: damage reduction, armor) for a while after.
-import { G, stat, power, sigO, crowd, foesNear, glow, rand, TAU } from './common.js';
+import { G, stat, power, sigO, crowd, foesNear, rand, TAU } from './common.js';
 import { isoX, isoY, camera } from '../../core/view.js';
 import { sfx } from '../../core/audio.js';
 import { addEffect, floatText, spawn, smoke } from '../../gfx/vfx.js';
@@ -57,7 +57,7 @@ class Charge {
     const sdx = Math.cos(this.ang) - Math.sin(this.ang), dir = sdx >= 0 ? 1 : -1;
     const order = this.riders.slice().sort((u, v) => u.x + u.y - (v.x + v.y));
     ctx.save(); ctx.globalCompositeOperation = 'lighter';
-    for (const r of order) { const px = isoX(r.x, r.y), py = isoY(r.x, r.y); glow(ctx, '#6aa0ff', px, py - 18, 30, 0.45 * a); ctx.globalCompositeOperation = 'lighter'; knight(ctx, px, py, dir, r.ph, 0.7 * a); }
+    for (const r of order) { const px = isoX(r.x, r.y), py = isoY(r.x, r.y); ctx.globalCompositeOperation = 'lighter'; knight(ctx, px, py, dir, r.ph, 0.7 * a); }
     ctx.restore();
   }
 }
@@ -90,7 +90,6 @@ export default {
     // a cloth banner on a pole from between his shoulders (src/gfx/lancerbanner.js): it unfurls with Valor and drags
     // behind him as he moves; the crossbar sits 114 px above his feet, so even the fully unfurled cloth clears his head
     const f = s.valor / MAX;
-    if (f >= 1) glow(ctx, '#8ab8ff', isoX(p.x, p.y), isoY(p.x, p.y) - (p.z || 0) - 90 * (p.scale || 1), 30, 0.4 + 0.2 * Math.sin(t * 8));
     if (!drawBanner(ctx, p, s, BLUE)) { stepBanner(p, s, 0, f, f >= 1); drawBanner(ctx, p, s, BLUE); }
   },
 };

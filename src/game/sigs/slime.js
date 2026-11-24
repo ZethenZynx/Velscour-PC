@@ -4,7 +4,7 @@
 // little slimes of the court (game/slimecourt.js), a rainbow, wobbling out of the splash to fight for him. Then he is his
 // old size again. Round his feet a living royal puddle: wobbling lobes and creeping pseudopods, bubbles that pop,
 // ripples, a glossy rim and droplets that crawl back in; it spreads as he grows and he leaves a trail of goo.
-import { G, later, stat, power, sigO, foesNear, headAt, glow, rand, TAU } from './common.js';
+import { G, later, stat, power, sigO, foesNear, headAt, rand, TAU } from './common.js';
 import { isoX, isoY, HW, HH, camera } from '../../core/view.js';
 import { sfx } from '../../core/audio.js';
 import { addEffect, Ring, floatText, spawn, addDecal } from '../../gfx/vfx.js';
@@ -99,7 +99,6 @@ export default {
     if (s.mass <= 0) return;
     // a wobbling bead of royal jelly over his head, filling with mass
     const [cx, cy0] = headAt(p, G.touch ? 24 : 28), cy = cy0 + Math.sin(t * 3) * 1.5, f = s.mass / MAX, R = (G.touch ? 6 : 7.5) * (1 + 0.1 * Math.sin(t * 7));
-    glow(ctx, BLUE, cx, cy, R * 2.4, 0.25 + 0.45 * f);
     ctx.fillStyle = 'rgba(10,30,80,0.7)'; ctx.beginPath(); ctx.ellipse(cx, cy, R, R * 0.92, 0, 0, TAU); ctx.fill();
     ctx.save(); ctx.beginPath(); ctx.ellipse(cx, cy, R, R * 0.92, 0, 0, TAU); ctx.clip();
     ctx.fillStyle = f >= 1 ? '#7ab8ff' : BLUE; ctx.fillRect(cx - R, cy + R - 2 * R * f + Math.sin(t * 5) * 0.8, 2 * R, 2 * R);

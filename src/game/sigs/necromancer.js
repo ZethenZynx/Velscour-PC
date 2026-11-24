@@ -2,7 +2,7 @@
 // (to him or his dead) gives up its soul: a green wisp that streams across the field into the lantern (champions
 // give two, uniques three, bosses six). Thirteen souls and the lantern bursts: DANSE MACABRE. Thirteen screaming
 // skulls whirl out and hunt the living, the corpses on the ground erupt in bone spikes, and his minions are made whole.
-import { G, stat, power, sigO, foesNear, headAt, glow, rand, TAU } from './common.js';
+import { G, stat, power, sigO, foesNear, headAt, rand, TAU } from './common.js';
 import { isoX, isoY, camera } from '../../core/view.js';
 import { sfx } from '../../core/audio.js';
 import { addEffect, Ring, floatText, spawn, burst } from '../../gfx/vfx.js';
@@ -55,7 +55,6 @@ class Skull {
     P.forEach(([x, y], i) => { ctx.globalAlpha = 0.5 * (1 - i / P.length); ctx.fillStyle = GREEN; ctx.beginPath(); ctx.arc(x, y, 4 - i * 0.4, 0, TAU); ctx.fill(); });
     ctx.globalAlpha = 1; ctx.globalCompositeOperation = 'source-over';
     const [x, y] = P[0] || [isoX(this.x, this.y), isoY(this.x, this.y) - this.z];
-    glow(ctx, GREEN, x, y, 12, 0.7);
     skull(ctx, x, y, 1.2);
   }
 }
@@ -118,7 +117,6 @@ export default {
     const [hx, hy] = headAt(p, -6), sw = Math.sin(t * 2.2) * 0.25, f = s.souls / SOULS, sc = G.touch ? 0.85 : 1;
     ctx.save(); ctx.translate(hx - 20 * sc, hy); ctx.rotate(sw); ctx.scale(sc, sc);
     ctx.strokeStyle = '#2a2a30'; ctx.lineWidth = 1; ctx.beginPath(); ctx.moveTo(0, -14); ctx.lineTo(0, -8); ctx.stroke(); // chain
-    glow(ctx, GREEN, 0, 2, 14 + f * 12 + s.flash * 8, 0.3 + f * 0.5 + s.flash * 0.3);
     ctx.fillStyle = 'rgba(20,40,24,0.75)'; ctx.fillRect(-6, -7, 12, 17);
     const fh = 17 * f; ctx.fillStyle = s.crack > 0 ? '#ffffff' : 'rgba(80,255,120,0.75)'; ctx.fillRect(-6, 10 - fh, 12, fh);
     skull(ctx, 0, 2, 1, 0.9);

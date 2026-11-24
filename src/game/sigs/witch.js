@@ -3,7 +3,7 @@
 // in the doll, black with rot: it still counts, and every rotten pin makes the squeeze 15% crueller. Six pins and
 // she SQUEEZES: the threads draw tight, every living puppet is wrenched, stunned and rotted from inside, and the
 // ones that die burst into crows and locusts.
-import { G, later, stat, power, sigO, glow, rand, TAU } from './common.js';
+import { G, later, stat, power, sigO, rand, TAU } from './common.js';
 import { isoX, isoY, camera } from '../../core/view.js';
 import { sfx } from '../../core/audio.js';
 import { addEffect, Ring, floatText, spawn, burst } from '../../gfx/vfx.js';
@@ -110,7 +110,6 @@ export default {
       });
       ctx.restore();
     }
-    glow(ctx, HEX, dx, dy, 12 + s.pins.length * 2, 0.2 + s.pins.length * 0.05 + s.squeeze * 0.5);
     doll(ctx, dx, dy, s.pins.length, s.rot, s.wob, s.squeeze, t);
   },
 };
