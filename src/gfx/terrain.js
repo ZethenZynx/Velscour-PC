@@ -484,7 +484,9 @@ export function standKey(x, y) {
  * hidden by one is stamped `hid` (render.js draws the hero's silhouette over the Castle's walls). */
 export function occludersFor(map, vr, views, out) {
   const T = terrainOf(map), b = T.box, w = map.w, H = map.hgt, tall = map.tallOcclusion;
-  for (const v of views) v.lv = H[map.tileIdx(v.at[0], v.at[1])];
+  // render.js stores actor tile coordinates as scalar ax/ay (to avoid a
+  // per-frame coordinate-pair allocation); use that same view record here.
+  for (const v of views) v.lv = H[map.tileIdx(v.ax, v.ay)];
   for (const i of T.occ) {
     const k = i * 4;
     if (b[k] > vr.x1 || b[k + 2] < vr.x0 || b[k + 1] > vr.y1 || b[k + 3] < vr.y0) continue;
