@@ -53,11 +53,11 @@ const [gameSource, townSource, act2TownSource, keepWorldSource, keepGameSource, 
   readFile(new URL('../../src/game/tessarielskeep.js', import.meta.url), 'utf8'),
   readFile(new URL('../../src/game/render.js', import.meta.url), 'utf8'),
 ]);
-assert.match(gameSource, /x: t\.breach\.x, y: t\.breach\.y, active: true, color: '#8fd45a'[\s\S]*?keepGate: true, label: 'Portal to the Acts'/,
-  'Herrington Hollow replaces the Act portal art at the former Breach pad');
-assert.match(gameSource, /if \(t\.breach\) world\.portals\.push\(\{[\s\S]*?x: t\.breach\.x, y: t\.breach\.y, active: true, color: '#8fd45a'[\s\S]*?keepGate: true, label: 'Portal to the Acts'/,
-  'Sunscorch Oasis uses the same gate art at its former Breach pad');
-assert.equal((gameSource.match(/keepGate: true/g) || []).length, 2, 'the two existing act portals are updated without adding duplicates');
+assert.match(gameSource, /x: t\.breach\.x, y: t\.breach\.y, active: true, color: '#3a8aff', reach: 2\.0,[\s\S]*?label: 'Portal to the Acts'/,
+  'Herrington Hollow uses the original blue portal at the former Breach pad');
+assert.match(gameSource, /if \(t\.breach\) world\.portals\.push\(\{[\s\S]*?x: t\.breach\.x, y: t\.breach\.y, active: true, color: '#3a8aff', reach: 2\.0,[\s\S]*?label: 'Portal to the Acts'/,
+  'Sunscorch Oasis uses the same original blue portal at its former Breach pad');
+assert.equal((gameSource.match(/keepGate: true/g) || []).length, 0, 'no Act portal is redirected to the green Keep gate renderer');
 assert.match(gameSource, /async enterTessarielKeep\(\)[\s\S]*?buildTessarielKeep\(this/,
   'Act IV builds the new town through the game entry flow');
 assert.match(gameSource, /autoTravelToAct4 = shouldAutoTravelToAct4\(c, depth, first\)[\s\S]*?if \(autoTravelToAct4\) c\.act4AutoTravelDone = true[\s\S]*?void this\.enterTessarielKeep\(\)/,
@@ -65,10 +65,10 @@ assert.match(gameSource, /autoTravelToAct4 = shouldAutoTravelToAct4\(c, depth, f
 assert.match(gameSource, /openVendor: \(id\) => Vendor\.open\(id\)[\s\S]*?openStash: \(\) => Stash\.open\(\)[\s\S]*?openReliquary: \(\) => G\.ui\.reliquary\.open\(\)[\s\S]*?openJewelBox: \(\) => JewelBox\.open\(\)/,
   'Keep merchants and storage use fork-native interfaces');
 assert.match(keepGameSource, /use: \(\) => game\.confirmDungeon\(\)/, 'Keep depth gate uses the existing portal-to-depths flow');
-assert.match(keepGameSource, /keepGate: true, label: 'Portal to the Acts'[\s\S]*?label: `Portal - Depth \$\{game\.maxPortalFloor\(G\.char\)\}`[\s\S]*?game\.confirmDungeon\(\)/,
-  'the Keep has only the fork-native Acts and Depths portals');
+assert.match(keepGameSource, /color: '#3a8aff', reach: 2, label: 'Portal to the Acts', use: \(\) => game\.openActSelection\(\)[\s\S]*?label: `Portal - Depth \$\{game\.maxPortalFloor\(G\.char\)\}`[\s\S]*?game\.confirmDungeon\(\)/,
+  'the Keep uses the original blue Acts portal and preserves its separate Depths portal');
 assert.match(keepWorldSource, /map\.c3only = true[\s\S]*?map\.keep = true/, 'the original isometric Keep terrain and collision data are retained');
-assert.match(rendererSource, /if \(p\.keepGate\) return drawKeepGate\(ctx, p\)/, 'the Portal to the Acts shares the original Keep gate art');
+assert.match(rendererSource, /if \(p\.keepGate\) return drawKeepGate\(ctx, p\)/, 'the renderer retains the Keep gate for any other intended callers');
 assert.match(rendererSource, /if \(n\.keepFlame\)[\s\S]*?drawSacredFlame/, 'the original central Sacred Flame animation is rendered');
 assert.doesNotMatch(gameSource, /Travel to Current Town/, 'the misleading current-town action remains removed');
 const saveSource = await readFile(new URL('../../src/game/save.js', import.meta.url), 'utf8');

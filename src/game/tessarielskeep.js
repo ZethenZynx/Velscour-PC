@@ -105,7 +105,7 @@ export async function buildTessarielKeep(game, services) {
   // Keep it one aisle inward, where its label, sprite and interaction radius stay unobstructed.
   const portalDepthsAt = reachableKeepSpot(map, generated.start, [17.5, 27.5], occupied.concat([portalActsAt])) || A.waygate.slice(0, 2);
   world.portals = [
-    { x: portalActsAt[0], y: portalActsAt[1], active: true, color: '#8fd45a', reach: 2, keepGate: true, label: 'Portal to the Acts', use: () => game.openActSelection() },
+    { x: portalActsAt[0], y: portalActsAt[1], active: true, color: '#3a8aff', reach: 2, label: 'Portal to the Acts', use: () => game.openActSelection() },
     { x: portalDepthsAt[0], y: portalDepthsAt[1], active: true, color: '#ff6020', reach: 2, label: `Portal - Depth ${game.maxPortalFloor(G.char)}`, use: () => game.confirmDungeon() },
   ];
   if (campaignVictoryRecorded()) {

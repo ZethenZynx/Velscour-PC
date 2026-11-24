@@ -541,8 +541,8 @@ export const game = {
     }];
     // The Act Selection Portal reuses the former Eternal Breach portal's reserved, reachable pad.
     world.portals.push({
-      x: t.breach.x, y: t.breach.y, active: true, color: '#8fd45a', reach: 2.0,
-      keepGate: true, label: 'Portal to the Acts',
+      x: t.breach.x, y: t.breach.y, active: true, color: '#3a8aff', reach: 2.0,
+      label: 'Portal to the Acts',
       use: () => this.openActSelection(),
     });
     // the hero steps out of the portal, a little way down its road toward the square
@@ -657,8 +657,8 @@ export const game = {
 
     // The same blue act portal occupies the former Eternal Breach portal pad in Sunscorch Oasis.
     if (t.breach) world.portals.push({
-      x: t.breach.x, y: t.breach.y, active: true, color: '#8fd45a', reach: 2.0,
-      keepGate: true, label: 'Portal to the Acts',
+      x: t.breach.x, y: t.breach.y, active: true, color: '#3a8aff', reach: 2.0,
+      label: 'Portal to the Acts',
       use: () => this.openActSelection(),
     });
 
