@@ -17,9 +17,18 @@ const audio = await readFile(new URL('../../src/core/audio.js', import.meta.url)
 assert.match(audio, /iron_express_whistle: \{ s: \['iron_express_whistle'\], ext: 'wav',[^\n]*max: 1 \}/, 'whistle sample is loaded as a single-voice WAV');
 assert.match(audio, /ironExpressWhistleUntil = ac\.currentTime \+ 1\.42/, 'rapid repeats are gated for the full sample duration');
 assert.match(audio, /G\.settings\.sfx <= 0/, 'the shared SFX mute setting is respected');
+assert.match(audio, /name === 'bell' && ironExpressActive\(\).*return ironExpressWhistleSfx\(vol\)/, 'legacy bell calls are centrally redirected only aboard the train');
+assert.match(audio, /export function notificationSfx\(fallback = 'ui', volume = 1\)/, 'notifications use a centralized environment-aware sound router');
+assert.match(audio, /export function stopIronExpressWhistleSfx\(\)[\s\S]*source\.stop\(\)/, 'active whistle sources can be stopped on departure');
 
 const train = await readFile(new URL('../../src/game/ghosttrain.js', import.meta.url), 'utf8');
 assert.equal([...train.matchAll(/sfx\(['"]bell['"]/g)].length, 0, 'Iron Express no longer triggers the old dong');
-assert.equal([...train.matchAll(/ironExpressWhistleSfx\(/g)].length, 5, 'all five train notification sites use the whistle helper');
+assert.equal([...train.matchAll(/ironExpressWhistleSfx\(/g)].length, 3, 'direct train-only whistle actions use the shared rate-limited helper');
+const ui = await readFile(new URL('../../src/ui/ui.js', import.meta.url), 'utf8');
+assert.match(ui, /centerMsg\(title, sub = '', dur = 2\.6, o = \{\}\) \{[\s\S]{0,180}notificationSfx\(null, o\.soundVolume \?\? 1\)/, 'all centered environment banners pass through the notification router');
+const chat = await readFile(new URL('../../src/ui/chat.js', import.meta.url), 'utf8');
+assert.match(chat, /notificationSfx\('ui',\.25\)/, 'important journal notifications use the environment-aware router');
+const game = await readFile(new URL('../../src/game/game.js', import.meta.url), 'utf8');
+assert.match(game, /if \(oldWorld\?\.map\?\.ghostTrain && oldWorld !== world\) stopIronExpressWhistleSfx\(\)/, 'leaving the train stops its active whistle immediately');
 
 console.log('Iron Express whistle asset, audio manifest, mute/rate guard, and notification replacements passed.');

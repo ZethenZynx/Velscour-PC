@@ -6,7 +6,7 @@ import { rollTreasureChest } from '../data/treasurechests.js';
 import { addMarkBonusChest } from './markchests.js';
 import { input } from '../core/input.js';
 import { camera } from '../core/view.js';
-import { sfx, playMusic, stopMusic, setAmbience, stopAmbience, footsteps } from '../core/audio.js';
+import { sfx, playMusic, stopMusic, setAmbience, stopAmbience, footsteps, stopIronExpressWhistleSfx } from '../core/audio.js';
 import { rand, pick, randi, chance, escapeHtml, dist, dist2, RNG, makeCanvas, fmtInt, swapKey, hexToRgb, clamp, shuffle } from '../core/util.js';
 import { biomeTileSet, loadBiomeArt, mixedTileSet, keepTileSets } from '../core/assets.js';
 import { loadArtFor, enemyImage, markArtCaches, trimArtCaches } from '../core/enemyart.js';
@@ -396,6 +396,7 @@ export const game = {
 
   quitToTitle() {
     if (!this.autosave()) return false;
+    stopIronExpressWhistleSfx();
     G.critterTutorial = null;
     UI.closeAll();
     G.world = null; G.player = null; G.char = null;
@@ -416,6 +417,7 @@ export const game = {
 
   setWorld(world, start, oldWorld) {
     const p = G.player;
+    if (oldWorld?.map?.ghostTrain && oldWorld !== world) stopIronExpressWhistleSfx();
     UI.hideRiftCompletion();
     if (oldWorld && oldWorld !== world) clearWorldObjectBuffs(p);
     if (oldWorld && oldWorld.rift && oldWorld !== world) riftLeave(oldWorld); // walking out of an unfinished rift is a fail

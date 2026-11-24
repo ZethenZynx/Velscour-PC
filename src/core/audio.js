@@ -7,6 +7,8 @@
 import { G } from '../state.js';
 
 let ac = null, master, sfxBus, musicBus, ambBus, noiseBuf, pulseWave;
+let currentSoundName = null;
+const ironExpressWhistleSources = new Set();
 let fanfareEnd = 0;
 let audioDiagnosticSink = null, currentDiagnostic = null, nextDiagnosticId = 0;
 const activeDiagnostics = new Map();
@@ -127,7 +129,7 @@ function noise(t, dur, { type = 'lowpass', f0 = 1000, f1 = f0, q = 1, vol = 0.5,
   filt.frequency.setValueAtTime(f0, t); filt.frequency.exponentialRampToValueAtTime(Math.max(20, f1), t + dur);
   const g = ac.createGain(); env(g, t, a, vol, dur);
   src.connect(filt); filt.connect(g); g.connect(sfxBus);
-  trackDiagnosticSource(src); src.start(t, Math.random() * 0.5); src.stop(t + dur + 0.05);
+  trackIronExpressWhistleSource(src); trackDiagnosticSource(src); src.start(t, Math.random() * 0.5); src.stop(t + dur + 0.05);
 }
 
 function tone(t, dur, { wave = 'sine', f0 = 440, f1 = f0, vol = 0.3, a = 0.005, detune = 0 } = {}) {
@@ -136,7 +138,17 @@ function tone(t, dur, { wave = 'sine', f0 = 440, f1 = f0, vol = 0.3, a = 0.005, 
   o.frequency.setValueAtTime(f0, t); o.frequency.exponentialRampToValueAtTime(Math.max(20, f1), t + dur);
   const g = ac.createGain(); env(g, t, a, vol, dur);
   o.connect(g); g.connect(sfxBus);
-  trackDiagnosticSource(o); o.start(t); o.stop(t + dur + 0.05);
+  trackIronExpressWhistleSource(o); trackDiagnosticSource(o); o.start(t); o.stop(t + dur + 0.05);
+}
+
+function trackIronExpressWhistleSource(source) {
+  if (currentSoundName !== 'iron_express_whistle') return;
+  ironExpressWhistleSources.add(source);
+  const previous = source.onended;
+  source.onended = (event) => {
+    ironExpressWhistleSources.delete(source);
+    previous?.call(source, event);
+  };
 }
 
 const R = (a, b) => a + Math.random() * (b - a);
@@ -293,6 +305,8 @@ export function infernalMarkRewardSfx() {
 }
 
 export function sfx(name, vol = 1, pitch = 1, context = null) {
+  // Catch legacy and future notification bells while aboard; preserve every other sound and region.
+  if (name === 'bell' && ironExpressActive()) return ironExpressWhistleSfx(vol);
   const diagnostic = beginDiagnostic(name, context);
   if (!ac || G.settings.sfx <= 0) { if (diagnostic) { diagnostic.sealed = true; finishDiagnostic(diagnostic, 'unavailable'); } return; }
   const fn = SOUNDS[name];
@@ -302,7 +316,9 @@ export function sfx(name, vol = 1, pitch = 1, context = null) {
   if (now - l.t < 0.045) { if (++l.n > 2) { if (diagnostic) { diagnostic.sealed = true; finishDiagnostic(diagnostic, 'rate-limited'); } return; } } else { l.n = 0; }
   l.t = now;
   const previousDiagnostic = currentDiagnostic;
+  const previousSoundName = currentSoundName;
   currentDiagnostic = diagnostic;
+  currentSoundName = name;
   try {
     const p = pitch * (0.92 + Math.random() * 0.16);
     if (playSample(name, vol, p, now)) return;
@@ -310,6 +326,7 @@ export function sfx(name, vol = 1, pitch = 1, context = null) {
   } catch (e) { if (diagnostic) diagnosticEvent('error', diagnostic, { message: String(e?.message || e) }); /* audio errors are never fatal */ }
   finally {
     currentDiagnostic = previousDiagnostic;
+    currentSoundName = previousSoundName;
     if (diagnostic) { diagnostic.sealed = true; if (!diagnostic.sources) finishDiagnostic(diagnostic); }
   }
 }
@@ -414,12 +431,51 @@ async function loadSamples() {
 }
 
 let ironExpressWhistleUntil = 0;
+let ironExpressWhistleTimer = null;
+const pendingIronExpressWhistles = [];
+const ironExpressActive = () => !!(G.world?.map?.ghostTrain || G.world?.trainRun?.id === 'ghost_train');
+function scheduleIronExpressWhistle() {
+  if (ironExpressWhistleTimer || !pendingIronExpressWhistles.length) return;
+  const delay = Math.max(0, (ironExpressWhistleUntil - (ac?.currentTime || 0)) * 1000);
+  ironExpressWhistleTimer = setTimeout(() => {
+    ironExpressWhistleTimer = null;
+    if (!ironExpressActive() || !ac || G.settings.sfx <= 0) { pendingIronExpressWhistles.length = 0; return; }
+    const volume = pendingIronExpressWhistles.shift();
+    ironExpressWhistleUntil = 0;
+    ironExpressWhistleSfx(volume);
+    scheduleIronExpressWhistle();
+  }, delay);
+}
 /** One finite, non-overlapping notification whistle for Iron Express announcements. */
 export function ironExpressWhistleSfx(volume = 1) {
-  if (!ac || G.settings.sfx <= 0 || ac.currentTime < ironExpressWhistleUntil) return false;
+  if (!ironExpressActive() || !ac || G.settings.sfx <= 0) return false;
+  if (ac.currentTime < ironExpressWhistleUntil) {
+    pendingIronExpressWhistles.push(volume);
+    scheduleIronExpressWhistle();
+    return true;
+  }
   ironExpressWhistleUntil = ac.currentTime + 1.42;
   sfx('iron_express_whistle', volume, 1, { source: 'Iron Express notification', sourceActive: false });
+  scheduleIronExpressWhistle();
   return true;
+}
+/** Stop a pending/ringing train notification as soon as the player leaves the Iron Express. */
+export function stopIronExpressWhistleSfx() {
+  ironExpressWhistleUntil = 0;
+  if (ironExpressWhistleTimer) clearTimeout(ironExpressWhistleTimer);
+  ironExpressWhistleTimer = null;
+  pendingIronExpressWhistles.length = 0;
+  for (const source of [...ironExpressWhistleSources]) {
+    try { source.stop(); } catch { /* a source that already ended needs no further action */ }
+  }
+  ironExpressWhistleSources.clear();
+}
+
+/** Notification-only router: Iron Express uses its whistle; other areas keep their requested cue. */
+export function notificationSfx(fallback = 'ui', volume = 1) {
+  if (ironExpressActive()) return ironExpressWhistleSfx(volume);
+  if (fallback) { sfx(fallback, volume); return true; }
+  return false;
 }
 
 function playSample(name, vol, p, now) {
@@ -435,6 +491,7 @@ function playSample(name, vol, p, now) {
   const g = ac.createGain(); g.gain.value = d.v * vol;
   src.connect(g); g.connect(sfxBus); src.start(now);
   src.onended = () => { src.disconnect(); g.disconnect(); };
+  trackIronExpressWhistleSource(src);
   if (currentDiagnostic) currentDiagnostic.asset = `sample:${buf}`;
   trackDiagnosticSource(src);
   live.push(now + buffers[buf].duration / p);

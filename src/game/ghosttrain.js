@@ -181,7 +181,6 @@ export function createGhostTrainRun(world, gen, biome, depth, onSuccess) {
     run.stationX = x + 110; run.phase = 'brake'; run.stationsSeen += last ? 0 : 1;
     trainStation(name, look);
     UI.centerMsg(name.toUpperCase(), last ? 'Brakes on. She runs into her last stop.' : 'A station ahead. She slows.', 3);
-    ironExpressWhistleSfx(0.8);
   }
   function arrive() {
     const S = run.stop, x0 = S.x - PLAT_LEN / 2, x1 = S.x + PLAT_LEN / 2;
@@ -345,7 +344,7 @@ export function createGhostTrainRun(world, gen, biome, depth, onSuccess) {
       const S = run.stop;
       if (!S.last) {
         S.t += dt;
-        if (!S.whistled && S.t > STOP - WHISTLE) { S.whistled = true; UI.centerMsg('ALL ABOARD!', `${WHISTLE} seconds`, 2.2); ironExpressWhistleSfx(); }
+        if (!S.whistled && S.t > STOP - WHISTLE) { S.whistled = true; UI.centerMsg('ALL ABOARD!', `${WHISTLE} seconds`, 2.2); }
         if (S.t >= STOP) depart();
       }
     } else if (run.phase === 'leave') {
