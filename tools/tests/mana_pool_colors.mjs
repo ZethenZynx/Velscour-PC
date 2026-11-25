@@ -37,8 +37,15 @@ for (const [classId, color] of Object.entries(expected)) {
   assert.deepEqual([...pixels.slice(0, 4)], [12, 40, 220, 255], `${classId} leaves art outside the orb untouched`);
   assert.deepEqual([...pixels.slice(20, 24)], [255, 255, 255, 255], `${classId} preserves white reflections`);
 }
-assert.deepEqual(MANA_ART_GEOMETRY['assets/ui/hud.webp'], { cx: 1768, cy: 144, radius: 93 });
-assert.deepEqual(MANA_ART_GEOMETRY['assets/ui/hud-orb-mana.webp'], { cx: 115, cy: 144, radius: 93 });
+assert.deepEqual(MANA_ART_GEOMETRY['assets/ui/hud.webp'], { cx: 1768, cy: 144, radius: 99 });
+assert.deepEqual(MANA_ART_GEOMETRY['assets/ui/hud-orb-mana.webp'], { cx: 115, cy: 144, radius: 99 });
+for (const color of Object.values(expected)) {
+  const lowSaturationBlueRim = new Uint8ClampedArray([23, 25, 31, 255]); // blue hue, below the former saturation cutoff
+  recolorManaPixels(lowSaturationBlueRim, 1, 1, color, { cx: 0, cy: 0, radius: 99 });
+  const actual = hsl(`#${[...lowSaturationBlueRim.slice(0, 3)].map((v) => v.toString(16).padStart(2, '0')).join('')}`);
+  const target = hsl(color);
+  assert.ok(Math.abs(actual.hue - target.hue) < 3 || target.saturation < 0.03, 'low-saturation blue edge pixels receive the class tint');
+}
 
 const hud = await readFile(new URL('../../src/ui/hud.js', import.meta.url), 'utf8');
 assert.match(hud, /set\('manaPoolColorClass', p\.classId[\s\S]*refreshManaPoolTexture\(classId\)/, 'HUD recolors the original image when the selected character class changes');

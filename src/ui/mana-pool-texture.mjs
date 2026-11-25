@@ -3,8 +3,10 @@ import { MANA_POOL_COLORS, manaPoolColor } from '../data/mana-pool-colors.js';
 // Orb centers/radii are taken from assets/ui/hud.json. Only blue pixels inside
 // this liquid circle are transformed; frames, labels, and adjacent HUD art stay intact.
 export const MANA_ART_GEOMETRY = Object.freeze({
-  'assets/ui/hud.webp': Object.freeze({ cx: 1768, cy: 144, radius: 93 }),
-  'assets/ui/hud-orb-mana.webp': Object.freeze({ cx: 115, cy: 144, radius: 93 }),
+  // Include the narrow blue edge visible around the glass, while staying inside
+  // the gold bezel. The CSS orb cover and its display dimensions are unchanged.
+  'assets/ui/hud.webp': Object.freeze({ cx: 1768, cy: 144, radius: 99 }),
+  'assets/ui/hud-orb-mana.webp': Object.freeze({ cx: 115, cy: 144, radius: 99 }),
 });
 
 const SOURCE_SATURATION = 0.7273; // Royal Blue #4169E1
@@ -58,7 +60,9 @@ export function recolorManaPixels(data, width, height, color, { cx, cy, radius }
     else sourceHue = 60 * ((r - g) / d + 4);
     if (sourceHue < 0) sourceHue += 360;
     const light = (max + min) / 2, sourceSaturation = d / (1 - Math.abs(2 * light - 1));
-    if (sourceHue < 185 || sourceHue > 275 || sourceSaturation < 0.16) continue;
+    // The rim is much darker and less saturated than the liquid center, so use
+    // a broader blue hue gate to catch it without touching the gold frame.
+    if (sourceHue < 170 || sourceHue > 295 || sourceSaturation < 0.035) continue;
     const saturation = target.saturation * Math.max(0.7, Math.min(1.15, sourceSaturation / SOURCE_SATURATION));
     const [nr, ng, nb] = toRgb(target.hue, Math.min(1, saturation), light);
     data[index] = nr; data[index + 1] = ng; data[index + 2] = nb; data[index + 3] = alpha;
