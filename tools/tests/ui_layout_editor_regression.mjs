@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
+import { createDefaultLayoutState, normalizeLayoutState } from '../../src/ui/ui-layout.mjs';
 
 const [source, styles, html, gameSource, mainSource] = await Promise.all([
   readFile(new URL('../../src/ui/layoutcustomizer.js', import.meta.url), 'utf8'),
@@ -33,7 +34,11 @@ assert.match(source, /node\.style\.textAlign = entry\?\.textAlign \|\| 'left'/, 
 assert.match(source, /record\.type === 'attributes'/, 'the layout observer continues to restore visibility and class changes');
 assert.match(source, /if \(insertedNodes\.length\) for \(const \[id, , selector\] of DEFINITIONS\)/, 'late-created customizable elements receive their saved layout');
 assert.match(source, /const reinserted = node && insertedNodes\.some\(\(added\) => added === node \|\| \(added\.nodeType === 1 && added\.contains\(node\)\)\)/, 'reused UI elements receive their layout again when moved back into the DOM');
-assert.match(source, /this\.visibilityObserver\?\.observe\(node, \{ attributes: true, attributeFilter: \['class'\] \}\)/, 'both startup and late-created elements track later visibility changes');
+assert.match(source, /this\.visibilityObserver\?\.observe\(node, \{ attributes: true, attributeFilter: \['class', 'style'\] \}\)/, 'registered roots track both visibility and inline layout resets');
+assert.match(source, /const appliedStyleText = new WeakMap\(\)/, 'layout manager records its own last-applied styles to avoid observer feedback loops');
+assert.match(source, /record\.attributeName !== 'style' \|\| layoutStyleWasReset\(record\.target\)/, 'external position and size resets trigger one centralized layout restore');
+assert.match(source, /record\.target\.contains\?\.\(child\)/, 'parent HUD class or style changes restore child layout overrides');
+assert.match(source, /observe\(document\.body, \{ attributes: true, attributeFilter: \['class'\] \}\)/, 'viewport-wide body layout mode changes restore customized positions');
 assert.match(source, /effective\(id, state = this\.state\) \{ return effectiveLayoutEntry\(state, id, characterLayoutId\(G\.char\)\)/, 'customizable UI resolves the active character override with profile-wide fallback');
 assert.match(source, /entry\(id\) \{ const state = this\.state; return writableLayoutEntry\(state, id, characterLayoutId\(G\.char\)\)/, 'editing an inherited layout creates a character-specific copy without changing the account profile');
 assert.match(source, /const state = this\.state, def = DEFAULTS\.get\(id\), entry = this\.effective\(id, state\)/, 'startup and dynamic UI application use the same resolved saved entry');
@@ -65,5 +70,18 @@ assert.match(styles, /\.ui-layout-toolbox header[^\n]*cursor: move/, 'the panel 
 assert.match(styles, /\.ui-layout-toolbox-actions[^\n]*flex: 0 0 auto/, 'the editor action controls remain fixed while panel content scrolls');
 assert.doesNotMatch(styles, /\.ui-layout-dialog > \.row/, 'the separate bottom toolbar is removed');
 assert.match(html, /class="hud-environment-info"[\s\S]*id="area-name"[\s\S]*id="area-sub"[\s\S]*id="area-affixes"/, 'environment name, description, and affixes share one movable group');
+
+const definitionBlock = source.slice(source.indexOf('const DEFINITIONS = ['), source.indexOf('const DEFAULTS'));
+const registeredIds = [...definitionBlock.matchAll(/\['([^']+)',\s*'([^']+)'/g)].map((match) => match[1]);
+assert.ok(registeredIds.length >= 15, 'persistent HUD elements are registered centrally');
+assert.equal(new Set(registeredIds).size, registeredIds.length, 'every customizable HUD element has a unique persistent identifier');
+const allElementsState = createDefaultLayoutState();
+for (const [index, id] of registeredIds.entries()) allElementsState.profiles.default.layouts[id] = {
+  x: .1 + index / 100, y: .2 + index / 100, width: 280 + index, height: 90 + index,
+  scale: 125, opacity: 75, visible: index % 2 === 0, locked: index % 3 === 0,
+  anchor: 'right', textAlign: 'center',
+};
+const restoredAllElements = normalizeLayoutState(JSON.parse(JSON.stringify(allElementsState)));
+for (const id of registeredIds) assert.deepEqual(restoredAllElements.profiles.default.layouts[id], allElementsState.profiles.default.layouts[id], `${id} retains position, size, scale, opacity, visibility, anchoring and alignment after persistence`);
 
 console.log('Passed editor outline reuse, drag lifecycle, environment information grouping, persistent movable toolbox, pause-menu visibility, and in-panel controls checks.');

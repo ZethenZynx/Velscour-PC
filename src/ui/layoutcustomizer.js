@@ -25,8 +25,22 @@ const DEFAULTS = new Map(DEFINITIONS.map(([id, label, selector, x, y, mode]) => 
 const clone = cloneLayoutValue;
 const clamp = (n, min, max) => Math.max(min, Math.min(max, n));
 const STYLE_PROPS = ['translate', 'scale', 'opacity', 'width', 'height', 'transform-origin'];
+const POSITION_STYLE_PROPS = ['position', 'left', 'top', 'right', 'bottom', 'translate', 'scale', 'width', 'height', 'transform', 'transform-origin'];
 const nativeStyles = new WeakMap();
 const managedStyles = new WeakMap();
+const appliedStyleText = new WeakMap();
+
+function styleText(node) { return node?.getAttribute?.('style') || node?.style?.cssText || ''; }
+function layoutStyleSnapshot(node) {
+  return { text: styleText(node), properties: Object.fromEntries(POSITION_STYLE_PROPS.map((prop) => [prop, node.style.getPropertyValue(prop)])) };
+}
+function layoutStyleWasReset(node) {
+  const previous = appliedStyleText.get(node);
+  if (!previous) return true;
+  const currentText = styleText(node);
+  if (!currentText && previous.text) return true;
+  return POSITION_STYLE_PROPS.some((prop) => node.style.getPropertyValue(prop) !== previous.properties[prop]);
+}
 
 function nativeStyle(node) {
   let original = nativeStyles.get(node);
@@ -37,13 +51,18 @@ function nativeStyle(node) {
   return original;
 }
 function restoreStyle(node, prop, entry) {
-  if (entry?.value) node.style.setProperty(prop, entry.value, entry.priority || '');
+  const value = entry?.value || '', priority = entry?.priority || '';
+  if (node.style.getPropertyValue(prop) === value && node.style.getPropertyPriority(prop) === priority) return;
+  if (value) node.style.setProperty(prop, value, priority);
   else node.style.removeProperty(prop);
 }
 function setManagedStyle(node, prop, value, enabled) {
   let managed = managedStyles.get(node);
   if (!managed) { managed = new Set(); managedStyles.set(node, managed); }
-  if (enabled) { node.style.setProperty(prop, value); managed.add(prop); }
+  if (enabled) {
+    if (node.style.getPropertyValue(prop) !== value || node.style.getPropertyPriority(prop)) node.style.setProperty(prop, value);
+    managed.add(prop);
+  }
   else if (managed.has(prop)) { restoreStyle(node, prop, nativeStyle(node)[prop]); managed.delete(prop); }
 }
 
@@ -91,7 +110,7 @@ export const UILayoutCustomizer = {
     if (!node) return false;
     const changed = this.observedElements.get(id) !== node;
     this.observedElements.set(id, node);
-    this.visibilityObserver?.observe(node, { attributes: true, attributeFilter: ['class'] });
+    this.visibilityObserver?.observe(node, { attributes: true, attributeFilter: ['class', 'style'] });
     return changed;
   },
   recordPosition(id, node = this.node(id), includeSize = false) {
@@ -166,7 +185,8 @@ export const UILayoutCustomizer = {
       node.dataset.anchor = anchor;
       node.style.justifyContent = ({ left: 'flex-start', right: 'flex-end', center: 'center' })[anchor];
     }
-    const rect = this.baseRect(node); if (!rect || !rect.width || !rect.height) return;
+    const rect = this.baseRect(node);
+    if (!rect || !rect.width || !rect.height) { appliedStyleText.set(node, layoutStyleSnapshot(node)); return; }
     const k = entry.scale / 100, parentScale = this.parentScale(node);
     let w = Math.min(entry.width || rect.width / parentScale.x, innerWidth / (k * parentScale.x));
     let h = Math.min(entry.height || rect.height / parentScale.y, innerHeight / (k * parentScale.y));
@@ -186,6 +206,7 @@ export const UILayoutCustomizer = {
     const sized = id === 'main-action-bar' ? !!(entry.width || entry.height) : false;
     setManagedStyle(node, 'width', `${w}px`, !!entry.width || sized);
     setManagedStyle(node, 'height', `${h}px`, !!entry.height || sized);
+    appliedStyleText.set(node, layoutStyleSnapshot(node));
   },
   applyAll() { for (const [id] of DEFINITIONS) this.applyElement(id); },
 
@@ -508,10 +529,24 @@ export function applyUILayoutSettings() {
     UILayoutCustomizer.visibilityObserver = new MutationObserver((records) => {
       const insertedNodes = [];
       const changedRows = new Set();
+      const changedRoots = new Map();
+      let refreshAll = false;
       for (const record of records) {
         if (record.type === 'attributes') {
+          if (record.target === document.body) { refreshAll = true; continue; }
           const id = DEFINITIONS.find(([, , selector]) => selector && record.target.matches(selector))?.[0];
-          if (id) UILayoutCustomizer.applyElement(id, record.target);
+          if (id) {
+            // Applying a layout also changes the style attribute. Ignore that follow-up
+            // record when the current inline style matches the manager's last result.
+            if (record.attributeName !== 'style' || layoutStyleWasReset(record.target)) changedRoots.set(id, record.target);
+            continue;
+          }
+          // Parent HUD classes and styles can change a child's base rectangle. Reapply
+          // only the registered elements inside that specific changed container.
+          for (const [childId, , selector] of DEFINITIONS) {
+            const child = selector ? document.querySelector(selector) : null;
+            if (child && record.target.contains?.(child)) changedRoots.set(childId, child);
+          }
           continue;
         }
         if (record.type === 'childList' && (record.target?.id === 'buff-row' || record.target?.id === 'debuff-row')) {
@@ -519,6 +554,8 @@ export function applyUILayoutSettings() {
         }
         for (const node of record.addedNodes) insertedNodes.push(node);
       }
+      if (refreshAll) UILayoutCustomizer.applyAll();
+      else for (const [id, node] of changedRoots) UILayoutCustomizer.applyElement(id, node);
       // These persistent HUD roots can be empty during startup. Reapply their saved
       // coordinates when their first/last icon changes, without replacing the roots.
       for (const id of changedRows) UILayoutCustomizer.applyElement(id);
@@ -531,6 +568,7 @@ export function applyUILayoutSettings() {
     });
     const app = document.querySelector('#app') || document.body;
     UILayoutCustomizer.visibilityObserver.observe(app, { childList: true, subtree: true });
+    if (app !== document.body) UILayoutCustomizer.visibilityObserver.observe(document.body, { attributes: true, attributeFilter: ['class'] });
     for (const [id, , selector] of DEFINITIONS) {
       const node = selector ? document.querySelector(selector) : null;
       if (node) UILayoutCustomizer.trackElementNode(id, node);
