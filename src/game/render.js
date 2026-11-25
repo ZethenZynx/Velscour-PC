@@ -19,6 +19,7 @@ import { enemyImage } from '../core/enemyart.js';
 import { drawPetCorpse } from '../core/petart.js';
 import { drawLootLabels } from './loot.js';
 import { OBJECT_LIFETIMES, isometricTileBounds } from '../core/objectlifetimes.mjs';
+import { findTrapGroundAnchor, isometricTileCorners } from './trapgeometry.mjs';
 import { canCullCreaturesByViewport, viewportCandidatesContainPlayer } from './renderpolicy.mjs';
 import { castleTileDressing, drawCastleParticles, drawCastleWater, MAT } from '../gfx/castleground.js';
 import { drawRim, RIM, xray, drawXray } from './creature.js';
@@ -42,6 +43,35 @@ import { profileRecord } from '../core/perfdiagnostics.js';
 let lightCanvas = null, glowCanvas = null, vignette = null, vigKey = '';
 const viewTileBounds = {}, actorTileBounds = {};
 const transitionSprites = new Map();
+const trapGroundAnchorCache = new WeakMap();
+let trapAnchorCanvas = null, trapAnchorContext = null;
+
+function trapGroundAnchor(img, row, frame, sx, sy, sw, sh) {
+  let anchors = trapGroundAnchorCache.get(img);
+  if (!anchors) { anchors = new Map(); trapGroundAnchorCache.set(img, anchors); }
+  const key = `${row}:${frame}`;
+  if (anchors.has(key)) return anchors.get(key);
+  try {
+    trapAnchorCanvas ||= document.createElement('canvas');
+    if (!trapAnchorContext) trapAnchorContext = trapAnchorCanvas.getContext('2d', { willReadFrequently: true });
+    if (!trapAnchorContext) return { x: sw / 2, y: sh };
+    if (trapAnchorCanvas.width !== sw || trapAnchorCanvas.height !== sh) {
+      trapAnchorCanvas.width = sw; trapAnchorCanvas.height = sh;
+      trapAnchorContext = trapAnchorCanvas.getContext('2d', { willReadFrequently: true });
+    }
+    trapAnchorContext.clearRect(0, 0, sw, sh);
+    trapAnchorContext.drawImage(img, sx, sy, sw, sh, 0, 0, sw, sh);
+    const data = trapAnchorContext.getImageData(0, 0, sw, sh).data;
+    const anchor = findTrapGroundAnchor(data, sw, sh) || { x: sw / 2, y: sh };
+    anchors.set(key, anchor);
+    return anchor;
+  } catch {
+    // Same-origin atlases should be readable; retain the old full-frame pivot if a platform blocks pixel reads.
+    const anchor = { x: sw / 2, y: sh };
+    anchors.set(key, anchor);
+    return anchor;
+  }
+}
 /**
  * Forget the canvases render.js baked (floor chunks, light falloff, vignette, labels): a GPU reset (the computer
  * slept, the tab sat in the background) can wipe accelerated canvases, and the floor would then draw black for good.
@@ -361,15 +391,17 @@ function drawProp(ctx, pr, alpha) {
       const sx = Math.round(frame * img.naturalWidth / columns), sx1 = Math.round((frame + 1) * img.naturalWidth / columns);
       const sy = Math.round(pr.trapRow * img.naturalHeight / rows), sy1 = Math.round((pr.trapRow + 1) * img.naturalHeight / rows);
       const sw = sx1 - sx, sh = sy1 - sy, scale = Math.max(52, 148 * (pr.k || 0.4)) / sw;
-      const dw = sw * scale, dh = sh * scale, dx = x - dw / 2, dy = y - dh;
+      const dw = sw * scale, dh = sh * scale;
+      const anchor = trapGroundAnchor(img, pr.trapRow, frame, sx, sy, sw, sh);
+      const ax = anchor.x * scale, ay = anchor.y * scale;
       ctx.save();
       ctx.imageSmoothingEnabled = false;
       if (pr.trapRotation) {
         ctx.translate(x, y); ctx.rotate(pr.trapRotation);
         if (pr.flip) ctx.scale(-1, 1);
-        ctx.drawImage(img, sx, sy, sw, sh, -dw / 2, -dh, dw, dh);
-      } else if (pr.flip) { ctx.translate(x, 0); ctx.scale(-1, 1); ctx.drawImage(img, sx, sy, sw, sh, -dw / 2, dy, dw, dh); }
-      else ctx.drawImage(img, sx, sy, sw, sh, dx, dy, dw, dh);
+        ctx.drawImage(img, sx, sy, sw, sh, -ax, -ay, dw, dh);
+      } else if (pr.flip) { ctx.translate(x, y); ctx.scale(-1, 1); ctx.drawImage(img, sx, sy, sw, sh, -ax, -ay, dw, dh); }
+      else ctx.drawImage(img, sx, sy, sw, sh, x - ax, y - ay, dw, dh);
       ctx.restore();
     }
   } else if (pr.k) {

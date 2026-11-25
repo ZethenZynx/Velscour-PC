@@ -5,6 +5,7 @@ import { isoX, isoY, HW, HH } from '../core/view.js';
 import { sfx } from '../core/audio.js';
 import { sparkle, screenAngle } from '../gfx/vfx.js';
 import { A } from '../core/assets.js';
+import { isometricTileCorners, pointInTrapTile } from './trapgeometry.mjs';
 
 export const ENVIRONMENT_TRAP_TYPES = Object.freeze({
   pressurePlate: { name: 'Pressure plate', fixture: 'plate', damage: 0.04, element: 'phys', mode: 'direct', trigger: 'pressure' },
@@ -265,17 +266,17 @@ function setDamageTiles(world, site) {
 }
 
 function traceGroundTile(ctx, tile) {
+  const corners = isometricTileCorners(tile);
+  if (!corners.length) return;
   ctx.beginPath();
-  ctx.moveTo(isoX(tile.x, tile.y - 0.5), isoY(tile.x, tile.y - 0.5));
-  ctx.lineTo(isoX(tile.x + 0.5, tile.y), isoY(tile.x + 0.5, tile.y));
-  ctx.lineTo(isoX(tile.x, tile.y + 0.5), isoY(tile.x, tile.y + 0.5));
-  ctx.lineTo(isoX(tile.x - 0.5, tile.y), isoY(tile.x - 0.5, tile.y));
+  ctx.moveTo(isoX(corners[0].x, corners[0].y), isoY(corners[0].x, corners[0].y));
+  for (let i = 1; i < corners.length; i++) ctx.lineTo(isoX(corners[i].x, corners[i].y), isoY(corners[i].x, corners[i].y));
   ctx.closePath();
 }
 
 function inDamageTiles(site, target) {
   const pad = Math.max(0, target.r || 0) * 0.35;
-  return site.damageTiles.some((tile) => Math.abs(target.x - tile.x) <= 0.5 + pad && Math.abs(target.y - tile.y) <= 0.5 + pad);
+  return site.damageTiles.some((tile) => pointInTrapTile(target, tile, pad));
 }
 
 function segmentDistance(px, py, ax, ay, bx, by) {
