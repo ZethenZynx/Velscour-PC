@@ -3,7 +3,7 @@ import { G } from '../state.js';
 import { DUNGEON_AFFIX_CONFIG } from '../data/dungeonaffixes.js';
 import { rand, chance, clamp, angleTo, TAU, mixHex, pick } from '../core/util.js';
 import { camera } from '../core/view.js';
-import { sfx } from '../core/audio.js';
+import { sfx, markAudioCombatActivity, recordAudioDiagnosticOriginSuppression } from '../core/audio.js';
 import { petCorpse } from '../core/petart.js';
 import { floatText, damageText, bloodSpray, gibs, addDecal, addEffect, Bolt, Ring, Telegraph, elem, spawn, burst, AffixFieldMarker } from '../gfx/vfx.js';
 import { Meter } from './dpsmeter.js';
@@ -25,12 +25,25 @@ import { SKILLS } from '../data/skills.js';
 import { skillMorphFor } from '../data/talents.js';
 import { EXTRA_AFFIX_DEATHS } from './affixcatalogruntime.js';
 import { notifyBossDefeated } from './bosscompletion.js';
+import { createCombatSoundGate } from './combat-sound-gate.mjs';
 
 const PLAYER_RES = { fire: 'fire', cold: 'cold', light: 'light', poison: 'poison', acid: 'poison' };
 const LEECH_K = 2; // life/mana leech: a whole monster's life taken returns LEECH_K x leech% of the hero's own
+const allowCombatSound = createCombatSoundGate();
 function combatSound(name, source, target, category, volume = 1) {
+  // Orbiting and multi-target hits can resolve several valid hits in the same simulation
+  // instant. Keep their damage/effects, but request only one identical cue per attacker
+  // every 45 ms; the audio engine was already suppressing almost all of these duplicates.
+  if ((name === 'hit' || name === 'crit') && source && typeof source === 'object') {
+    const now = performance.now() / 1000;
+    if (!allowCombatSound(source, `${name}:${category}`, now)) {
+      recordAudioDiagnosticOriginSuppression(name, category, source.name || (source.team === 'enemy' ? 'Enemy combat' : 'Player combat'), 'combat.hit-multi-target-coalescing');
+      return false;
+    }
+  }
   const enemySource = source?.team === 'enemy';
   return sfx(name, volume, 1, { category, actor: enemySource ? 'enemy' : 'player', source: source?.name || (enemySource ? 'Enemy combat' : 'Player combat'),
+    origin: `combatSound:${category}`,
     sourceActive: () => !source || source.dead !== true, x: target?.x ?? source?.x, y: target?.y ?? source?.y, worldId: G.world?.id });
 }
 /** Heal `who` for leeching `frac` of a hit of dmg on tgt: by the share of tgt's life it took, in `who`'s own life. */
@@ -248,6 +261,9 @@ export function hit(src, tgt, amount, el = 'phys', o = {}) {
   if (byHero && src && src.isPlayer && !o.dot) G.lastHit = tgt; // the HUD's target window
   if (byHero && src && src.isPlayer && o.sk && !o.dot && showFx && !o.noClassHitFx) classHitFx(src, tgt, o.sk, el); // the class's own splash (gfx/classfx.js)
   const actualDamage = Math.min(dmg, Math.max(0, tgt.hp));
+  if (actualDamage > 0 && src && src.team !== tgt.team && (src.team === 'enemy' || tgt.team === 'enemy')) {
+    markAudioCombatActivity(world, 4, o.dot ? 'persistent-damage-tick' : 'hostile-damage');
+  }
   if (!o.silent && actualDamage > 0 && G.ui?.event) {
     const attacker = src?.isPlayer ? 'You' : (src?.name || src?.arch || 'Enemy');
     const target = tgt?.isPlayer ? 'you' : (tgt?.name || tgt?.arch || 'enemy');

@@ -1291,7 +1291,10 @@ export class Monster extends Creature {
         if (t && !t.dead) {
           w.addHazard(new Projectile({ world: w, src: this, x: this.x, y: this.y, ang: this.leadAng(t, P.speed || 7) + rand(-0.05, 0.05), speed: P.speed || 7, range: (this.range || 7) + 2, fx: P.fx, el, dmg: [dmg * 0.6, dmg * 0.8] }));
           this.face(angleTo(this.x, this.y, t.x, t.y));
-          if (a.k % 2 === 0) enemySound(this, P.fx === 'arrow' ? 'bow' : elem(el).sfx, 0.35);
+          // This move launches a whole projectile volley. One release cue per volley
+          // avoids asking the audio manager to suppress another identical sound for
+          // every other dart while preserving every projectile and damage event.
+          if (a.k === 0) enemySound(this, P.fx === 'arrow' ? 'bow' : elem(el).sfx, 0.35);
         }
         if (++a.k >= a.n) done();
         break;

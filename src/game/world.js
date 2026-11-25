@@ -5,7 +5,7 @@ import { G } from '../state.js';
 import { applyDungeonAffix } from '../data/dungeonaffixes.js';
 import { camera, isoX, isoY } from '../core/view.js';
 import { rand, dist2, TAU, chance } from '../core/util.js';
-import { sfx, audioDiagnosticsEnabled, recordAudioDiagnosticMarker } from '../core/audio.js';
+import { sfx, audioDiagnosticsEnabled, audioCombatStatus, recordAudioDiagnosticMarker } from '../core/audio.js';
 import { spawn, updateVfx, addLight, sparkle, smoke, lights } from '../gfx/vfx.js';
 import { bodyR } from '../world/map.js';
 import { profileEnd, profileRecord, profileStart } from '../core/perfdiagnostics.js';
@@ -78,6 +78,7 @@ export class World {
     this.kills = 0;
     this.lastPlayerTile = -1;
     this._audioDiagnosticCombat = false;
+    this._audioCombatUntil = 0;
     if (this.kind === 'dungeon') {
       this.initClutter();
     }
@@ -396,9 +397,10 @@ export class World {
 
   update(dt) {
     if (audioDiagnosticsEnabled()) {
-      const inCombat = this.creatures.some((creature) => creature.team === 'enemy' && !creature.dead && (creature.awake || creature.state === 'act'));
+      const combat = audioCombatStatus(this), inCombat = combat.active;
       if (this._audioDiagnosticCombat !== inCombat) {
-        recordAudioDiagnosticMarker(inCombat ? 'combat-start' : 'combat-end', { worldId: this.id, environment: this.biome?.name || this.kind, depth: this.depth ?? null, inCombat });
+        recordAudioDiagnosticMarker(inCombat ? 'combat-start' : 'combat-end', { worldId: this.id, environment: this.biome?.name || this.kind,
+          depth: this.depth ?? null, inCombat, reason: combat.reason });
         this._audioDiagnosticCombat = inCombat;
       }
     } else this._audioDiagnosticCombat = null;

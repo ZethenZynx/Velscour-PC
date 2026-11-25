@@ -6,7 +6,7 @@
 // Songs and beds stream through <audio> elements routed into the Web Audio graph, so they're never fully decoded.
 import { G } from '../state.js';
 import { AUDIO_VOLUME_GROUPS, audioGroupForSound, isCombatAudioCategory, normalizeAudioSettings } from './audio-settings.js';
-import { AUDIO_DIAGNOSTIC_STACK_LIMIT, createAudioDiagnosticSession, summarizeAudioDiagnosticEvents } from './audio-diagnostics.mjs';
+import { AUDIO_DIAGNOSTIC_CALLSITE_SAMPLE_INTERVAL, AUDIO_DIAGNOSTIC_STACK_LIMIT, createAudioDiagnosticSession, summarizeAudioDiagnosticEvents } from './audio-diagnostics.mjs';
 
 let ac = null, master, sfxBus, musicBus, ambBus, noiseBuf, pulseWave, activeOutputBus = null;
 const categoryBuses = {};
@@ -19,6 +19,7 @@ const audioMetrics = { discarded: 0, duplicateSuppressed: 0, distanceCulled: 0, 
 const peakByCategory = {};
 const metricsByCategory = {};
 let audioProcessingMs = 0, audioProcessingSamples = 0, audioProcessingWorstMs = 0;
+let audioFrameProcessingMs = 0;
 let audioFocusGain = 1;
 const ironExpressWhistleSources = new Set();
 let fanfareEnd = 0;
@@ -26,6 +27,8 @@ let notificationDuckUntil = 0;
 let audioDiagnosticSink = null, currentDiagnostic = null, nextDiagnosticId = 0;
 const activeDiagnostics = new Map();
 let diagnosticStackIds = new Map();
+let diagnosticStackSamples = new Map();
+let lastDiagnosticStackIds = new Map();
 const last = {};
 const AUDIO = 'assets/audio/';
 let manifest = null;               // assets/audio/audio.json
@@ -82,6 +85,31 @@ export function initAudio() {
 }
 
 export const audioReady = () => !!ac && ac.state === 'running';
+/** Audio-only encounter state: recent real damage or a nearby engaged hostile, never dungeon membership alone. */
+export function audioCombatStatus(world = G.world) {
+  if (!world) return { active: false, reason: 'no-world' };
+  if (Number(world._audioCombatUntil) > Number(world.time || 0)) return { active: true, reason: world._audioCombatReason || 'recent-hostile-damage' };
+  const player = world.player;
+  if (!player || player.dead || !Array.isArray(world.creatures)) return { active: false, reason: 'no-living-player' };
+  const rangeSq = 12 * 12;
+  const engaged = world.creatures.some((creature) => {
+    if (!creature || creature.team !== 'enemy' || creature.dead) return false;
+    if (creature.aggro !== player && creature.target !== player && creature.state !== 'act') return false;
+    const dx = (creature.x || 0) - (player.x || 0), dy = (creature.y || 0) - (player.y || 0);
+    return dx * dx + dy * dy <= rangeSq;
+  });
+  return { active: engaged, reason: engaged ? 'nearby-engaged-hostile' : 'no-nearby-engagement' };
+}
+
+export function isAudioCombatActive(world = G.world) { return audioCombatStatus(world).active; }
+
+/** Called only for successful hostile damage; the short tail covers active DOTs and brief attack gaps. */
+export function markAudioCombatActivity(world = G.world, seconds = 4, reason = 'recent-hostile-damage') {
+  if (!world) return;
+  const until = (Number(world.time) || 0) + seconds;
+  if (until >= (Number(world._audioCombatUntil) || 0)) world._audioCombatReason = reason;
+  world._audioCombatUntil = Math.max(Number(world._audioCombatUntil) || 0, until);
+}
 /** The shared context and the sfx bus, for the instrument sampler (src/core/sampler.js). */
 export const audioCtx = () => ac;
 export const audioOut = (category = 'playerSpell') => categoryBuses[category] || sfxBus;
@@ -110,7 +138,8 @@ export function audioActiveByCategory() {
 
 /** Register a non-sfx Web Audio voice (for example the Bard sampler) with the same limits and diagnostics. */
 export function beginAudioVoice(sound, category, source, durationSeconds = 1, { combat = false } = {}) {
-  const diagnostic = beginDiagnostic(sound, { category, source, combat });
+  const diagnosticCombat = combat || isCombatAudioCategory(category);
+  const diagnostic = beginDiagnostic(sound, { category, source, combat: diagnosticCombat, inCombat: isAudioCombatActive() });
   const audio = G.settings.audio = normalizeAudioSettings(G.settings.audio);
   if (audio.muted.master || audio.volumes.master <= 0 || audio.muted[category] || audio.volumes[category] <= 0) { finishRequestedDiagnostic(diagnostic, 'muted'); return null; }
   const now = ac?.currentTime || 0;
@@ -119,7 +148,8 @@ export function beginAudioVoice(sound, category, source, durationSeconds = 1, { 
   if (combat && liveSoundInstances.filter((item) => item.combat).length >= audio.maxCombatSounds) { recordAudioMetric('discarded', category); finishRequestedDiagnostic(diagnostic, 'channel-limit'); return null; }
   const playback = { id: ++nextPlaybackId, sound, category, combat, endsAt: now + Math.max(0.05, durationSeconds), route: null };
   liveSoundInstances.push(playback);
-  if (diagnostic) { diagnostic.playbackId = playback.id; diagnostic.asset = `sampler:${sound}`; diagnosticEvent('playback-registered', diagnostic, { category, playbackId: playback.id, asset: diagnostic.asset }); }
+  if (diagnostic) { diagnostic.playbackId = playback.id; diagnostic.asset = `sampler:${sound}`; diagnostic.combatAudio = diagnosticCombat;
+    diagnosticEvent('playback-registered', diagnostic, { category, playbackId: playback.id, asset: diagnostic.asset, combatAudio: diagnosticCombat }); }
   if (audioRecording?.active) peakByCategory[category] = Math.max(peakByCategory[category] || 0, liveSoundInstances.filter((item) => item.category === category).length);
   return { playback, diagnostic };
 }
@@ -146,11 +176,11 @@ export function startAudioDiagnosticRecording() {
   if (audioRecording?.active) return false;
   audioRecording = { active: true, startedUtc: new Date().toISOString(), startedPerfMs: performance.now(),
     session: createAudioDiagnosticSession(), stackTraces: {}, nextStackId: 0 };
-  diagnosticStackIds = new Map();
+  diagnosticStackIds = new Map(); diagnosticStackSamples = new Map(); lastDiagnosticStackIds = new Map();
   for (const key of Object.keys(audioMetrics)) audioMetrics[key] = 0;
   for (const key of Object.keys(peakByCategory)) delete peakByCategory[key];
   for (const key of Object.keys(metricsByCategory)) delete metricsByCategory[key];
-  audioProcessingMs = audioProcessingSamples = audioProcessingWorstMs = 0;
+  audioProcessingMs = audioProcessingSamples = audioProcessingWorstMs = audioFrameProcessingMs = 0;
   setAudioDiagnosticSink(captureAudioDiagnosticEvent);
   recordAudioDiagnosticMarker('recording-start');
   return true;
@@ -181,8 +211,22 @@ export function recordAudioDiagnosticMarker(type, detail = {}) {
   const world = G.world;
   captureAudioDiagnosticEvent({ type, timeUtc: new Date().toISOString(), perfMs: performance.now(),
     worldId: detail.worldId ?? world?.id ?? null, environment: detail.environment ?? world?.biome?.name ?? world?.kind ?? null,
-    inCombat: detail.inCombat ?? (world?._audioDiagnosticCombat === true), ...detail });
+    inCombat: detail.inCombat ?? isAudioCombatActive(world), ...detail });
   return true;
+}
+
+/** Samples audio work once per rendered frame while recording; a no-op during normal gameplay. */
+export function recordAudioDiagnosticFrame() {
+  if (!audioRecording?.active) return;
+  audioRecording.session.recordFrameAudio(audioFrameProcessingMs);
+  audioFrameProcessingMs = 0;
+}
+
+/** Record a deliberately coalesced combat cue without creating an audio request or Web Audio source. */
+export function recordAudioDiagnosticOriginSuppression(sound, category, source, origin) {
+  if (!audioRecording?.active) return;
+  audioRecording.session.suppressAtOrigin({ sound, category, source: source || 'unattributed', origin,
+    timeUtc: new Date().toISOString(), perfMs: performance.now() });
 }
 
 function captureAudioDiagnosticEvent(event) {
@@ -203,19 +247,29 @@ function storeDiagnosticStack(key, stack) {
 }
 
 function diagnosticStackId(sound, category) {
-  const key = `audio:${category || 'uncategorized'}:${sound}`;
-  if (audioRecording?.active && diagnosticStackIds.has(key)) return diagnosticStackIds.get(key);
-  return storeDiagnosticStack(key, new Error().stack || '');
+  const key = `${category || 'uncategorized'}:${sound}`;
+  if (!audioRecording?.active) return { id: null, sampled: false };
+  const sampleCount = (diagnosticStackSamples.get(key) || 0) + 1;
+  diagnosticStackSamples.set(key, sampleCount);
+  const sampled = sampleCount === 1 || sampleCount % AUDIO_DIAGNOSTIC_CALLSITE_SAMPLE_INTERVAL === 1;
+  if (sampled) {
+    const stack = new Error().stack || '';
+    const frames = stack.split('\n').slice(4, 10).join('\n');
+    const id = storeDiagnosticStack(`callsite:${frames}`, stack);
+    if (id != null) lastDiagnosticStackIds.set(key, id);
+    else return { id: null, sampled: false };
+  }
+  return { id: lastDiagnosticStackIds.get(key) ?? null, sampled };
 }
 
 export function audioDiagnosticReport() {
   if (!audioRecording) return { error: 'No audio diagnostic recording has been started.' };
-  const session = audioRecording.session.report(), events = audioRecording.session.events.slice();
+  const durationMs = audioRecording.durationMs ?? Number((performance.now() - audioRecording.startedPerfMs).toFixed(2));
+  const session = audioRecording.session.report(durationMs), events = audioRecording.session.events.slice();
   const retainedEventSummary = summarizeAudioDiagnosticEvents(events);
   const eventCount = audioRecording.session.totalEvents;
   const detailLimit = audioRecording.session.detailLimit;
   const importantLimit = audioRecording.session.importantLimit;
-  const durationMs = audioRecording.durationMs ?? Number((performance.now() - audioRecording.startedPerfMs).toFixed(2));
   const sourcesAtStop = audioRecording.sourceSnapshotAtStop || audioRecording.session.snapshotSources();
   const settings = normalizeAudioSettings(G.settings.audio);
   return {
@@ -231,6 +285,12 @@ export function audioDiagnosticReport() {
     activeInstancesByCategory: audioRecording.activeInstancesAtStop || audioActiveByCategory(), peakInstancesByCategory: { ...peakByCategory },
     metrics: { ...audioMetrics, byCategory: structuredCloneSafe(metricsByCategory), audioProcessingAverageMs: audioProcessingSamples ? Number((audioProcessingMs / audioProcessingSamples).toFixed(3)) : 0, audioProcessingWorstMs: Number(audioProcessingWorstMs.toFixed(3)), audioProcessingSamples, combatSoundsQueued: 0 },
     summary: { mostFrequentSounds: session.mostFrequentSounds, mostFrequentCategories: session.mostFrequentCategories,
+      requestRates: session.requestRates, perSoundAudio: session.perSound,
+      requestOrigins: session.requestOrigins, originSuppression: session.originSuppression,
+      peakSimultaneousCombatSounds: session.peaks.simultaneousCombatSounds,
+      peakSimultaneousWebAudioSources: session.peaks.simultaneousWebAudioSources,
+      requestToPlaybackLatencyMs: session.requestToPlaybackLatencyMs,
+      audioProcessingPerFrameMs: session.audioProcessingPerFrameMs,
       longestSounds: session.longestSounds, potentiallyOrphaned: session.potentiallyOrphaned,
       stillActiveWhenRecordingStopped: audioRecording.activeAtStop || [],
       pendingSourcesWhenRecordingStopped: sourcesAtStop.pending,
@@ -270,7 +330,8 @@ function diagnosticEvent(type, record, details = {}) {
   if (!audioDiagnosticSink || !record) return;
   try { audioDiagnosticSink({ type, timeUtc: new Date().toISOString(), perfMs: performance.now(), id: record.id, sound: record.sound, asset: record.asset,
     assetPath: record.assetPath || null, category: record.category || null, playbackId: record.playbackId || null,
-    source: record.source, stackId: record.stackId ?? null, worldId: record.worldId ?? null, environment: record.environment ?? null,
+    source: record.source, origin: record.origin || null, stackId: record.stackId ?? null, callsiteSample: record.callsiteSample === true,
+    worldId: record.worldId ?? null, environment: record.environment ?? null,
     inCombat: record.inCombat ?? null, combatAudio: record.combatAudio ?? null, activeInstances: activeDiagnostics.size,
     activeSources: record.sources, ...details }); } catch { /* diagnostics must never affect sound playback */ }
 }
@@ -280,11 +341,13 @@ function diagnosticSourceActive(record) {
 }
 function beginDiagnostic(sound, context) {
   if (!audioDiagnosticSink) return null;
+  const stack = diagnosticStackId(sound, context?.category);
   const record = { id: ++nextDiagnosticId, sound, asset: `procedural:${sound}`, source: context?.source || 'unattributed',
+    origin: context?.origin || null,
     assetPath: null, category: context?.category || null, sourceActive: context?.sourceActive,
     worldId: context?.worldId ?? G.world?.id ?? null, environment: context?.environment ?? G.world?.biome?.name ?? G.world?.kind ?? null,
-    inCombat: context?.inCombat ?? (G.world?._audioDiagnosticCombat === true), combatAudio: context?.combat ?? null,
-    stackId: diagnosticStackId(sound, context?.category), sources: 0, sourceSerial: 0, sealed: false };
+    inCombat: context?.inCombat ?? isAudioCombatActive(), combatAudio: context?.combat ?? isCombatAudioCategory(context?.category),
+    stackId: stack.id, callsiteSample: stack.sampled, sources: 0, sourceSerial: 0, sealed: false };
   activeDiagnostics.set(record.id, record);
   diagnosticEvent('play', record, { sourceActive: diagnosticSourceActive(record) });
   return record;
@@ -528,7 +591,8 @@ export function sfx(name, vol = 1, pitch = 1, context = null) {
   // Catch legacy and future notification bells while aboard; preserve every other sound and region.
   if (name === 'bell' && ironExpressActive()) return ironExpressWhistleSfx(vol);
   const category = audioGroupForSound(name, context);
-  const diagnostic = beginDiagnostic(name, { ...context, category });
+  const combat = context?.combat ?? isCombatAudioCategory(category);
+  const diagnostic = beginDiagnostic(name, { ...context, category, combat, inCombat: context?.inCombat ?? isAudioCombatActive() });
   if (!ac || G.settings.sfx <= 0) return finishRequestedDiagnostic(diagnostic, 'unavailable');
   const fn = SOUNDS[name];
   if (!fn) return finishRequestedDiagnostic(diagnostic, 'unknown-sound');
@@ -559,7 +623,6 @@ export function sfx(name, vol = 1, pitch = 1, context = null) {
   if (liveSoundInstances.filter((item) => item.sound === name).length >= identicalLimit) {
     recordAudioMetric('duplicateSuppressed', category); return finishRequestedDiagnostic(diagnostic, 'duplicate-suppressed');
   }
-  const combat = context?.combat ?? isCombatAudioCategory(category);
   if (combat && liveSoundInstances.filter((item) => item.combat).length >= audio.maxCombatSounds) {
     recordAudioMetric('discarded', category); return finishRequestedDiagnostic(diagnostic, 'channel-limit');
   }
@@ -575,6 +638,7 @@ export function sfx(name, vol = 1, pitch = 1, context = null) {
   const playback = { id: ++nextPlaybackId, sound: name, category, combat, endsAt: now + 0.2, route: route.cleanup };
   liveSoundInstances.push(playback);
   if (diagnostic) { diagnostic.category = category; diagnostic.combatAudio = combat; diagnostic.playbackId = playback.id; }
+  if (diagnostic) diagnosticEvent('playback-registered', diagnostic, { category, playbackId: playback.id, combatAudio: combat, durationEstimateMs: 200 });
   if (audioRecording?.active) peakByCategory[category] = Math.max(peakByCategory[category] || 0, liveSoundInstances.filter((item) => item.category === category).length);
   if (['rareItem', 'questAchievement'].includes(category) && audio.notificationDucking) duckForNotification(now, audio);
   const previousDiagnostic = currentDiagnostic;
@@ -604,6 +668,7 @@ export function sfx(name, vol = 1, pitch = 1, context = null) {
     if (started) {
       const elapsed = performance.now() - started;
       audioProcessingMs += elapsed; audioProcessingSamples++; audioProcessingWorstMs = Math.max(audioProcessingWorstMs, elapsed);
+      audioFrameProcessingMs += elapsed;
       if (elapsed > 2 && audioRecording?.active) captureAudioDiagnosticEvent({ type: 'processing-spike', timeUtc: new Date().toISOString(), perfMs: performance.now(), durationMs: Number(elapsed.toFixed(3)), sound: name, category });
     }
     currentDiagnostic = previousDiagnostic;

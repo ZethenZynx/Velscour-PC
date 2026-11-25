@@ -24,7 +24,7 @@ import { game } from './game/game.js';
 import { dropBakes } from './game/render.js';
 import { controls } from './game/controls.js';
 import { initSpectate } from './game/spectate.js';
-import { applyVolumes, preloadSong, TITLE_SONG, recordAudioDiagnosticMarker } from './core/audio.js';
+import { applyVolumes, preloadSong, TITLE_SONG, recordAudioDiagnosticMarker, recordAudioDiagnosticFrame } from './core/audio.js';
 import { profileBeginFrame, profileEnd, profileFinishFrame, profileSetRender, profileSetUpdate, setPerformanceProfilerEnabled } from './core/perfdiagnostics.js';
 import { observeAdaptivePerformance, performanceTier } from './core/performancequality.mjs';
 import { applyPerformanceQuality } from './gfx/vfx.js';
@@ -269,6 +269,7 @@ function loop(now) {
   }
   if (profiling) profileSetRender(profileEnd(renderStarted));
   input.endFrame();
+  recordAudioDiagnosticFrame();
   if (profiling) profileFinishFrame(G.world);
 }
 
