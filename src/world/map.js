@@ -119,14 +119,27 @@ export class TileMap {
     }
   }
   /** Recover an embedded body using only a recent, still-reachable safe point.
-   * A bounded flood fill is the fallback when collision geometry changes under it. */
+   * The broader reachability scan runs only when the local repair radius is insufficient. */
   recoverEmbedded(e, maxDistance = 3) {
-    if (!e || !Number.isFinite(e.x) || !Number.isFinite(e.y)) return false;
+    if (!e) return false;
+    const ax = e._lastValidMap === this ? e._lastValidX : NaN, ay = e._lastValidMap === this ? e._lastValidY : NaN;
+    if (!Number.isFinite(e.x) || !Number.isFinite(e.y)) {
+      // Bad coordinates can result from a legacy save or an interrupted scripted
+      // move. Recover from the map-local anchor before doing any distance math.
+      if (Number.isFinite(ax) && Number.isFinite(ay) && this.positionFree(e, ax, ay)) {
+        e.x = ax; e.y = ay; this.rememberPosition(e); return true;
+      }
+      const start = e.world?.startPos;
+      if (e.isPlayer && start && this.positionFree(e, start[0], start[1])) {
+        e.x = start[0]; e.y = start[1]; this.rememberPosition(e); return true;
+      }
+      return false;
+    }
     if (this.positionFree(e, e.x, e.y)) {
       this._recordPosition(e);
       return false;
     }
-    const r = bodyR(e), ax = e._lastValidMap === this ? e._lastValidX : NaN, ay = e._lastValidMap === this ? e._lastValidY : NaN;
+    const r = bodyR(e);
     if (Number.isFinite(ax) && Number.isFinite(ay) && Math.hypot(e.x - ax, e.y - ay) <= maxDistance && this.positionFree(e, ax, ay)) {
       e.x = ax; e.y = ay; this.rememberPosition(e); return true;
     }
@@ -147,6 +160,20 @@ export class TileMap {
         best = [x, y]; bestD = d;
       }
       if (best) { e.x = best[0]; e.y = best[1]; this.rememberPosition(e); return true; }
+
+      // The player may have been displaced farther than the local repair radius
+      // before a terrain change invalidated the current tile. Search the same
+      // walk-connected component from the last safe point, selecting the closest
+      // body-clear tile to the invalid position. This path runs only on recovery.
+      let globalBest = null, globalBestD2 = Infinity;
+      for (let i = 0; i < reachable.length; i++) {
+        if (!reachable[i]) continue;
+        const tx = i % this.w, ty = (i / this.w) | 0, x = tx + 0.5, y = ty + 0.5;
+        const d2 = (x - e.x) ** 2 + (y - e.y) ** 2;
+        if (d2 >= globalBestD2 || !this.positionFree(e, x, y)) continue;
+        globalBest = [x, y]; globalBestD2 = d2;
+      }
+      if (globalBest) { e.x = globalBest[0]; e.y = globalBest[1]; this.rememberPosition(e); return true; }
     }
     // A character may load into a bad legacy/save position before this map has had
     // a chance to remember it. Extract only through the tile containing the stuck

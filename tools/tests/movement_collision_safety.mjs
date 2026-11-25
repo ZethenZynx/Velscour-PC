@@ -4,6 +4,7 @@ import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 import { TileMap } from '../../src/world/map.js';
 import { Leap } from '../../src/game/hazards.js';
+import { clearInterruptedMovement } from '../../src/game/movement-recovery.mjs';
 
 const mapSource = await readFile(new URL('../../src/world/map.js', import.meta.url), 'utf8');
 const ninjaSource = await readFile(new URL('../../src/game/ninja.js', import.meta.url), 'utf8');
@@ -86,6 +87,37 @@ const edgeStuck = actor(4.8, 4.5, 0.3);
 assert.equal(edgeStuckMap.recoverEmbedded(edgeStuck), true, 'legacy positions overlapping an adjacent wall are recovered');
 assert.ok(edgeStuckMap.positionFree(edgeStuck, edgeStuck.x, edgeStuck.y));
 
+// A scripted terrain change can invalidate a position more than the local repair
+// radius from its anchor. Recovery still selects a safe tile in the anchor's
+// walk-connected component, never on the far side of a full-height wall.
+const farRecoveryMap = room(20, 9);
+for (let y = 0; y < farRecoveryMap.h; y++) farRecoveryMap.block[y * farRecoveryMap.w + 10] = 1;
+farRecoveryMap.block[4 * farRecoveryMap.w + 14] = 1;
+const farStuck = actor(14.5, 4.5, 0.3);
+farRecoveryMap.rememberPosition(Object.assign(farStuck, { x: 4.5, y: 4.5 }));
+farStuck.x = 14.5;
+assert.equal(farRecoveryMap.recoverEmbedded(farStuck), true, 'recovery extends beyond the local radius when the player is embedded');
+assert.ok(farRecoveryMap.positionFree(farStuck, farStuck.x, farStuck.y));
+assert.ok(farStuck.x < 10, 'the recovery destination remains in the last-safe connected component');
+
+const nonFinite = actor(Number.NaN, Number.POSITIVE_INFINITY, 0.3);
+farRecoveryMap.rememberPosition(Object.assign(nonFinite, { x: 4.5, y: 4.5 }));
+nonFinite.x = Number.NaN; nonFinite.y = Number.POSITIVE_INFINITY;
+assert.equal(farRecoveryMap.recoverEmbedded(nonFinite), true, 'non-finite interrupted coordinates recover through the safe anchor');
+assert.deepEqual([nonFinite.x, nonFinite.y], [4.5, 4.5]);
+
+// Recovery unlocks player input immediately, discards stale queued casts, and
+// leaves cooldown/resource balance untouched.
+const interrupted = { channel: {}, castLock: 2, castFree: true, queued: { skill: 'stale' }, z: 20,
+  lunge: 1, attackAnimT: 0.5, moving: true, moveVec: [1, 0], moveTarget: [9, 9], path: [[8, 8]],
+  pathFor: '8,8', attackTarget: {}, interact: {}, lootTarget: {}, cooldowns: { dash: 4 }, mana: 20 };
+assert.equal(clearInterruptedMovement(interrupted), true);
+for (const key of ['channel', 'queued', 'moveTarget', 'path', 'pathFor', 'attackTarget', 'interact', 'lootTarget']) assert.equal(interrupted[key], null, `${key} is cleared after recovery`);
+assert.equal(interrupted.castLock, 0); assert.equal(interrupted.castFree, false); assert.equal(interrupted.z, 0);
+assert.equal(interrupted.moving, false); assert.deepEqual(interrupted.moveVec, [0, 0]);
+assert.equal(interrupted.cooldowns.dash, 4, 'movement recovery does not reset ability cooldowns');
+assert.equal(interrupted.mana, 20, 'movement recovery does not grant resources');
+
 const movedFromInvalid = actor(4.8, 4.5, 0.3);
 movedFromInvalid.x = 4.7; recovery.rememberPosition(movedFromInvalid); movedFromInvalid.x = 4.8;
 assert.equal(recovery.move(movedFromInvalid, 0.2, 0), false, 'normal movement first repairs an embedded start instead of moving through the wall');
@@ -117,6 +149,7 @@ for (let i = 0; i < 5; i++) {
 assert.match(mapSource, /circle-vs-cell overlap/, 'shared map collision uses exact body-to-cell geometry');
 assert.match(mapSource, /recoverEmbedded\(e, maxDistance = 3\)/, 'all players can use bounded embedded-position recovery');
 assert.match(playerSource, /recoverEmbedded\?\.\(this\)/, 'player update checks and recovers an invalid location automatically');
+assert.match(playerSource, /clearInterruptedMovement\(this\)/, 'recovery releases channel, cast lock, and stale input together');
 assert.match(skillSource, /const safe = \(x, y\) => w\.map\.positionFree\(p, x, y\) && canLand\(x, y\)/,
   'Blink preserves teleport behavior but only chooses a full-body-safe landing');
 assert.match(rogueSource, /w\.map\.positionFree\(p, x, y\).*w\.map\.los/,

@@ -33,6 +33,7 @@ import { rogueHit, rogueUpdate } from './rogue.js';
 import { ninjaHit, ninjaUpdate } from './ninja.js';
 import { ninjaGearLayer } from '../gfx/ninjagear.js';
 import { CRIT_OVER } from '../data/statformulas.mjs';
+import { clearInterruptedMovement } from './movement-recovery.mjs';
 
 const FREE_CAST = new Set(['buff', 'summon']);
 import { relicBonuses } from '../data/relics.js';
@@ -789,8 +790,7 @@ export class Player extends Creature {
   update(dt) {
     const c = this.char, st = this.st;
     if (!this.dead && this.world?.map?.recoverEmbedded?.(this)) {
-      if (this.channel instanceof Leap) this.z = 0;
-      this.channel = null; this.moveTarget = null; this.path = null; this.moving = false;
+      clearInterruptedMovement(this);
     }
     this.animT += dt;
     const gfx = this.gearFx();

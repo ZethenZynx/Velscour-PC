@@ -451,8 +451,10 @@ export const game = {
     p.x = start[0]; p.y = start[1]; p.z = 0;
     p.channel = null; p.path = null; p.moveTarget = null; p.attackTarget = null; p.interact = null; p.lootTarget = null;
     p.status = {}; p.dead = false; p.kbx = p.kby = 0; p.castLock = 0;
+    world.startPos = [p.x, p.y];
     world.player = p;
     world.add(p);
+    world.map.rememberPosition(p);
     for (const s of keep) {
       const [x, y] = world.map.randomNear(p.x, p.y, 1.5);
       s.x = x; s.y = y; s.world = world; s.aggro = null; s.foe = null; s.nav = null; s.fol = null;
@@ -1279,6 +1281,7 @@ export const game = {
     if (!w || !w.velscour || !p) return;
     const [x, y] = w.map.nudge(22.5, 26.5, 0.4);
     p.x = x; p.y = y; p.path = null; p.moveTarget = null; p.attackTarget = null;
+    w.map.rememberPosition(p);
     for (const s of w.creatures) if (s.team === 'player' && s !== p) [s.x, s.y] = w.map.randomNear(x, y, 1.5);
     w.map.reveal(x, y, 30);
     camera.follow(x, y, 0, true);
@@ -2673,6 +2676,7 @@ export const game = {
       if (G.world?.gen?.start) {
         p.x = G.world.gen.start[0];
         p.y = G.world.gen.start[1];
+        G.world.map.rememberPosition(p);
       }
       p.invuln = 4;
       UI.centerMsg('RESPAWNED', 'Return to the fight before the timer expires', 2.0);
@@ -2710,6 +2714,7 @@ export const game = {
       if (w.velscour && p) {
         const [x, y] = w.map.nudge(22.5, 26.5, 0.4);
         p.x = x; p.y = y; p.path = null; p.moveTarget = null; p.attackTarget = null;
+        w.map.rememberPosition(p);
         for (const s of w.creatures) if (s.team === 'player' && s !== p) [s.x, s.y] = w.map.randomNear(x, y, 1.5);
         w.map.reveal(x, y, 30);
         camera.follow(x, y, 0, true);

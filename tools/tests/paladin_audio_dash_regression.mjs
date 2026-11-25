@@ -97,13 +97,13 @@ for (const [tx, ty] of [[4, 0.5], [-3, 0.5], [0.5, 5], [4, 4]]) {
 const multi = makeDash({ tx: 8, ty: 0.5, maxDistance: 4, n: 3 });
 assert.ok(Math.abs(multi.player.x - 4.5) < 1e-6, 'multi-segment dash keeps the intended total range instead of tripling it');
 
-function runTileDash(map, [x, y], [tx, ty], maxDistance = 10) {
+function runTileDash(map, [x, y], [tx, ty], maxDistance = 10, frameDt = 0.05) {
   const player = { x, y, r: 0.2, team: 'player', isPlayer: true, face(a) { this.facing = a; } };
   const world = { map, hostiles() { return []; } };
   const dash = new Dash({ world, src: player, ang: Math.atan2(ty - y, tx - x),
     len: cursorDashLength(x, y, tx, ty, maxDistance), dmg: [1, 1], el: 'phys', speed: 10 });
   let steps = 0;
-  while (dash.update(0.05)) assert.ok(++steps < 200, 'collision-limited dash always terminates');
+  while (dash.update(frameDt)) assert.ok(++steps < 200, 'collision-limited dash always terminates');
   return { player, dash };
 }
 
@@ -122,6 +122,11 @@ for (let y = 0; y < directWallMap.h; y++) directWallMap.block[y * directWallMap.
 const direct = runTileDash(directWallMap, [2.5, 3.5], [9, 3.5]);
 assert.ok(direct.player.x <= 3.84 && direct.player.x > 3.7, 'direct wall dash stops at the nearest valid body position');
 assert.equal(direct.player.channel, null, 'wall contact immediately releases the dash channel');
+const lowFps = runTileDash(directWallMap, [2.5, 5.5], [9, 5.5], 10, 0.8);
+assert.ok(directWallMap.positionFree(lowFps.player, lowFps.player.x, lowFps.player.y),
+  'a large single-frame dash step still ends at a valid full-body position');
+assert.ok(lowFps.player.x <= 3.84, 'frame-time spikes cannot tunnel a dash through the wall');
+assert.equal(lowFps.player.channel, null, 'a dash obstructed during a frame spike releases its movement channel');
 const sliding = runTileDash(directWallMap, [2.5, 1.5], [8, 6]);
 assert.ok(sliding.player.x <= 3.84 && sliding.player.y > 2, 'angled dash slides along a wall without crossing it');
 const cornerMap = new TileMap(10, 9); cornerMap.t.fill(1);
