@@ -5,6 +5,7 @@ import { readFile } from 'node:fs/promises';
 import { TileMap } from '../../src/world/map.js';
 import { findMimicSpawn } from '../../src/game/mimic.mjs';
 import { ART_BY_ID, BESTIARY } from '../../src/data/bestiary.js';
+import { makeMonster } from '../../src/game/monster.js';
 
 const [game, artSource, artMeta, sprite] = await Promise.all([
   readFile(new URL('../../src/game/game.js', import.meta.url), 'utf8'),
@@ -23,6 +24,26 @@ assert.deepEqual(artMeta['special/mimic'].file, 'mimic.webp');
 assert.equal(artMeta['special/mimic'].cells.length, 1);
 assert.equal(sprite.toString('ascii', 0, 4), 'RIFF');
 assert.equal(sprite.toString('ascii', 8, 12), 'WEBP');
+
+// The art override must leave the existing champion stat/scaling pipeline intact.
+const originalRandom = Math.random;
+try {
+  Math.random = () => 0.41;
+  for (const depth of [1, 25, 100, 250, 500, 1000]) {
+    const biome = { id: 'catacombs', el: 'phys' };
+    const world = { depth, biome, dungeonAffixes: [] };
+    const mimicLook = makeMonster(world, 'beetle', biome, depth, 'champion', 10, 10, 0, { art: 'chest_mimic', swap: null });
+    const ordinaryLook = makeMonster(world, 'beetle', biome, depth, 'champion', 10, 10, 0, { art: 'powder_keg', swap: null });
+    assert.equal(mimicLook.rank, 'champion');
+    assert.equal(mimicLook.art, 'chest_mimic');
+    assert.equal(mimicLook.maxHp, ordinaryLook.maxHp, `champion health scaling remains unchanged at depth ${depth}`);
+    assert.equal(mimicLook.dmg, ordinaryLook.dmg, `champion damage scaling remains unchanged at depth ${depth}`);
+    assert.equal(mimicLook.xp, ordinaryLook.xp, `champion reward scaling remains unchanged at depth ${depth}`);
+    assert.deepEqual(mimicLook.affixes, ordinaryLook.affixes, `champion abilities/affixes remain unchanged at depth ${depth}`);
+  }
+} finally {
+  Math.random = originalRandom;
+}
 
 const map = new TileMap(12, 8);
 map.t.fill(1);
