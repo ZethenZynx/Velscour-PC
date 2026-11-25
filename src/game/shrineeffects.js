@@ -4,6 +4,37 @@ const pct = (n) => `${Number(n || 0).toLocaleString(undefined, { maximumFraction
 const titleCase = (s) => String(s || '').replace(/(^|[-_ ])\w/g, (m) => m.toUpperCase()).replaceAll('_', ' ');
 const elementName = (s) => s === 'light' ? 'Lightning' : titleCase(s);
 
+/** Short, accurate floating copy for shrine activations; world shrines use the actual applied (rarity-scaled) values. */
+export function shrineFloatingMessage(id, buff = {}) {
+  const s = buff?.stats || {};
+  const skillDamage = (Number(s.dmg) || 0) * 0.35;
+  const catalogShrine = !!buff?.worldObjectId;
+  switch (id || buff?.worldObjectId || String(buff?.id || '').replace(/^shrine_/, '')) {
+    case 'frenzy': return '+40% Attack & Cast Speed';
+    case 'fortune': return catalogShrine
+      ? `+${pct(s.mf)} Magic Find · +${pct(s.gf)} Gold Find`
+      : '+150% Magic & Gold Find';
+    case 'bulwark': return '+40% Max Health · +15% Damage Reduction';
+    case 'wisdom': return '+75% Experience Gain';
+    case 'wrath': return '+17.5% Skill Damage · +10% Critical Chance';
+    case 'storm': return 'Lightning Strikes Nearby Foes';
+    case 'renewal': return 'Health & Mana Restored · +3% Health Regen/s';
+    case 'might': return `+${pct(skillDamage)} Skill Damage`;
+    case 'fortitude': return `+${pct(s.life)} Health · +${pct(s.armor)} Armor · +${pct(s.reduce)} Damage Reduction`;
+    case 'swiftness': return `+${pct(s.as)} Attack/Cast Speed · +${pct((Number(s.speed) || 0) * 0.6)} Move Speed`;
+    case 'sorcery': return `+${pct(skillDamage)} Skill Damage · +${pct((Number(s.regen) || 0) / 10)} Health Regen/s`;
+    case 'precision': return `+${pct((Number(s.crit) || 0) / 4)} Crit Chance · +${pct(s.critDmg)} Crit Damage`;
+    case 'phoenix': return 'Phoenix Charge Granted';
+    case 'echoes': return `+${pct(s.echoChance)} Skill Echo Chance`;
+    case 'colossus': return `+${pct(skillDamage)} Skill Damage · +${pct(s.areaPct)} Area`;
+    case 'elements': {
+      const [element, value] = Object.entries(s.elemental || {})[0] || ['elemental', 0];
+      return `+${pct((Number(value) || 0) * 0.25)} ${elementName(element)} Skill Damage`;
+    }
+    default: return buff?.name || 'Shrine Effect Granted';
+  }
+}
+
 export const LEGACY_SHRINE_DESCRIPTIONS = Object.freeze({
   frenzy: '+40% attack speed and cast speed.',
   fortune: '+150% Magic Find and Gold Find.',

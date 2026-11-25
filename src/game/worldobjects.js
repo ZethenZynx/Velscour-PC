@@ -12,7 +12,7 @@ import { GroundItem, dropChest, rollGroundItem, rollGroundGem } from './loot.js'
 import { GEMS, goldPile, goldScale, itemName, rarityAt } from '../data/items.js';
 import { depthLevel } from '../data/depth.js';
 import { UI } from '../ui/ui.js';
-import { shrineBuffDescription } from './shrineeffects.js';
+import { shrineBuffDescription, shrineFloatingMessage } from './shrineeffects.js';
 
 const RARITIES = [
   { name: 'Common', chance: 45, scale: 1, color: '#b8b8b8' },
@@ -171,6 +171,7 @@ function applyBlessing(world,o) {
     const element=pick(['fire','cold','light','poison','arcane']); stats={elemental:{[element]:28}}; title=`the Elements (${element})`;
   }
   used(world,o); const buff=addBuff(p,o,`Shrine of ${title}`,o.color,stats,duration,extra);
+  floatText(o.x,o.y,112,shrineFloatingMessage(o.id,buff),o.color,12,{life:2.5,vz:18});
   if(o.id==='fortitude')p.heal(p.maxHp*.12);
   UI.log(`<b style="color:${o.color}">${esc(o.name)}</b><br><b>Effect Granted:</b> ${esc(title)}<br>${esc(buff.description)}<br><b>Duration:</b> ${Math.ceil(buff.t)} seconds, or until you leave the floor.`,o.color,{category:'dungeon.shrine',important:true});
   UI.event({ category: 'debug.shrine', text: `${o.name}: applied ${title} for ${Math.ceil(buff.t)} seconds.` });

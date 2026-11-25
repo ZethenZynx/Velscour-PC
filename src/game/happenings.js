@@ -28,7 +28,7 @@ import { worldHeresies } from './heresies.js';
 import { DUNGEON_AFFIX_BY_ID, DUNGEON_AFFIX_CONFIG } from '../data/dungeonaffixes.js';
 import { setupWorldObjects } from './worldobjects.js';
 import { setupDungeonEvent } from './dungeonevents.js';
-import { LEGACY_SHRINE_DESCRIPTIONS } from './shrineeffects.js';
+import { LEGACY_SHRINE_DESCRIPTIONS, shrineFloatingMessage } from './shrineeffects.js';
 import { grantMarksWithBonus } from './marks.js';
 import { IMP_BY_ID, IMP_SPRITE_PATH, TREASURE_IMP_SPAWN_DELAY_MAX, TREASURE_IMP_SPAWN_DELAY_MIN, TREASURE_IMP_SPAWN_RETRY_DELAY, advanceTreasureImpSpawnTimer, hasTreasureImpArea, selectImpMovementPattern, selectPrismaticRewards, selectTreasureImp, treasureImpAreaKey, treasureImpPayoutMultiplier, treasureImpSpawnDelay, treasureImpSpriteScale, treasureImpTrailInterval, treasureImpTrailType } from '../data/treasureimps.js';
 import { endgameUnlocked, canEarnInfernalMarks } from './endgame.js';
@@ -219,7 +219,7 @@ export function addShrine(world, [x, y], key) {
       if (S.heal) { p.hp = p.maxHp; p.mana = p.maxMana; }
       const buff = typeof p?.addBuff === 'function' ? p.addBuff({ id: 'shrine_' + key, name: S.name, iconKey: 'shrine:' + key, el: S.el, stats: S.buff, t: S.t, max: S.t, storm: S.storm, floorOnly: true, worldObject: true }) : null;
       if (buff) buff.description = LEGACY_SHRINE_DESCRIPTIONS[key] || S.msg;
-      floatText(p.x, p.y, 90, S.name.toUpperCase(), S.color, 16, { life: 2 });
+      floatText(x, y, 112, shrineFloatingMessage(key,buff), S.color, 12, { life: 2.5, vz: 18 });
       UI.log(`<b style="color:${S.color}">${S.name}</b><br><b>Effect Granted:</b><br>${buff?.description || S.msg}<br><b>Duration:</b> ${Math.ceil(buff?.t || S.t)} seconds.`, S.color, { category: 'dungeon.shrine', important: true });
     },
   });
