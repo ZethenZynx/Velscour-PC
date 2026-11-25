@@ -38,7 +38,8 @@ const originalDialog = UI.dialog;
 const originalConfirmDungeon = game.confirmDungeon;
 const originalEnterRift = game.enterRift;
 let spec, returnedToDepths = false, enteredTier = null;
-const pick = { value: '2', innerHTML: '', addEventListener() {}, focus() {}, select() {} };
+const pickHandlers = {};
+const pick = { value: '2', innerHTML: '', addEventListener(type, fn) { pickHandlers[type] = fn; }, focus() {}, select() {} };
 const warn = { innerHTML: '' };
 const preview = { innerHTML: '' };
 UI.dialog = (options) => {
@@ -59,6 +60,11 @@ try {
   pick.value = '99';
   spec.buttons[2].fn();
   assert.equal(enteredTier, 2, 'an invalid or locked tier cannot be entered');
+  G.char.rifts.open = 4;
+  pickHandlers.focus();
+  assert.equal((pick.innerHTML.match(/<option value="\d+"/g) || []).length, 4, 'newly unlocked tiers are added when the selector is revisited');
+  assert.equal(pick.value, '4', 'the highest newly unlocked tier becomes selected');
+  assert.match(preview.innerHTML, /Highest unlocked Rift tier <b>4<\/b>/, 'the preview updates its unlocked-tier information');
   assert.equal(spec.buttons[0].label, 'Back');
   spec.buttons[0].fn();
   assert.equal(returnedToDepths, true, 'Back callback reopens the normal Depths picker');
