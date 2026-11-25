@@ -43,6 +43,7 @@ import { generateTown, makeTownTiles, rollTownWeather } from '../world/town.js';
 import { generateAct2Town, makeAct2TownTiles, ACT2_TOWN_NAME } from '../world/act2town.js';
 import { actSelectionRows, shouldAutoTravelToAct2, act4Unlocked, shouldAutoTravelToAct4 } from './actselection.js';
 import { buildTessarielKeep } from './tessarielskeep.js';
+import { warmKeepHeroes } from './keepfolk.js';
 import { releaseKeepArt } from '../gfx/keepart.js';
 import { keepClear, keepDeath, keepBreach } from './keep.js';
 import { isCurrentWorldForArtRelease, shouldReleaseCastle3D, shouldReleaseTownSheets } from './levelart.mjs';
@@ -227,6 +228,13 @@ function yieldForLoadingPaint() {
       requestAnimationFrame(() => requestAnimationFrame(resolve));
     } else setTimeout(resolve, 0);
   });
+}
+
+// Keep-specific asset preparation is useful, but slow saved-gear decoding must never strand the player on the loader.
+function waitBounded(promise, ms) {
+  let timer;
+  const timeout = new Promise((resolve) => { timer = setTimeout(resolve, ms); });
+  return Promise.race([promise, timeout]).finally(() => clearTimeout(timer));
 }
 
 // Build the level's monster sprites (palette swap, hit flash, corpse shade) behind the loading screen: each swap reads
@@ -721,6 +729,13 @@ export const game = {
       LoadingScreen.setProgress(80, 'Preparing the Keep.');
       this.setWorld(built.world, built.start, old);
       await warmLevelArt(built.world);
+      const heroArt = built.world.keepFolk?.arts;
+      if (heroArt?.length) {
+        LoadingScreen.setProgress(90, 'Preparing the companions.');
+        await waitBounded(Promise.all(heroArt), 5000);
+        warmKeepHeroes(built.world);
+        await waitBounded(yieldForLoadingPaint(), 250);
+      }
       HUD.setArea("Tessariel's Keep", 'Act IV — Sanctuary of the Sacred Flame');
       playMusic(locationMusicKind(built.world)); setAmbience('tkeep');
       Vendor.restock();

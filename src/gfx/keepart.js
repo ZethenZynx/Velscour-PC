@@ -13,13 +13,17 @@ export const KEEP_DIR = 'assets/tiles/tkeep/';
 const DECOR_DIR = KEEP_DIR + 'decor/';
 const R = 2;   // decoration canvases are drawn at 2x (k = 0.5) so they stay crisp zoomed in
 let A = null, loading = null;
+let generation = 0;
 const loadImg = (src) => new Promise((ok, no) => { const i = new Image(); i.onload = () => ok(i); i.onerror = () => no(new Error(src)); i.src = src; });
 
 /** Everything the keep draws: the baked set, the decor atlases, the Castle Keep pack's props. Safe to call again. */
 export function loadKeepArt() {
+  // The baked pages are shared with Castle/Skyship and may be replaced while the Keep pack is cached.
+  if (A && A.baked !== castle3dState()) { A.cache.clear(); A = null; loading = null; generation++; }
   if (A) return Promise.resolve(A);
   if (loading) return loading;
-  loading = Promise.all([
+  const requestGeneration = generation;
+  const pending = Promise.all([
     loadBaked(KEEP_DIR),
     fetch(DECOR_DIR + 'decor.json').then((r) => r.json()),
     loadImg(DECOR_DIR + 'banners.webp'), loadImg(DECOR_DIR + 'glass.webp'), loadImg(DECOR_DIR + 'rugs.webp'),
@@ -28,14 +32,22 @@ export function loadKeepArt() {
     // Tessariel's Azure/Ivory and The Ember's Blue/White are replaced in their
     // original atlas frames, so all callers (including saved decoration IDs)
     // resolve the new art through the same established atlas path.
-    A = { baked, meta, banners, glass, rugs, scat, pack, cache: new Map() };
-    return A;
-  }).catch((e) => { loading = null; throw e; });
+    const art = { baked, meta, banners, glass, rugs, scat, pack, cache: new Map() };
+    // A load that finishes after leaving the Keep may satisfy its old caller, but must not repopulate the live cache.
+    if (requestGeneration === generation) A = art;
+    return art;
+  }).catch((e) => { if (requestGeneration === generation) loading = null; throw e; });
+  loading = pending;
   return loading;
 }
 export const keepArt = () => A;
-/** Let the canvases go when the hero leaves (the baked pages go with releaseCastle3D). */
-export function releaseKeepArt() { if (A) A.cache.clear(); }
+/** Release Keep-owned canvases and let the shared baked pages reload on the next visit. */
+export function releaseKeepArt() {
+  generation++;
+  if (A) A.cache.clear();
+  A = null;
+  loading = null;
+}
 
 // ------------------------------------------------------------------ helpers
 const ground = (x, y, lv) => [(x - y) * HW, (x + y) * HH - lv * 4];

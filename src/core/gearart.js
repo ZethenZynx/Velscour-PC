@@ -1,6 +1,7 @@
 // Gear art (Grim Nocturne): per class 26 body armors (two to seven per rarity) and one shared atlas of enclosed helmets
 // (three sets), a column per class and a row per design (each design has a rarity). Built by tools/nocturnegear.py.
 import { makeCanvas, hexToRgb, clamp, pick, chance } from './util.js';
+import { G } from '../state.js';
 import { RARITY, shownEquip } from '../data/items.js';
 import { PALETTES, GEAR_FX, FX_CHANCE } from '../data/gear.js';
 import { resolveHelmetFit } from './helmetfit.js';
@@ -16,6 +17,52 @@ const V = '?v=nocturne-9';
 // New class armor packs do not include their own helmet columns. Use the existing Barbarian column for previews,
 // while Rogue and Ninja keep their intended bare-headed silhouettes in world rendering.
 const BORROWED_HELMS = new Set(['monk', 'rogue', 'ninja']);
+
+// Saved companion previews are drawn repeatedly in the Keep. On desktop Chromium, hand the cropped sprite to the GPU
+// as an ImageBitmap once; mobile and other browsers retain the existing HTML-canvas path for compatibility.
+let rasterPreviewOK;
+function canRasterizePreview() {
+  if (rasterPreviewOK !== undefined) return rasterPreviewOK;
+  try {
+    const touch = !!G.touch || (typeof matchMedia === 'function' && matchMedia('(pointer: coarse)').matches) ||
+      ('ontouchstart' in window && navigator.maxTouchPoints > 0);
+    const chromium = navigator.userAgentData
+      ? navigator.userAgentData.brands.some((b) => /Chromium/.test(b.brand))
+      : /\bChrome\/\d/.test(navigator.userAgent);
+    const disabled = globalThis.VELSCOUR_NO_RASTER || /[?&]noraster\b/.test(location.search);
+    rasterPreviewOK = !touch && chromium && !disabled && typeof OffscreenCanvas === 'function' &&
+      'transferToImageBitmap' in OffscreenCanvas.prototype &&
+      !!new OffscreenCanvas(1, 1).getContext('2d', { willReadFrequently: true });
+  } catch (e) { rasterPreviewOK = false; }
+  return rasterPreviewOK;
+}
+
+function previewCanvas(w, h, raster = false) {
+  if (!raster || !canRasterizePreview()) return makeCanvas(w, h);
+  const c = new OffscreenCanvas(Math.max(1, Math.ceil(w)), Math.max(1, Math.ceil(h)));
+  c.getContext('2d', { willReadFrequently: true });
+  c._keepRaster = true;
+  return c;
+}
+
+function finishPreviewCanvas(c) {
+  if (!c?._keepRaster || typeof c.transferToImageBitmap !== 'function') return c;
+  let bitmap = null;
+  try {
+    const fields = Object.keys(c).filter((k) => k !== '_keepRaster').map((k) => [k, c[k]]);
+    bitmap = c.transferToImageBitmap();
+    for (const [k, v] of fields) bitmap[k] = v;
+    return bitmap;
+  } catch (e) {
+    if (!bitmap) return c;
+    // Keep nonstandard ImageBitmap implementations usable by falling back to a plain canvas if metadata is not writable.
+    const fallback = makeCanvas(bitmap.width, bitmap.height), ctx = fallback.getContext('2d');
+    ctx.drawImage(bitmap, 0, 0);
+    for (const k of ['_bodyH', '_feetFromBottom', '_centerX']) if (c[k] !== undefined) fallback[k] = c[k];
+    bitmap.close?.();
+    return fallback;
+  }
+}
 const NO_HELM = new Set(['rogue', 'ninja']);
 const FINISH_K = { ninja: 0.35, rogue: 0.5 };
 // The hero is composed at HD x its 128x192 frame: armor pixels enlarged as they are, helmets from their HD atlas
@@ -412,7 +459,7 @@ export function heroPortrait(cls, body, head, w, h, over = null, extra = null) {
 }
 
 /** A copy of canvas `c` cropped to its opaque pixels (null stays null), so a card can fill its frame with the hero. */
-export function trimCanvas(c, meta = null) {
+export function trimCanvas(c, meta = null, raster = false) {
   if (!c) return c;
   const { width: w, height: h } = c, d = c.getContext('2d').getImageData(0, 0, w, h).data;
   let x0 = w, y0 = h, x1 = -1, y1 = -1;
@@ -420,7 +467,7 @@ export function trimCanvas(c, meta = null) {
     if (d[(y * w + x) * 4 + 3] > 8) { if (x < x0) x0 = x; if (x > x1) x1 = x; if (y < y0) y0 = y; if (y > y1) y1 = y; }
   }
   if (x1 < 0) return c;
-  const t = makeCanvas(x1 - x0 + 1, y1 - y0 + 1);
+  const t = previewCanvas(x1 - x0 + 1, y1 - y0 + 1, raster);
   t.getContext('2d').drawImage(c, -x0, -y0);
   if (meta && meta.frame && meta.feet && meta.headTop) {
     const scale = w / meta.frame[0];
@@ -428,7 +475,7 @@ export function trimCanvas(c, meta = null) {
     t._feetFromBottom = Math.max(0, y1 - meta.feet * scale);
     t._centerX = (meta.frame[0] / 2) * scale - x0;
   }
-  return t;
+  return finishPreviewCanvas(t);
 }
 
 // Independent, sequential save previews: never replace the active game's gear state
@@ -436,7 +483,7 @@ export function trimCanvas(c, meta = null) {
 // immediately after composing its body/helm. Existing saved item looks are reused.
 const savedPreviews = new Map();
 let previewQueue = Promise.resolve();
-export function savedGearPreview(cls, body, head, weapon = null, offhand = null) {
+export function savedGearPreview(cls, body, head, weapon = null, offhand = null, raster = false) {
   if (body && typeof body === 'object' && ('body' in body || 'head' in body || 'weapon' in body)) {
     const eq = body;
     body = eq.body;
@@ -444,7 +491,7 @@ export function savedGearPreview(cls, body, head, weapon = null, offhand = null)
     weapon = eq.weapon;
     offhand = eq.offhand;
   }
-  const signature = cls + '|' + JSON.stringify([
+  const signature = cls + (raster ? '|keep-raster|' : '|') + JSON.stringify([
     body && [body.look, body.ilvl, body.rarity, body.base],
     head && [head.look, head.ilvl, head.rarity, head.base],
     weapon && [weapon.base, weapon.rarity, weapon.ilvl, weapon.look],
@@ -467,7 +514,7 @@ export function savedGearPreview(cls, body, head, weapon = null, offhand = null)
         console.warn('Held gear preview unavailable for', cls, e);
       }
     }
-    return trimCanvas(finalArt, src.meta);
+    return trimCanvas(finalArt, src.meta, raster);
   });
   previewQueue = work.catch(() => {});
   const result = work.catch(e => {

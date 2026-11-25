@@ -3,8 +3,8 @@
 // with their own numbers; the Castellan on her dais; and the keep's own folk (painted townsfolk) at their posts.
 // Agents are world.npcs entries with update(dt); render.js draws a hero through drawKeepHero, the rest as townsfolk.
 import { G } from '../state.js';
-import { rand, randi, pick, chance, TAU, clamp } from '../core/util.js';
-import { HW, HH } from '../core/view.js';
+import { makeCanvas, rand, randi, pick, chance, TAU, clamp } from '../core/util.js';
+import { HW, HH, camera, isoX, isoY } from '../core/view.js';
 import { savedGearPreview } from '../core/gearart.js';
 import { CLASSES } from '../data/classes.js';
 import { heroesByClass } from './save.js';
@@ -73,7 +73,7 @@ function interestSpots(A) {
  */
 export function startKeepFolk(world, A) {
   const L = world.layout, spots = keepSpots(L), interest = interestSpots(A).filter((s) => world.map.walkable(s.x, s.y));
-  const d = { agents: [], heroes: [], chatT: rand(2, 4), greetT: 0, world };
+  const d = { agents: [], heroes: [], arts: [], chatT: rand(2, 4), greetT: 0, world };
   const base = (o) => ({ x: 0, y: 0, flip: false, animT: rand(0, 5), idleSeed: randi(0, 9), talkText: '', talkT: 0, talkAge: 0, emotion: null, emotionT: 0, iconT: 0, iconAge: 0, reach: 1.6, ...o });
   const upd = (n) => (dt) => { n.talkT = Math.max(0, n.talkT - dt); n.talkAge += dt; n.emotionT = Math.max(0, n.emotionT - dt); n.iconT = Math.max(0, (n.iconT || 0) - dt); };
 
@@ -120,7 +120,9 @@ export function startKeepFolk(world, A) {
   list.forEach((h, k) => {
     const s = spots[(k * 97 + 13) % spots.length] || A.start;
     const n = base({ keepHero: true, ...h, x: s[0], y: s[1], img: null, state: 'idle', waitT: rand(1, 6), speed: SPEED * rand(0.9, 1.1) });
-    void savedGearPreview(h.cls, h.save.equip || {}).then((img) => { n.img = img || null; }).catch(() => {});
+    const eq = h.save.equip || {};
+    const art = savedGearPreview(h.cls, eq.body, eq.head, eq.weapon, eq.offhand, true).then((img) => { n.img = img || null; }).catch(() => null);
+    d.arts.push(art);
     n.update = (dt) => tickHero(d, n, dt);
     n.use = () => heroCard(n);
     world.npcs.push(n); d.heroes.push(n);
@@ -128,6 +130,24 @@ export function startKeepFolk(world, A) {
   d.update = (dt) => director(d, dt, interest);
   world.keepFolk = d;
   return d;
+}
+
+/** Bake each companion's zoom-specific outline while the Keep loading screen is still visible. */
+export function warmKeepHeroes(world) {
+  const heroes = world?.keepFolk?.heroes;
+  if (!heroes?.length) return;
+  const ctx = makeCanvas(1, 1).getContext('2d');
+  camera.apply(ctx);
+  for (const n of heroes) {
+    const img = n.img, H = 60;
+    if (!img?._bodyH || !img.width || !img.height) continue;
+    const k = H / img._bodyH, w = img.width * k, h = img.height * k;
+    ctx.save();
+    ctx.translate(Math.round(isoX(n.x, n.y)), Math.round(isoY(n.x, n.y) + (img._feetFromBottom || 0) * k));
+    if (n.flip) ctx.scale(-1, 1);
+    drawRim(ctx, RIM.hero, img, 0, 0, img.width, img.height, -img._centerX * k, -h, w, h);
+    ctx.restore();
+  }
 }
 
 function tickHero(d, n, dt) {
