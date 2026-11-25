@@ -1545,8 +1545,11 @@ body.touch .macros-panel .mc-why { display: none; }
 .rift-dialog h2 { color: #80f0ff; text-shadow: 0 0 10px rgba(32,224,255,.45); }
 .rift-dialog .velscour-biome-select { width: 100%; }
 .rift-dialog .rb-stats { font-size: 12px; margin: 4px 0 10px; }
-.rift-tier-picker { display: grid; grid-template-columns: auto minmax(110px, 180px); align-items: center; gap: 12px; margin: 12px 0 8px; }
-.rift-dialog #rift-pick { width: 100%; min-height: 36px; padding: 5px 9px; color: #f0dcad; border: 1px solid #735329; border-radius: 4px; background: #130e0b; font: 700 16px var(--font-head); }
+.rift-tier-picker { position: relative; display: grid; grid-template-columns: minmax(150px, 220px); align-items: center; margin: 7px 0 10px; }
+.rift-dialog #rift-pick { appearance: none; width: 100%; min-height: 38px; padding: 6px 34px 6px 11px; color: #f0dcad; border: 1px solid rgba(32,224,255,.58); border-radius: 5px; background: linear-gradient(135deg, rgba(25,32,34,.98), rgba(19,14,11,.98)); box-shadow: inset 0 0 0 1px rgba(201,164,93,.16), 0 0 10px rgba(32,224,255,.08); font: 700 16px var(--font-head); cursor: pointer; }
+.rift-dialog #rift-pick:focus-visible { outline: 2px solid #20e0ff; outline-offset: 2px; }
+.rift-dialog #rift-pick option { color: #f0dcad; background: #130e0b; }
+.rift-tier-select-arrow { position: absolute; right: 12px; top: 50%; color: #20e0ff; font: 900 20px/1 var(--font-head); transform: translateY(-55%); pointer-events: none; text-shadow: 0 0 6px rgba(32,224,255,.55); }
 .rift-tier-preview { margin: 8px 0; padding: 10px 12px; border: 1px solid rgba(32,224,255,.34); border-radius: 5px; background: linear-gradient(135deg, rgba(20,30,35,.82), rgba(24,12,12,.86)); color: #d8c9ad; font-size: 12px; }
 .rift-tier-preview > strong { display: block; margin-bottom: 7px; color: #8eefff; font: 800 15px var(--font-head); }
 .rift-preview-stats { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 5px 18px; }

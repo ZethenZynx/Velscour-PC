@@ -98,8 +98,8 @@ async function townPart(page, shot, step) {
   await shot('rift_gate_lit');
   await page.evaluate(() => window.VELSCOUR.G.world.portals.find((q) => q.rift).use());
   await page.waitForSelector('.rift-dialog #rift-pick');
-  const dlg = await page.evaluate(() => { const s = document.querySelector('#rift-pick'); s.value = '7'; s.dispatchEvent(new Event('change')); return { n: s.options.length, first: s.options[0].textContent, t3: [...s.options].find((o) => o.value === '3').textContent, warn: document.querySelector('#rift-warn').textContent }; });
-  check(dlg.n === 7 && /Tier 7 — as deadly as Depth 570 \(monster level 290\)/.test(dlg.first) && /best 3:21/.test(dlg.t3), `the tier dialog lists tiers 7..1 with depth, monster level and best times (${dlg.first} | ${dlg.t3})`);
+  const dlg = await page.evaluate(() => { const s = document.querySelector('#rift-pick'); const initial = { tag: s.tagName, selected: s.value, n: s.options.length, first: s.options[0].textContent, last: s.options[s.options.length - 1].textContent }; s.value = '7'; s.dispatchEvent(new Event('change')); return { ...initial, selectedPreview: document.querySelector('#rift-tier-preview').textContent, warn: document.querySelector('#rift-warn').textContent }; });
+  check(dlg.tag === 'SELECT' && dlg.n === 7 && dlg.selected === '7' && dlg.first === 'Tier 1' && dlg.last === 'Tier 7' && /Tier 7/.test(dlg.selectedPreview), `the selector offers every unlocked tier, defaults to the highest and updates its preview (${dlg.first}–${dlg.last})`);
   check(/level 290; you are level 273/.test(dlg.warn), 'it warns when the monsters are more than 4 levels above the hero');
   await shot('rift_dialog');
   await clean(page);

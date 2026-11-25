@@ -13,6 +13,11 @@ import { endgame } from '../game/endgame.js';
 import { Board } from '../game/leaderboard.js';
 
 const num = (v) => (Number.isFinite(+v) ? +v : 0);
+const riftTierOptions = (max, selected) => {
+  let html = '';
+  for (let value = 1; value <= max; value++) html += `<option value="${value}"${value === selected ? ' selected' : ''}>Tier ${value}</option>`;
+  return html;
+};
 /** A board entry's build (untrusted: everything is escaped, rarities clamped). */
 function buildHtml(e) {
   const b = e.build && typeof e.build === 'object' ? e.build : {}, gear = b.gear && typeof b.gear === 'object' ? b.gear : {};
@@ -29,22 +34,40 @@ function buildHtml(e) {
 export const Rifts = {
   /** Pick a tier (1 .. the tier the hero's wins opened) and step in. */
   open(tier, { onBack = null } = {}) {
-    const c = G.char, top = riftOpen(c), selected = Math.min(top, normalizeRiftTier(tier || top)), r = c.rifts;
+    const c = G.char, top = riftOpen(c), r = c.rifts;
+    const unlockedTier = (value, max = riftOpen(c)) => {
+      const n = Number(value);
+      return Number.isSafeInteger(n) && n >= 1 && n <= max ? n : max;
+    };
+    const selected = tier == null ? top : unlockedTier(tier, top);
     const acc = endgame().bests[c.classId];
     const d = UI.dialog({
       title: 'ABYSSAL RIFT', cls: 'rift-dialog',
       html: `<p>The gate opens on <b style="color:#20e0ff">a rift torn in the abyss</b>: a short dungeon and its arena, against the clock.</p>
         <p class="dim">Slay ${Math.round(RIFT_QUOTA * 100)}% of the rift's monsters (a champion counts four, a unique eight) to wake the Guardian, then slay it before <b>${fmtTime(riftTime())}</b> runs out. Finish in half the time and the win opens three tiers; in 80%, two; else one. Falling here costs no Defiance and leaves your descent where it is.</p>
-        <label class="velscour-message-label" for="rift-pick">Rift tier (1–${top})</label><input id="rift-pick" type="number" inputmode="numeric" min="1" max="${top}" step="1" value="${selected}" class="velscour-number-input">
+        <label class="velscour-message-label" for="rift-pick">Choose a Rift tier</label><div class="rift-tier-picker"><select id="rift-pick" class="rift-tier-select" aria-label="Choose an unlocked Abyssal Rift tier">${riftTierOptions(top, selected)}</select><span class="rift-tier-select-arrow" aria-hidden="true">⌄</span></div>
         <div id="rift-tier-preview" class="rift-tier-preview" aria-live="polite"></div>
         <p class="breach-warn" id="rift-warn"></p>
         <p class="rb-stats dim">Best: ${r.best ? `Tier ${r.best}` : 'none yet'}${acc ? ` · your ${escapeHtml(CLASSES[c.classId]?.name || c.classId)}s' best Tier ${acc.tier} in ${fmtTime(acc.time)}` : ''} · ${r.runs | 0} run${r.runs === 1 ? '' : 's'}, ${Object.values(r.cleared).reduce((a, n) => a + n, 0)} closed, ${r.fails | 0} collapsed, ${r.deaths | 0} fallen</p>`,
-      buttons: [{ label: onBack ? 'Back' : 'Not yet', fn: onBack || undefined }, { label: 'Honour Board', keepOpen: true, fn: () => this.board() }, { label: 'Enter the Rift', cls: 'red', fn: () => G.game.enterRift(normalizeRiftTier(d.box.querySelector('#rift-pick').value)) }],
+      buttons: [{ label: onBack ? 'Back' : 'Not yet', fn: onBack || undefined }, { label: 'Honour Board', keepOpen: true, fn: () => this.board() }, { label: 'Enter the Rift', cls: 'red', fn: () => G.game.enterRift(unlockedTier(d.box.querySelector('#rift-pick')?.value)) }],
     });
     const sel = d.box.querySelector('#rift-pick'), warn = d.box.querySelector('#rift-warn'), preview = d.box.querySelector('#rift-tier-preview');
+    let optionTop = top;
+    const refreshTiers = () => {
+      const latest = riftOpen(c);
+      if (latest !== optionTop) {
+        const oldSelection = unlockedTier(sel.value, optionTop);
+        const nextSelection = oldSelection === optionTop ? latest : unlockedTier(oldSelection, latest);
+        sel.innerHTML = riftTierOptions(latest, nextSelection);
+        sel.value = String(nextSelection);
+        optionTop = latest;
+      }
+      return optionTop;
+    };
     const fmtMul = (n) => n >= 1e6 ? `×${n.toExponential(2)}` : `×${n.toLocaleString(undefined, { maximumFractionDigits: 2 })}`;
     const upd = () => {
-      const n = Math.min(top, normalizeRiftTier(sel.value || top)); sel.value = String(n);
+      const latest = refreshTiers();
+      const n = unlockedTier(sel.value, latest); sel.value = String(n);
       const range = riftQualityRange(n, c), rewardDepth = riftRewardProgressionDepth(n, c), reward = riftReward(n, !r.cleared[n]);
       const nextQualityDepth = RARITY[range.progressionMax]?.minDepth;
       const markBonus = Math.max(0, Number(G.player?.st?.markRiftRewards) || 0);
@@ -56,10 +79,10 @@ export const Rifts = {
       const progressionNote = range.max < Math.min(20, 5 + Math.floor((n - 1) / 5))
         ? `Equipment quality is limited to Tier ${range.max} by normal dungeon progression (you have unlocked through Depth ${range.normalDepth}).`
         : 'Normal progression remains in force; Rift tier cannot bypass equipment, gem or sigil unlocks.';
-      preview.innerHTML = `<strong>Tier ${n}</strong><div class="rift-preview-stats"><span>Enemy health <b>${fmtMul(riftHpMul(n))}</b></span><span>Enemy damage <b>${fmtMul(riftDmgMul(n))}</b></span><span>Equipment quality <b>Tier ${range.min}-${range.max}</b></span><span>Highest unlocked Rift tier <b>${top}</b></span><span>Potential Infernal Marks <b>${potentialMarks}${markBonus ? ` (${markBonus}% bonus)` : ''}</b></span><span>Gem cap <b>Grade ${gemCap}</b> (also limited by character level)</span><span>Sigil cap <b>Rank ${sigilRank}</b></span></div><p class="rift-progression-note">${progressionNote}</p>${nextQualityDepth ? `<p class="dim">Reach Depth ${nextQualityDepth} to unlock equipment quality Tier ${range.progressionMax + 1}.</p>` : '<p class="dim">All equipment qualities are unlocked through normal progression.</p>'}`;
+      preview.innerHTML = `<strong>Tier ${n}</strong><div class="rift-preview-stats"><span>Enemy health <b>${fmtMul(riftHpMul(n))}</b></span><span>Enemy damage <b>${fmtMul(riftDmgMul(n))}</b></span><span>Equipment quality <b>Tier ${range.min}-${range.max}</b></span><span>Highest unlocked Rift tier <b>${latest}</b></span><span>Potential Infernal Marks <b>${potentialMarks}${markBonus ? ` (${markBonus}% bonus)` : ''}</b></span><span>Gem cap <b>Grade ${gemCap}</b> (also limited by character level)</span><span>Sigil cap <b>Rank ${sigilRank}</b></span></div><p class="rift-progression-note">${progressionNote}</p>${nextQualityDepth ? `<p class="dim">Reach Depth ${nextQualityDepth} to unlock equipment quality Tier ${range.progressionMax + 1}.</p>` : '<p class="dim">All equipment qualities are unlocked through normal progression.</p>'}`;
       const L = riftLevel(n); warn.innerHTML = L > c.level + 4 ? `<b style="color:#ff6050">Monsters there are level ${L}; you are level ${c.level}. Expect to die.</b>` : '';
     };
-    sel.addEventListener('input', upd); sel.addEventListener('change', upd); upd();
+    sel.addEventListener('focus', upd); sel.addEventListener('input', upd); sel.addEventListener('change', upd); upd();
     return d;
   },
   /** A closed rift: what it paid, and on to the next tier or home. */

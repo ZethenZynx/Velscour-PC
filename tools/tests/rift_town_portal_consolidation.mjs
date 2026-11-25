@@ -36,25 +36,36 @@ assert.match(gameRiftSource, /R\.timedOut = true[\s\S]*?Defeat the Guardian in o
 // without constructing or launching a browser.
 const originalDialog = UI.dialog;
 const originalConfirmDungeon = game.confirmDungeon;
-let spec, returnedToDepths = false;
-const pick = { value: '2', addEventListener() {}, focus() {}, select() {} };
+const originalEnterRift = game.enterRift;
+let spec, returnedToDepths = false, enteredTier = null;
+const pick = { value: '2', innerHTML: '', addEventListener() {}, focus() {}, select() {} };
 const warn = { innerHTML: '' };
+const preview = { innerHTML: '' };
 UI.dialog = (options) => {
   spec = options;
-  return { box: { querySelector(selector) { return selector === '#rift-pick' ? pick : warn; } } };
+  return { box: { querySelector(selector) { return selector === '#rift-pick' ? pick : selector === '#rift-warn' ? warn : preview; } } };
 };
 game.confirmDungeon = () => { returnedToDepths = true; };
+game.enterRift = (tier) => { enteredTier = tier; };
 G.char = { classId: 'paladin', level: 100, cleared: { 100: true }, rifts: { open: 2, bestTime: {}, cleared: {}, runs: 0, fails: 0, deaths: 0 } };
 G.game = game;
 try {
   game.confirmRift(2, { backToDepths: true });
   assert.equal(spec.title, 'ABYSSAL RIFT');
+  assert.match(spec.html, /<select id="rift-pick"/);
+  assert.doesNotMatch(spec.html, /<input[^>]*type="number"/);
+  assert.equal((spec.html.match(/<option value="\d+"/g) || []).length, 2, 'only unlocked tiers are present as choices');
+  assert.match(spec.html, /<option value="2" selected>Tier 2<\/option>/, 'the selector defaults to the highest unlocked tier');
+  pick.value = '99';
+  spec.buttons[2].fn();
+  assert.equal(enteredTier, 2, 'an invalid or locked tier cannot be entered');
   assert.equal(spec.buttons[0].label, 'Back');
   spec.buttons[0].fn();
   assert.equal(returnedToDepths, true, 'Back callback reopens the normal Depths picker');
 } finally {
   UI.dialog = originalDialog;
   game.confirmDungeon = originalConfirmDungeon;
+  game.enterRift = originalEnterRift;
   G.char = null;
   G.game = null;
 }
