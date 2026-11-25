@@ -5,8 +5,8 @@
 //   setAmbience(key)    a biome id or 'town': a looped ambient bed that drifts louder and softer (the title has none)
 // Songs and beds stream through <audio> elements routed into the Web Audio graph, so they're never fully decoded.
 import { G } from '../state.js';
-import { AUDIO_VOLUME_GROUPS, audioGroupForSound, normalizeAudioSettings } from './audio-settings.js';
-import { summarizeAudioDiagnosticEvents } from './audio-diagnostics.mjs';
+import { AUDIO_VOLUME_GROUPS, audioGroupForSound, isCombatAudioCategory, normalizeAudioSettings } from './audio-settings.js';
+import { AUDIO_DIAGNOSTIC_STACK_LIMIT, createAudioDiagnosticSession, summarizeAudioDiagnosticEvents } from './audio-diagnostics.mjs';
 
 let ac = null, master, sfxBus, musicBus, ambBus, noiseBuf, pulseWave, activeOutputBus = null;
 const categoryBuses = {};
@@ -25,6 +25,7 @@ let fanfareEnd = 0;
 let notificationDuckUntil = 0;
 let audioDiagnosticSink = null, currentDiagnostic = null, nextDiagnosticId = 0;
 const activeDiagnostics = new Map();
+let diagnosticStackIds = new Map();
 const last = {};
 const AUDIO = 'assets/audio/';
 let manifest = null;               // assets/audio/audio.json
@@ -143,14 +144,14 @@ export function setAudioDiagnosticSink(sink) {
 
 export function startAudioDiagnosticRecording() {
   if (audioRecording?.active) return false;
-  audioRecording = { active: true, startedUtc: new Date().toISOString(), startedPerfMs: performance.now(), events: [] };
+  audioRecording = { active: true, startedUtc: new Date().toISOString(), startedPerfMs: performance.now(),
+    session: createAudioDiagnosticSession(), stackTraces: {}, nextStackId: 0 };
+  diagnosticStackIds = new Map();
   for (const key of Object.keys(audioMetrics)) audioMetrics[key] = 0;
   for (const key of Object.keys(peakByCategory)) delete peakByCategory[key];
   for (const key of Object.keys(metricsByCategory)) delete metricsByCategory[key];
   audioProcessingMs = audioProcessingSamples = audioProcessingWorstMs = 0;
-  setAudioDiagnosticSink((event) => {
-    if (audioRecording?.active && audioRecording.events.length < 20000) audioRecording.events.push(event);
-  });
+  setAudioDiagnosticSink(captureAudioDiagnosticEvent);
   recordAudioDiagnosticMarker('recording-start');
   return true;
 }
@@ -158,7 +159,9 @@ export function startAudioDiagnosticRecording() {
 export function stopAudioDiagnosticRecording() {
   if (!audioRecording?.active) return false;
   recordAudioDiagnosticMarker('recording-stop');
+  audioRecording.activeInstancesAtStop = audioActiveByCategory();
   audioRecording.activeAtStop = [...activeDiagnostics.values()].map(({ id, sound, asset, assetPath, category, source, sources }) => ({ id, sound, asset, assetPath, category, source, activeSources: sources }));
+  audioRecording.sourceSnapshotAtStop = audioRecording.session.snapshotSources();
   audioRecording.active = false;
   audioRecording.stoppedUtc = new Date().toISOString();
   audioRecording.durationMs = Number((performance.now() - audioRecording.startedPerfMs).toFixed(2));
@@ -176,39 +179,69 @@ export function clearAudioDiagnosticRecording() {
 export function recordAudioDiagnosticMarker(type, detail = {}) {
   if (!audioRecording?.active) return false;
   const world = G.world;
-  if (audioRecording.events.length < 20000) audioRecording.events.push({ type, timeUtc: new Date().toISOString(), perfMs: performance.now(),
+  captureAudioDiagnosticEvent({ type, timeUtc: new Date().toISOString(), perfMs: performance.now(),
     worldId: detail.worldId ?? world?.id ?? null, environment: detail.environment ?? world?.biome?.name ?? world?.kind ?? null,
     inCombat: detail.inCombat ?? (world?._audioDiagnosticCombat === true), ...detail });
   return true;
 }
 
+function captureAudioDiagnosticEvent(event) {
+  if (!audioRecording?.active || !event) return;
+  const { stack, ...rest } = event;
+  const stackId = stack ? storeDiagnosticStack(`event:${event.type}:${event.name || ''}:${event.message || ''}`, stack) : event.stackId;
+  audioRecording.session.record(stackId == null ? rest : { ...rest, stackId });
+}
+
+function storeDiagnosticStack(key, stack) {
+  if (!audioRecording?.active) return null;
+  if (diagnosticStackIds.has(key)) return diagnosticStackIds.get(key);
+  if (audioRecording.nextStackId >= AUDIO_DIAGNOSTIC_STACK_LIMIT) return null;
+  const stackId = ++audioRecording.nextStackId;
+  diagnosticStackIds.set(key, stackId);
+  audioRecording.stackTraces[stackId] = stack || '';
+  return stackId;
+}
+
+function diagnosticStackId(sound, category) {
+  const key = `audio:${category || 'uncategorized'}:${sound}`;
+  if (audioRecording?.active && diagnosticStackIds.has(key)) return diagnosticStackIds.get(key);
+  return storeDiagnosticStack(key, new Error().stack || '');
+}
+
 export function audioDiagnosticReport() {
   if (!audioRecording) return { error: 'No audio diagnostic recording has been started.' };
-  const events = audioRecording.events.slice(), sounds = new Map(), starts = new Map(), lifetimes = [];
-  for (const event of events) {
-    if (event.type === 'play') { sounds.set(event.sound, (sounds.get(event.sound) || 0) + 1); starts.set(event.id, event); }
-    else if (event.type === 'stop' && starts.has(event.id)) {
-      const start = starts.get(event.id);
-      lifetimes.push({ sound: start.sound, category: start.category, asset: start.asset, assetPath: start.assetPath, source: start.source,
-        startedUtc: start.timeUtc, stoppedUtc: event.timeUtc, durationMs: Math.max(0, Date.parse(event.timeUtc) - Date.parse(start.timeUtc)), reason: event.reason || 'ended' });
-    }
-  }
+  const session = audioRecording.session.report(), events = audioRecording.session.events.slice();
+  const retainedEventSummary = summarizeAudioDiagnosticEvents(events);
+  const eventCount = audioRecording.session.totalEvents;
+  const detailLimit = audioRecording.session.detailLimit;
+  const importantLimit = audioRecording.session.importantLimit;
+  const durationMs = audioRecording.durationMs ?? Number((performance.now() - audioRecording.startedPerfMs).toFixed(2));
+  const sourcesAtStop = audioRecording.sourceSnapshotAtStop || audioRecording.session.snapshotSources();
   const settings = normalizeAudioSettings(G.settings.audio);
   return {
     title: 'Velscour Audio Diagnostics', startedUtc: audioRecording.startedUtc, stoppedUtc: audioRecording.stoppedUtc || null,
-    durationMs: audioRecording.durationMs ?? Number((performance.now() - audioRecording.startedPerfMs).toFixed(2)),
+    durationMs,
+    statisticsScope: { sessionStatistics: 'complete-session', eventStatistics: 'retained-detailed-events-only',
+      totalEventsObserved: eventCount, detailedEventsStored: events.length, detailedEventLimit: detailLimit,
+      detailedEventsDropped: audioRecording.session.detailDropped, importantEventsStored: audioRecording.session.importantEvents.length,
+      importantEventLimit: importantLimit, importantEventsDropped: audioRecording.session.importantDropped,
+      detailedEventsTruncated: audioRecording.session.detailDropped > 0 },
     character: G.char?.name || null, environment: G.world?.biome?.name || G.world?.kind || null,
     audioSettings: { ...settings, volumes: { ...settings.volumes }, muted: { ...settings.muted } },
-    activeInstancesByCategory: audioActiveByCategory(), peakInstancesByCategory: { ...peakByCategory },
+    activeInstancesByCategory: audioRecording.activeInstancesAtStop || audioActiveByCategory(), peakInstancesByCategory: { ...peakByCategory },
     metrics: { ...audioMetrics, byCategory: structuredCloneSafe(metricsByCategory), audioProcessingAverageMs: audioProcessingSamples ? Number((audioProcessingMs / audioProcessingSamples).toFixed(3)) : 0, audioProcessingWorstMs: Number(audioProcessingWorstMs.toFixed(3)), audioProcessingSamples, combatSoundsQueued: 0 },
-    summary: { mostFrequentSounds: [...sounds].map(([sound, count]) => ({ sound, count })).sort((a, b) => b.count - a.count).slice(0, 25),
-      longestSounds: lifetimes.sort((a, b) => b.durationMs - a.durationMs).slice(0, 25),
-      potentiallyOrphaned: lifetimes.filter((item) => item.durationMs > 5000).slice(0, 100),
+    summary: { mostFrequentSounds: session.mostFrequentSounds, mostFrequentCategories: session.mostFrequentCategories,
+      longestSounds: session.longestSounds, potentiallyOrphaned: session.potentiallyOrphaned,
       stillActiveWhenRecordingStopped: audioRecording.activeAtStop || [],
-      audioProcessingSpikes: events.filter((event) => event.type === 'processing-spike').sort((a, b) => b.durationMs - a.durationMs).slice(0, 100),
-      totalRequests: [...sounds.values()].reduce((a, b) => a + b, 0),
-      lifecycle: summarizeAudioDiagnosticEvents(events) },
-    eventLimit: 20000, truncated: events.length >= 20000, events,
+      pendingSourcesWhenRecordingStopped: sourcesAtStop.pending,
+      activeSourcesWhenRecordingStopped: sourcesAtStop.active,
+      audioProcessingSpikes: session.processingSpikes,
+      audioProcessingSpikeCount: session.processingSpikeCount,
+      totalRequests: session.requests.requested, fullSessionRequests: session.requests.requested,
+      lifecycle: { ...session, retainedEventLifecycle: retainedEventSummary } },
+    eventLimit: detailLimit, importantEventLimit: importantLimit,
+    truncated: audioRecording.session.detailDropped > 0,
+    events, importantEvents: audioRecording.session.importantEvents.slice(), stackTraces: { ...audioRecording.stackTraces },
   };
 }
 
@@ -237,7 +270,7 @@ function diagnosticEvent(type, record, details = {}) {
   if (!audioDiagnosticSink || !record) return;
   try { audioDiagnosticSink({ type, timeUtc: new Date().toISOString(), perfMs: performance.now(), id: record.id, sound: record.sound, asset: record.asset,
     assetPath: record.assetPath || null, category: record.category || null, playbackId: record.playbackId || null,
-    source: record.source, stack: record.stack, worldId: record.worldId ?? null, environment: record.environment ?? null,
+    source: record.source, stackId: record.stackId ?? null, worldId: record.worldId ?? null, environment: record.environment ?? null,
     inCombat: record.inCombat ?? null, combatAudio: record.combatAudio ?? null, activeInstances: activeDiagnostics.size,
     activeSources: record.sources, ...details }); } catch { /* diagnostics must never affect sound playback */ }
 }
@@ -251,7 +284,7 @@ function beginDiagnostic(sound, context) {
     assetPath: null, category: context?.category || null, sourceActive: context?.sourceActive,
     worldId: context?.worldId ?? G.world?.id ?? null, environment: context?.environment ?? G.world?.biome?.name ?? G.world?.kind ?? null,
     inCombat: context?.inCombat ?? (G.world?._audioDiagnosticCombat === true), combatAudio: context?.combat ?? null,
-    stack: new Error().stack, sources: 0, sourceSerial: 0, sealed: false };
+    stackId: diagnosticStackId(sound, context?.category), sources: 0, sourceSerial: 0, sealed: false };
   activeDiagnostics.set(record.id, record);
   diagnosticEvent('play', record, { sourceActive: diagnosticSourceActive(record) });
   return record;
@@ -272,7 +305,7 @@ function trackDiagnosticSource(source, startAt = ac?.currentTime || 0, stopAt = 
   let startTimer = setTimeout(() => {
     if (ac?.state === 'running' && (ac.currentTime + 0.015 >= scheduledAt) && activeDiagnostics.has(record.id)) {
       started = true;
-      diagnosticEvent('source-start', record, { sourceId, audioTime: scheduledAt, inferredFromEnd: false });
+      diagnosticEvent('source-start', record, { sourceId, audioTime: scheduledAt, inferredFromEnd: false, startObservation: 'audio-clock-estimate' });
     }
   }, Math.max(0, (scheduledAt - (ac?.currentTime || 0)) * 1000) + 20);
   const previous = source.onended;
@@ -281,7 +314,7 @@ function trackDiagnosticSource(source, startAt = ac?.currentTime || 0, stopAt = 
       clearTimeout(startTimer);
       if (!started && (ac?.currentTime || 0) >= scheduledAt) {
         started = true;
-        diagnosticEvent('source-start', record, { sourceId, audioTime: scheduledAt, inferredFromEnd: true });
+        diagnosticEvent('source-start', record, { sourceId, audioTime: scheduledAt, inferredFromEnd: true, startObservation: 'inferred-from-ended-source' });
       }
       record.sources = Math.max(0, record.sources - 1);
       diagnosticEvent('source-stop', record, { sourceId, audioTime: ac?.currentTime ?? null, endedBeforeStart: !started });
@@ -526,8 +559,7 @@ export function sfx(name, vol = 1, pitch = 1, context = null) {
   if (liveSoundInstances.filter((item) => item.sound === name).length >= identicalLimit) {
     recordAudioMetric('duplicateSuppressed', category); return finishRequestedDiagnostic(diagnostic, 'duplicate-suppressed');
   }
-  const nonCombat = ['music', 'ambient', 'interface', 'environment', 'npc', 'portal', 'shrine', 'chest', 'itemDrop', 'itemPickup', 'currency', 'rareItem', 'questAchievement'];
-  const combat = !nonCombat.includes(category);
+  const combat = context?.combat ?? isCombatAudioCategory(category);
   if (combat && liveSoundInstances.filter((item) => item.combat).length >= audio.maxCombatSounds) {
     recordAudioMetric('discarded', category); return finishRequestedDiagnostic(diagnostic, 'channel-limit');
   }
@@ -572,7 +604,7 @@ export function sfx(name, vol = 1, pitch = 1, context = null) {
     if (started) {
       const elapsed = performance.now() - started;
       audioProcessingMs += elapsed; audioProcessingSamples++; audioProcessingWorstMs = Math.max(audioProcessingWorstMs, elapsed);
-      if (elapsed > 2 && audioRecording?.active && audioRecording.events.length < 20000) audioRecording.events.push({ type: 'processing-spike', timeUtc: new Date().toISOString(), durationMs: Number(elapsed.toFixed(3)), sound: name, category });
+      if (elapsed > 2 && audioRecording?.active) captureAudioDiagnosticEvent({ type: 'processing-spike', timeUtc: new Date().toISOString(), perfMs: performance.now(), durationMs: Number(elapsed.toFixed(3)), sound: name, category });
     }
     currentDiagnostic = previousDiagnostic;
     currentSoundName = previousSoundName;
@@ -816,7 +848,8 @@ export function footsteps(p, surface) {
   stepD += Math.hypot(p.x - stepX, p.y - stepY); stepX = p.x; stepY = p.y;
   if (stepD < 0.85) return;
   stepD = 0;
-  sfx(SAMPLES['step_' + surface] ? 'step_' + surface : 'step_stone', 1, 1);
+  sfx(SAMPLES['step_' + surface] ? 'step_' + surface : 'step_stone', 1, 1,
+    { category: 'playerMovement', combat: false, source: 'Player footsteps' });
 }
 
 // ------------------------------------------------------------------ streamed tracks

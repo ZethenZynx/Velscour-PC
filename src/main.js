@@ -24,7 +24,7 @@ import { game } from './game/game.js';
 import { dropBakes } from './game/render.js';
 import { controls } from './game/controls.js';
 import { initSpectate } from './game/spectate.js';
-import { applyVolumes, preloadSong, TITLE_SONG } from './core/audio.js';
+import { applyVolumes, preloadSong, TITLE_SONG, recordAudioDiagnosticMarker } from './core/audio.js';
 import { profileBeginFrame, profileEnd, profileFinishFrame, profileSetRender, profileSetUpdate, setPerformanceProfilerEnabled } from './core/perfdiagnostics.js';
 import { observeAdaptivePerformance, performanceTier } from './core/performancequality.mjs';
 import { applyPerformanceQuality } from './gfx/vfx.js';
@@ -307,9 +307,11 @@ function startTicker() {
 
 let errShown = 0;
 function reportError(err) {
+  const message = String(err && err.message || err);
+  recordAudioDiagnosticMarker('error', { source: 'runtime', message: message.slice(0, 500), stack: String(err?.stack || '').slice(0, 4000) });
   console.error(err);
   if (errShown++ > 3) return;
-  UI.log && UI.logEl && UI.log(`<span style="color:#ff6060">Error: ${String(err && err.message || err).slice(0, 140)}</span>`);
+  UI.log && UI.logEl && UI.log(`<span style="color:#ff6060">Error: ${message.slice(0, 140)}</span>`);
 }
 
 async function boot() {

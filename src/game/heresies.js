@@ -167,7 +167,7 @@ export function spawnHeresyEncounters(world, makePortal = null) {
     const styles = ['harrower', 'cantor', 'reaver'];
     const i = Math.abs((Number(world.environmentTrapSeed) || Number(world.depth) || 1) | 0) % names.length;
     const m = makeNamed(names[i], styles[i], i);
-    if (m) { floatText(m.x, m.y, 70, 'HERETICAL CHAMPION', '#ffbd65', 10); UI.log(`<b style="color:#ff8050">${escapeHtml(m.name)}</b> has entered the hunt.`, '#ffb090'); }
+    if (m) { floatText(m.x, m.y, 70, 'HERETICAL CHAMPION', '#ffbd65', 10); G.ui?.log?.(`<b style="color:#ff8050">${escapeHtml(m.name)}</b> has entered the hunt.`, '#ffb090'); }
   }
   if (plan.retribution && !H.retributionStarted) {
     H.retributionStarted = true;
@@ -177,7 +177,7 @@ export function spawnHeresyEncounters(world, makePortal = null) {
       addEffect(new Telegraph({ kind: 'circle', x: m.x, y: m.y, r: 1.8, dur: 1.4, color: '#ff3c20' }), 'ground');
       floatText(m.x, m.y, 86, "VELSCOUR'S RETRIBUTION", '#ff6840', 11);
       sfx('roar', 0.55);
-      UI.centerMsg('VELSCOUR’S RETRIBUTION', 'An infernal champion answers your Heresy.', 2.4);
+      G.ui?.centerMsg?.('VELSCOUR’S RETRIBUTION', 'An infernal champion answers your Heresy.', 2.4);
     }
   }
   if (plan.sanctum && typeof makePortal === 'function' && !H.sanctumPortalCreated) {

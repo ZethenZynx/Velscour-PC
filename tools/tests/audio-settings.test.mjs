@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { AUDIO_SECTIONS, AUDIO_VOLUME_GROUPS, AUDIO_PRESETS, DEFAULT_AUDIO_SETTINGS, applyAudioPreset, audioGroupForSound, normalizeAudioSettings } from '../../src/core/audio-settings.js';
+import { AUDIO_SECTIONS, AUDIO_VOLUME_GROUPS, AUDIO_PRESETS, DEFAULT_AUDIO_SETTINGS, applyAudioPreset, audioGroupForSound, isCombatAudioCategory, normalizeAudioSettings } from '../../src/core/audio-settings.js';
 import { G, SETTINGS_KEY, loadSettings } from '../../src/state.js';
 
 test('all volume groups appear exactly once in the collapsible settings sections', () => {
@@ -39,6 +39,8 @@ test('the sound router assigns player, enemy, boss, impact, UI and positional st
   assert.equal(audioGroupForSound('swing'), 'playerAttack');
   assert.equal(audioGroupForSound('fire'), 'playerSpell');
   assert.equal(audioGroupForSound('step_stone'), 'playerMovement');
+  assert.equal(isCombatAudioCategory(audioGroupForSound('step_stone')), false, 'player footsteps do not consume combat sound slots');
+  assert.equal(isCombatAudioCategory('weaponImpact'), true);
   assert.equal(audioGroupForSound('swing', { actor: 'enemy' }), 'enemyAttack');
   assert.equal(audioGroupForSound('fire', { actor: 'enemy' }), 'enemySpell');
   assert.equal(audioGroupForSound('roar', { actor: 'enemy', boss: true }), 'boss');

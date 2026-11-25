@@ -133,4 +133,9 @@ export function audioGroupForSound(name, context = null) {
   return LEGACY_SOUND_GROUPS[name] || 'environment';
 }
 
+const NON_COMBAT_AUDIO_CATEGORIES = new Set(['music', 'ambient', 'interface', 'playerMovement', 'environment', 'npc',
+  'portal', 'shrine', 'chest', 'itemDrop', 'itemPickup', 'currency', 'rareItem', 'questAchievement']);
+
+export function isCombatAudioCategory(category) { return !NON_COMBAT_AUDIO_CATEGORIES.has(category); }
+
 export function audioGroupIds() { return GROUP_IDS.slice(); }

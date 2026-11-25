@@ -4,10 +4,11 @@ import assert from 'node:assert/strict';
 import { G } from '../../src/state.js';
 import { BIOME_BY_ID } from '../../src/data/biomes.js';
 import { generateDungeon } from '../../src/world/dungeon.js';
+import { World } from '../../src/game/world.js';
 import { HERESIES, HERESY_BY_ID, HERESY_MAX_RANK, HERESY_MILESTONES, heresyMods, heresyRank } from '../../src/data/heresies.js';
 import {
   heresyAbilityCostMul, heresyCooldownMul, heresyHero, heresyMonster,
-  heresyShrineDurationMul, heresySpawns, heresyWorld, rollHeresyEncounters,
+  heresyShrineDurationMul, heresySpawns, heresyWorld, rollHeresyEncounters, spawnHeresyEncounters,
 } from '../../src/game/heresies.js';
 
 const original = ['twins','crowned','thirst','fifth','legion','iron','cruel','ambush','omens','glass','hunger','gaze'];
@@ -105,5 +106,34 @@ const afterFirst = { xp: once.xpBonusPct, mf: once.mfAdd, sigil: once.sigilMul, 
 heresyWorld(once, character);
 assert.deepEqual({ xp: once.xpBonusPct, mf: once.mfAdd, sigil: once.sigilMul, relic: once.relicMul }, afterFirst, 'reapplying world setup cannot compound reward dials');
 assert.equal(once.heresyTrapIntervalMul, 0.75);
+
+// A generated Hunt and Retribution must not depend on a module-global `UI`.
+// The game UI is attached to G by UI.init(), and may be absent in headless tests.
+const generated = generateDungeon(121, infernalBiome, tileset, 0x3412);
+const encounterWorld = new World('dungeon', { map: generated.map, depth: 121, biome: infernalBiome,
+  props: [], torches: [], portals: [], npcs: [], chests: [], creatures: [], loot: [] });
+encounterWorld.roster = infernalBiome.roster;
+encounterWorld.startPos = generated.start;
+encounterWorld.environmentTrapSeed = 0x3412;
+encounterWorld.heresy = { ids: [], rank: 75, encounters: { bounty: false, hunt: true, sanctum: false, retribution: true } };
+G.char = { heresyRewards: { bountyClaims: {}, huntClaims: {}, sanctumClaims: {}, retributionClaims: {} } };
+G.world = encounterWorld;
+const calls = [];
+G.ui = { log: (...args) => calls.push(['log', ...args]), centerMsg: (...args) => calls.push(['centerMsg', ...args]) };
+assert.doesNotThrow(() => spawnHeresyEncounters(encounterWorld), 'Hunt and Retribution UI calls resolve through G.ui');
+assert.ok(calls.some(([type]) => type === 'log'), 'Hunt entry is announced');
+assert.ok(calls.some(([type]) => type === 'centerMsg'), 'Retribution entry is announced');
+assert.ok(encounterWorld.creatures.some((creature) => creature.name === 'Ashen Harrower' || creature.name === 'Sable Apostle' || creature.name === 'Gravebound Reaver'));
+G.ui = null;
+const noUiWorld = new World('dungeon', { map: generated.map, depth: 121, biome: infernalBiome,
+  props: [], torches: [], portals: [], npcs: [], chests: [], creatures: [], loot: [] });
+noUiWorld.roster = infernalBiome.roster;
+noUiWorld.startPos = generated.start;
+noUiWorld.environmentTrapSeed = 0x3513;
+noUiWorld.heresy = { ids: [], rank: 75, encounters: { bounty: false, hunt: true, sanctum: false, retribution: true } };
+G.char = { heresyRewards: { bountyClaims: {}, huntClaims: {}, sanctumClaims: {}, retributionClaims: {} } };
+G.world = noUiWorld;
+assert.doesNotThrow(() => spawnHeresyEncounters(noUiWorld), 'encounter gameplay continues if the UI is unavailable');
+G.ui = null;
 
 console.log('Heresy expansion: 30 modifiers, 75-rank cap, milestone reward formulas, encounter probabilities, walkable infernal challenge layouts, pack scaling, combat dials, and idempotent world setup passed.');
