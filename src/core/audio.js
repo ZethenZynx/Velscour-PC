@@ -967,6 +967,8 @@ export const TITLE_SONG = 'hymn_of_the_abyss';
 const MUSIC = {
   title: { songs: [TITLE_SONG], gap: [10, 16], vol: 0.9 },
   town: { songs: ['empty_school'], gap: [30, 70], vol: 0.75 },
+  // One continuous loop shared by Sunscorch Oasis, the Sea of Sand and its pyramid.
+  sea_of_sand: { songs: ['sea_of_sand'], loop: true, gap: [0, 0], vol: 0.7 },
   // dungeons and overworld biomes: shuffled, with long ambience-only breaks; it carries on across levels
   wilds: { songs: ['stone_room_reverberation', 'stone_room_reverberation_2'], shuffle: true, gap: [45, 120], vol: 0.6 },
 };
@@ -1027,7 +1029,7 @@ function startSong(at = 0) {
   m.song = m.last = m.queue.shift();
   if (manifest && !(m.song in manifest.music)) { m.song = null; m.next = 0; return; }
   const deck = m.deck;
-  deck.load(m.song, songUrls[m.song] || `${AUDIO}music/${m.song}.mp3`, false, at || def.at || 0);
+  deck.load(m.song, songUrls[m.song] || `${AUDIO}music/${m.song}.mp3`, !!def.loop, at || def.at || 0);
   deck.g.gain.cancelScheduledValues(ac.currentTime); deck.g.gain.setValueAtTime(0, ac.currentTime);
   deck.fade(def.vol, normalizeAudioSettings(G.settings.audio).musicFadeSeconds);
   m.next = 0;
@@ -1098,7 +1100,7 @@ function tick() {
   const now = ac.currentTime;
   if (music) {
     const m = music;
-    if (m.song && !m.deck.playing && m.deck.el.ended) { m.song = null; m.next = now + R2(m.def.gap); }   // song over: a break
+    if (m.song && !m.def.loop && !m.deck.playing && m.deck.el.ended) { m.song = null; m.next = now + R2(m.def.gap); }   // song over: a break
     if (!m.song && m.next && now >= m.next) startSong();
   }
   const on = !!(music && music.song && music.deck.playing);

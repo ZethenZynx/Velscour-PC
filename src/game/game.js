@@ -72,6 +72,7 @@ import { DUNE_VARIANTS } from '../data/dunes.js';
 import { loadCastlePack, releaseCastlePack } from '../gfx/castle.js';
 import { loadCastle3D, releaseCastle3D, loadBaked, castle3dState, warmBaked } from '../gfx/castle3dart.js';
 import { CASTLE_VARIANTS } from '../data/castles.js';
+import { locationMusicKind } from './musicrouting.mjs';
 
 import { generateSkyship } from '../world/skyship.js';
 import { warmSky } from '../gfx/skyship.js';
@@ -573,7 +574,7 @@ export const game = {
     this.setWorld(world, arrive, old);
     void warmLevelArt(world); // the hero's summons; trims the last level's monster sprites
     HUD.setArea('Herrington Hollow', 'Town — a safe haven');
-    playMusic('town'); setAmbience('town');
+    playMusic(locationMusicKind(world)); setAmbience('town');
     Vendor.restock();
     const p = G.player;
     townHappening(world); // a festival, a blessing, a gift (game/happenings.js)
@@ -676,7 +677,7 @@ export const game = {
     this.setWorld(world, arrive, old);
     void warmLevelArt(world);
     HUD.setArea('Sunscorch Oasis', 'Act II Town — Desert Haven');
-    playMusic('town');
+    playMusic(locationMusicKind(world));
     setAmbience('sea_of_sand');
     Vendor.restock();
     const p = G.player;
@@ -713,7 +714,7 @@ export const game = {
       this.setWorld(built.world, built.start, old);
       await warmLevelArt(built.world);
       HUD.setArea("Tessariel's Keep", 'Act IV — Sanctuary of the Sacred Flame');
-      playMusic('town'); setAmbience('tkeep');
+      playMusic(locationMusicKind(built.world)); setAmbience('tkeep');
       Vendor.restock();
       if (G.player) { G.player.hp = G.player.maxHp; G.player.mana = G.player.maxMana; }
       beginVictoryTownCelebration(built.world, c);
@@ -1970,7 +1971,9 @@ export const game = {
       (biome.overworld ? `${biome.id === 'scorpion_king_pyramid' ? biome.name : gen.variant ? gen.variant.name : biome.name}${world.overworldScenario?.title ? ` · ${world.overworldScenario.title}` : ''}` : gen.raid ? `${biome.name} · Boss Room` : biome.name) + (worldRank(world) ? ` · Heresy ${worldRank(world)}` : ''),
       world.dungeonAffixes || []
     );
-    playMusic('wilds', { delay: 4 + Math.random() * 20 }); setAmbience(sky ? world.sky.v.amb : sea ? world.seaRun.variant.amb : reg?.amb || biome.id);
+    const musicKind = locationMusicKind(world);
+    playMusic(musicKind, musicKind === 'wilds' ? { delay: 4 + Math.random() * 20 } : {});
+    setAmbience(sky ? world.sky.v.amb : sea ? world.seaRun.variant.amb : reg?.amb || biome.id);
     const kin = tileset.mixed && BIOME_BY_ID[tileset.mixed];
     if (uFloor) {
       UI.centerMsg(`UNBOUND FLOOR ${uFloor}`, isUnboundCheckpointFloor(uFloor) ? 'CHECKPOINT MILESTONE' : `Direct Descent · Hardmode Depth ${depth}`, 2.6);
@@ -2098,7 +2101,7 @@ export const game = {
       const safe = findReachableInteractableSpot(back.map, start, start[0], start[1], 5, 0.4, 0.42) || start;
       this.setWorld(back, safe, challenge); void warmEnemyArt(back);
       HUD.setArea(back.biome?.name || 'Dungeon', `Depth ${back.depth || c.depth}${worldRank(back) ? ` · Heresy ${worldRank(back)}` : ''}`, back.dungeonAffixes || []);
-      playMusic('wilds'); setAmbience(back.biome?.id || 'hell');
+      playMusic(locationMusicKind(back)); setAmbience(back.biome?.id || 'hell');
     } };
     const challengeExit = { x: gen.exit[0], y: gen.exit[1], type: 'exit', active: false, color: '#5a5a60', reach: 1.6, label: 'Sealed Challenge Exit', use: () => {
       if (!challengeExit.active) { floatText(challengeExit.x, challengeExit.y, 60, 'The guardians still stand.', '#ff6040', 12); sfx('error'); return; }
