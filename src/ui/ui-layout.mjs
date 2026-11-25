@@ -114,6 +114,15 @@ export function layoutParentScale(rect, localWidth, localHeight) {
   return { x: scale(rect?.width, localWidth), y: scale(rect?.height, localHeight) };
 }
 
+/** Clamp a rendered viewport anchor without mutating the normalized coordinates saved in the profile. */
+export function clampUILayoutAnchor(x, y, width, height, scale = 1, viewport = {}) {
+  const vw = Math.max(1, Number(viewport.width) || 1), vh = Math.max(1, Number(viewport.height) || 1);
+  const w = Math.max(0, Number(width) || 0) * Math.max(.01, Number(scale) || 1);
+  const h = Math.max(0, Number(height) || 0) * Math.max(.01, Number(scale) || 1);
+  const clamp = (value, max) => Math.max(0, Math.min(Number(value) || 0, Math.max(0, max)));
+  return { x: clamp(x, vw - w), y: clamp(y, vh - h) };
+}
+
 export function characterLayoutId(character) {
   if (!character) return '';
   return String(character.id || character.uuid || character.created || `${character.name || ''}:${character.class || character.classId || ''}`);

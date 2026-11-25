@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import {
-  activeLayoutMap, characterLayoutId, cloneLayoutValue, createDefaultLayoutState, effectiveLayoutEntry, layoutEditorRect, layoutParentScale,
+  activeLayoutMap, characterLayoutId, clampUILayoutAnchor, cloneLayoutValue, createDefaultLayoutState, effectiveLayoutEntry, layoutEditorRect, layoutParentScale,
   exportLayoutProfile, importLayoutProfile, migrateEnvironmentInfoLayout, migrateGroupedHudLayout, normalizeLayoutEntry, normalizeLayoutState,
   snapUILayoutPosition, writableLayoutEntry,
 } from '../../src/ui/ui-layout.mjs';
@@ -111,6 +111,8 @@ assert.deepEqual(layoutEditorRect(actualBox), actualBox, 'editor outline uses th
 assert.equal(layoutEditorRect({ left: 0, top: 0, width: 0, height: 20 }), null, 'unmeasurable elements do not receive guessed placeholder dimensions');
 assert.deepEqual(layoutParentScale({ width: 300, height: 75 }, 200, 50), { x: 1.5, y: 1.5 }, 'nested editing converts between CSS and viewport dimensions through parent scaling');
 assert.deepEqual(layoutParentScale({ width: 300, height: 50 }, 200, 50), { x: 1.5, y: 1 }, 'nonuniform parent scaling is preserved per axis');
+assert.deepEqual(clampUILayoutAnchor(950, 540, 200, 80, 1.25, { width: 1000, height: 600}), { x: 750, y: 500 }, 'rendered coordinates clamp to a resized viewport without rewriting saved coordinates');
+assert.deepEqual(clampUILayoutAnchor(240, 120, 200, 80, 1, { width: 1600, height: 900}), { x: 240, y: 120 }, 'a normalized saved position maps consistently at another screen size');
 
 const exported = exportLayoutProfile(state);
 const imported = importLayoutProfile(exported);

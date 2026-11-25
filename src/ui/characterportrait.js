@@ -88,7 +88,10 @@ export const CharacterPortrait = {
       if (e.key !== 'ArrowUp' && e.key !== 'ArrowDown') return;
       e.preventDefault(); const c = config(); c.size = clamp((Number(c.size) || 100) + (e.key === 'ArrowUp' ? 25 : -25), 75, 150); this.applySettings(); saveSettings();
     });
-    this.resizeListener ||= () => this.clampPosition(true);
+    this.resizeListener ||= () => {
+      if (UILayoutCustomizer.hasSavedPosition('character-portrait')) UILayoutCustomizer.applyElement('character-portrait', this.root);
+      else this.clampPosition(true);
+    };
     window.addEventListener('resize', this.resizeListener);
     this.applySettings();
   },
@@ -128,8 +131,10 @@ export const CharacterPortrait = {
     this.root.style.width = `${BASE_W * size / 100}px`;
     this.root.style.height = `${BASE_H * size / 100}px`;
     this.root.style.setProperty('--portrait-scale', String(size / 100));
-    this.root.style.left = `${clamp(x, 0, Math.max(0, innerWidth - BASE_W * size / 100))}px`;
-    this.root.style.top = `${clamp(y, 0, Math.max(0, innerHeight - BASE_H * size / 100))}px`;
+    if (!UILayoutCustomizer.hasSavedPosition('character-portrait')) {
+      this.root.style.left = `${clamp(x, 0, Math.max(0, innerWidth - BASE_W * size / 100))}px`;
+      this.root.style.top = `${clamp(y, 0, Math.max(0, innerHeight - BASE_H * size / 100))}px`;
+    }
     const lock = this.root.querySelector('[data-portrait-lock]');
     lock.textContent = c.locked ? '🔒' : '⌖';
     lock.title = c.locked ? 'Unlock portrait movement and resizing' : 'Lock portrait movement and resizing';
@@ -149,10 +154,12 @@ export const CharacterPortrait = {
     e.preventDefault(); e.stopPropagation();
     const handle = e.currentTarget, pointerId = e.pointerId;
     const r = this.root.getBoundingClientRect(), dx = e.clientX - r.left, dy = e.clientY - r.top;
-    let ended = false;
+    let ended = false, moved = false;
     const move = (ev) => {
       if (ev.pointerId !== pointerId) return;
       if (ev.buttons !== undefined && (ev.buttons & 1) === 0) return end();
+      if (!moved && Math.hypot(ev.clientX - e.clientX, ev.clientY - e.clientY) < 3) return;
+      moved = true;
       this.savePosition(ev.clientX - dx, ev.clientY - dy);
     };
     const end = (ev) => {
@@ -163,8 +170,7 @@ export const CharacterPortrait = {
       document.removeEventListener('pointercancel', end);
       handle.removeEventListener('lostpointercapture', end);
       window.removeEventListener('blur', end);
-      saveSettings();
-      UILayoutCustomizer.recordPosition('character-portrait', this.root);
+      if (moved) { saveSettings(); UILayoutCustomizer.recordPosition('character-portrait', this.root); }
     };
     handle.setPointerCapture(e.pointerId);
     handle.addEventListener('pointermove', move);
@@ -180,7 +186,10 @@ export const CharacterPortrait = {
     e.currentTarget.setPointerCapture(e.pointerId);
     const move = (ev) => {
       const ratio = Math.max((BASE_W + ev.clientX - sx) / BASE_W, (BASE_H + ev.clientY - sy) / BASE_H);
-      config().size = clamp(Math.round((initial * ratio) / 25) * 25, 75, 150); this.applySettings();
+      config().size = clamp(Math.round((initial * ratio) / 25) * 25, 75, 150);
+      const layout = UILayoutCustomizer.entry('character-portrait');
+      layout.width = BASE_W * config().size / 100; layout.height = BASE_H * config().size / 100;
+      this.applySettings();
     };
     const end = () => { e.currentTarget.removeEventListener('pointermove', move); e.currentTarget.removeEventListener('pointerup', end); e.currentTarget.removeEventListener('pointercancel', end); saveSettings(); UILayoutCustomizer.recordPosition('character-portrait', this.root, true); };
     e.currentTarget.addEventListener('pointermove', move); e.currentTarget.addEventListener('pointerup', end); e.currentTarget.addEventListener('pointercancel', end);

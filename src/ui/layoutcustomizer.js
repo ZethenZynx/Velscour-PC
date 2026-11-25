@@ -2,7 +2,7 @@ import { G, saveSettings } from '../state.js';
 import { el, escapeHtml } from '../core/util.js';
 import { UI } from './ui.js';
 import {
-  activeLayoutMap, characterLayoutId, cloneLayoutValue, createDefaultLayoutState, effectiveLayoutEntry, snapUILayoutPosition,
+  activeLayoutMap, characterLayoutId, clampUILayoutAnchor, cloneLayoutValue, createDefaultLayoutState, effectiveLayoutEntry, snapUILayoutPosition,
   exportLayoutProfile, importLayoutProfile, layoutEditorRect, layoutParentScale, migrateEnvironmentInfoLayout, migrateGroupedHudLayout, normalizeLayoutEntry, normalizeLayoutState,
   writableLayoutEntry,
 } from './ui-layout.mjs';
@@ -24,8 +24,8 @@ const DEFINITIONS = [
 const DEFAULTS = new Map(DEFINITIONS.map(([id, label, selector, x, y, mode]) => [id, { id, label, selector, x, y, mode }]));
 const clone = cloneLayoutValue;
 const clamp = (n, min, max) => Math.max(min, Math.min(max, n));
-const STYLE_PROPS = ['translate', 'scale', 'opacity', 'width', 'height', 'transform-origin'];
-const POSITION_STYLE_PROPS = ['position', 'left', 'top', 'right', 'bottom', 'translate', 'scale', 'width', 'height', 'transform', 'transform-origin'];
+const POSITION_STYLE_PROPS = ['position', 'left', 'top', 'right', 'bottom', 'translate', 'scale', 'width', 'height', 'transform', 'transform-origin', 'margin', 'box-sizing'];
+const STYLE_PROPS = [...POSITION_STYLE_PROPS, 'opacity'];
 const nativeStyles = new WeakMap();
 const managedStyles = new WeakMap();
 const appliedStyleText = new WeakMap();
@@ -105,6 +105,7 @@ export const UILayoutCustomizer = {
 
   entry(id) { const state = this.state; return writableLayoutEntry(state, id, characterLayoutId(G.char)); },
   effective(id, state = this.state) { return effectiveLayoutEntry(state, id, characterLayoutId(G.char)) || normalizeLayoutEntry(); },
+  hasSavedPosition(id, state = this.state) { const entry = this.effective(id, state); return entry.x != null || entry.y != null; },
   node(id) { const def = DEFAULTS.get(id); return def?.selector ? document.querySelector(def.selector) : null; },
   trackElementNode(id, node) {
     if (!node) return false;
@@ -196,13 +197,24 @@ export const UILayoutCustomizer = {
       else if (entry.height && !entry.width) w = h * ratio;
       else if (entry.width && entry.height) h = w / ratio;
     }
-    const targetX = clamp(entry.x == null ? rect.left : entry.x * innerWidth, 0, Math.max(0, innerWidth - w * k * parentScale.x));
-    const targetY = clamp(entry.y == null ? rect.top : entry.y * innerHeight, 0, Math.max(0, innerHeight - h * k * parentScale.y));
-    const ox = w * (1 - k) / 2, oy = h * (1 - k) / 2;
-    setManagedStyle(node, 'translate', `${(targetX - rect.left) / parentScale.x - ox}px ${(targetY - rect.top) / parentScale.y - oy}px`, entry.x != null || entry.y != null);
+    const positioned = entry.x != null || entry.y != null;
+    const anchor = clampUILayoutAnchor(entry.x == null ? rect.left : entry.x * innerWidth, entry.y == null ? rect.top : entry.y * innerHeight,
+      w * parentScale.x, h * parentScale.y, k, { width: innerWidth, height: innerHeight });
+    const targetX = anchor.x, targetY = anchor.y;
+    // A saved position is a viewport anchor. Detach it from the element's former grid/flex slot and CSS centering
+    // transform so changing content, classes, sibling heights, or parent layout cannot shift that anchor.
+    setManagedStyle(node, 'position', 'fixed', positioned);
+    setManagedStyle(node, 'left', positioned ? `${targetX}px` : '', positioned);
+    setManagedStyle(node, 'top', positioned ? `${targetY}px` : '', positioned);
+    setManagedStyle(node, 'right', 'auto', positioned);
+    setManagedStyle(node, 'bottom', 'auto', positioned);
+    setManagedStyle(node, 'translate', 'none', positioned);
+    setManagedStyle(node, 'transform', 'none', positioned);
+    setManagedStyle(node, 'transform-origin', positioned ? 'top left' : 'center center', positioned || entry.scale !== 100);
+    setManagedStyle(node, 'margin', '0', positioned);
+    setManagedStyle(node, 'box-sizing', 'border-box', positioned && !!(entry.width || entry.height));
     setManagedStyle(node, 'scale', String(k), entry.scale !== 100);
     setManagedStyle(node, 'opacity', String(entry.opacity / 100), entry.opacity !== 100);
-    setManagedStyle(node, 'transform-origin', 'center center', entry.scale !== 100);
     const sized = id === 'main-action-bar' ? !!(entry.width || entry.height) : false;
     setManagedStyle(node, 'width', `${w}px`, !!entry.width || sized);
     setManagedStyle(node, 'height', `${h}px`, !!entry.height || sized);

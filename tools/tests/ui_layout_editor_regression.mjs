@@ -2,12 +2,14 @@ import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 import { createDefaultLayoutState, normalizeLayoutState } from '../../src/ui/ui-layout.mjs';
 
-const [source, styles, html, gameSource, mainSource] = await Promise.all([
+const [source, styles, html, gameSource, mainSource, portraitSource, chatSource] = await Promise.all([
   readFile(new URL('../../src/ui/layoutcustomizer.js', import.meta.url), 'utf8'),
   readFile(new URL('../../css/style.css', import.meta.url), 'utf8'),
   readFile(new URL('../../index.html', import.meta.url), 'utf8'),
   readFile(new URL('../../src/game/game.js', import.meta.url), 'utf8'),
   readFile(new URL('../../src/main.js', import.meta.url), 'utf8'),
+  readFile(new URL('../../src/ui/characterportrait.js', import.meta.url), 'utf8'),
+  readFile(new URL('../../src/ui/chat.js', import.meta.url), 'utf8'),
 ]);
 
 const renderAll = source.match(/renderAll\(refresh = true\)\s*\{([\s\S]*?)\n  \},\n\n  renderGuides/);
@@ -43,6 +45,21 @@ assert.match(source, /effective\(id, state = this\.state\) \{ return effectiveLa
 assert.match(source, /entry\(id\) \{ const state = this\.state; return writableLayoutEntry\(state, id, characterLayoutId\(G\.char\)\)/, 'editing an inherited layout creates a character-specific copy without changing the account profile');
 assert.match(source, /const state = this\.state, def = DEFAULTS\.get\(id\), entry = this\.effective\(id, state\)/, 'startup and dynamic UI application use the same resolved saved entry');
 assert.match(source, /applyAll\(\) \{ for \(const \[id\] of DEFINITIONS\) this\.applyElement\(id\); \}/, 'every registered UI element is restored through the centralized manager');
+assert.match(source, /const POSITION_STYLE_PROPS = \['position', 'left', 'top', 'right', 'bottom', 'translate', 'scale', 'width', 'height', 'transform', 'transform-origin', 'margin', 'box-sizing'\]/, 'central restoration tracks positioning and CSS transform properties');
+assert.match(source, /setManagedStyle\(node, 'position', 'fixed', positioned\)/, 'saved positions use stable viewport anchoring instead of parent flow');
+assert.match(source, /setManagedStyle\(node, 'transform', 'none', positioned\)/, 'saved positions neutralize competing CSS centering transforms');
+assert.match(source, /setManagedStyle\(node, 'transform-origin', positioned \? 'top left' : 'center center'/, 'dynamic dimensions cannot shift a customized top-left anchor');
+assert.match(source, /hasSavedPosition\(id, state = this\.state\)/, 'secondary movement systems can defer to saved layout positions');
+assert.match(source, /visibilityObserver\?\.observe\(node, \{ attributes: true, attributeFilter: \['class', 'style'\] \}\)/, 'registered roots are observed for runtime style and class changes');
+const layoutDefinitionBlock = source.match(/const DEFINITIONS = \[([\s\S]*?)\n\];/)?.[1] || '';
+const definitionIds = [...layoutDefinitionBlock.matchAll(/\['([a-z0-9-]+)'/g)].map((match) => match[1]);
+assert.ok(definitionIds.length > 0 && new Set(definitionIds).size === definitionIds.length, 'every customizable element uses a unique persistent identifier');
+assert.match(portraitSource, /hasSavedPosition\('character-portrait'\)/, 'portrait resize and settings updates respect the centralized position');
+assert.match(portraitSource, /if \(moved\) \{ saveSettings\(\); UILayoutCustomizer\.recordPosition\('character-portrait', this\.root\); \}/, 'a portrait title-bar click without an actual drag cannot rewrite its saved position');
+assert.match(portraitSource, /layout\.width = BASE_W \* config\(\)\.size \/ 100; layout\.height = BASE_H \* config\(\)\.size \/ 100/, 'explicit portrait resizing updates the centralized dimensions');
+assert.match(chatSource, /hasSavedPosition\('adventurers-log'\)/, 'chat resize handling respects the centralized position');
+assert.match(chatSource, /if\(moved\)\{this\.save\(\);UILayoutCustomizer\.recordPosition\('adventurers-log',this\.root\);\}/, 'a chat title-bar click without an actual drag cannot rewrite its saved position');
+assert.match(chatSource, /entry\.width=layout\.width;entry\.height=layout\.height/, 'explicit chat resizing updates the centralized dimensions');
 assert.ok(mainSource.indexOf('loadSettings();') < mainSource.indexOf('HUD.init();') && mainSource.indexOf('HUD.init();') < mainSource.indexOf('applyUILayoutSettings();'), 'saved settings load before HUD creation and initial layout application');
 assert.doesNotMatch(source, /\['(?:health-orb|mana-orb)'/, 'health and mana orbs are not independently registered');
 assert.doesNotMatch(source, /\['panel-[^']+'/, 'temporary interaction windows are not registered as HUD elements');
