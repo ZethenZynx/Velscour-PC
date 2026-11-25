@@ -7,6 +7,7 @@ import { A, classSprite, potionIcon } from '../core/assets.js';
 import { UI, $, droppable } from './ui.js';
 import { skillIconURL, buffIconURL, smiteIcon, madnessIcon, ultimateIcon } from './icons.js';
 import { CLASSES } from '../data/classes.js';
+import { manaPoolColor } from '../data/mana-pool-colors.js';
 import { POTION_INFO } from '../data/items.js';
 import { SKILLS, effLevel, manaCost, rageCost, whirlwindRageCost, cooldown, CLASS_SKILLS } from '../data/skills.js';
 import { xpToNext } from '../game/player.js';
@@ -499,6 +500,9 @@ export const HUD = {
     const lifeK = Math.round(clamp(1 - p.hp / p.maxHp, 0, 1) * 200) / 2;
     set('life', lifeK, (v) => { $('#life-cover .orb-empty').style.height = v + '%'; });
     set('mana', Math.round(clamp(1 - p.mana / p.maxMana, 0, 1) * 200) / 2, (v) => { $('#mana-cover .orb-empty').style.height = v + '%'; });
+    set('manaPoolColorClass', p.classId, (classId) => {
+      $('#mana-cover').style.setProperty('--mana-pool-color', manaPoolColor(classId));
+    });
     set('rageClass', p.classId === 'barbarian', v => { $('#barbarian-rage').classList.toggle('hidden', !v); });
     if (p.classId === 'barbarian') {
       set('rageAmount', Math.round(p.rage), v => { $('#barbarian-rage-fill').style.width = v + '%'; $('#barbarian-rage-text').textContent = `Rage ${v}%`; });

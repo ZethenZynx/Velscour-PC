@@ -140,7 +140,8 @@ button { font-family: var(--font-head); }
 #hud-bar:hover #xp-text .xp-text-full, #xp-track:hover ~ #xp-text .xp-text-full, #xp-text:hover .xp-text-full, #xp-text.show-full .xp-text-full { display: inline; }
 .resource-orb-group { position: absolute; z-index: 5; pointer-events: none; }
 .orb-cover { position: absolute; left: 50%; top: 50%; translate: -50% -50%; z-index: 5; border-radius: 50%; overflow: hidden; pointer-events: none; }
-.orb-empty { position: absolute; left: 0; right: 0; top: 0; height: 0%; background: linear-gradient(rgba(0,0,0,.86), rgba(5,0,0,.8)); transition: height .15s; box-shadow: 0 2px 6px rgba(255,255,255,.08); }
+.orb-tint { position: absolute; inset: 0; background: var(--mana-pool-color, #4169e1); mix-blend-mode: color; }
+.orb-empty { position: absolute; z-index: 1; left: 0; right: 0; top: 0; height: 0%; background: linear-gradient(rgba(0,0,0,.86), rgba(5,0,0,.8)); transition: height .15s; box-shadow: 0 2px 6px rgba(255,255,255,.08); }
 .orb-text { position: absolute; left: 50%; top: 50%; translate: -50% -50%; z-index: 10; font: 700 clamp(9px, 1.3vw, 14px) var(--font-head); color: #fff; text-shadow: 0 0 3px #000, 0 0 4px #000, 0 0 2px #000; text-align: center; pointer-events: none; white-space: nowrap; }
 #hud-slots { position: absolute; inset: 0; z-index: 5; pointer-events: none; }
 #hud-slots .slot { pointer-events: auto; }
