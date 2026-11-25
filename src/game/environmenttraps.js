@@ -31,6 +31,18 @@ export const ENVIRONMENT_TRAP_TYPES = Object.freeze({
   dartTrap: { name: 'Wall Dart Trap', fixture: 'dartWall', damage: 0.03, damageMultiplier: 1.5, element: 'phys', mode: 'direct', trigger: 'periodic' },
 });
 
+export const DART_TRAP_VARIANTS = Object.freeze([
+  Object.freeze({ id: 'normal', name: 'Normal Dart Trap', element: 'phys', color: '#d9d4c8', shaft: '#6d5540' }),
+  Object.freeze({ id: 'poison', name: 'Poison Dart Trap', element: 'poison', color: '#b7d653', shaft: '#667c38' }),
+  Object.freeze({ id: 'fire', name: 'Fire Dart Trap', element: 'fire', color: '#ffb04c', shaft: '#a94d29' }),
+  Object.freeze({ id: 'electric', name: 'Electric Dart Trap', element: 'light', color: '#8beaff', shaft: '#397b9c' }),
+]);
+
+export function selectDartTrapVariant(rng) {
+  const index = Math.max(0, Math.min(DART_TRAP_VARIANTS.length - 1, Math.floor(rng() * DART_TRAP_VARIANTS.length)));
+  return DART_TRAP_VARIANTS[index];
+}
+
 // Each atlas row is one physical trap and each column is idle, warning, active, destroyed.
 // The variation atlas supplies material-specific pressure plates, spike beds, vents, flame nozzles and turrets.
 const TRAP_ART = Object.freeze({
@@ -156,14 +168,19 @@ function excluded(world, x, y, start, occupied) {
   return occupied(x, y, start);
 }
 
-function dartWallMount(world, x, y, rng) {
+export function findDartWallMount(world, x, y, rng = Math.random, diagnostics = null) {
+  if (diagnostics) diagnostics.mountAttempts = (diagnostics.mountAttempts || 0) + 1;
   const map = world.map, tx = Math.floor(x), ty = Math.floor(y), choices = [];
+  let adjacentWall = false, blockedMount = false, blockedLane = false;
   for (const [wallX, wallY] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
-    const wallTile = (ty + wallY) * map.w + tx + wallX;
-    const wallIsWalkable = typeof map.walkableTile === 'function'
-      ? map.walkableTile(tx + wallX, ty + wallY)
-      : map.walkable(tx + wallX + 0.5, ty + wallY + 0.5);
-    if (wallIsWalkable || map.clutter?.[wallTile]) continue;
+    const wx = tx + wallX, wy = ty + wallY, wallTile = wy * map.w + wx;
+    const inBounds = typeof map.inb === 'function' ? map.inb(wx, wy) : wx >= 0 && wy >= 0 && wx < map.w && wy < map.h;
+    const isFloor = inBounds && (typeof map.tile === 'function' ? map.tile(wx, wy) : map.walkableTile?.(wx, wy));
+    if (isFloor) {
+      if (map.block?.[wallTile]) blockedMount = true;
+      continue;
+    }
+    adjacentWall = true;
     const fireX = -wallX, fireY = -wallY;
     let range = 0;
     for (let d = 0.25; d <= 4.5; d += 0.25) {
@@ -171,8 +188,18 @@ function dartWallMount(world, x, y, rng) {
       range = d;
     }
     if (range >= 4.5) choices.push({ wallX, wallY, fireX, fireY, range: 4.5 });
+    else blockedLane = true;
   }
-  return choices.length ? choices[Math.floor(rng() * choices.length)] : null;
+  if (choices.length) {
+    if (diagnostics) diagnostics.validMounts = (diagnostics.validMounts || 0) + 1;
+    return choices[Math.floor(rng() * choices.length)];
+  }
+  if (diagnostics) {
+    const reason = !adjacentWall ? 'noAdjacentWall' : blockedMount && !blockedLane ? 'blockedWallMount' : 'laneBlockedBeforeFiveTiles';
+    diagnostics.rejected ||= {};
+    diagnostics.rejected[reason] = (diagnostics.rejected[reason] || 0) + 1;
+  }
+  return null;
 }
 
 function makeSite(world, kind, x, y, id, rng, variant, mount = null) {
@@ -182,9 +209,10 @@ function makeSite(world, kind, x, y, id, rng, variant, mount = null) {
   if (!image?.naturalWidth) return null;
   const columns = 4;
   const rows = art.sheet === 'mechanical' || art.sheet === 'elemental' ? 6 : art.sheet === 'nature' ? 9 : art.sheet === 'dart-wall' ? 4 : 12;
-  const element = art.element || baseType.element;
+  const dartVariant = kind === 'dartTrap' ? selectDartTrapVariant(rng) : null;
+  const element = dartVariant?.element || art.element || baseType.element;
   const type = kind === 'dartTrap' ? {
-    ...baseType, element, damage: element === 'poison' ? 0.024 : baseType.damage,
+    ...baseType, ...dartVariant, element, damage: element === 'poison' ? 0.024 : baseType.damage,
     trigger: ['periodic', 'proximity', 'pressure'][Math.floor(rng() * 3)],
   } : baseType;
   const tint = tintFor(variant, type.element);
@@ -327,11 +355,11 @@ class DartProjectile {
   draw(ctx) {
     const x = isoX(this.x, this.y), y = isoY(this.x, this.y) - 3;
     ctx.save(); ctx.translate(x, y); ctx.rotate(screenAngle(Math.atan2(this.dy, this.dx)));
-    ctx.fillStyle = this.site.type.element === 'poison' ? '#77933d' : '#6d5540';
+    ctx.fillStyle = this.site.type.shaft || '#6d5540';
     ctx.fillRect(-8, -1.2, 13, 2.4);
-    ctx.fillStyle = this.site.type.element === 'poison' ? '#a8c56a' : '#c8c3b5';
+    ctx.fillStyle = this.site.type.color || '#c8c3b5';
     ctx.beginPath(); ctx.moveTo(8, 0); ctx.lineTo(3, -2.2); ctx.lineTo(3, 2.2); ctx.closePath(); ctx.fill();
-    ctx.fillStyle = this.site.type.element === 'poison' ? '#b7d653' : '#c69355';
+    ctx.fillStyle = this.site.type.color || '#c69355';
     ctx.fillRect(-9, -2.1, 2.5, 1); ctx.fillRect(-9, 1.1, 2.5, 1);
     ctx.restore();
   }
@@ -350,7 +378,7 @@ function damageTarget(world, site, target, ratio) {
   const isBoss = target.rank === 'boss' || target.isBoss || target.isVelscour;
   const bossScale = isBoss ? 0.2 : 1;
   const amount = trapDamageAmount(target.maxHp, world.depth, ratio, bossScale < 1, site.type.damageMultiplier ?? 1.5);
-  if (amount > 0) hit(source, target, amount, site.type.element, { crit: false, dot: ratio < 0.02, affixHazard: true, noArc: true, noStatus: true, noVariance: true, silent: true, damageCap: target.maxHp * (isBoss ? 0.03 : Math.min(0.20, 0.10 * (site.type.damageMultiplier ?? 1.5))) });
+  if (amount > 0) hit(source, target, amount, site.type.element, { crit: false, dot: ratio < 0.02, affixHazard: true, noArc: true, noStatus: site.kind !== 'dartTrap', burn: site.type.id === 'fire', poison: site.type.id === 'poison', stun: site.type.id === 'electric', noVariance: true, silent: true, damageCap: target.maxHp * (isBoss ? 0.03 : Math.min(0.20, 0.10 * (site.type.damageMultiplier ?? 1.5))) });
 }
 
 function materialFor(variant) {
@@ -377,21 +405,34 @@ export function setupEnvironmentalTraps(world, start) {
   if (!world || world.kind === 'town' || world.environmentTrapsInitialized) return 0;
   world.environmentTrapsInitialized = true;
   const profile = trapProfileFor(world.biome?.id);
+  if (profile.includes('dartTrap') && !A.environmentTrapAtlases?.['dart-wall']?.naturalWidth) {
+    world.environmentTrapsInitialized = false;
+    if (world.environmentTrapDiagnostics) world.environmentTrapDiagnostics.dartAtlasUnavailable = true;
+    return 0; // a later call can retry when the dedicated trap atlas finishes loading
+  }
   const seed = hash((Number(world.environmentTrapSeed) || 1) ^ hash((world.depth || 0) + 0x41c64e6d) ^ hash(String(world.biome?.id || '').split('').reduce((a, c) => Math.imul(a ^ c.charCodeAt(0), 16777619), 2166136261)));
   const rng = seeded(seed);
-  const floors = [], occupied = occupiedIndex(world);
+  const floors = [], dartFloors = [], occupied = occupiedIndex(world), diagnostics = world.environmentTrapDiagnostics || null;
   for (let y = 2; y < world.map.h - 2; y++) for (let x = 2; x < world.map.w - 2; x++) if (!excluded(world, x + 0.5, y + 0.5, start, occupied)) floors.push([x + 0.5, y + 0.5]);
+  // Dart fixtures need a wall-adjacent floor. Requiring a 0.55-radius circle at
+  // the tile center rejects every such tile (the center is 0.5 from the wall).
+  // Use walkable/object-clear cells here, then validate the full clear firing lane.
+  if (profile.includes('dartTrap')) for (let y = 1; y < world.map.h - 1; y++) for (let x = 1; x < world.map.w - 1; x++) {
+    const px = x + 0.5, py = y + 0.5;
+    if (world.map.walkable(px, py) && !occupied(px, py, start)) dartFloors.push([px, py]);
+  }
   // Shuffle the valid candidates without touching the game's global random stream.
   for (let i = floors.length - 1; i > 0; i--) { const j = Math.floor(rng() * (i + 1)); [floors[i], floors[j]] = [floors[j], floors[i]]; }
+  for (let i = dartFloors.length - 1; i > 0; i--) { const j = Math.floor(rng() * (i + 1)); [dartFloors[i], dartFloors[j]] = [dartFloors[j], dartFloors[i]]; }
   const targetCount = clamp(Math.round(floors.length / 260), 3, 12);
   const sites = [];
-  // Wall darts were previously a one-in-five roll at each random site, then silently
-  // replaced if the chosen floor tile lacked a long, unobstructed wall lane. Seed one
-  // guaranteed dart in suitable profiles when the generated layout has a valid mount.
-  if (profile.includes('dartTrap')) for (const [x,y] of floors) {
+  if (diagnostics) diagnostics.dartCandidateTiles = dartFloors.length;
+  // Reserve one dart in each eligible layout before ordinary trap selection.
+  // Use the separate wall-mount pool so collision-radius validation cannot erase it.
+  if (profile.includes('dartTrap')) for (const [x,y] of dartFloors) {
     if (sites.length >= targetCount) break;
     if (sites.some((s) => Math.hypot(s.x - x, s.y - y) < 7)) continue;
-    const mount = dartWallMount(world, x, y, rng);
+    const mount = findDartWallMount(world, x, y, rng, diagnostics);
     if (!mount) continue;
     const site = makeSite(world, 'dartTrap', x, y, sites.length, rng, world.environmentVariant || world.biome?.id, mount);
     if (site) { setDamageTiles(world, site); sites.push(site); break; }
@@ -401,7 +442,7 @@ export function setupEnvironmentalTraps(world, start) {
     if (sites.some((s) => Math.hypot(s.x - x, s.y - y) < 7)) continue;
     let kind = profile[Math.floor(rng() * profile.length)], mount = null;
     if (kind === 'dartTrap') {
-      mount = dartWallMount(world, x, y, rng);
+      mount = findDartWallMount(world, x, y, rng, diagnostics);
       if (!mount) continue;
     }
     const site = makeSite(world, kind, x, y, sites.length, rng, world.environmentVariant || world.biome?.id, mount);
@@ -435,6 +476,13 @@ export function setupEnvironmentalTraps(world, start) {
     if (world.lifecycle) world.lifecycle.creaturesCreated++;
   }
   world.environmentTraps = sites;
+  if (diagnostics) {
+    diagnostics.placed = sites.reduce((counts, site) => {
+      counts[site.kind] = (counts[site.kind] || 0) + 1;
+      if (site.kind === 'dartTrap') counts[site.type.id] = (counts[site.type.id] || 0) + 1;
+      return counts;
+    }, {});
+  }
   world.environmentTrapObstacleDestroyed = (clutter, site) => detonateObstacle(world, site, clutter);
   world.addHazard({
     ground: true,

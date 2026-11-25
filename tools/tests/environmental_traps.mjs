@@ -3,7 +3,8 @@ import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 import { hit } from '../../src/game/combat.js';
 import { BIOMES, BETA_BIOMES, BREACH_BIOME, SCORPION_KING_PYRAMID_BIOME, TOWN_BIOME, ACT2_TOWN_BIOME } from '../../src/data/biomes.js';
-import { ENVIRONMENT_TRAP_GROUND_FIXTURES, ENVIRONMENT_TRAP_PROFILES, ENVIRONMENT_TRAP_TYPES, setupEnvironmentalTraps, trapArtFor, trapDamageAmount, trapDamageScale } from '../../src/game/environmenttraps.js';
+import { DART_TRAP_VARIANTS, ENVIRONMENT_TRAP_GROUND_FIXTURES, ENVIRONMENT_TRAP_PROFILES, ENVIRONMENT_TRAP_TYPES, selectDartTrapVariant, setupEnvironmentalTraps, trapArtFor, trapDamageAmount, trapDamageScale } from '../../src/game/environmenttraps.js';
+import { generateDungeon } from '../../src/world/dungeon.js';
 import { A } from '../../src/core/assets.js';
 
 const ATLAS_DIMENSIONS = { mechanical: [1024, 1536, 6], elemental: [1024, 1536, 6], nature: [1182, 1330, 9], 'environment-variations': [724, 2172, 12], 'dart-wall': [1312, 1200, 4] };
@@ -144,6 +145,22 @@ test('generated trap sites are deterministic, accessible, and separated from int
   assert.equal(setupEnvironmentalTraps(a, [5, 5]), 0, 'an initialized world must not receive duplicate sites');
 });
 
+test('dart atlas loading races leave the trap manager retryable instead of permanently empty', () => {
+  const loaded = Object.fromEntries(['mechanical', 'elemental', 'nature', 'environment-variations'].map((id) => [id, { naturalWidth: 1024, naturalHeight: 1200 }]));
+  A.environmentTrapAtlases = loaded;
+  const w = 44, h = 44, walkableTile = (x, y) => x >= 2 && y >= 2 && x < w - 2 && y < h - 2;
+  const world = {
+    kind: 'dungeon', depth: 30, environmentTrapSeed: 91, biome: { id: 'catacombs' }, tileset: { k: 0.4 },
+    props: [], chests: [], npcs: [], portals: [], creatures: [], hazards: [], map: { w, h, walkableTile, walkable: (x, y) => walkableTile(Math.floor(x), Math.floor(y)), circleFree: () => true },
+    addHazard(hazard) { this.hazards.push(hazard); return hazard; },
+  };
+  assert.equal(setupEnvironmentalTraps(world, [22, 22]), 0);
+  assert.equal(world.environmentTrapsInitialized, false, 'a not-yet-loaded dart atlas does not lock the world as initialized');
+  A.environmentTrapAtlases = { ...loaded, 'dart-wall': { naturalWidth: 1312, naturalHeight: 1200 } };
+  assert.ok(setupEnvironmentalTraps(world, [22, 22]) > 0, 'the normal setup call can retry once the atlas is ready');
+  assert.ok(world.environmentTraps.some((site) => site.kind === 'dartTrap'));
+});
+
 test('wall dart traps require a nearby wall, warn, and send a resistible projectile volley down a clear lane', () => {
   A.environmentTrapAtlases = Object.fromEntries(Object.entries(ATLAS_DIMENSIONS).map(([id, [naturalWidth, naturalHeight]]) => [id, { naturalWidth, naturalHeight }]));
   let world, site, manager;
@@ -187,6 +204,98 @@ test('wall dart traps require a nearby wall, warn, and send a resistible project
   assert.equal(playerDarts.length, 3, 'a second warning creates another three-dart volley');
   for (const dart of playerDarts) dart.update(0.1);
   assert.ok(player.hp < 1000, 'the same physical dart volley can damage the player through the shared combat mitigation path');
+});
+
+test('eligible generated dungeons consistently place visible wall darts across biomes and depths', () => {
+  const atlas = { naturalWidth: 1312, naturalHeight: 1200 };
+  A.environmentTrapAtlases = Object.fromEntries(['mechanical', 'elemental', 'nature', 'environment-variations', 'dart-wall'].map((id) => [id, atlas]));
+  const tileSet = { k: 0.4, scatter: [], floors: [{ lum: 0.5, name: 'stone' }], bases: [0], features: [0], families: [] };
+  const biomeIds = ['catacombs', 'castle_keep', 'desert_temple', 'pirate_seas'];
+  const depths = [1, 25, 100, 250];
+  const summary = Object.fromEntries(DART_TRAP_VARIANTS.map((variant) => [variant.id, 0]));
+  const rejected = {};
+  let dungeons = 0, placedDartSites = 0, mountAttempts = 0, acceptedMounts = 0;
+  for (const biomeId of biomeIds) {
+    const biome = BIOMES.find((entry) => entry.id === biomeId);
+    assert.ok(ENVIRONMENT_TRAP_PROFILES[biomeId].includes('dartTrap'), `${biomeId} is eligible`);
+    for (const depth of depths) for (let seed = 1; seed <= 12; seed++) {
+      const environmentTrapSeed = (depth * 100_000 + seed * 17 + biomeIds.indexOf(biomeId)) >>> 0;
+      const generated = generateDungeon(depth, biome, tileSet, environmentTrapSeed);
+      const world = {
+        kind: 'dungeon', depth, environmentTrapSeed, environmentVariant: generated.variant?.id || biomeId, biome,
+        tileset: { k: 0.4, scatter: [] }, map: generated.map, props: generated.props || [], chests: generated.chests || [],
+        npcs: [], portals: [{ x: generated.exit[0], y: generated.exit[1] }], creatures: [], hazards: [],
+        environmentTrapDiagnostics: {}, addHazard(hazard) { this.hazards.push(hazard); return hazard; },
+      };
+      setupEnvironmentalTraps(world, generated.start);
+      const darts = world.environmentTraps.filter((site) => site.kind === 'dartTrap');
+      assert.ok(darts.length >= 1, `${biomeId} depth ${depth}, seed ${environmentTrapSeed} places a dart`);
+      assert.ok(world.environmentTrapDiagnostics.dartCandidateTiles > 0, 'wall-side candidates are considered separately from body-radius safe sites');
+      assert.ok(world.environmentTrapDiagnostics.validMounts > 0, 'a five-tile clear lane is confirmed before placement');
+      for (const site of darts) {
+        assert.equal(site.damageTiles.length, 5);
+        assert.ok(site.fixture.trapSheet === 'dart-wall' && Number.isInteger(site.fixture.trapRow));
+        assert.ok(DART_TRAP_VARIANTS.some((variant) => variant.id === site.type.id));
+        summary[site.type.id]++;
+      }
+      dungeons++; placedDartSites += darts.length;
+      mountAttempts += world.environmentTrapDiagnostics.mountAttempts || 0;
+      acceptedMounts += world.environmentTrapDiagnostics.validMounts || 0;
+      for (const [reason, count] of Object.entries(world.environmentTrapDiagnostics.rejected || {})) rejected[reason] = (rejected[reason] || 0) + count;
+    }
+  }
+  assert.ok(Object.values(summary).every((count) => count > 0), 'normal generation can produce every element variant');
+  assert.equal(dungeons, 192);
+  console.log(`Dart spawn simulation: ${dungeons}/${dungeons} eligible dungeons; ${placedDartSites} darts; mount candidates ${acceptedMounts + Object.values(rejected).reduce((a, b) => a + b, 0)}; valid mounts ${acceptedMounts}; rejected ${JSON.stringify(rejected)}; variants ${JSON.stringify(summary)}`);
+});
+
+test('dart variant selector covers all four explicit variants without forced gameplay overrides', () => {
+  for (let i = 0; i < DART_TRAP_VARIANTS.length; i++) {
+    const selected = selectDartTrapVariant(() => (i + 0.25) / DART_TRAP_VARIANTS.length);
+    assert.equal(selected.id, DART_TRAP_VARIANTS[i].id);
+  }
+  assert.deepEqual(DART_TRAP_VARIANTS.map(({ id, element }) => [id, element]), [
+    ['normal', 'phys'], ['poison', 'poison'], ['fire', 'fire'], ['electric', 'light'],
+  ]);
+});
+
+test('all four naturally generated dart variants warn, launch visible colored projectiles, and apply their element effect', () => {
+  A.environmentTrapAtlases = Object.fromEntries(Object.entries(ATLAS_DIMENSIONS).map(([id, [naturalWidth, naturalHeight]]) => [id, { naturalWidth, naturalHeight }]));
+  for (const variant of DART_TRAP_VARIANTS) {
+    let world, site, manager;
+    for (let seed = 1; seed <= 250 && !site; seed++) {
+      const w = 44, h = 44, walkableTile = (x, y) => x >= 2 && y >= 2 && x < w - 2 && y < h - 2;
+      world = {
+        kind: 'dungeon', depth: 60, environmentTrapSeed: seed, environmentVariant: 'catacombs', biome: { id: 'catacombs' }, tileset: { k: 0.4 },
+        props: [], chests: [], npcs: [], portals: [], creatures: [], hazards: [], map: { w, h, walkableTile, walkable: (x, y) => walkableTile(Math.floor(x), Math.floor(y)), circleFree: () => true },
+        addHazard(hazard) { this.hazards.push(hazard); return hazard; },
+      };
+      setupEnvironmentalTraps(world, [22, 22]);
+      site = world.environmentTraps.find((item) => item.kind === 'dartTrap' && item.type.id === variant.id);
+      manager = world.hazards.find((hazard) => hazard.ground && hazard.update);
+    }
+    assert.ok(site, `${variant.name} is naturally selectable`);
+    site.type.trigger = 'periodic';
+    site.next = 0;
+    manager.update(0.01);
+    assert.equal(site.fixture.trapState, 'warning', `${variant.name} gives a warning before firing`);
+    assert.equal(site.damageTiles.length, 5, `${variant.name} warning covers its 5x1 attack lane`);
+    manager.update(1.2);
+    const volley = world.hazards.filter((hazard) => hazard !== manager && typeof hazard.draw === 'function');
+    assert.equal(volley.length, 3, `${variant.name} launches a three-dart projectile volley`);
+    const colors = [];
+    const ctx = { save(){}, restore(){}, translate(){}, rotate(){}, fillRect(){ colors.push(this.fillStyle); }, beginPath(){}, moveTo(){}, lineTo(){}, closePath(){}, fill(){ colors.push(this.fillStyle); } };
+    volley[0].draw(ctx);
+    assert.ok(colors.includes(variant.color), `${variant.name} has a visible, element-colored projectile`);
+    const target = { id: `dart-${variant.id}-target`, team: 'enemy', world, x: site.x + site.fireX * 0.7, y: site.y + site.fireY * 0.7, r: 0.36,
+      hp: 1000, maxHp: 1000, dead: false, rank: 'normal', res: {}, status: {}, curses: {} };
+    world.creatures.push(target);
+    for (const dart of volley) dart.update(0.1);
+    assert.ok(target.hp < 1000, `${variant.name} deals damage through the normal combat path`);
+    if (variant.id === 'poison') assert.ok(target.status.poison?.t > 0, 'poison darts apply poison');
+    if (variant.id === 'fire') assert.ok(target.status.burn?.t > 0, 'fire darts apply burn');
+    if (variant.id === 'electric') assert.ok(target.status.stun?.t > 0, 'electric darts apply the existing stun status');
+  }
 });
 
 test('trap fixture state advances from idle through warning and activation, then resets', () => {
