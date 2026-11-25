@@ -534,7 +534,9 @@ export const FAMILIAR_ART = [
 ];
 
 import { REPLACEMENT_ART } from './replacementart.js';
-export const ART_BY_ID = Object.fromEntries([...BESTIARY, ...SUMMON_ART, ...FAMILIAR_ART, ...REPLACEMENT_ART].map((a) => [a.id, a]));
+// Special encounter art is registered for explicit spawns, not included in BESTIARY pools.
+export const MIMIC_ART = { id: 'chest_mimic', sheet: 'special/mimic', i: 0, arch: 'beetle', name: 'Mimic', h: 68, gore: 'flesh' };
+export const ART_BY_ID = Object.fromEntries([...BESTIARY, ...SUMMON_ART, ...FAMILIAR_ART, ...REPLACEMENT_ART, MIMIC_ART].map((a) => [a.id, a]));
 
 const compat = (a, arch) => a.arch === arch || (a.also && a.also.includes(arch));
 /** Painted art that can play an AI archetype in a pack: every sheet, any biome (the Sea of Sand's own archetypes

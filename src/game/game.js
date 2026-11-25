@@ -10,7 +10,7 @@ import { profileEnd, profileRecord, profileStart } from '../core/perfdiagnostics
 import { sfx, playMusic, stopMusic, setAmbience, stopAmbience, footsteps, stopIronExpressWhistleSfx, audioDiagnosticsEnabled, isAudioCombatActive, recordAudioDiagnosticMarker } from '../core/audio.js';
 import { rand, pick, randi, chance, escapeHtml, dist, dist2, RNG, makeCanvas, fmtInt, swapKey, hexToRgb, clamp, shuffle } from '../core/util.js';
 import { biomeTileSet, loadBiomeArt, mixedTileSet, keepTileSets } from '../core/assets.js';
-import { loadArtFor, enemyImage, markArtCaches, trimArtCaches } from '../core/enemyart.js';
+import { loadArtFor, loadEnemySheets, enemyImage, markArtCaches, trimArtCaches } from '../core/enemyart.js';
 import { loadClassArt } from '../core/classart.js';
 import { preloadSkillSheets } from '../ui/icons.js';
 import { dungeonAffixIconHTML } from '../ui/dungeonaffixicons.js';
@@ -35,6 +35,7 @@ import { setupDungeonEvent, dungeonEventTick } from './dungeonevents.js';
 import { GREED_LEVELS, greedOf, greedWorld, greedPacks, setGreed, rollGreedAffixes, getGreedAffixPreview } from './greed.js';
 import { assignPackLeader } from './packleaders.js';
 import { pickMonsterArchetype } from './monsterroster.js';
+import { findMimicSpawn } from './mimic.mjs';
 import { spectateTick } from './spectate.js';
 import { toggleSmite, getUltimate, executeUltimate } from './smite.js';
 import { hearthTick, useHearth, hearthPortalActive, closeHearthPortals, getActiveHearth, returnFromHearth } from './hearth.js';
@@ -235,6 +236,13 @@ async function warmEnemyArt(w) {
   const seen = new Set();
   let t = performance.now();
   markArtCaches();
+  if (w.chests?.some((chest) => chest.chestType === 'mimic')) {
+    await loadEnemySheets(['special/mimic']);
+    if (G.world !== w) return;
+    const key = 'chest_mimic|' + swapKey(null);
+    seen.add(key);
+    if (enemyImage('chest_mimic')) { enemyImage('chest_mimic', null, 'flash'); enemyImage('chest_mimic', null, 'dark'); }
+  }
   for (const c of w.creatures) {
     if (!c.art || G.world !== w) continue;
     const k = c.art + '|' + swapKey(c.swap);
@@ -1651,22 +1659,33 @@ export const game = {
           sfx('chest');
           if (this.chestType === 'mimic') {
             const arch = pickMonsterArchetype(world);
-            const mimic = arch && makeMonster(world, arch, biome, depthLevel(depth), 'champion', this.x, this.y, 0);
-            if (mimic) {
+            const mimic = arch && makeMonster(world, arch, biome, depthLevel(depth), 'champion', this.x, this.y, 0,
+              { art: 'chest_mimic', swap: null });
+            const spawn = mimic && findMimicSpawn(world.map, mimic, world.creatures, this.x, this.y);
+            if (mimic && spawn) {
+              const rewardChest = this;
+              const chestIndex = world.chests.indexOf(rewardChest);
+              if (chestIndex !== -1) world.chests.splice(chestIndex, 1);
+              mimic.x = spawn.x; mimic.y = spawn.y;
               mimic.name = 'Mimic';
               mimic.chestMimic = true;
-              mimic.aura = '#d8ad53';
+              mimic.awake = true;
+              mimic.targetable = true;
+              mimic.aura = '#b84c2f';
               mimic.onDeath = () => {
                 sfx('gold');
-                dropChest(world, this, depth);
-                sparkle(this.x, this.y, 20, '#ffd060', 24, 0.6);
+                dropChest(world, rewardChest, depth);
+                sparkle(mimic.x, mimic.y, 20, '#ffd060', 24, 0.6);
               };
               world.add(mimic);
-              floatText(this.x, this.y, 38, 'MIMIC!', '#ffd060', 12);
+              addEffect(new Ring(spawn.x, spawn.y, 0.18, 1.15, 0.42, '#c84b32', 3, { z: 3 }));
+              sparkle(spawn.x, spawn.y, 22, '#d98c48', 12, 0.45);
+              floatText(spawn.x, spawn.y, 48, 'MIMIC!', '#ffd060', 12);
               sfx('boss');
               return;
             }
-            // If this biome has no usable monster roster, open it as a normal cache.
+            // If this area has no usable archetype or safe spawn position, preserve
+            // the chest reward rather than trapping the hero or creating an invalid enemy.
           }
           if (this.chestType === 'explosive') {
             floatText(this.x, this.y, 34, 'TRAP!', '#ff7040', 11);
