@@ -30,7 +30,7 @@ import { setupWorldObjects } from './worldobjects.js';
 import { setupDungeonEvent } from './dungeonevents.js';
 import { LEGACY_SHRINE_DESCRIPTIONS, shrineFloatingMessage } from './shrineeffects.js';
 import { grantMarksWithBonus } from './marks.js';
-import { IMP_BY_ID, IMP_SPRITE_PATH, TREASURE_IMP_SPAWN_DELAY_MAX, TREASURE_IMP_SPAWN_DELAY_MIN, TREASURE_IMP_SPAWN_RETRY_DELAY, advanceTreasureImpSpawnTimer, hasTreasureImpArea, selectImpMovementPattern, selectPrismaticRewards, selectTreasureImp, treasureImpAreaKey, treasureImpPayoutMultiplier, treasureImpSpawnDelay, treasureImpSpriteScale, treasureImpTrailInterval, treasureImpTrailType } from '../data/treasureimps.js';
+import { IMP_BY_ID, IMP_SPRITE_PATH, TREASURE_IMP_SPAWN_DELAY_MAX, TREASURE_IMP_SPAWN_DELAY_MIN, TREASURE_IMP_SPAWN_RETRY_DELAY, advanceTreasureImpSpawnTimer, canSpawnTreasureImp, hasActiveTreasureImp, hasTreasureImpArea, selectImpMovementPattern, selectPrismaticRewards, selectTreasureImp, treasureImpAreaKey, treasureImpPayoutMultiplier, treasureImpSpawnDelay, treasureImpSpriteScale, treasureImpTrailInterval, treasureImpTrailType } from '../data/treasureimps.js';
 import { endgameUnlocked, canEarnInfernalMarks } from './endgame.js';
 import { makeCovenant } from '../data/relics.js';
 import { grantMarks } from './marks.js';
@@ -536,6 +536,7 @@ function createTreasureImp(world, at, variant, options = {}) {
   Object.assign(m, { name: variant.name, impVariant: variant.id, impColor: variant.color, nameColor: variant.color,
     goblin: true, aura: variant.color, scale: 0.9, dmg: 0, xp: m.xp * 8, awake: true, rank: 'unique', affixes: [], impEffect: variant.effect,
     impLeft: null, impDiscovered: false, impEscapeWarned: false, impParticleT: 0, dungeonEventImp: !!options.event,
+    impSpawnSource: options.event ? 'dungeon-event' : options.specialEncounter || 'natural',
     impMovementPattern: selectImpMovementPattern(), impPatternTimer: rand(0, 0.12), impPatternSign: chance(0.5) ? 1 : -1,
     impTrailTimer: treasureImpTrailInterval() });
   m.maxHp *= 15; m.hp = m.maxHp; m.speed = 3.5;
@@ -584,6 +585,7 @@ export function spawnImp(world, options = {}) {
   if (!world?.player || !world.map) return null;
   const event = !!options.event;
   const guaranteed = !!options.guaranteed;
+  if (!canSpawnTreasureImp(world, { event })) return null;
   if (!event && !guaranteed && impEncounteredInArea(world)) return null;
   const p = world.player, map = world.map;
   let at = null;
@@ -626,7 +628,7 @@ export function spawnImp(world, options = {}) {
           const [x, y] = map.randomNear(at[0], at[1], 1.6);
           if (dist(p.x, p.y, x, y) >= 3.5 && map.circleFree(x, y, 0.35) && map.flowAt(x, y) >= 0 && reachable(x, y)) second = [x, y];
         }
-        if (second) createTreasureImp(world, second, other);
+        if (second) createTreasureImp(world, second, other, { specialEncounter: 'imp-gathering' });
       }
       UI.log('<b style="color:#e9bdff">Imp Gathering!</b> A small band of different imps scatters through the area.', '#e9bdff');
     }
@@ -674,7 +676,8 @@ function impSpawnTimersTick(world, dt) {
     const left = c.treasureImpGuaranteedPending[key] = advanceTreasureImpSpawnTimer(c.treasureImpGuaranteedPending[key], dt);
     H.impGuaranteedT = left;
     if (left <= 0 && !bossAwake) {
-      if (spawnImp(world, { guaranteed: true })) recordGuaranteedImp(world);
+      if (hasActiveTreasureImp(world)) recordGuaranteedImp(world); // discard this blocked attempt; never keep it queued behind another encounter
+      else if (spawnImp(world, { guaranteed: true })) recordGuaranteedImp(world);
       else c.treasureImpGuaranteedPending[key] = TREASURE_IMP_SPAWN_RETRY_DELAY;
     }
   } else H.impGuaranteedT = undefined;
@@ -682,7 +685,11 @@ function impSpawnTimersTick(world, dt) {
     const left = c.treasureImpRandomPending[key] = advanceTreasureImpSpawnTimer(c.treasureImpRandomPending[key], dt);
     H.impT = left;
     if (left <= 0 && !bossAwake) {
-      if (!spawnImp(world)) c.treasureImpRandomPending[key] = TREASURE_IMP_SPAWN_RETRY_DELAY;
+      if (hasActiveTreasureImp(world)) {
+        delete c.treasureImpRandomPending[key]; // consume, rather than defer, a chance blocked by an active event or imp
+        H.impT = undefined;
+        G.game?.autosave?.();
+      } else if (!spawnImp(world)) c.treasureImpRandomPending[key] = TREASURE_IMP_SPAWN_RETRY_DELAY;
     }
   } else H.impT = undefined;
 }

@@ -87,6 +87,20 @@ export function hasTreasureImpArea(areaKey, savedAreas) {
   return typeof areaKey === 'string' && Array.isArray(savedAreas) && savedAreas.includes(areaKey);
 }
 
+/** True while any variant of the roaming Treasure Imp family is still present in this world. */
+export function hasActiveTreasureImp(world) {
+  const isActiveImp = (m) => !!m && !m.dead && !m.removed && !m.dungeonEventImpEscaped && (m.goblin || m.impVariant);
+  if (Array.isArray(world?.creatures) && world.creatures.some(isActiveImp)) return true;
+  const imps = world?.happen?.imps;
+  if (Array.isArray(imps) && imps.some(isActiveImp)) return true;
+  return isActiveImp(world?.happen?.imp);
+}
+
+/** Special event encounters may intentionally create a group; ordinary spawns share one family-wide slot. */
+export function canSpawnTreasureImp(world, { event = false } = {}) {
+  return !!event || !hasActiveTreasureImp(world);
+}
+
 export function treasureImpSpriteScale(originalSpriteHeight, creatureScale = 1) {
   const h = Math.max(1, Number(originalSpriteHeight) || 1);
   const s = Math.max(0.01, Number(creatureScale) || 1);
