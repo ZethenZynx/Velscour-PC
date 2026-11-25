@@ -23,3 +23,29 @@ export const MANA_POOL_COLORS = Object.freeze({
 });
 
 export const manaPoolColor = (classId) => MANA_POOL_COLORS[classId] || MANA_POOL_COLORS.wizard;
+
+// The original orb liquid is Royal Blue. Filter only that artwork's hue and
+// saturation; backdrop-filter preserves the asset's pixel luminance, texture,
+// reflections, and highlights instead of painting a flat color over it.
+function hslFromHex(hex) {
+  const values = hex.slice(1).match(/.{2}/g).map((value) => parseInt(value, 16) / 255);
+  const [r, g, b] = values, max = Math.max(r, g, b), min = Math.min(r, g, b), delta = max - min;
+  let hue = 0;
+  if (delta) {
+    if (max === r) hue = 60 * (((g - b) / delta) % 6);
+    else if (max === g) hue = 60 * ((b - r) / delta + 2);
+    else hue = 60 * ((r - g) / delta + 4);
+  }
+  if (hue < 0) hue += 360;
+  const lightness = (max + min) / 2;
+  const saturation = delta ? delta / (1 - Math.abs(2 * lightness - 1)) : 0;
+  return { hue, saturation };
+}
+
+const SOURCE = hslFromHex(MANA_POOL_COLORS.wizard);
+
+export function manaPoolTintFilter(classId) {
+  const { hue, saturation } = hslFromHex(manaPoolColor(classId));
+  const turn = ((hue - SOURCE.hue + 540) % 360) - 180;
+  return `hue-rotate(${turn.toFixed(2)}deg) saturate(${(saturation / SOURCE.saturation).toFixed(3)})`;
+}
