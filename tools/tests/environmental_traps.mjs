@@ -8,12 +8,12 @@ import { A } from '../../src/core/assets.js';
 
 const ATLAS_DIMENSIONS = { mechanical: [1024, 1536, 6], elemental: [1024, 1536, 6], nature: [1182, 1330, 9], 'environment-variations': [724, 2172, 12], 'dart-wall': [1312, 1200, 4] };
 
-test('all playable non-town environments have three to five valid hazard types', () => {
+test('all playable non-town environments have three to six valid hazard types', () => {
   const biomes = [...new Map([TOWN_BIOME, ACT2_TOWN_BIOME, ...BIOMES, ...BETA_BIOMES, BREACH_BIOME, SCORPION_KING_PYRAMID_BIOME].map((b) => [b.id, b])).values()];
   for (const biome of biomes.filter((b) => !b.town && !['town', 'act2_town'].includes(b.id))) {
     const profile = ENVIRONMENT_TRAP_PROFILES[biome.id];
     assert.ok(profile, `missing trap profile for ${biome.id}`);
-    assert.ok(profile.length >= 3 && profile.length <= 5, `${biome.id} has ${profile.length} trap types`);
+    assert.ok(profile.length >= 3 && profile.length <= 6, `${biome.id} has ${profile.length} trap types`);
     for (const id of profile) assert.ok(ENVIRONMENT_TRAP_TYPES[id], `${biome.id} refers to unknown trap ${id}`);
   }
 });
@@ -43,6 +43,10 @@ test('flat trap fixtures and warnings use the intended ground and depth layers',
   assert.ok(groundFixtures >= 0 && groundFixtures < actors, 'flat trap sprites are rendered before actors');
   assert.ok(groundEffects >= 0 && groundEffects < groundWarnings && groundWarnings < actors, 'warning shapes are above ground effects but below actors');
   assert.ok(sortedProps >= 0, 'ground fixtures are excluded from the later depth-sorted pass');
+  const traps = await readFile(new URL('../../src/game/environmenttraps.js', import.meta.url), 'utf8');
+  assert.ok(traps.includes("ctx.fillStyle = '#ff2828'"), 'warnings pulse as translucent red ground tiles');
+  assert.ok(traps.includes('for (const tile of site.damageTiles)'), 'warning cells use the same footprint as damage');
+  assert.ok(source.includes('Math.round(frame * img.naturalWidth / columns)'), 'atlas frames use integer crop boundaries');
 });
 
 test('every trap uses a dedicated physical sprite atlas and environment variants use distinct art rows', () => {
@@ -94,6 +98,13 @@ test('environmental scaling rises gradually and stays inside the approved caps',
   assert.equal(trapDamageAmount(1000, 1, 0.075), 75);
   assert.equal(trapDamageAmount(1000, 1_000_000, 0.075), 100, 'direct hits respect the 10% maximum-health cap');
   assert.equal(trapDamageAmount(1000, 1, 0.075, true), 15, 'bosses take reduced but nonzero damage');
+  assert.equal(trapDamageAmount(1000, 1, 0.075, false, 1.5), 112.5, 'ordinary traps apply the approved 50% increase');
+  assert.equal(trapDamageAmount(1000, 1, 0.075, false, 1.75), 131.25, 'swinging traps apply the approved 75% increase');
+  assert.equal(trapDamageAmount(1000, 1, 0.075, false, 2), 150, 'boulders apply the approved 100% increase over their base damage');
+  assert.equal(trapDamageAmount(1000, 1, 0.03, false, 1.5), 45, 'wall darts apply the approved 50% increase');
+  assert.ok(Math.abs(trapDamageAmount(1000, 100, 0.075, false, 1.5) - 150) < 1e-8, 'ordinary direct traps cap at 15% of maximum health');
+  assert.ok(Math.abs(trapDamageAmount(1000, 100, 0.075, false, 1.75) - 175) < 1e-8, 'swinging traps retain the full 75% increase after depth scaling');
+  assert.ok(Math.abs(trapDamageAmount(1000, 100, 0.075, false, 2) - 200) < 1e-8, 'boulders retain the full 100% increase without becoming a one-hit kill');
 });
 
 test('generated trap sites are deterministic, accessible, and separated from interactables', () => {
@@ -114,7 +125,8 @@ test('generated trap sites are deterministic, accessible, and separated from int
   assert.ok(countA >= 3 && countA <= 12);
   assert.equal(countA, countB);
   assert.deepEqual(a.environmentTraps.map(({kind,x,y}) => [kind,x,y]), b.environmentTraps.map(({kind,x,y}) => [kind,x,y]));
-  assert.equal(a.props.length, countA + 1, 'every trap site uses its own physical sprite fixture beside the original prop');
+  const expectedProps = 1 + countA + a.environmentTraps.filter((site) => site.triggerFixture).length;
+  assert.equal(a.props.length, expectedProps, 'every trap site uses its physical fixture and pressure-trigger plates are counted separately');
   for (const site of a.environmentTraps) {
     assert.ok(A.environmentTrapAtlases[site.fixture.trapSheet], 'trap fixture references a loaded dedicated sprite atlas');
     assert.ok(['idle', 'warning', 'active', 'destroyed'].includes(site.fixture.trapState));
@@ -126,6 +138,8 @@ test('generated trap sites are deterministic, accessible, and separated from int
     assert.ok(Math.hypot(site.x - 15, site.y - 15) >= 1.35);
     assert.ok(Math.hypot(site.x - 10, site.y - 12) >= 2.25);
     assert.ok(a.map.circleFree(site.x, site.y, 0.55));
+    const expectedTiles = site.kind === 'dartTrap' ? 5 : ['rollingBoulder','swingingBlade'].includes(site.kind) ? 3 : 9;
+    assert.equal(site.damageTiles.length, expectedTiles, `${site.kind} uses the requested tile footprint`);
   }
   assert.equal(setupEnvironmentalTraps(a, [5, 5]), 0, 'an initialized world must not receive duplicate sites');
 });
@@ -146,7 +160,9 @@ test('wall dart traps require a nearby wall, warn, and send a resistible project
     manager = world.hazards.find((hazard) => hazard.ground && hazard.update);
   }
   assert.ok(site, 'a seeded catacomb layout can place a wall dart trap');
-  assert.ok(site.fireRange >= 3.5 && Math.abs(site.fireX) + Math.abs(site.fireY) === 1, 'projectile direction points from its wall into a clear path');
+  assert.equal(site.fireRange, 4.5, 'the wall dart path covers five complete tiles from the wall');
+  assert.equal(site.damageTiles.length, 5, 'the dart warning and hit lane are exactly five tiles long');
+  assert.ok(Math.abs(site.fireX) + Math.abs(site.fireY) === 1, 'projectile direction points from its wall into a clear path');
   site.type = { ...site.type, trigger: 'periodic' };
   site.next = 0;
   manager.update(0.01);
@@ -189,5 +205,58 @@ test('trap fixture state advances from idle through warning and activation, then
   manager.update(1.2);
   assert.equal(site.fixture.trapState, 'active');
   manager.update(0.36);
+  if (site.kind === 'rollingBoulder') {
+    assert.equal(site.fixture.trapState, 'active', 'the boulder remains active while rolling through its warned lane');
+    manager.update(0.36);
+  }
   assert.equal(site.fixture.trapState, 'idle');
+});
+
+test('rolling boulder sweeps its warned three-tile lane and damages a target only once', () => {
+  A.environmentTrapAtlases = Object.fromEntries(Object.entries(ATLAS_DIMENSIONS).map(([id, [naturalWidth, naturalHeight]]) => [id, { naturalWidth, naturalHeight }]));
+  let world, site, manager;
+  for (let seed = 1; seed <= 200 && !site; seed++) {
+    world = { kind: 'dungeon', depth: 20, environmentTrapSeed: seed, biome: { id: 'deep_mines' }, tileset: { k: 0.4 },
+      props: [], chests: [], npcs: [], portals: [], creatures: [], hazards: [], map: { w: 40, h: 40, walkable: () => true, circleFree: () => true },
+      addHazard(hazard) { this.hazards.push(hazard); return hazard; } };
+    setupEnvironmentalTraps(world, [2,2]);
+    site = world.environmentTraps.find((item) => item.kind === 'rollingBoulder');
+    manager = world.hazards.find((hazard) => hazard.ground && hazard.update);
+  }
+  assert.ok(site, 'deep-mine layouts can generate a boulder on a clear straight lane');
+  assert.equal(site.damageTiles.length, 3, 'the warning shows three tiles in one lane');
+  assert.equal(Math.abs(site.fireX) + Math.abs(site.fireY), 1, 'the boulder follows one straight cardinal direction');
+  site.type = { ...site.type, trigger: 'periodic' }; site.next = 0;
+  manager.update(0.01); assert.equal(site.fixture.trapState, 'warning');
+  manager.update(1.2); assert.ok(site.boulderRun, 'the boulder begins rolling after the warning ends');
+  const target = { team: 'enemy', world, x: site.x + site.fireX, y: site.y + site.fireY, hp: 1000, maxHp: 1000, dead: false, rank: 'normal', res: {}, status: {}, curses: {} };
+  world.creatures.push(target);
+  manager.update(0.2);
+  assert.ok(target.hp < 1000, 'a moving boulder damages a target along its swept path');
+  const afterFirstHit = target.hp;
+  manager.update(0.2);
+  assert.equal(target.hp, afterFirstHit, 'one boulder run cannot repeatedly damage a target');
+});
+
+test('explosive obstacles show the same one-second tile warning before their 3x3 blast', () => {
+  A.environmentTrapAtlases = Object.fromEntries(Object.entries(ATLAS_DIMENSIONS).map(([id, [naturalWidth, naturalHeight]]) => [id, { naturalWidth, naturalHeight }]));
+  let world, site, manager;
+  for (let seed = 1; seed <= 100 && !site; seed++) {
+    world = { kind: 'dungeon', depth: 20, environmentTrapSeed: seed, biome: { id: 'deep_mines' }, tileset: { k: 0.4 },
+      props: [], chests: [], npcs: [], portals: [], creatures: [], hazards: [], map: { w: 40, h: 40, walkable: () => true, circleFree: () => true },
+      addHazard(hazard) { this.hazards.push(hazard); return hazard; } };
+    setupEnvironmentalTraps(world, [2,2]);
+    site = world.environmentTraps.find((item) => item.type.destructible);
+    manager = world.hazards.find((hazard) => hazard.ground && hazard.update);
+  }
+  assert.ok(site, 'deep mines produce breakable explosive obstacles');
+  assert.equal(site.damageTiles.length, 9, 'the blast warning covers a centered 3x3 footprint');
+  const target = { team: 'enemy', world, x: site.x, y: site.y, hp: 1000, maxHp: 1000, dead: false, rank: 'normal', res: {}, status: {}, curses: {} };
+  world.creatures.push(target);
+  world.environmentTrapObstacleDestroyed(site.obstacle, site);
+  assert.equal(site.fixture.trapState, 'warning');
+  manager.update(0.6);
+  assert.equal(target.hp, 1000, 'the obstacle does not damage before its telegraph completes');
+  manager.update(0.6);
+  assert.ok(target.hp < 1000, 'the warned explosion damages targets inside its matching tiles');
 });

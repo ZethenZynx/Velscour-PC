@@ -354,12 +354,22 @@ function drawProp(ctx, pr, alpha) {
     const img = A.environmentTrapAtlases?.[pr.trapSheet];
     if (img?.complete && img.naturalWidth) {
       const frame = ({ idle: 0, warning: 1, active: 2, destroyed: 3 })[pr.trapState] ?? 0;
-      const sw = pr.trapCellW, sh = pr.trapCellH, scale = Math.max(52, 148 * (pr.k || 0.4)) / sw;
+      // Some trap sheets (notably nature.png) do not divide into integer pixel
+      // cells. Match the rounded atlas boundaries used by the preview builder;
+      // fractional source rectangles can sample a neighboring animation frame.
+      const columns = pr.trapColumns || 4, rows = pr.trapRows || 12;
+      const sx = Math.round(frame * img.naturalWidth / columns), sx1 = Math.round((frame + 1) * img.naturalWidth / columns);
+      const sy = Math.round(pr.trapRow * img.naturalHeight / rows), sy1 = Math.round((pr.trapRow + 1) * img.naturalHeight / rows);
+      const sw = sx1 - sx, sh = sy1 - sy, scale = Math.max(52, 148 * (pr.k || 0.4)) / sw;
       const dw = sw * scale, dh = sh * scale, dx = x - dw / 2, dy = y - dh;
       ctx.save();
       ctx.imageSmoothingEnabled = false;
-      if (pr.flip) { ctx.translate(x, 0); ctx.scale(-1, 1); ctx.drawImage(img, frame * sw, pr.trapRow * sh, sw, sh, -dw / 2, dy, dw, dh); }
-      else ctx.drawImage(img, frame * sw, pr.trapRow * sh, sw, sh, dx, dy, dw, dh);
+      if (pr.trapRotation) {
+        ctx.translate(x, y); ctx.rotate(pr.trapRotation);
+        if (pr.flip) ctx.scale(-1, 1);
+        ctx.drawImage(img, sx, sy, sw, sh, -dw / 2, -dh, dw, dh);
+      } else if (pr.flip) { ctx.translate(x, 0); ctx.scale(-1, 1); ctx.drawImage(img, sx, sy, sw, sh, -dw / 2, dy, dw, dh); }
+      else ctx.drawImage(img, sx, sy, sw, sh, dx, dy, dw, dh);
       ctx.restore();
     }
   } else if (pr.k) {
