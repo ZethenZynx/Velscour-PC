@@ -209,6 +209,13 @@ export function startTownLife(world, t, c, visit) {
     if (!a.walking) a.walkT = 0;
     // passing remarks to the hero
     const p = G.player;
+    if (a.species === 'chicken' && p && dist(p.x, p.y, a.x, a.y) < 3.8) {
+      if (d.time >= (a.nextChickenReactionAt || 0)) {
+        a.nextChickenReactionAt = d.time + rand(8, 14);
+        a.icon = 'chicken'; a.iconT = rand(1.1, 1.6); a.iconAge = 0;
+      }
+      if (!a.fleeing && dist(p.x, p.y, a.x, a.y) < 2.65) animalBolt(d, a);
+    }
     if (p && !a.busy && !a.walking && (a.barkT -= dt) <= 0 && dist(p.x, p.y, a.x, a.y) < 2.6) {
       a.barkT = rand(35, 60);
       if (chance(0.55)) d.greet(a);

@@ -107,6 +107,8 @@ export function townFrame(n) {
     return Math.floor((n.animT || 0) * 0.55) % 3;
   }
   if (n.species === 'scorpion' || n.species === 'scarab' || n.species === 'snake') {
+    if (n.species === 'scorpion' && n.scorpionDefendT > 0) return 9; // upright defensive tail pose
+    if (n.species === 'snake' && n.snakeDefendT > 0) return 6 + Math.floor((0.55 - n.snakeDefendT) * 6) % 3;
     if (n.turnT > 0) return 6 + Math.floor((0.4 - n.turnT) * 7) % 3;
     if (n.walking) return 3 + Math.floor((n.walkT || 0) * (n.species === 'scarab' ? 8 : 5)) % 3;
     return Math.floor((n.animT || 0) * 0.45) % 3;
