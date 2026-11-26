@@ -36,6 +36,7 @@ import { endgameUnlocked, canEarnInfernalMarks } from './endgame.js';
 import { makeCovenant } from '../data/relics.js';
 import { grantMarks } from './marks.js';
 import { canDropNaturalSigil, naturalSigilDropChance, recordNaturalSigilDrop } from './sigildrops.mjs';
+import { TOWN_REWARD_MAX_DEPTH } from './defiance.js';
 
 const IMP_ESCAPE_SECONDS = 38;
 const IMP_WARNING_SECONDS = 6;
@@ -917,7 +918,18 @@ function clearDungeonAffixBuff() {
 export function townHappening(world) {
   const c = G.char;
   clearDungeonAffixBuff();
-  if (!c || (c.townVisitCount || 0) < 2 || !chance(0.65)) return;
+  if (!c || world?.kind !== 'town' || world?.biome?.id !== 'town') return;
+  const savedDepth = Number(c.depth);
+  const progressionDepth = Number.isFinite(savedDepth) ? Math.max(1, Math.floor(savedDepth)) : 1;
+  if (progressionDepth > TOWN_REWARD_MAX_DEPTH) {
+    // These persisted character blessings are granted exclusively by this random town event system.
+    if (c.blessing) {
+      c.blessing = null;
+      G.player?.recompute?.();
+    }
+    return;
+  }
+  if ((c.townVisitCount || 0) < 2 || !chance(0.65)) return;
   const key = pick(TOWN_KEYS.filter((k) => k !== c.lastTownEvent));
   c.lastTownEvent = key;
   const E = TOWN_EVENTS[key];
@@ -926,7 +938,8 @@ export function townHappening(world) {
   if (E.fn) extra = E.fn(c);
   if (G.player) G.player.recompute();
   setTimeout(() => {
-    if (G.world !== world) return;
+    const currentDepth = Number(c.depth);
+    if (G.char !== c || G.world !== world || !Number.isFinite(currentDepth) || Math.floor(currentDepth) > TOWN_REWARD_MAX_DEPTH) return;
     UI.centerMsg(E.name.toUpperCase(), E.text, 3);
     UI.log(`<b style="color:${E.color}">${E.name}</b>: ${E.text}${extra ? ' ' + extra : ''}`, E.color);
     sfx('gate', 0.5);

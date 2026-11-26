@@ -15,6 +15,7 @@ import { refundStorageMarks } from './endgame.js';
 import { stashRaw, listRaw } from './herobackup.js';
 import { jewelBoxMigrationComplete } from './jewelboxstorage.mjs';
 import { setPotionCounts } from './potionpurchase.js';
+import { TOWN_REWARD_MAX_DEPTH } from './defiance.js';
 import {
   BAG_COLS, BAG_ROWS, GEM_BAG_COLS, GEM_BAG_BASE_ROWS, JEWEL_BOX_COLS, JEWEL_BOX_BASE_ROWS,
   fixBag, fixGemBag, fixStash, fixJewelBox,
@@ -350,6 +351,7 @@ export function migrate(c) {
   c.townVictoryFireworksPending = !!c.townVictoryFireworksPending && !c.townVictoryFireworksDone;
   const savedDepth = Number(c.depth);
   c.depth = Number.isFinite(savedDepth) ? Math.max(1, Math.min(MAX_DEPTH, Math.floor(savedDepth))) : 1;
+  if (c.depth > TOWN_REWARD_MAX_DEPTH) c.blessing = null;
   if (!Array.isArray(c.sigilDropLevels)) c.sigilDropLevels = [];
   else c.sigilDropLevels = c.sigilDropLevels.filter((key) => typeof key === 'string');
   const savedDeepest = Number(c.deepest);

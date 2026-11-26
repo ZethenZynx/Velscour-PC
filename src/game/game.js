@@ -1857,7 +1857,7 @@ export const game = {
     setupCommissions(world, gen.start); // this depth's Town Commission objectives (game/commissions.js)
     greedWorld(world, c); // Greed adds its selected endgame rewards to existing world dials.
     heresyWorld(world, c); // the Heresies' rank pays on top (none in Unbound)
-    tickBlessing(c);
+    if (tickBlessing(c, depth)) G.player?.recompute?.();
     world.onBossAwake = (m) => {
       UI.centerMsg(m.name, m.isVelscour ? 'The Demon Lord rises' : m.raid ? `${m.title}${m.raid.mods.length ? ' · ' + m.raid.modText() : ''}` : 'Guardian of the Exit', 3);
       sfx('boss');

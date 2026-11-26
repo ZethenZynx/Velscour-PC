@@ -5,6 +5,7 @@
 // Blessings: a town happening (game/happenings.js) can bless the hero for the next few depths.
 import { blockStart } from '../data/depth.js';
 
+export const TOWN_REWARD_MAX_DEPTH = 25;
 export const MAX_DEFIANCE = 8;
 export const DEFIANCE = { life: 10, dmg: 8, reduce: 5 }; // per stack
 const ZERO = { life: 0, dmg: 0, reduce: 0, mf: 0, gf: 0, xp: 0 };
@@ -35,10 +36,16 @@ export function clearDefiance(c, depth) {
   return true;
 }
 
-/** Entering a new depth uses up one depth of the blessing. */
-export function tickBlessing(c) {
-  if (!c.blessing) return;
+/** Entering a new depth uses up one depth of the town-event blessing. */
+export function tickBlessing(c, progressionDepth = c?.depth) {
+  if (!c?.blessing) return false;
+  const depth = Number(progressionDepth);
+  if (Number.isFinite(depth) && depth > TOWN_REWARD_MAX_DEPTH) {
+    c.blessing = null;
+    return true;
+  }
   if (--c.blessing.left <= 0) c.blessing = null;
+  return !c.blessing;
 }
 
 export function defianceText(n) {
