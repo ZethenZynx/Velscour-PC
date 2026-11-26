@@ -29,10 +29,10 @@ test('trap definitions have a physical fixture and bounded damage mode', () => {
 
 test('flat trap fixtures and warnings use the intended ground and depth layers', async () => {
   const ground = new Set(ENVIRONMENT_TRAP_GROUND_FIXTURES);
-  for (const type of ['pressurePlate', 'collapsingFloor', 'poisonVent', 'flameJet', 'spikeTrap', 'quicksand', 'lavaFissure', 'explosiveRune', 'crackingIce', 'freezingVent']) {
+  for (const type of ['pressurePlate', 'collapsingFloor', 'poisonVent', 'flameJet', 'spikeTrap', 'quicksand', 'lavaFissure', 'explosiveRune', 'crackingIce', 'freezingVent', 'unstableCrystal']) {
     assert.ok(ground.has(ENVIRONMENT_TRAP_TYPES[type].fixture), `${type} is drawn on the ground layer`);
   }
-  for (const type of ['swingingBlade', 'magicalTurret', 'fallingIcicles', 'lightningHazard', 'rollingBoulder', 'poisonousPlant', 'thornTrap', 'cursedAltar', 'boneSpikes', 'unstableCrystal', 'dartTrap']) {
+  for (const type of ['swingingBlade', 'magicalTurret', 'fallingIcicles', 'lightningHazard', 'rollingBoulder', 'poisonousPlant', 'thornTrap', 'cursedAltar', 'boneSpikes', 'dartTrap']) {
     assert.ok(!ground.has(ENVIRONMENT_TRAP_TYPES[type].fixture), `${type} remains depth-sorted as an elevated or moving object`);
   }
   const source = await readFile(new URL('../../src/game/render.js', import.meta.url), 'utf8');
@@ -45,9 +45,10 @@ test('flat trap fixtures and warnings use the intended ground and depth layers',
   assert.ok(groundEffects >= 0 && groundEffects < groundWarnings && groundWarnings < actors, 'warning shapes are above ground effects but below actors');
   assert.ok(sortedProps >= 0, 'ground fixtures are excluded from the later depth-sorted pass');
   const traps = await readFile(new URL('../../src/game/environmenttraps.js', import.meta.url), 'utf8');
+  const geometry = await readFile(new URL('../../src/game/trapgeometry.mjs', import.meta.url), 'utf8');
   assert.ok(traps.includes("ctx.fillStyle = '#ff2828'"), 'warnings pulse as translucent red ground tiles');
   assert.ok(traps.includes('for (const tile of site.damageTiles)'), 'warning cells use the same footprint as damage');
-  assert.ok(source.includes('Math.round(frame * img.naturalWidth / columns)'), 'atlas frames use integer crop boundaries');
+  assert.ok(source.includes('trapAtlasFrameRect(') && geometry.includes('Math.round(column * width / columns)'), 'runtime frames use tested integer atlas crop boundaries');
 });
 
 test('every trap uses a dedicated physical sprite atlas and environment variants use distinct art rows', () => {
@@ -141,6 +142,12 @@ test('generated trap sites are deterministic, accessible, and separated from int
     assert.ok(a.map.circleFree(site.x, site.y, 0.55));
     const expectedTiles = site.kind === 'dartTrap' ? 5 : ['rollingBoulder','swingingBlade'].includes(site.kind) ? 3 : 9;
     assert.equal(site.damageTiles.length, expectedTiles, `${site.kind} uses the requested tile footprint`);
+    if (expectedTiles === 9) {
+      assert.equal(site.fixture.x, site.x, `${site.kind} ground anchor remains at the center of its 3×3 footprint`);
+      assert.equal(site.fixture.y, site.y, `${site.kind} ground anchor remains at the center of its 3×3 footprint`);
+      const center = site.damageTiles.reduce((p, tile) => [p[0] + tile.x / 9, p[1] + tile.y / 9], [0, 0]);
+      assert.ok(Math.abs(center[0] - site.x) < 1e-9 && Math.abs(center[1] - site.y) < 1e-9, `${site.kind} warning and damage tiles are centered on the same world anchor`);
+    }
   }
   assert.equal(setupEnvironmentalTraps(a, [5, 5]), 0, 'an initialized world must not receive duplicate sites');
 });

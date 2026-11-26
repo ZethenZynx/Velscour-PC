@@ -20,7 +20,7 @@ import { enemyImage } from '../core/enemyart.js';
 import { drawPetCorpse } from '../core/petart.js';
 import { drawLootLabels } from './loot.js';
 import { OBJECT_LIFETIMES, isometricTileBounds } from '../core/objectlifetimes.mjs';
-import { findTrapGroundAnchor, isometricTileCorners } from './trapgeometry.mjs';
+import { findTrapGroundAnchor, isometricTileCorners, trapAnchorFrame, trapAtlasFrameRect } from './trapgeometry.mjs';
 import { canCullCreaturesByViewport, viewportCandidatesContainPlayer } from './renderpolicy.mjs';
 import { castleTileDressing, drawCastleParticles, drawCastleWater, MAT } from '../gfx/castleground.js';
 import { drawRim, RIM, xray, drawXray } from './creature.js';
@@ -386,20 +386,23 @@ function drawProp(ctx, pr, alpha) {
     const img = A.environmentTrapAtlases?.[pr.trapSheet];
     if (img?.complete && img.naturalWidth) {
       const frame = ({ idle: 0, warning: 1, active: 2, destroyed: 3 })[pr.trapState] ?? 0;
-      // Some trap sheets (notably nature.png) do not divide into integer pixel
-      // cells. Match the rounded atlas boundaries used by the preview builder;
-      // fractional source rectangles can sample a neighboring animation frame.
+      // Some trap sheets do not divide into integer pixel cells. Use shared
+      // rounded boundaries so a source rectangle never samples its neighbor.
       const columns = pr.trapColumns || 4, rows = pr.trapRows || 12;
-      const sx = Math.round(frame * img.naturalWidth / columns), sx1 = Math.round((frame + 1) * img.naturalWidth / columns);
-      const sy = Math.round(pr.trapRow * img.naturalHeight / rows), sy1 = Math.round((pr.trapRow + 1) * img.naturalHeight / rows);
-      const sw = sx1 - sx, sh = sy1 - sy, scale = Math.max(52, 148 * (pr.k || 0.4)) / sw;
+      const rect = trapAtlasFrameRect(img.naturalWidth, img.naturalHeight, columns, rows, frame, pr.trapRow);
+      if (!rect) return;
+      const { sx, sy, sw, sh } = rect;
+      const scale = Math.max(52, 148 * (pr.k || 0.4)) / sw;
       const dw = sw * scale, dh = sh * scale;
-      // Wall fixtures stay anchored to their idle-frame foot point. Animated
-      // flames or broken rubble can extend below the idle silhouette and must
-      // not make a mounted trap visibly jump away from the wall.
-      const anchor = pr.wallMountedTrap
-        ? trapGroundAnchor(img, pr.trapRow, 0, 0, sy, sw, sh)
-        : trapGroundAnchor(img, pr.trapRow, frame, sx, sy, sw, sh);
+      // Animation columns redraw a trap around one world-space pivot. Use the
+      // substantial idle-frame footprint, not state-specific sparks, smoke,
+      // or rubble, to determine the bottom-center ground contact. Falling
+      // icicles keep their authored per-frame movement from the ceiling.
+      const anchorFrame = trapAnchorFrame(pr.trapKind, frame);
+      const anchorRect = trapAtlasFrameRect(img.naturalWidth, img.naturalHeight, columns, rows, anchorFrame, pr.trapRow);
+      const anchor = anchorRect
+        ? trapGroundAnchor(img, pr.trapRow, anchorFrame, anchorRect.sx, anchorRect.sy, anchorRect.sw, anchorRect.sh)
+        : { x: sw / 2, y: sh };
       const ax = anchor.x * scale, ay = anchor.y * scale;
       ctx.save();
       ctx.imageSmoothingEnabled = false;

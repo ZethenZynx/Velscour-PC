@@ -94,7 +94,7 @@ const profiles = {};
 const assign = (ids, traps) => ids.forEach((id) => { profiles[id] = Object.freeze([...traps]); });
 // These fixtures lie flat in the walkable plane. Draw them beneath actors so
 // their broad atlas cells cannot paint over feet or sprites in the depth pass.
-export const ENVIRONMENT_TRAP_GROUND_FIXTURES = Object.freeze(['plate', 'cracked', 'vent', 'flame', 'spikes', 'sand', 'fissure', 'rune', 'ice', 'frostVent']);
+export const ENVIRONMENT_TRAP_GROUND_FIXTURES = Object.freeze(['plate', 'cracked', 'vent', 'flame', 'spikes', 'sand', 'fissure', 'rune', 'ice', 'frostVent', 'crystal']);
 const GROUND_TRAP_FIXTURES = new Set(ENVIRONMENT_TRAP_GROUND_FIXTURES);
 assign(['catacombs','sunken','blood','ashen','gilded','shadow','obsidian','flesh','serpent','necropolis','cathedral'], ['pressurePlate','dartTrap','swingingBlade','boneSpikes','cursedAltar']);
 assign(['castle_keep','castle','shattered','library','throne'], ['pressurePlate','dartTrap','swingingBlade','spikeTrap','destructible']);
