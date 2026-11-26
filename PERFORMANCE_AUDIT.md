@@ -156,3 +156,42 @@ The compactor now moves the packed survivor range to the front before truncating
 The profile reports a Canvas 2D renderer, Edge/Chromium on Windows, internal canvas 1920×1020 at 0.75 scale, and `desynchronized: false`. It does not expose the actual GPU adapter or whether Canvas2D fell back to software. Therefore hardware acceleration is still unverified, but it is not needed to explain this capture's specific 63.5 ms effect pass: the runaway number of signature-layer draws is directly confirmed. A full WebGL or Godot migration is not justified before checking the live profile with this root cause fixed; no incomplete replacement engine was shipped. Hardware-level acceleration and post-fix FPS remain the only material runtime checks requiring the user's gameplay run.
 
 Tauri/Electron packaging still does not replace Canvas2D and is not an FPS fix by itself. Godot/Unity port estimates and asset/save migration risks remain as detailed above; the full migration is not technically justified until the isolated renderer comparison shows the current canvas path cannot meet targets after Extreme Performance is evaluated.
+
+## Follow-up upstream-optimization and slowdown audit (2026-11-25)
+
+### Scope and evidence
+
+The fork contains one selective import of the upstream Tessariel's Keep optimization: fork commit `b98e11ae` adapts four files (`src/core/gearart.js`, `src/game/game.js`, `src/game/keepfolk.js`, `src/gfx/keepart.js`) from upstream commit `02bc8de844f133f1477ccea7c2a0c5a52715a47f`. It does not import the upstream chest moves, Keep layout/content changes, or its other source files. The import is confined to companion preview rasterization and preparation, a bounded loading wait, and Keep art cache lifecycle.
+
+No new performance JSON was attached to this request, and the Downloads folder has no `velscour-performance-*.json` reports available to this checkout. The previously documented 2026-11-24 capture predates `b98e11ae`; it cannot diagnose today's slowdown. I did not start the game or a browser, consistent with the owner's preference to perform visual/gameplay checks manually. The results below are repeatable Node fixtures, not live-game FPS measurements.
+
+### Upstream import review
+
+- Saved companion gear previews use a 24-entry bounded map. Desktop Chromium with OffscreenCanvas and ImageBitmap support gets a one-time raster preview; other runtimes retain the canvas implementation. Repeated Keep rendering uses the saved image instead of composing the gear each frame.
+- `warmKeepHeroes` prebuilds outline cache entries for loaded companion images before the loading screen closes. This is one-time work per entry, not per-frame outline generation.
+- The five-second wait is a cap on loading-screen waiting. If it times out, pending preview promises continue asynchronously; this is a possible entry-period CPU burst, not evidence for stuttering later in a settled town. No live capture was supplied to establish whether the timeout is reached.
+- Leaving the Keep clears its private sprite cache and drops the Keep art reference; a generation token prevents a late load from repopulating it. This trades re-entry decoding/loading work for releasing Keep-only references. It is a plausible source of a transition hitch, but does not explain random stutters while standing in an already-loaded town without further evidence.
+- The import's raster feature is guarded by runtime capability checks and has a `noraster` query override. There is no evidence in the supplied files that it raises steady-state combat workload. Since the current runtime report is missing, no optimization was selectively reverted or changed on speculation.
+
+### Re-run non-browser measurements
+
+The existing `node tools/tests/performance_audit.mjs` suite passed all 18 scenarios. Additional isolated reruns measured:
+
+| Workload | Reference | Current | Observed change |
+|---|---:|---:|---:|
+| VFX cleanup, 10,000 entries, p50 | 3.498 ms | 0.462 ms | 86.8% lower |
+| VFX cleanup, 10,000 entries, p95 | 3.651 ms | 0.485 ms | 86.7% lower |
+| Settled distant loot, 10,000 items, p50 World.update | 0.2534 ms | 0.0050 ms | 98.0% lower |
+| Settled distant loot, 10,000 items, p95 World.update | 0.6070 ms | 0.0110 ms | 98.2% lower |
+| Settled distant loot, 10,000 items, worst sample | 5.9065 ms | 0.1031 ms | 98.3% lower |
+| Town flow-field builds over 4 simulated seconds | 0 | 15 in dungeon control | Dungeon-only work remains out of towns |
+| Ambient light candidate selection, 3,001 props, p95 | 0.270 ms | 0.042 ms | 84.4% lower in this run |
+| Storm Tether, 100 hammers / 400 synthetic targets / 120 pulses | 56.34 ms | 14.94 ms | 73.5% lower in this run |
+
+The performance suite also reproduced and checked the already-fixed VFX compaction defect: 12 expired entries used to create 12 duplicate/missing persistent signature layers among 282 live effects; current compaction retains all 282 unique references through 60 cleanup frames. Its earlier profiler capture attributed 63.5 ms median and 135.1 ms worst to repeated `SigLayer` drawing. This remains the strongest confirmed historical combat-render regression; the current test verifies the correction but is not a fresh post-fix FPS comparison.
+
+All comparisons above are isolated Node workloads and are sensitive to machine load/JIT warmup. They demonstrate bounded helper-level costs, not 16.7 ms frame delivery, GPU time, browser garbage collection, or 30-minute runtime stability. The requested 30-minute desktop gameplay comparison, full crowded combat, and Keep entry/exit A/B remain unmeasured because they require the owner's running-game profile.
+
+### Current disposition
+
+No newly confirmed code regression was found in the selective Keep import or in the tested combat hot paths, so I made no speculative rendering, AI, particle, or density changes. The only identified Keep-specific residual risk is preview work continuing after the five-second wait expires and re-entry decode cost after the Keep cache is released. Please capture and attach a fresh exported report from the current build during one reproducible session: about 2 minutes in town (idle, then walk), followed by 2 minutes of dense combat with the same build/settings. Keep the profiler enabled and include the environment, depth, class, companion count, and whether the Keep was entered immediately before the capture. That report is needed to distinguish current town, combat, and asset-transition costs before changing more runtime code.
