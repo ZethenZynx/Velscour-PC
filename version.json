@@ -1,11 +1,11 @@
 {
   "schema": 1,
-  "version": "0.1.0",
-  "buildId": "a657dc6dcf12864c8538a454355847f6fe77f138",
-  "downloadUrl": "https://github.com/ZethenZynx/Velscour-PC/releases/download/v0.1.0/velscour-pc-v0.1.0.zip",
-  "sha256": "dff7738c3ae73db42d70d58ee85db1fb5c79cded96e2aebc03a20540e99f51ed",
-  "packageSize": 1643130546,
-  "checksumUrl": "https://github.com/ZethenZynx/Velscour-PC/releases/download/v0.1.0/velscour-pc-v0.1.0.zip.sha256",
-  "releaseNotesUrl": "https://github.com/ZethenZynx/Velscour-PC/releases/tag/v0.1.0",
-  "publishedAt": "2026-11-26T21:30:57.427Z"
+  "version": "0.1.1",
+  "buildId": "4d1f899dff2cc1cd62a0d55787e6172bdab6f05a",
+  "downloadUrl": "https://github.com/ZethenZynx/Velscour-PC/releases/download/v0.1.1/velscour-pc-v0.1.1.zip",
+  "sha256": "02d6763e8d81c5fe68502cf4d0797c53ed9a5678e33a001adc52b901f2f91c58",
+  "packageSize": 1643130775,
+  "checksumUrl": "https://github.com/ZethenZynx/Velscour-PC/releases/download/v0.1.1/velscour-pc-v0.1.1.zip.sha256",
+  "releaseNotesUrl": "https://github.com/ZethenZynx/Velscour-PC/releases/tag/v0.1.1",
+  "publishedAt": "2026-11-26T21:37:23.864Z"
 }
