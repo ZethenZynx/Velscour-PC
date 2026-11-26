@@ -28,6 +28,7 @@ import { applyVolumes, preloadSong, TITLE_SONG, recordAudioDiagnosticMarker, rec
 import { profileBeginFrame, profileEnd, profileFinishFrame, profileSetRender, profileSetUpdate, setPerformanceProfilerEnabled } from './core/perfdiagnostics.js';
 import { observeAdaptivePerformance, performanceTier } from './core/performancequality.mjs';
 import { applyPerformanceQuality } from './gfx/vfx.js';
+import { ensureJewelBoxMigration } from './game/jewelboxstorage.mjs';
 
 function resize() {
   G.W = window.innerWidth;
@@ -360,6 +361,13 @@ async function boot() {
     await Promise.all([loadAssets((p) => { pa = p; show(); }), preloadSong(TITLE_SONG, (p) => { ps = p; show(); }).then(() => { ps = 1; show(); })]);
   } catch (e) {
     $('#loading-text').innerHTML = `Could not load game assets.<br><small>${e.message}</small><br><small>If you opened index.html directly from disk, serve the folder over http instead (see README).</small>`;
+    return;
+  }
+  const jewelBoxMigration = await ensureJewelBoxMigration();
+  if (!jewelBoxMigration.ok) {
+    console.error('The shared Jewel Box migration was stopped safely.', jewelBoxMigration.error);
+    const message = $('#loading-text');
+    if (message) message.textContent = `The shared Jewel Box could not be migrated safely. Your character saves and migration backup are preserved. Reload to retry. ${jewelBoxMigration.error?.message || ''}`;
     return;
   }
   HUD.init();

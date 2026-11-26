@@ -13,6 +13,7 @@ import { newMacros, migrateMacros } from '../data/macros.js';
 import { reliquary } from './reliquary.js';
 import { refundStorageMarks } from './endgame.js';
 import { stashRaw, listRaw } from './herobackup.js';
+import { jewelBoxMigrationComplete } from './jewelboxstorage.mjs';
 import {
   BAG_COLS, BAG_ROWS, GEM_BAG_COLS, GEM_BAG_BASE_ROWS, JEWEL_BOX_COLS, JEWEL_BOX_BASE_ROWS,
   fixBag, fixGemBag, fixStash, fixJewelBox,
@@ -192,7 +193,7 @@ export function newCharData(classId, name) {
     bag: Array(BAG_COLS * BAG_ROWS).fill(null), // more rows are bought in the inventory (data/bag.js)
     gemBag: Array(GEM_BAG_COLS * GEM_BAG_BASE_ROWS).fill(null), // dedicated carrier for gems & runes
     stash: Array(300).fill(null),
-    jewelBox: Array(JEWEL_BOX_COLS * JEWEL_BOX_BASE_ROWS).fill(null), // dedicated town vault for gems & runes
+    jewelBox: [], // the Jewel Box is account-wide; retained only as a legacy migration field
     tabs: Array(TAB_SLOTS).fill(null), tabAt: 0, // the Bard's Tabs: locked Music Sheets he plays (data/tabs.js)
     gold: 150, potions: { hp: 6, mp: 4, rejuv: 1, fury: 1 },
     depth: 1, deepest: 0, nextBiome: 'catacombs', biomeBag: [], cleared: {}, visitedAct2Town: false, act2AutoTravelDone: false, visitedAct4Town: false, act4AutoTravelDone: false, lastTown: 'act1', dungeonAffixes: [], nextAffixes: [], greedLevel: 0, greed: 0, greedSystemV1: true, greedAffixPreview: null, greedAffixPreviews: {}, greedPortalDestinations: {}, overworldMisses: 0, overworldLastVisit: null, seaOfSandRuns: {}, darkForestRuns: {}, wandererBounties: {}, npcEncounterDepths: {}, treasureImpDepths: [], treasureImpGuaranteedAreas: [], treasureImpRandomAreas: [], treasureImpGuaranteedPending: {}, treasureImpRandomCheckedAreas: [], treasureImpRandomPending: {}, treasureImpTutorialShown: false, townVictoryFireworksPending: false, townVictoryFireworksDone: false, breach: { best: 0, cleared: {} },
@@ -629,16 +630,21 @@ export function migrate(c) {
       c.bag[i] = null;
       continue;
     }
-    const sameJb = c.jewelBox.find((b) => b && b.type === 'gem' && b.gem === it.gem && b.tier === it.tier);
-    if (sameJb) {
-      sameJb.count = (sameJb.count || 1) + (it.count || 1);
-      c.bag[i] = null;
-      continue;
-    }
-    const freeJb = c.jewelBox.findIndex((b) => !b);
-    if (freeJb >= 0) {
-      c.jewelBox[freeJb] = it;
-      c.bag[i] = null;
+    // Once the shared Jewel Box migration is complete, keep overflow in the
+    // character's bag. It remains visible and can be deposited manually; this
+    // avoids writing it to a retired per-character vault during save loading.
+    if (!jewelBoxMigrationComplete()) {
+      const sameJb = c.jewelBox.find((b) => b && b.type === 'gem' && b.gem === it.gem && b.tier === it.tier);
+      if (sameJb) {
+        sameJb.count = (sameJb.count || 1) + (it.count || 1);
+        c.bag[i] = null;
+        continue;
+      }
+      const freeJb = c.jewelBox.findIndex((b) => !b);
+      if (freeJb >= 0) {
+        c.jewelBox[freeJb] = it;
+        c.bag[i] = null;
+      }
     }
   }
   // Remap orphaned ring skill augments from pruned 80-skill trees onto valid augmentable skills in the same tree/class
@@ -681,5 +687,6 @@ export function migrate(c) {
   const reliquaryMarks = (vault.tabs || []).reduce((sum, tab) => sum + expandedRows(tab, 12, 8, 16) * 10, 0);
   refundStorageMarks({ heroId: c.id, heroMarks, reliquaryMarks });
   c.storageMarkRefundV1 = true;
+  if (jewelBoxMigrationComplete()) c.jewelBox = [];
   return c;
 }

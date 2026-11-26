@@ -1641,6 +1641,7 @@ body:not(.touch) .panel[data-panel="character"],
 body:not(.touch) .character-panel { width: min(580px, calc(100vw - 24px)); }
 body:not(.touch) .vendor-panel { width: min(460px, calc(100vw - 24px)); }
 body:not(.touch) .stash-panel { width: min(510px, calc(100vw - 24px)); }
+body:not(.touch) .jewelbox-panel { width: min(522px, calc(100vw - 24px)); }
 body:not(.touch) .reliquary-panel { width: min(548px, calc(100vw - 24px)); }
 body:not(.touch) #panels:has(.vendor-panel, .stash-panel, .reliquary-panel) .vendor-panel { width: min(460px, 35vw); }
 body:not(.touch) .alchemist-vendor-panel { width: min(560px, calc(100vw - 24px)); }
@@ -1976,6 +1977,9 @@ body:not(.touch) .inv-wrap.character-view .character-card { grid-column: auto; }
 .jewelbox-dropzone:hover { border-color: #bb66ff !important; background: rgba(75,25,110,.45) !important; }
 .jewelbox-grid .bslot { background: radial-gradient(circle at center, #241432 0%, #150a20 100%); border-color: #4b236d; }
 .jewelbox-grid .bslot:hover { border-color: #aa55ff; }
+@media (max-width: 560px) {
+  body:not(.touch) .jewelbox-panel .jewelbox-grid { grid-template-columns: repeat(10, minmax(0, 1fr)); }
+}
 
 .inv-section-title { display: flex; justify-content: space-between; align-items: center; min-height: 24px; margin: 0 0 5px; padding: 0 1px 5px; border-bottom: 1px solid #6b4b29; color: #f1cc89; font: 700 12px var(--font-head); letter-spacing: 1.1px; text-transform: uppercase; }
 .inv-section-title span { color: #b9a17d; font: 600 11px var(--font-body); letter-spacing: 0; text-transform: none; }
