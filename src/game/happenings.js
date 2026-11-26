@@ -14,8 +14,8 @@ import { explosionFx } from '../gfx/shapes.js';
 import { hit, aoe } from './combat.js';
 import { makeMonster, makeElite, monsterBase } from './monster.js';
 import { ambush } from './mayhem.js';
-import { GroundItem, dropChest, groundRewardDepth, rollGroundItem, rollGroundGem, rollOrbKind } from './loot.js';
-import { rollItem, rollGem, potionItem, itemName, itemColor, rarityAt, qualityAtDepth, goldScale, rollSigil } from '../data/items.js';
+import { GroundItem, dropChest, groundRewardDepth, rollGroundItem, rollGroundGem, rollGroundSigil, rollOrbKind } from './loot.js';
+import { rollItem, rollGem, potionItem, itemName, itemColor, rarityAt, qualityAtDepth, goldScale } from '../data/items.js';
 import { depthLevel, FINAL_DEPTH } from '../data/depth.js';
 import { addToBag } from './player.js';
 import { UI } from '../ui/ui.js';
@@ -453,7 +453,7 @@ function grantImpReward(world, m, variant, options = {}) {
       impDropGold(world, m, lvl, 18 + lvl * 3, 8, qty);
       impBlessing('prosperity', 'Prosperity', variant.color, { gf: 55, mf: 35 }, 60); break;
     case 'sigil':
-      for (let i = 0; i < impQuantity(randi(1, 2), qty); i++) impDrop(world, m, 'item', { item: rollSigil(groundRewardDepth(world, world.depth || 1), 0) });
+      for (let i = 0; i < impQuantity(randi(1, 2), qty); i++) impDrop(world, m, 'item', { item: rollGroundSigil(world, world.depth || 1, 0) });
       break;
     case 'arcane':
       for (let i = 0; i < impQuantity(8, qty); i++) impDrop(world, m, 'orb_mp');
@@ -482,7 +482,7 @@ function grantImpReward(world, m, variant, options = {}) {
       break;
     }
     case 'artisan':
-      for (let i = 0; i < impQuantity(3, qty); i++) impDrop(world, m, 'item', { item: rollSigil(groundRewardDepth(world, world.depth || 1), 0) });
+      for (let i = 0; i < impQuantity(3, qty); i++) impDrop(world, m, 'item', { item: rollGroundSigil(world, world.depth || 1, 0) });
       impDropGems(world, m, lvl, 1, qty);
       break;
     case 'abyssal':

@@ -6,8 +6,8 @@ import { sfx } from '../core/audio.js';
 import { addEffect, Ring, Column, Bolt, sparkle, floatText } from '../gfx/vfx.js';
 import { UI } from '../ui/ui.js';
 import { makeRaidBoss, RAID_BOSSES } from './raid.js';
-import { GroundItem, rollGroundItem, rollGroundGem, groundRewardSigilDepth } from './loot.js';
-import { rollSigil, goldPile } from '../data/items.js';
+import { GroundItem, rollGroundItem, rollGroundGem, rollGroundSigil } from './loot.js';
+import { goldPile } from '../data/items.js';
 import { hit } from './combat.js';
 import { RIFT_TIME, RIFT_QUOTA, RIFT_DENSITY, RIFT_GUARDIAN_HP, PYLONS, riftDepth, riftLevel, riftLootDepth, riftJump, riftWeight, riftReward, fmtTime, instabilitiesForTier, normalizeRiftTier, nextRiftTier, riftHpMul, riftDmgMul } from '../data/rifts.js';
 import { markBonuses, grantMarksWithBonus, riftMarks } from './marks.js';
@@ -296,7 +296,7 @@ export function riftWin(world, m) {
   }
 
   // Sigils, Gems & Gold
-  for (let i = 0; i < sigilCount; i++) drop('item', { item: rollSigil(groundRewardSigilDepth(world, lootDepth), RW.sigilBonus) });
+  for (let i = 0; i < sigilCount; i++) drop('item', { item: rollGroundSigil(world, lootDepth, RW.sigilBonus) });
   for (let i = 0; i < gemCount; i++) drop('item', { item: rollGroundGem(lvl + 4, world) });
   for (let i = 0; i < 6; i++) drop('gold', { amount: Math.round(goldPile(lvl) * rand(3, 6) * (1 + (((p && p.st.goldFind) || 0) + (p?.st?.markGold || 0)) / 100) * rewardScale) });
 

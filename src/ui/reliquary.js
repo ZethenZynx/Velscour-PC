@@ -8,7 +8,7 @@ import { itemCell, itemTooltip, itemGearTip, rarityClass } from './itemui.js';
 import { changed, renderInventory } from './inventory.js';
 import { addToBag } from '../game/player.js';
 import { reliquary, saveReliquary, openTabs, codexProgress, codexEntries, MILESTONES, VAULT_TABS, codexTitle, noteFind } from '../game/reliquary.js';
-import { RELIC_COLORS, SIGILS, SLOT_NAMES, makeGem, itemName } from '../data/items.js';
+import { RELIC_COLORS, SIGILS, SLOT_NAMES, makeGem, itemName, sigilMinDepth } from '../data/items.js';
 import { COVENANT_BY_ID, makeHeirloom, makeCovenant, heirloomPreview, GLYPHWORDS } from '../data/relics.js';
 import { itemIconURL } from './icons.js';
 import { reliquaryTabRows, nextReliquaryRowCost, canBuyReliquaryRow, buyReliquaryRow, storageExpansionUnlocked, RELIQUARY_MAX_ROWS } from '../data/bag.js';
@@ -362,7 +362,7 @@ function codexTip(e, got) {
   let h = `<div class="tt-name" style="color:${got ? col : '#8a8070'}">${got ? escapeHtml(e.name) : 'Undiscovered'}</div>`;
   if (e.kind === 'h') h += `<div class="tt-base">Heirloom · ${SLOT_NAMES[e.slot]}</div>`;
   if (e.kind === 'c') h += `<div class="tt-base">Covenant · ${SLOT_NAMES[e.slot]} · ${escapeHtml(COVENANT_BY_ID[e.set].name)}</div>`;
-  if (e.kind === 's') h += `<div class="tt-base">Sigil Stone · Rank ${e.rank + 1} · from Depth ${e.rank * 24 || 1}</div>`;
+  if (e.kind === 's') h += `<div class="tt-base">Sigil Stone · Rank ${e.rank + 1} · from Depth ${sigilMinDepth(e.rank)} onward</div>`;
   if (e.kind === 'g') {
     h += `<div class="tt-base">Glyphword · ${e.slots.map((s) => SLOT_NAMES[s]).join(' or ')} · ${e.sig.length} sockets</div>`;
     h += `<div style="color:${col}">'${e.sig.map((r) => SIGILS[r].name).join(' · ')}'</div>`;

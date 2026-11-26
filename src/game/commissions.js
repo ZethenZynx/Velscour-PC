@@ -10,10 +10,11 @@ import { rand, chance, pick, escapeHtml, fmtInt } from '../core/util.js';
 import { sfx } from '../core/audio.js';
 import { addEffect, Ring, glowSprite, sparkle, floatText } from '../gfx/vfx.js';
 import { isoX, isoY } from '../core/view.js';
-import { goldPile, rollSigil, itemName, itemColor, qualityAtDepth } from '../data/items.js';
+import { goldPile, itemName, itemColor, qualityAtDepth } from '../data/items.js';
 import { makeCovenant } from '../data/relics.js';
 import { depthLevel, FINAL_DEPTH } from '../data/depth.js';
 import { BIOME_BY_ID } from '../data/biomes.js';
+import { rollGroundSigil } from './loot.js';
 import { addToBag } from './player.js';
 import { noteLineDone, makeAccountHeirloom } from './reliquary.js';
 import { GroundItem } from './loot.js';
@@ -172,7 +173,7 @@ function progress(e, k, what) {
   const gearLvl = Math.min(lvl, c.level || lvl);
   const gold = Math.round(goldPile(lvl) * 25);
   c.gold += gold;
-  const gifts = [rollSigil(depth, 1), rollSigil(depth, 1)];
+  const gifts = [rollGroundSigil(G.world, depth, 1), rollGroundSigil(G.world, depth, 1)];
   if (chance(0.4) || e.ch === L.chapters.length - 1) { const cov = makeCovenant(gearLvl + 1, { maxRarity: qualityAtDepth(depth) }); if (cov) gifts.push(cov); }
   e.ch++; e.n = 0;
   const last = e.ch >= L.chapters.length;

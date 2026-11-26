@@ -181,7 +181,7 @@ export async function ensureOmniIndex() {
         cat: 'Gear & Relics',
         badge: `Sigil #${rank + 1}`,
         title: `${sig.name} Sigil Stone`,
-        sub: `Rank ${rank + 1} · Drops from Depth ${rank * 24}`,
+        sub: `Rank ${rank + 1} · Drops from Depth ${itemsMod.sigilMinDepth(rank)} onward`,
         keywords: `${sig.name} sigil stone rune socket`.toLowerCase(),
         href: `gear.html?tab=gems&q=${encodeURIComponent(sig.name)}`,
       });

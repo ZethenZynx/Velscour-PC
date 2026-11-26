@@ -11,7 +11,7 @@ import { itemIconURL } from './icons.js';
 import { finishOf, gearFxOf } from '../core/gearart.js';
 import { readSheet, sheetTempo } from '../data/tabs.js';
 import { keyName } from '../data/melodies.js';
-import { RELIC_COLORS, RELIC_NAMES, SIGILS, SIGIL_MAX, sigilStats, sigilCap } from '../data/items.js';
+import { RELIC_COLORS, RELIC_NAMES, SIGILS, SIGIL_MAX, sigilStats, sigilCap, sigilMinDepth } from '../data/items.js';
 import { HEIRLOOM_BY_ID, COVENANT_BY_ID, PIECE_BY_ID, POWERS, GLYPHWORDS, glyphOf, wornSets, powerText, lineValue, TUNE } from '../data/relics.js';
 
 // weapon figures (an item's Damage, flat weapon damage) on the weapon scale of the hero's depth (data/depth.js); thorns
@@ -76,7 +76,7 @@ export function itemTooltip(item, opts = {}) {
   if (item.locked) h += '<div class="tt-base" style="color:#ffd860">🔒 Locked: you can\'t sell or drop this item</div>';
   if (item.type === 'gem' && GEMS[item.gem].sigil) {
     const r = item.tier, S = SIGILS[r];
-    h += `<div class="tt-base">Sigil Stone · Rank ${r + 1} of ${SIGIL_MAX + 1} · drops from Depth ${r * 24 || 1}${item.count > 1 ? ` · Stack of ${item.count}` : ''}</div><div class="tt-sep"></div>`;
+    h += `<div class="tt-base">Sigil Stone · Rank ${r + 1} of ${SIGIL_MAX + 1} · drops from Depth ${sigilMinDepth(r)} onward${item.count > 1 ? ` · Stack of ${item.count}` : ''}</div><div class="tt-sep"></div>`;
     for (const [where, slot] of [['Weapon', 'weapon'], ['Armor, helm, shield', 'body'], ['Ring', 'ring']]) for (const [s, v] of sigilStats(r, slot)) h += `<div class="tt-gem">${where}: ${escapeHtml(label(s, v, trees))}</div>`;
     const uses = GLYPHWORDS.filter((w) => w.sig.includes(r)).map((w) => w.name);
     h += `<div class="tt-sep"></div><div class="dim">Socket it like a gem. Set Sigils in the right order in a plain (white) item with exactly that many sockets to write a Glyphword${uses.length ? ` (${uses.slice(0, 4).map(escapeHtml).join(', ')}${uses.length > 4 ? '…' : ''})` : ''}.${r < SIGIL_MAX ? ` Fuse 3 at the Gem Forge for one ${SIGILS[r + 1].name}.` : ''}</div>`;

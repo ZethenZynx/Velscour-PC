@@ -33,8 +33,13 @@ export function groundRewardDepth(world = G.world, fallbackDepth = 1) {
 }
 
 /** Rift sigils follow Rift tier but cannot outrun the hero's normal-depth unlocks. */
-export function groundRewardSigilDepth(world = G.world, fallbackDepth = 1) {
-  return world?.rift ? riftRewardProgressionDepth(world.rift.tier, G.char) : fallbackDepth;
+export function groundRewardSigilDepth(world = G.world, fallbackDepth = world?.depth || G.char?.depth || 1) {
+  return world?.rift ? riftRewardProgressionDepth(world.rift.tier, G.char) : Math.max(1, Number(fallbackDepth) || 1);
+}
+
+/** Roll a Sigil using the owning world's effective progression depth. */
+export function rollGroundSigil(world = G.world, fallbackDepth = world?.depth || G.char?.depth || 1, bonus = 0) {
+  return rollSigil(groundRewardSigilDepth(world, fallbackDepth), bonus);
 }
 
 const ORB_COLOR = { orb_hp: '#ff2a2a', orb_mp: '#3a6aff', orb_rejuv: '#c040ff', orb_fury: '#ffa020' };
@@ -411,7 +416,7 @@ export function dropLoot(world, m) {
   // Sigil Stones: rare from the rank and file, common from guardians (Heresies: world.sigilMul)
   const sig = { normal: 0.004, champion: 0.03, unique: 0.08, boss: 0.45 }[rank] * (world.lootMul || 1) * (world.sigilMul || 1) * (1 + (st.markSigilChance || 0) / 100) * breachScale;
   const sigils = greedMore(world.depth && chance(sig) ? 1 : 0);
-  for (let i = 0; i < sigils; i++) add('item', { item: rollSigil(groundRewardSigilDepth(world, world.depth), rank === 'boss' ? 1 : 0) });
+  for (let i = 0; i < sigils; i++) add('item', { item: rollGroundSigil(world, world.depth, rank === 'boss' ? 1 : 0) });
   // an Abyssal Key (docs/ENDGAME.md): BOSS ROOM bosses past depth 600 under Heresy rank 10, rift guardians from tier 10
   if (m.isRaid && chance(keyChance(world, m))) add('key', {}); // (keyChance rolls once a boss: a raid boss pays out three dropLoots)
   // rings: a guardian usually drops one
@@ -450,10 +455,10 @@ export function dropChest(world, chest, depth) {
   }
   const sigilChance = rarity ? rarity.sigilChance : chest.rare ? 0.25 : 0.06;
   const sigils = !goldOnly && !gemsOnly && chance(Math.min(1, sigilChance * (world.lootMul || 1) * (world.sigilMul || 1) * (1 + (st.markSigilChance || 0) / 100))) ? greedCount(1) : 0;
-  for (let i = 0; i < sigils; i++) add('item', { item: rollSigil(groundRewardSigilDepth(world, depth)) });
+  for (let i = 0; i < sigils; i++) add('item', { item: rollGroundSigil(world, depth) });
   if (chest.heresyPool === 'hunt' || chest.heresyPool === 'retribution') {
     const count = chest.heresyPool === 'retribution' ? 2 : 1;
-    for (let i = 0; i < count; i++) add('item', { item: rollSigil(groundRewardSigilDepth(world, depth), 1) });
+    for (let i = 0; i < count; i++) add('item', { item: rollGroundSigil(world, depth, 1) });
     if (!goldOnly) add('item', { item: rollGroundGem(depthLevel(depth) + 4, world) });
   }
   const goldPiles = gemsOnly ? 0 : greedCount(breachCount(randi(goldRange[0], goldRange[1])) + (goldOnly ? 2 : 0));

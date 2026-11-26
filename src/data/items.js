@@ -482,7 +482,7 @@ const SPECIAL_GEMS = GEM_KEYS.filter((k) => GEMS[k].special);
 // ---------------------------------------------------------------- Sigil Stones
 // w: in a weapon, a: in armor (head, body, off-hand, hands, legs, feet), r: in a ring. A rank r stone gives base x
 // sigilMult(r): about 1.4x one stat of the best gem that drops at the same depth (a stone gives one stat, a gem two),
-// so a Sigil is worth socketing on its own; whole skill levels stay whole. Rank r drops from depth 24 r.
+// so a Sigil is worth socketing on its own; whole skill levels stay whole. Each rank unlocks every 25 depths.
 export const SIGILS = [
   { name: 'Ash', color: '#ff8040', w: ['firePct', 4], a: ['resFire', 3], r: ['life', 6] },
   { name: 'Bryn', color: '#80c8ff', w: ['coldPct', 4], a: ['resCold', 3], r: ['mana', 5] },
@@ -518,6 +518,8 @@ export function sigilStats(rank, slot) {
   const v = FIXED.has(s) ? b : b * sigilMult(rank);
   return [[s, Math.round(v * 10) / 10]];
 }
+/** The first eligible depth for a Sigil rank (zero-based rank 0 is the Rank 1 Ash Sigil). */
+export const sigilMinDepth = (rank) => 1 + clamp(Math.floor(Number(rank) || 0), 0, SIGIL_MAX) * 25;
 /** The highest eligible Sigil: rank 1 at Depth 1, each new rank every 25 depths. */
 export const sigilCap = (depth) => clamp(Math.floor((Math.max(1, Number(depth) || 1) - 1) / 25), 0, SIGIL_MAX);
 /** A Sigil from depth `depth`: mostly the few ranks just under its cap. */
@@ -553,7 +555,8 @@ let UID = Date.now() % 1000000;
 export const newUid = () => ++UID;
 
 export function makeGem(gem, tier) {
-  return { uid: newUid(), type: 'gem', gem, tier: clamp(tier, 0, gemMaxTier(gem)), count: 1, ilvl: GEMS[gem] && GEMS[gem].sigil ? tier * 24 + 1 : tier * 15 + 1 };
+  const rank = clamp(tier, 0, gemMaxTier(gem));
+  return { uid: newUid(), type: 'gem', gem, tier: rank, count: 1, ilvl: GEMS[gem] && GEMS[gem].sigil ? sigilMinDepth(rank) : rank * 15 + 1 };
 }
 export function rollGem(ilvl, masteryPct = 0) {
   const maxTier = clamp(Math.floor(ilvl / 16), 0, 7); // the top two tiers only come from the Gem Forge
