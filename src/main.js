@@ -29,6 +29,7 @@ import { profileBeginFrame, profileEnd, profileFinishFrame, profileSetRender, pr
 import { observeAdaptivePerformance, performanceTier } from './core/performancequality.mjs';
 import { applyPerformanceQuality } from './gfx/vfx.js';
 import { ensureJewelBoxMigration } from './game/jewelboxstorage.mjs';
+import { renderResolutionScale } from './core/render-resolution.mjs';
 
 function resize() {
   G.W = window.innerWidth;
@@ -38,8 +39,9 @@ function resize() {
   // cap the backing store to keep fill-rate sane on huge / high-dpi screens
   const maxPixels = G.touch ? 1.6e6 : 4.2e6;
   if (G.W * G.H * dpr * dpr > maxPixels) dpr = Math.sqrt(maxPixels / (G.W * G.H));
-  // resScale < 1 when the frame rate is too low (adaptRes): fewer pixels to fill, same layout
-  // Apply the pixel budget AFTER adaptive scaling; a minimum 0.75 DPR could otherwise
+  // Adaptive Performance changes cosmetic quality only; the selected graphics
+  // preset controls backing-store scale. Apply the pixel budget after that scale.
+  // A minimum 0.75 DPR could otherwise
   // undo the cap on large phones/tablets and silently allocate oversized buffers.
   G.dpr = Math.max(0.5, Math.min(dpr * (G.resScale || 1), Math.sqrt(maxPixels / (G.W * G.H))));
   G.canvas.width = Math.round(G.W * G.dpr);
@@ -178,35 +180,11 @@ function renderTitle(dt) {
   ctx.fillRect(0, 0, W, H);
 }
 
-// Adaptive resolution: when a device misses its frame budget, trade backing-store
-// pixels for frame rate in 2 s windows, and earn them back after 10 s of headroom.
-// Every change re-bakes the floor chunks at the new size, so a phone hovering near the limits used to see-saw
-// (down, 10 s later up, down again): each step back up that has to be undone soon after doubles the wait (to 2 min).
-const ar = { t: 0, n: 0, good: 0, need: 5, upAt: -1e9 };
-function adaptRes(raw) {
-  if (G.mode !== 'game' || document.hidden) { ar.t = ar.n = 0; return; }
-  // Do not discard very slow frames: that prevented adaptation precisely when
-  // biome generation/painting made the phone stall for >250 ms.
-  ar.t += Math.min(raw, 0.25); ar.n++;
-  if (ar.t < 2) return;
-  const fps = ar.n / ar.t, s = G.resScale || 1, now = performance.now();
-  ar.t = ar.n = 0;
-  const minScale = G.settings.graphicsPreset === 'extreme' || G.settings.adaptivePerformance ? 0.5 : G.touch ? 0.7 : 0.75, cap = G.settings.fpsCap || 0;
-  // under a frame cap the budget is the cap's, not 60
-  const slowFps = cap ? cap * 0.8 : G.touch ? 45 : 50, fastFps = cap ? cap * 0.95 : 57;
-  if (fps < slowFps && s > minScale) {
-    if (now - ar.upAt < 20000) ar.need = Math.min(60, ar.need * 2);
-    G.resScale = Math.max(minScale, s * 0.85); ar.good = 0; resize();
-  } else if (fps > fastFps && s < 1) { if (++ar.good >= ar.need) { G.resScale = Math.min(1, s / 0.85); ar.good = 0; ar.upAt = now; resize(); } }
-  else ar.good = 0;
-}
-
 function applyGraphicsQualitySettings() {
   const tier = performanceTier(G.settings);
   const changed = tier !== (G.performanceQualityTier || 0);
   G.performanceQualityTier = tier;
-  if (G.settings.graphicsPreset === 'extreme') G.resScale = Math.min(G.resScale || 1, 0.7);
-  else if (G.settings.graphicsPreset !== 'extreme' && !G.settings.adaptivePerformance) G.resScale = 1;
+  G.resScale = renderResolutionScale(G.settings);
   if (changed) applyPerformanceQuality();
   resize();
   dropBakes();
@@ -247,7 +225,6 @@ function loop(now) {
   const profiling = profileBeginFrame(now);
   last = now;
   adaptCosmeticQuality(raw);
-  adaptRes(raw);
   G.time += dt;
   G.dt = dt;
   G.frame++;
@@ -327,7 +304,7 @@ async function boot() {
   G.input = input;
   G.controls = controls;
   G.game = game;
-  if (G.settings.graphicsPreset === 'extreme') G.resScale = 0.7;
+  G.resScale = renderResolutionScale(G.settings);
   resize();
   window.addEventListener('resize', resize);
   window.addEventListener('orientationchange', () => setTimeout(resize, 200));

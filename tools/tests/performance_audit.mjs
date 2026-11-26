@@ -21,6 +21,7 @@ const suite = [
   ['Iron Express lights, scenery, and map generation', ['tools/tests/ghosttrain_hotpaths.mjs']],
   ['Gore cleanup and cap regression', ['tools/tests/gore_performance.mjs']],
   ['Optional rolling performance profiler', ['tools/tests/performance_profiler.mjs']],
+  ['Resolution stability and dormant-enemy collision broad phase', ['tools/tests/performance-targeted.mjs']],
   ['Environmental trap profiles and placement', ['--test', 'tools/tests/environmental_traps.mjs']],
   ['Eternal Breach randomized island layouts', ['tools/tests/breach_gen.mjs', '10', '1,11,21']],
   ['Sea of Sand generation (100 seeds)', ['tools/tests/sea_of_sand_generation.mjs']],

@@ -3,7 +3,7 @@ import { G } from '../state.js';
 import { vfxStats } from '../gfx/vfx.js';
 import { audioActiveCount } from './audio.js';
 import { GAME_BUILD_ID, GAME_VERSION } from '../data/build-version.js';
-import { FRAME_BUDGET_MS, summarizeFrameSpikes } from './performance-analysis.js';
+import { FRAME_BUDGET_MS, summarizeFrameGroups, summarizeFrameSpikes } from './performance-analysis.js';
 
 const CAP = 27000; // 3 minutes at 150 Hz; longer on typical 60-120 Hz displays
 const HISTORY_MS = 180000;
@@ -369,6 +369,7 @@ export function performanceReport() {
     },
     renderResolution: { scale: G.resScale || 1, devicePixelRatio: G.dpr || 1, canvasWidth: G.canvas?.width || 0, canvasHeight: G.canvas?.height || 0 },
     summaryMs: summaries,
+    frameSummariesByEnvironmentAndResolution: summarizeFrameGroups(frames),
     framePacing: {
       currentFps: rafGap > 0 ? Number((1000 / rafGap).toFixed(2)) : 0,
       averageFps: meanInterval > 0 ? Number((1000 / meanInterval).toFixed(2)) : 0,

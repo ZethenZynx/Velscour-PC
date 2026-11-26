@@ -375,7 +375,7 @@ export class World {
     }
     return best;
   }
-  alliesOf(team, x, y, r) { return this.query(x, y, r, (c) => c.team === team); }
+  alliesOf(team, x, y, r, out = []) { out.length = 0; return this.query(x, y, r, (c) => c.team === team, out); }
 
   /** Static prop metadata is generated once per area. Keep only props that can
    * emit ambient smoke/light so the per-frame ambience pass avoids scanning
@@ -516,14 +516,18 @@ export class World {
 
   /** Push overlapping creatures apart. */
   separate() {
+    const p = this.player, px = p?.x || 0, py = p?.y || 0, sleepRadius2 = 26 * 26;
+    const dormantAndFar = (c) => c.team === 'enemy' && !c.awake && p && dist2(c.x, c.y, px, py) > sleepRadius2;
     for (const [, cell] of this.grid) {
       for (let i = 0; i < cell.length; i++) {
         const a = cell[i];
-        if (a.static) continue;
+        if (a.static || dormantAndFar(a)) continue;
         for (let j = i + 1; j < cell.length; j++) {
           const b = cell[j];
-        if (this._perfProfiling) this._perfCollisionPairs++;
-          if (b.static && b.owner === a) continue; // the hero walks through his own turrets and totems
+          // Sleeping enemies beyond the AI wake radius still participate in
+          // spatial queries, but need no physical separation until they wake.
+          if (dormantAndFar(b) || (b.static && b.owner === a)) continue;
+          if (this._perfProfiling) this._perfCollisionPairs++;
           const dx = b.x - a.x, dy = b.y - a.y;
           const rr = (a.r + b.r) * 0.85;
           const d2 = dx * dx + dy * dy;

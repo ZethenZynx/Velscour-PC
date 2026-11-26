@@ -58,6 +58,7 @@ export class Projectile {
     }, o);
     this.E = elem(this.el);
     this.hitSet = new Set();
+    this._hostileBuffer = [];
     this.vx = Math.cos(this.ang) * this.speed;
     this.vy = Math.sin(this.ang) * this.speed;
     this.life = this.dur || this.range / this.speed;
@@ -148,14 +149,14 @@ export class Projectile {
       }
     }
     if (this.pull) {
-      for (const c of w.hostiles(this.team, this.x, this.y, 2.6)) {
+      for (const c of w.hostiles(this.team, this.x, this.y, 2.6, this._hostileBuffer)) {
         if (c.static || c.rank === 'boss') continue;
         const a = angleTo(c.x, c.y, this.x, this.y);
         w.map.move(c, Math.cos(a) * 3 * dt, Math.sin(a) * 3 * dt, c.ghost);
       }
     }
     // collisions
-    const hits = w.hostiles(this.team, this.x, this.y, this.r * this.size);
+    const hits = w.hostiles(this.team, this.x, this.y, this.r * this.size, this._hostileBuffer);
     for (const c of hits) {
       if (this.hitSet.has(c.id) || (c.fly && this.lowOnly)) continue;
       this.onHit(c);
@@ -356,6 +357,8 @@ export class Area {
     this.E = elem(this.el);
     this.team = this.src ? this.src.team : this.team;
     this.hitSet = new Map();
+    this._hostileBuffer = [];
+    this._allyBuffer = [];
     this.ground = this.mode !== 'cyclone';
     if (this.mode === 'cyclone') { this.wander = rand(TAU); this.fx = dkFx(this.src, this.fx); }
   }
@@ -375,7 +378,7 @@ export class Area {
       const nx = this.x + tx * dt, ny = this.y + ty * dt;
       if (w.map.isFloor(nx, ny)) { this.x = nx; this.y = ny; } else { this.vx = -this.vx; this.vy = -this.vy; }
       // pull small things in
-      for (const c of w.hostiles(this.team, this.x, this.y, this.r * 1.5)) {
+      for (const c of w.hostiles(this.team, this.x, this.y, this.r * 1.5, this._hostileBuffer)) {
         if (c.static || c.rank === 'boss') continue;
         const a = angleTo(c.x, c.y, this.x, this.y);
         w.map.move(c, Math.cos(a) * 1.5 * dt, Math.sin(a) * 1.5 * dt, c.ghost);
@@ -385,14 +388,14 @@ export class Area {
     if (this.tickT <= 0) {
       this.tickT = this.tick;
       if (this.dmg && this.dmg[1] > 0) {
-        for (const c of w.hostiles(this.team, this.x, this.y, this.r)) {
+        for (const c of w.hostiles(this.team, this.x, this.y, this.r, this._hostileBuffer)) {
           hit(this.src, c, roll(this.dmg), this.el, { ...this.o, dot: this.mode === 'zone', silent: false });
           if (this.slow) c.status.slow = { t: 0.8, amt: 0.4 };
           if (this.pullIn && !c.static && c.rank !== 'boss') { const a = angleTo(c.x, c.y, this.x, this.y); c.kbx += Math.cos(a) * 3; c.kby += Math.sin(a) * 3; }
         }
       }
       if (this.heal) {
-        for (const c of w.alliesOf(this.team, this.x, this.y, this.r)) c.heal ? c.heal(c.maxHp * 0.03, false) : (c.hp = Math.min(c.maxHp, c.hp + c.maxHp * 0.03));
+        for (const c of w.alliesOf(this.team, this.x, this.y, this.r, this._allyBuffer)) c.heal ? c.heal(c.maxHp * 0.03, false) : (c.hp = Math.min(c.maxHp, c.hp + c.maxHp * 0.03));
       }
       if (this.onTick) this.onTick(this);
     }
@@ -587,6 +590,7 @@ export class Orbit {
     this.cd = new Map();
     this.base = rand(TAU);
     this.pos = [];
+    this._hostileBuffer = [];
   }
   get depth() { return this.src.x + this.src.y + 0.5; }
   update(dt) {
@@ -602,7 +606,7 @@ export class Orbit {
       // dense hammer/orbit effects generate avoidable garbage for the collector.
       const p = this.pos[i] || (this.pos[i] = [0, 0, 0]);
       p[0] = x; p[1] = y; p[2] = a;
-      for (const c of w.hostiles(this.team, x, y, 0.42 * this.size)) {
+      for (const c of w.hostiles(this.team, x, y, 0.42 * this.size, this._hostileBuffer)) {
         const k = c.id * 100 + i;
         if ((this.cd.get(c.id) || 0) > this.t) continue;
         this.cd.set(c.id, this.t + 0.33);

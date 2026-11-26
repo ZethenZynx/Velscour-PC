@@ -9,6 +9,33 @@ const TIMING_KEYS = [
   'enemyHistoryMs', 'minimapMs', 'eventsMs', 'environmentMs',
 ];
 
+const percentile = (sorted, p) => sorted.length ? sorted[Math.min(sorted.length - 1, Math.floor((sorted.length - 1) * p))] : 0;
+
+/** Export-time aggregation only: split frame metrics by environment and render scale. */
+export function summarizeFrameGroups(frames) {
+  const groups = new Map();
+  for (const frame of frames) {
+    const scale = Number.isFinite(frame.resolutionScale) ? frame.resolutionScale : 1;
+    const key = JSON.stringify([frame.worldKind || '', frame.environment || '', scale]);
+    let group = groups.get(key);
+    if (!group) {
+      group = { worldKind: frame.worldKind || '', environment: frame.environment || '', resolutionScale: scale, frameCount: 0,
+        frameMs: [], gapMs: [], updateMs: [], renderMs: [] };
+      groups.set(key, group);
+    }
+    group.frameCount++;
+    for (const metric of ['frameMs', 'gapMs', 'updateMs', 'renderMs']) group[metric].push(Number(frame[metric]) || 0);
+  }
+  return [...groups.values()].map((group) => {
+    const result = { worldKind: group.worldKind, environment: group.environment, resolutionScale: group.resolutionScale, frameCount: group.frameCount };
+    for (const metric of ['frameMs', 'gapMs', 'updateMs', 'renderMs']) {
+      const values = group[metric].sort((a, b) => a - b);
+      result[metric] = { median: percentile(values, 0.5), p95: percentile(values, 0.95), p99: percentile(values, 0.99), worst: values.at(-1) || 0 };
+    }
+    return result;
+  });
+}
+
 export function summarizeFrameSpikes(frames, budgetMs = FRAME_BUDGET_MS, limit = 100) {
   return frames.filter((frame) => frame.frameMs >= budgetMs || frame.gapMs >= budgetMs)
     .map((frame) => {

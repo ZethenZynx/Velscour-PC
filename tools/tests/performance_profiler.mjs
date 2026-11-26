@@ -8,6 +8,8 @@ const game = await readFile(new URL('../../src/game/game.js', import.meta.url), 
 const render = await readFile(new URL('../../src/game/render.js', import.meta.url), 'utf8');
 const screens = await readFile(new URL('../../src/ui/screens.js', import.meta.url), 'utf8');
 const state = await readFile(new URL('../../src/state.js', import.meta.url), 'utf8');
+const resolution = await readFile(new URL('../../src/core/render-resolution.mjs', import.meta.url), 'utf8');
+const buildVersion = await readFile(new URL('../../src/data/build-version.js', import.meta.url), 'utf8');
 
 assert.match(state, /performanceProfiler:\s*false/, 'the profiler is disabled for existing and new players by default');
 assert.match(profiler, /if \(!performanceProfilerEnabled\(\)\) return false/, 'disabled collection exits before creating frame history');
@@ -23,7 +25,12 @@ assert.match(profiler, /history\.renderSetupMs\[at\]\s*=\s*phases\.renderSetupMs
 assert.match(profiler, /particleDrawMs.*topHazardDrawMs.*topEffectDrawMs/s, 'the top effects stage is split into ambient, particle, hazard, and effect timings');
 assert.match(profiler, /skyFrontMs.*seeThroughMs.*screenFeedbackMs.*hudLabelsMs.*combatTextMs.*cinematicOverlayMs/s, 'large screen-space rendering stages are separated for spike diagnosis');
 assert.match(profiler, /visibleParticles:\s*world\?\._perfVisibleParticles/, 'visible particle workload is counted separately from retained particles');
-assert.match(profiler, /resolutionScale.*devicePixelRatio.*canvasWidth.*canvasHeight/s, 'per-frame reports capture adaptive backing-store resolution');
+assert.match(profiler, /resolutionScale.*devicePixelRatio.*canvasWidth.*canvasHeight/s, 'per-frame reports capture backing-store resolution');
+assert.match(profiler, /frameSummariesByEnvironmentAndResolution:\s*summarizeFrameGroups\(frames\)/, 'exported diagnostics separate statistics by environment and render scale');
+assert.match(buildVersion, /GAME_BUILD_ID = 'fork-main-performance-diagnostics-2026-11-26'/, 'reports identify this deployed source build instead of using generic development');
+assert.match(main, /renderResolutionScale\(G\.settings\)/, 'backing-store resolution follows the selected graphics preset');
+assert.doesNotMatch(main, /adaptRes|ar\.upAt/, 'performance variation no longer silently changes render resolution');
+assert.match(resolution, /graphicsPreset === 'extreme' \? 0\.7 : 1/, 'standard rendering retains native resolution and only the explicit preset reduces backing-store scale');
 assert.match(profiler, /renderQueue.*renderViews.*renderCreatures.*renderWalls.*renderProps.*renderLoot/s, 'per-frame counts include visible rendering work');
 assert.match(main, /profileBeginFrame\(now\)/, 'frame sampling is connected to the main loop');
 assert.match(main, /profileFinishFrame\(G\.world\)/, 'frame records close after update and rendering');
