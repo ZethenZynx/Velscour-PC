@@ -1,6 +1,7 @@
 // The loot filter (Settings > Loot filter): which item types and rarities auto-pickup grabs. Ground labels have a
 // separately saved filter, initially copied from this one to preserve existing behavior. Clicking an item always picks it up.
 import { G, saveSettings } from '../state.js';
+import { potionLabelCanCollect } from './potionpurchase.js';
 
 /** Filter rows: what each covers. Rarity rows hold the lowest rarity to keep (-1: none of them). */
 export const FILTER_ROWS = [
@@ -11,7 +12,7 @@ export const FILTER_ROWS = [
 ];
 export const FILTER_DEFAULT = { on: false, weapon: 0, offhand: 0, armor: 0, ring: 0, gems: 0, upgrades: true, keep: false };
 
-const LABEL_FILTER_DEFAULT = { on: false, weapon: 0, offhand: 0, armor: 0, ring: 0, gems: 0 };
+const LABEL_FILTER_DEFAULT = { on: false, weapon: 0, offhand: 0, armor: 0, ring: 0, gems: 0, dynamicPotionLabels: false };
 
 function normalizedFilter(target, key, defaults, fallback) {
   let f = target[key];
@@ -60,6 +61,11 @@ export function lootLabelFilter() {
 }
 /** The label filter when it is switched on, else null. */
 export const activeLabelFilter = () => { const f = lootLabelFilter(); return f && f.on ? f : null; };
+
+/** Capacity only suppresses potion labels when the opt-in label-filter preference is enabled. */
+export function shouldSuppressPotionLabelForCapacity(character, kind) {
+  return lootLabelFilter().dynamicPotionLabels === true && !potionLabelCanCollect(character, kind);
+}
 
 function passesFilter(it, f) {
   if (!f || !it) return true;

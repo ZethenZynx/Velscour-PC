@@ -8,14 +8,13 @@ import { replacementIcon } from '../core/replacementart.js';
 import { pixelSprite, gemIcon, goldIcon, ringIcon } from '../gfx/pixelart.js';
 import { rollItem, rollGem, itemName, itemColor, goldPile, goldScale, MATERIALS, GEMS, potionItem, RARITY_COLORS, RARITY_RARE, RARITY_EPIC, RARITY_LEGENDARY, qualityAtDepth, rarityAt } from '../data/items.js';
 import { potionIcon } from '../core/assets.js';
-import { potionLabelCanCollect } from './potionpurchase.js';
 import { artIcon } from '../core/classart.js';
 import { gearIcon } from '../core/gearart.js';
 import { heldIcon } from '../gfx/heldart.js';
 import { AUGMENTS } from '../data/rings.js';
 import { depthLevel } from '../data/depth.js';
 import { sheetIcon } from '../gfx/notation.js';
-import { filterPasses, labelFilterPasses } from './lootfilter.js';
+import { filterPasses, labelFilterPasses, shouldSuppressPotionLabelForCapacity } from './lootfilter.js';
 import { rollSigil, SIGILS } from '../data/items.js';
 import { maybeAccountRelic } from './reliquary.js';
 import { heresyAllows } from './heresies.js';
@@ -538,7 +537,7 @@ export function drawLootLabels(ctx, world, mouse) {
     const dx = p ? p.x - l.x : 0, dy = p ? p.y - l.y : 0, d2 = dx * dx + dy * dy;
     if (d2 > 196) continue;
     if (l.kind === 'potion') {
-      l._potionLabelSuppressedForCapacity = !potionLabelCanCollect(p?.char, l.item?.kind);
+      l._potionLabelSuppressedForCapacity = shouldSuppressPotionLabelForCapacity(p?.char, l.item?.kind);
       if (l._potionLabelSuppressedForCapacity) { l.named = false; silent.push(l); continue; }
     }
     const d = Math.sqrt(d2);

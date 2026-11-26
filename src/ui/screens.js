@@ -1028,7 +1028,7 @@ export function settingsDialog() {
 }
 
 /** Shared item type and rarity controls for pickup and ground-label filters. */
-function itemFilterDialog(title, f, enabledLabel, help, onDone) {
+function itemFilterDialog(title, f, enabledLabel, help, onDone, extraControls = '') {
   const opts = `<option value="-1">None</option>` + RARITY.map((r, i) => `<option value="${i}" style="color:${r.color}">${r.name}${i < RARITY.length - 1 ? ' or better' : ''}</option>`).join('');
   const gemGradeNames = ['Chipped', 'Flawed', 'Standard', 'Flawless', 'Perfect', 'Royal', 'Imperial', 'Celestial', 'Abyssal', 'Eternal'];
   const gemOpts = `<option value="-1">None</option>` + gemGradeNames.map((name, i) => `<option value="${i}">${name}${i < gemGradeNames.length - 1 ? ' or better' : ''}</option>`).join('');
@@ -1036,6 +1036,7 @@ function itemFilterDialog(title, f, enabledLabel, help, onDone) {
     <label><b>${enabledLabel}</b></label><input type="checkbox" data-f="on" ${f.on ? 'checked' : ''}>
     ${(FILTER_ROWS || []).map((r) => `<label>${r.name}</label><select data-f="${r.k}">${opts}</select>`).join('')}
     <label>Gems &amp; Runes</label><select data-f="gems">${gemOpts}</select>
+    ${extraControls}
   </div><p class="dim" style="font-size:12px;max-width:520px">${help}</p>`;
   const d = UI.dialog({ title, html, buttons: [{ label: 'Done', fn: () => { saveLootFilterSettings(); onDone && onDone(); } }] });
   d.box.querySelectorAll('[data-f]').forEach((inp) => {
@@ -1058,12 +1059,14 @@ export function lootFilterDialog(onDone) {
 
 /** Settings > HUD & UI > Ground loot label filter; never changes drops or pickup. */
 export function groundLabelFilterDialog(onDone) {
+  const f = lootLabelFilter();
   return itemFilterDialog(
     'Ground Label Filter',
-    lootLabelFilter(),
+    f,
     'Use the ground label filter',
     'This only filters unprompted item labels. It does not change drops or pickup; filtered items can still be picked up and named when hovered. Use Show gold labels to control gold piles.',
-    onDone
+    onDone,
+    `<label title="Hide only potion names while you already have the matching potion type at capacity">Dynamic Potion Labels</label><input type="checkbox" data-f="dynamicPotionLabels" ${f.dynamicPotionLabels ? 'checked' : ''}>`
   );
 }
 

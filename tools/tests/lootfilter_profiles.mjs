@@ -20,9 +20,10 @@ initializeCharacterLootFilters(first);
 assert.equal(first.lootFilter.weapon, 3, 'existing shared pickup filter migrates to the first hero');
 assert.equal(first.lootFilter.gems, 0, 'legacy boolean gem setting is normalized');
 assert.equal(first.lootLabelFilter.weapon, 2, 'existing shared label filter migrates independently');
+assert.equal(first.lootLabelFilter.dynamicPotionLabels, false, 'existing label filters gain the disabled default without replacing other choices');
 G.char = first;
 Object.assign(lootFilter(), { on: true, weapon: 5, gems: 4 });
-Object.assign(lootLabelFilter(), { on: true, armor: 6, gems: 3 });
+Object.assign(lootLabelFilter(), { on: true, armor: 6, gems: 3, dynamicPotionLabels: true });
 let saved = 0;
 G.game = { autosave() { saved++; } };
 saveLootFilterSettings();
@@ -40,6 +41,7 @@ const savedFirst = listSaves().find((hero) => hero.id === first.id);
 const savedSecond = listSaves().find((hero) => hero.id === second.id);
 assert.equal(savedFirst.lootFilter.weapon, 5, 'pickup profile is written into the hero save');
 assert.equal(savedFirst.lootLabelFilter.armor, 6, 'label profile is written into the hero save');
+assert.equal(savedFirst.lootLabelFilter.dynamicPotionLabels, true, 'the option is saved with the label filter');
 assert.equal(savedSecond.lootFilter.weapon, -1);
 assert.equal(savedSecond.lootLabelFilter.weapon, 7);
 
@@ -54,6 +56,7 @@ const restored = JSON.parse(JSON.stringify(first));
 G.char = restored;
 assert.equal(lootFilter().gems, 4, 'character save data retains pickup settings');
 assert.equal(lootLabelFilter().gems, 3, 'character save data retains label settings');
+assert.equal(lootLabelFilter().dynamicPotionLabels, true, 'character save data retains dynamic potion label preference');
 assert.equal(G.settings.lootFilter.weapon, 3, 'active hero edits never overwrite the old shared settings template');
 
 G.char = null;

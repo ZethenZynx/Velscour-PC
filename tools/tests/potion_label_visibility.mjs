@@ -1,17 +1,29 @@
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
+import { G } from '../../src/state.js';
 import { changePotionCount, potionCapacity, potionLabelCanCollect, setPotionCounts } from '../../src/game/potionpurchase.js';
+import { lootLabelFilter, shouldSuppressPotionLabelForCapacity } from '../../src/game/lootfilter.js';
 
 const kinds = ['hp', 'mp', 'rejuv', 'fury'];
 const character = { potions: { hp: 0, mp: 0, rejuv: 0, fury: 0 } };
 assert.deepEqual(kinds.map((kind) => potionLabelCanCollect(character, kind)), [true, true, true, true]);
 assert.equal(potionCapacity(character, 'hp'), 30, 'the current game capacity is read from the shared belt rule');
+G.char = null;
+delete G.settings.lootLabelFilter;
+assert.equal(lootLabelFilter().dynamicPotionLabels, false, 'dynamic potion labels are disabled by default');
+G.char = character;
+assert.equal(lootLabelFilter().dynamicPotionLabels, false, 'new character label settings inherit the disabled default');
 
 setPotionCounts(character, { hp: 30 });
 assert.equal(potionLabelCanCollect(character, 'hp'), false, 'full health potion labels are suppressed');
+assert.equal(shouldSuppressPotionLabelForCapacity(character, 'hp'), false, 'capacity is ignored while unchecked');
+lootLabelFilter().dynamicPotionLabels = true;
+assert.equal(shouldSuppressPotionLabelForCapacity(character, 'hp'), true, 'checked option hides a full potion type');
 assert.equal(potionLabelCanCollect(character, 'mp'), true, 'health capacity does not suppress mana potion labels');
+assert.equal(shouldSuppressPotionLabelForCapacity(character, 'mp'), false, 'other available potion types keep their labels');
 changePotionCount(character, 'hp', -1);
 assert.equal(potionLabelCanCollect(character, 'hp'), true, 'consuming a potion restores its label eligibility');
+assert.equal(shouldSuppressPotionLabelForCapacity(character, 'hp'), false, 'labels return immediately after consumption');
 setPotionCounts(character, { mp: 30, rejuv: 30 });
 assert.equal(potionLabelCanCollect(character, 'mp'), false);
 assert.equal(potionLabelCanCollect(character, 'rejuv'), false);
@@ -30,7 +42,7 @@ const encounters = await readFile(new URL('../../src/game/encounters.js', import
 const happenings = await readFile(new URL('../../src/game/happenings.js', import.meta.url), 'utf8');
 const save = await readFile(new URL('../../src/game/save.js', import.meta.url), 'utf8');
 const render = await readFile(new URL('../../src/game/render.js', import.meta.url), 'utf8');
-assert.match(loot, /_potionLabelSuppressedForCapacity = !potionLabelCanCollect/);
+assert.match(loot, /_potionLabelSuppressedForCapacity = shouldSuppressPotionLabelForCapacity/);
 assert.match(loot, /if \(l\._potionLabelSuppressedForCapacity\) \{[\s\S]*?continue;/, 'only label drawing is skipped while the silent hitbox remains');
 assert.match(loot, /draw\(ctx\)[\s\S]*?const img = this\.icon\(\)/, 'the ground potion sprite rendering path remains intact');
 assert.match(player, /changePotionCount\(c, g\.item\.kind, 1\)/);
@@ -41,5 +53,9 @@ assert.match(happenings, /changePotionCount\(c, 'hp', 3\)/);
 assert.match(save, /setPotionCounts\(c, c\.potions\)/, 'loading saved counts invalidates cached availability');
 assert.match(player, /invalidatePotionAvailability\(c\)/, 'equipment/stat recomputes invalidate capacity eligibility');
 assert.match(render, /G\.lootBoxes = drawLootLabels\(ctx, world/, 'the shared renderer applies this label rule in every mode');
+const lootFilter = await readFile(new URL('../../src/game/lootfilter.js', import.meta.url), 'utf8');
+const screens = await readFile(new URL('../../src/ui/screens.js', import.meta.url), 'utf8');
+assert.match(lootFilter, /dynamicPotionLabels:\s*false/, 'the option defaults off');
+assert.match(screens, /Dynamic Potion Labels[\s\S]*?data-f="dynamicPotionLabels"/, 'the option is in the Ground Label Filter dialog');
 
 console.log('Potion ground-label capacity, per-type updates, count mutation hooks, and sprite preservation checks passed.');
