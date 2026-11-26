@@ -626,6 +626,25 @@ export function biomesForDepth(depth) {
   return [...new Set(ids)].filter((id) => BIOME_BY_ID[id]);
 }
 
+// Saved characters can carry a shuffled endgame biome bag created before the Sheer Drops
+// environments were added. Refresh that bag once so newly registered endgame biomes are
+// eligible immediately, without re-adding already-spent choices on every later selection.
+const SHEER_ENDGAME_POOL_VERSION = 1;
+function syncSavedSheerEndgamePool(c, all) {
+  if (!c || (c.sheerEndgamePoolVersion || 0) >= SHEER_ENDGAME_POOL_VERSION) return;
+  let bag = Array.isArray(c.biomeBag) ? c.biomeBag.filter((id) => all.includes(id)) : [];
+  if (!bag.length) {
+    // New characters and exhausted cycles start with the complete current rotation.
+    bag = all.slice();
+  } else {
+    for (const { id } of SHEER) {
+      if (all.includes(id) && !bag.includes(id)) bag.push(id);
+    }
+  }
+  c.biomeBag = bag;
+  c.sheerEndgamePoolVersion = SHEER_ENDGAME_POOL_VERSION;
+}
+
 /**
  * A shuffled pool for this depth's configured ranges. Campaign bands are fixed; the endgame cycles its open pool.
  */
@@ -633,6 +652,7 @@ export function drawBiome(c, depth) {
   if (depth <= FINAL_DEPTH) return campaignBiomeForDepth(depth);
   const all = biomesForDepth(depth);
   if (!all.length) return 'catacombs';
+  syncSavedSheerEndgamePool(c, all);
   const overworldIds = all.filter((id) => BIOME_BY_ID[id]?.overworld);
 
   if ((c.overworldMisses || 0) >= 3 && overworldIds.length) {
@@ -658,6 +678,7 @@ export function biomeChoices(c, depth, n = 3) {
   if (depth <= FINAL_DEPTH) return [drawBiome(c, depth)];
   const all = biomesForDepth(depth);
   if (!all.length) return ['catacombs'];
+  syncSavedSheerEndgamePool(c, all);
   const overworldIds = all.filter((id) => BIOME_BY_ID[id]?.overworld);
   const mix = (a) => { a = a.slice(); for (let i = a.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [a[i], a[j]] = [a[j], a[i]]; } return a; };
 
