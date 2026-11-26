@@ -7,6 +7,9 @@ import { generateAct2Town } from '../../src/world/act2town.js';
 G.player = null;
 const variants = new Map(ANIMALS.filter((a) => ['scorpion', 'scarab', 'snake'].includes(a.species)).map((a) => [a.species, a]));
 assert.equal(variants.size, 3, 'all desert critter species are registered');
+assert.deepEqual([...variants.values()].map(({ id, name }) => [id, name]), [
+  ['desert_scorpion_01', 'Scorpion'], ['desert_scarab_01', 'Scarab'], ['desert_snake_01', 'Desert Snake'],
+], 'Act II critter labels omit articles without changing their sprite identifiers');
 
 function town(seed, act = 'act2_town') {
   const map = {

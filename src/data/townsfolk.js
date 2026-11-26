@@ -78,9 +78,9 @@ const BEASTS = [
   ['cat_01_black', 'Soot', 'cat', 'town'], ['cat_02_tabby', 'Biscuit', 'cat', 'town'], ['cat_03_tortoiseshell', 'Patches', 'cat', 'town'],
   ['dog_01_small_terrier', 'Scamp', 'dog', 'town'], ['dog_02_hound', 'Barley', 'dog', 'town'], ['dog_03_shepherd', 'Shep', 'dog', 'town'],
   ['chicken_01_hen', 'a hen', 'chicken', 'town'],
-  ['desert_scorpion_01', 'a scorpion', 'scorpion', 'desert'],
-  ['desert_scarab_01', 'a scarab', 'scarab', 'desert'],
-  ['desert_snake_01', 'a desert snake', 'snake', 'desert'],
+  ['desert_scorpion_01', 'Scorpion', 'scorpion', 'desert'],
+  ['desert_scarab_01', 'Scarab', 'scarab', 'desert'],
+  ['desert_snake_01', 'Desert Snake', 'snake', 'desert'],
   ['rabbit_01', 'a rabbit', 'rabbit', 'edge'], ['rat_01', 'a rat', 'rat', 'edge'],
   ['deer_buck_01', 'a stag', 'deer', 'edge'], ['deer_doe_01', 'a doe', 'deer', 'edge'],
 ];
