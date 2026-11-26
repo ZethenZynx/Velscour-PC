@@ -2,6 +2,7 @@
 import { rand, randi, pick, weighted, clamp, chance, fmtInt } from '../core/util.js';
 import { rollAugments, RING_NAMES, AUGMENTS, KIND_NAMES } from './rings.js';
 import { SKILLS } from './skills.js';
+import { CLASSES } from './classes.js';
 import { SHEET_PRICE } from './tabs.js';
 import { CLASS_FOCUS } from './held.js';
 import { MAX_LEVEL, weaponRef } from './depth.js';
@@ -153,14 +154,95 @@ export const shownEquip = (c) => {
 export const SLOT_NAMES = { weapon: 'Weapon', offhand: 'Off-hand', head: 'Head', body: 'Body', hands: 'Hands', legs: 'Legs', feet: 'Feet', ring: 'Ring', ring1: 'Ring', ring2: 'Ring', ring3: 'Ring', ring4: 'Ring' };
 /** Can item it go in equipment slot `slot`? (A ring fits any of the four ring slots.) */
 export const DUAL_WIELD = new Set(['barbarian', 'rogue']);
-export const CLASS_ARMS = { rogue: { weapon: ['dagger'], offhand: ['dagger'] }, ninja: { weapon: ['katana'], offhand: ['nunchaku'] } };
+const DUAL_WIELD_OFFHAND = { barbarian: 'axe', rogue: 'dagger' };
+
+/** Preferred and secondary main-hand weapon families for class-weighted random weapon drops. */
+export const WEAPON_PROFICIENCY = {
+  paladin: { primary: ['mace', 'hammer'], secondary: ['sword'] },
+  ranger: { primary: ['bow'], secondary: ['crossbow', 'dagger'] },
+  wizard: { primary: ['staff', 'wand'], secondary: [] },
+  necromancer: { primary: ['wand', 'scythe'], secondary: ['dagger'] },
+  barbarian: { primary: ['axe', 'hammer'], secondary: ['sword'] },
+  dragoon: { primary: ['spear'], secondary: [] },
+  totem_master: { primary: ['staff'], secondary: [] },
+  death_knight: { primary: ['sword'], secondary: [] },
+  arcane_sorcerer: { primary: ['wand'], secondary: [] },
+  carrion_witch: { primary: ['staff', 'scythe'], secondary: ['dagger'] },
+  bard: { primary: ['lute'], secondary: ['sword', 'dagger'] },
+  slime_lord: { primary: ['mace'], secondary: [] },
+  boomerang_knight: { primary: ['boomerang'], secondary: [] },
+  lancer: { primary: ['spear'], secondary: ['sword'] },
+  dragon_knight: { primary: ['sword'], secondary: [] },
+  gunner: { primary: ['pistol'], secondary: ['crossbow'] },
+  monk: { primary: ['staff'], secondary: ['mace', 'dagger'] },
+  rogue: { primary: ['dagger'], secondary: [] },
+  ninja: { primary: ['katana'], secondary: [] },
+};
+
 export function armsReason(classId, item, slot = null) {
-  const arms = CLASS_ARMS[classId];
-  if (!arms || !item || item.type !== 'gear') return null;
+  if (!classId || !item || item.type !== 'gear') return null;
   const target = slot || item.slot;
-  const allowed = arms[target];
-  if (allowed && !allowed.includes(item.base)) return `A ${classId === 'rogue' ? 'Rogue' : 'Ninja'} can only equip ${allowed.join(' or ')} in that slot.`;
+  let allowed = null;
+  if (item.slot === 'weapon' && target === 'weapon') allowed = WEAPONS[item.base]?.classes;
+  else if (item.slot === 'offhand' && target === 'offhand') allowed = OFFHANDS[item.base]?.classes || [];
+  else if (item.slot === 'weapon' && target === 'offhand') {
+    allowed = DUAL_WIELD.has(classId) && item.base === DUAL_WIELD_OFFHAND[classId] ? [classId] : [];
+  }
+  if (allowed && !allowed.includes(classId)) {
+    const names = allowed.map((id) => CLASSES[id]?.name || id).join(', ');
+    return names ? `This ${item.slot === 'weapon' ? 'weapon' : 'off-hand'} can only be equipped by: ${names}.` : `This class cannot equip that ${item.slot === 'weapon' ? 'weapon' : 'off-hand'} type.`;
+  }
   return null;
+}
+
+/** Class ids that may equip this main-hand or off-hand item in its normal slot. */
+export function equipmentClassIds(item, targetSlot = item?.slot) {
+  if (!item || item.type !== 'gear') return [];
+  if (item.slot === 'weapon' && targetSlot === 'weapon') return [...(WEAPONS[item.base]?.classes || [])];
+  if (item.slot === 'offhand' && targetSlot === 'offhand') return [...(OFFHANDS[item.base]?.classes || [])];
+  if (item.slot === 'weapon' && targetSlot === 'offhand') return Object.keys(DUAL_WIELD_OFFHAND).filter((id) => DUAL_WIELD_OFFHAND[id] === item.base);
+  return [];
+}
+
+function pickWeightedPool(pool, weight, rng = Math.random) {
+  if (!pool.length || weight <= 0) return null;
+  return weighted(pool.map((base) => [base, weight / pool.length]), rng);
+}
+
+/** Select one weapon base after a weapon slot is already chosen; rarity, slot and drop count are untouched. */
+export function smartLootWeaponBase(classId, rng = Math.random) {
+  const profile = WEAPON_PROFICIENCY[classId];
+  if (!profile) return pick(ACTIVE_WEAPONS);
+  const allowed = new Set(Object.entries(WEAPONS).filter(([, w]) => w.classes?.includes(classId)).map(([base]) => base));
+  const primary = profile.primary.filter((base) => allowed.has(base));
+  const secondary = profile.secondary.filter((base) => allowed.has(base) && !primary.includes(base));
+  const offClass = ACTIVE_WEAPONS.filter((base) => !allowed.has(base));
+  if (!primary.length) return pick(ACTIVE_WEAPONS);
+  const categoryRoll = rng();
+  let pool;
+  if (secondary.length && categoryRoll < 0.10) pool = secondary;
+  else if (offClass.length && categoryRoll >= 0.95) pool = offClass;
+  else pool = primary;
+  return pickWeightedPool(pool, 1, rng) || primary[0];
+}
+
+/** Select class-usable off-hand families at the same 85/10/5 preference while retaining rare off-class finds. */
+export function smartLootOffhandBase(classId, rng = Math.random) {
+  if (!classId || !CLASSES[classId]) return pick(ACTIVE_OFFHANDS);
+  const focus = CLASS_FOCUS[classId];
+  const primary = focus && ACTIVE_OFFHANDS.includes(focus) ? [focus] : [];
+  const allowed = ACTIVE_OFFHANDS.filter((base) => OFFHANDS[base]?.classes?.includes(classId));
+  const secondary = allowed.filter((base) => !primary.includes(base));
+  const offClass = ACTIVE_OFFHANDS.filter((base) => !allowed.includes(base));
+  // Dual-wield classes have no off-hand item families; keep their random off-hand
+  // slot rolls valid items for transfer instead of inventing a fake axe/dagger base.
+  if (!primary.length) return pick(ACTIVE_OFFHANDS);
+  const categoryRoll = rng();
+  let pool;
+  if (secondary.length && categoryRoll < 0.10) pool = secondary;
+  else if (offClass.length && categoryRoll >= 0.95) pool = offClass;
+  else pool = primary;
+  return pickWeightedPool(pool, 1, rng) || primary[0];
 }
 export const fitsSlot = (it, slot, classId = null) => !!it && it.type === 'gear' && !armsReason(classId, it, slot) && (it.slot === slot || (it.slot === 'ring' && RING_SLOTS.includes(slot)) || (DUAL_WIELD.has(classId) && slot === 'offhand' && it.slot === 'weapon'));
 /** The equipment slot an item goes to: its own, or for a ring the first empty ring slot (else the first). */
@@ -289,12 +371,11 @@ export const OFFHANDS = {
 };
 export const ACTIVE_OFFHANDS = Object.keys(OFFHANDS);
 
-/** A random off-hand base from the active pool: favors the wearer's focus, shields, and caster off-hands. */
+/** A random off-hand base, class-weighted when the active hero is known. */
 function offhandBase() {
-  const arms = CLASS_ARMS[ringCtx.classId];
-  if (arms && arms.offhand[0] !== arms.weapon[0] && chance(0.55)) return arms.offhand[0];
-  const own = CLASS_FOCUS[ringCtx.classId];
-  return chance(0.4) && own ? own : chance(0.35) ? 'shield' : pick(ACTIVE_OFFHANDS);
+  return ringCtx.classId
+    ? smartLootOffhandBase(ringCtx.classId)
+    : chance(0.35) ? 'shield' : pick(ACTIVE_OFFHANDS);
 }
 export const ARMORS = {
   head: { names: ['Cap', 'Helm', 'Great Helm', 'Winged Helm', 'Crown'], icon: 'helm', armor: 0.6 },
@@ -632,12 +713,15 @@ export function rollItem(ilvl, opts = {}) {
   const rolledRarity = opts.rarity ?? rollRarity(opts.mf || 0, opts.bonus || 0, ilvl, maxRarity, minRarity, opts.lowerQualityBias ?? 1);
   const rarity = clamp(Math.floor(Number(rolledRarity) || 0), minRarity, maxRarity);
   const tier = tierOf(ilvl), pl = powerLevel(ilvl, rarity);
+  // Choose a class-weighted base before class catalog art is selected. Explicit bases
+  // (unique/set/quest rewards and class-default stock) remain authoritative.
+  if (slot === 'weapon' && !opts.base && ringCtx.classId) opts = { ...opts, base: smartLootWeaponBase(ringCtx.classId) };
+  if (slot === 'offhand' && !opts.base && ringCtx.classId) opts = { ...opts, base: smartLootOffhandBase(ringCtx.classId) };
   const item = { uid: newUid(), type: 'gear', slot, rarity, ilvl, tier, upg: 0, affixes: [], gems: [], sockets: 0 };
   const art = opts.generic || slot === 'ring' ? null : classItem(slot, rarity, opts.base);
   if (art) opts = { ...opts, base: art.base };
   if (slot === 'weapon') {
-    const arms = CLASS_ARMS[ringCtx.classId];
-    item.base = opts.base || (arms && chance(0.5) ? arms.weapon[0] : pick(ACTIVE_WEAPONS));
+    item.base = opts.base || (ringCtx.classId ? smartLootWeaponBase(ringCtx.classId) : pick(ACTIVE_WEAPONS));
     const W = WEAPONS[item.base] || WEAPONS.sword;
     const avg = (6 + pl * 1.8 + 0.022 * pl * pl) * W.dmg;
     item.dmg = [Math.max(1, Math.round(avg * 0.8)), Math.max(2, Math.round(avg * 1.2))];

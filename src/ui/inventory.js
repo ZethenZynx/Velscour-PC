@@ -8,7 +8,7 @@ import { itemCell, itemTooltip, itemGearTip, rarityClass } from './itemui.js';
 import {
   SLOTS, SLOT_NAMES, VANITY_SLOTS, shownEquip, itemName, itemColor, GEMS, gemName,
   itemValue, fitsSlot, slotFor, unsocketCost, makeGem, canWearVanity, itemBaseDisplayName, compareEquipmentForStorage,
-  itemReqStat, charEffectiveStat, canEquipItem, BASE_REQ_STAT, STAT_NAMES,
+  itemReqStat, charEffectiveStat, canEquipItem, armsReason, BASE_REQ_STAT, STAT_NAMES,
   legendaryDesc, augTarget, powerLevel,
 } from '../data/items.js';
 import { AUGMENTS } from '../data/rings.js';
@@ -57,6 +57,8 @@ export function equipFromBag(idx, slot) {
   if (it.unid) { UI.log('Identify it first (buy it from the Gambler).', '#ff8080'); return false; }
   if ((it.req || 1) > c.level) { UI.log(`Requires level ${it.req}.`, '#ff8080'); sfx('error'); return false; }
   const to = slot && fitsSlot(it, slot, c.classId) ? slot : slotFor(c.equip, it, c.classId);
+  const weaponReason = armsReason(c.classId, it, to);
+  if (weaponReason) { UI.log(weaponReason, '#ff8080'); sfx('error'); return false; }
   const reqStat = itemReqStat(it);
   if (reqStat) {
     const cur = charEffectiveStat(c, reqStat.stat, to);
@@ -275,7 +277,12 @@ function handleDropOnEquip(slot, data) {
     const from = data.slot;
     if (!from || from === slot) return false;
     const moving = c.equip[from], target = c.equip[slot];
-    if (!fitsSlot(moving, slot, c.classId) || (target && !fitsSlot(target, from, c.classId))) return false;
+    if (!fitsSlot(moving, slot, c.classId) || (target && !fitsSlot(target, from, c.classId))) {
+      const reason = armsReason(c.classId, moving, slot) || (target && armsReason(c.classId, target, from));
+      if (reason) UI.log(reason, '#ff8080');
+      sfx('error');
+      return false;
+    }
     if (!canEquipItem(c, moving, slot) || (target && !canEquipItem(c, target, from))) {
       UI.log('The items do not meet the requirements for those slots.', '#ff8080');
       sfx('error');
@@ -297,7 +304,7 @@ function handleDropOnEquip(slot, data) {
   const it = c.bag[data.idx];
   if (!it) return false;
   if (it.type === 'gem') return c.equip[slot] ? socketGem(data.idx, { where: 'equip', slot }, 'bag') : false;
-  if (!fitsSlot(it, slot, c.classId)) { sfx('error'); return false; }
+  if (!fitsSlot(it, slot, c.classId)) { UI.log(armsReason(c.classId, it, slot) || 'That item cannot be equipped in this slot.', '#ff8080'); sfx('error'); return false; }
   return equipFromBag(data.idx, slot);
 }
 

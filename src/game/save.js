@@ -2,7 +2,7 @@
 import { CLASSES } from '../data/classes.js';
 import { chooseDungeonAffix, normalizeDungeonAffixIds } from '../data/dungeonaffixes.js';
 import { MAX_LEVEL, MAX_DEPTH, FINAL_DEPTH } from '../data/depth.js';
-import { rollItem, HOLLOW, WEAPONS, OFFHANDS, ARMORS, AFFIX_BY_STAT, affixValue, powerLevel, tierOf, itemReqStat, charEffectiveStat, augTarget, affixScale, flatDmgValue, LINE_MULT, PERK_MULT } from '../data/items.js';
+import { rollItem, HOLLOW, WEAPONS, OFFHANDS, ARMORS, AFFIX_BY_STAT, affixValue, powerLevel, tierOf, itemReqStat, charEffectiveStat, armsReason, augTarget, affixScale, flatDmgValue, LINE_MULT, PERK_MULT } from '../data/items.js';
 import { SCOPE_MUL, augPower, augmentable, AUGMENTS } from '../data/rings.js';
 import { SKILLS, CLASS_SKILLS, MAX_SKILL_LEVEL } from '../data/skills.js';
 import { TALENTS, isTalentLockedByChoice, isTalentPrereqMet } from '../data/talents.js';
@@ -28,7 +28,47 @@ const OVERHAUL_RESET_KEY = 'velscour_campaign_overhaul_reset_v1';
 const OVERHAUL_BACKUP_KEY = 'velscour_campaign_overhaul_backup_v1';
 const SKILL_POINT_LEVEL_RESET = 'skillPointLevelResetV1';
 const OVERHAUL_EXTRA_KEYS = ['velscour_bard_heard', 'velscour_taunts_v1'];
+const WEAPON_COMPAT_BACKUP_PREFIX = KEY + '_weapon_compat_backup_v1_';
 let overhaulResetChecked = false;
+
+/** Move newly incompatible equipped weapons without changing the saved item object. */
+function migrateClassWeaponEquipment(c) {
+  if (c.classWeaponRestrictionsV1) return;
+  const displaced = ['weapon', 'offhand']
+    .filter((slot) => c.equip?.[slot] && armsReason(c.classId, c.equip[slot], slot))
+    .map((slot) => ({ slot, item: c.equip[slot] }));
+  if (!displaced.length) { c.classWeaponRestrictionsV1 = 1; return; }
+
+  // Keep a small exact backup before moving anything. The character save itself
+  // is also rewritten atomically, so the original saved record remains intact
+  // until the migrated record is successfully written.
+  const signature = displaced.map(({ slot, item }) => `${slot}-${item.uid || `${item.base}-${item.ilvl}-${item.rarity}`}`).join('_');
+  const backupKey = WEAPON_COMPAT_BACKUP_PREFIX + String(c.id || 'unknown') + '_' + encodeURIComponent(signature);
+  let backupReady = false;
+  try {
+    let backup = null;
+    const existing = localStorage.getItem(backupKey);
+    if (existing) backup = JSON.parse(existing);
+    if (!backup || backup.version !== 1 || backup.characterId !== c.id || !Array.isArray(backup.items)) {
+      backup = { version: 1, characterId: c.id, characterName: c.name || '', savedAt: Date.now(), items: displaced.map(({ slot, item }) => ({ slot, item })) };
+      localStorage.setItem(backupKey, JSON.stringify(backup));
+      backup = JSON.parse(localStorage.getItem(backupKey) || 'null');
+    }
+    const backupUids = new Set((backup?.items || []).map((entry) => entry?.item?.uid).filter(Boolean));
+    backupReady = !!backup && backup.version === 1 && backup.characterId === c.id && !displaced.some(({ item }) => item.uid && !backupUids.has(item.uid));
+  } catch (error) {
+    console.warn('Could not create the optional class weapon recovery copy; the original character save remains untouched until its migrated replacement is written.', error);
+  }
+  if (!backupReady) console.warn('Class weapon migration is proceeding with the atomic character-save copy as its recovery point.');
+
+  for (const { slot, item } of displaced) {
+    const free = c.bag.findIndex((entry) => !entry);
+    if (free >= 0) c.bag[free] = item;
+    else c.stash.push(item); // Stash renders all occupied rows, including safe migration overflow.
+    c.equip[slot] = null;
+  }
+  c.classWeaponRestrictionsV1 = 1;
+}
 
 /** One-time campaign migration: snapshot gameplay progress, then clear it without touching player preferences. */
 export function applyCampaignOverhaulReset() {
@@ -620,6 +660,7 @@ export function migrate(c) {
   fixGemBag(c);
   fixStash(c);
   fixJewelBox(c);
+  migrateClassWeaponEquipment(c);
   // Existing Covenant gear is left byte-for-byte intact; new drops use the current drop tier.
   // Migrate legacy gems from c.bag into c.gemBag (or overflow into c.jewelBox)
   for (let i = 0; i < c.bag.length; i++) {
