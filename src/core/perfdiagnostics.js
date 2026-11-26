@@ -4,13 +4,14 @@ import { vfxStats } from '../gfx/vfx.js';
 import { audioActiveCount } from './audio.js';
 import { GAME_BUILD_ID, GAME_VERSION } from '../data/build-version.js';
 import { FRAME_BUDGET_MS, summarizeFrameGroups, summarizeFrameSpikes } from './performance-analysis.js';
+import { shouldSampleCounts } from './perf-count-sampling.mjs';
 
 const CAP = 27000; // 3 minutes at 150 Hz; longer on typical 60-120 Hz displays
 const HISTORY_MS = 180000;
 const MAX_LONG_TASKS = 128;
-const KEYS = ['frameMs', 'gapMs', 'updateMs', 'renderMs', 'renderSetupMs', 'floorDrawMs', 'groundDrawMs', 'renderSortMs', 'depthDrawMs', 'effectDrawMs', 'ambientTopDrawMs', 'particleDrawMs', 'topHazardDrawMs', 'topEffectDrawMs', 'lightingMs', 'screenOverlayMs', 'skyFrontMs', 'seeThroughMs', 'screenFeedbackMs', 'hudLabelsMs', 'combatTextMs', 'cinematicOverlayMs', 'automapMs', 'worldMs', 'aiMs', 'pathMs', 'collisionMs', 'hazardMs', 'lootMs', 'vfxMs', 'uiMs', 'enemyHistoryMs', 'minimapMs', 'eventsMs', 'environmentMs'];
+const KEYS = ['frameMs', 'gapMs', 'updateMs', 'renderMs', 'renderSetupMs', 'floorDrawMs', 'groundDrawMs', 'renderSortMs', 'depthDrawMs', 'effectDrawMs', 'ambientTopDrawMs', 'particleDrawMs', 'topHazardDrawMs', 'topEffectDrawMs', 'lightingMs', 'screenOverlayMs', 'skyFrontMs', 'seeThroughMs', 'screenFeedbackMs', 'hudLabelsMs', 'combatTextMs', 'cinematicOverlayMs', 'automapMs', 'worldMs', 'aiMs', 'pathMs', 'collisionMs', 'hazardMs', 'lootMs', 'vfxMs', 'uiMs', 'enemyHistoryMs', 'minimapMs', 'eventsMs', 'environmentMs', 'saveMs'];
 const COUNT_KEYS = ['creatures', 'enemies', 'inactiveEnemies', 'offscreenCreatures', 'deadCreatures', 'corpses', 'projectiles', 'hazards', 'traps', 'groundItems', 'lootLabels', 'particles', 'visibleParticles', 'effects', 'groundEffects', 'topEffects', 'decals', 'gore', 'damageText', 'audio', 'spatialCandidates', 'collisionPairs', 'pathSearches', 'renderQueue', 'renderViews', 'renderCreatures', 'renderWalls', 'renderProps', 'renderLoot'];
-let history = null, cursor = 0, count = 0, frameSerial = 0, prevRaf = 0, nextPaint = 0, latestCounts = null;
+let history = null, cursor = 0, count = 0, frameSerial = 0, prevRaf = 0, nextPaint = 0, latestCounts = null, latestCountsWorld = null;
 let frameStarted = 0, rafGap = 16.667, updateMs = 0, renderMs = 0, phases = null;
 let panel = null, graph = null;
 let longTaskObserver = null, longTasks = [];
@@ -64,7 +65,7 @@ export function setPerformanceProfilerEnabled(enabled) {
   if (enabled) { allocateHistory(); mountPanel(); startLongTaskObserver(); }
   else {
     stopLongTaskObserver();
-    history = null; latestCounts = null; count = cursor = frameSerial = 0;
+    history = null; latestCounts = null; latestCountsWorld = null; count = cursor = frameSerial = 0;
     longTasks = [];
     prevRaf = nextPaint = 0; phases = null;
     dropPanel();
@@ -74,7 +75,7 @@ export function setPerformanceProfilerEnabled(enabled) {
 export function resetPerformanceStatistics() {
   if (!performanceProfilerEnabled()) return false;
   stopLongTaskObserver();
-  history = null; latestCounts = null; count = cursor = frameSerial = 0;
+  history = null; latestCounts = null; latestCountsWorld = null; count = cursor = frameSerial = 0;
   longTasks = [];
   prevRaf = nextPaint = 0; phases = null;
   allocateHistory(); mountPanel();
@@ -132,7 +133,7 @@ export function profileBeginFrame(rafNow) {
   prevRaf = now;
   frameStarted = performance.now();
   updateMs = renderMs = 0;
-  phases = { worldMs: 0, aiMs: 0, pathMs: 0, collisionMs: 0, hazardMs: 0, lootMs: 0, vfxMs: 0, uiMs: 0, enemyHistoryMs: 0, minimapMs: 0, eventsMs: 0, environmentMs: 0, renderSetupMs: 0, floorDrawMs: 0, groundDrawMs: 0, renderSortMs: 0, depthDrawMs: 0, effectDrawMs: 0, ambientTopDrawMs: 0, particleDrawMs: 0, topHazardDrawMs: 0, topEffectDrawMs: 0, lightingMs: 0, screenOverlayMs: 0, skyFrontMs: 0, seeThroughMs: 0, screenFeedbackMs: 0, hudLabelsMs: 0, combatTextMs: 0, cinematicOverlayMs: 0, automapMs: 0 };
+  phases = { worldMs: 0, aiMs: 0, pathMs: 0, collisionMs: 0, hazardMs: 0, lootMs: 0, vfxMs: 0, uiMs: 0, enemyHistoryMs: 0, minimapMs: 0, eventsMs: 0, environmentMs: 0, saveMs: 0, renderSetupMs: 0, floorDrawMs: 0, groundDrawMs: 0, renderSortMs: 0, depthDrawMs: 0, effectDrawMs: 0, ambientTopDrawMs: 0, particleDrawMs: 0, topHazardDrawMs: 0, topEffectDrawMs: 0, lightingMs: 0, screenOverlayMs: 0, skyFrontMs: 0, seeThroughMs: 0, screenFeedbackMs: 0, hudLabelsMs: 0, combatTextMs: 0, cinematicOverlayMs: 0, automapMs: 0 };
   return true;
 }
 
@@ -204,7 +205,7 @@ export function profileFinishFrame(world) {
   history.hazardMs[at] = phases.hazardMs; history.lootMs[at] = phases.lootMs;
   history.vfxMs[at] = phases.vfxMs; history.uiMs[at] = phases.uiMs;
   history.enemyHistoryMs[at] = phases.enemyHistoryMs; history.minimapMs[at] = phases.minimapMs;
-  history.eventsMs[at] = phases.eventsMs; history.environmentMs[at] = phases.environmentMs;
+  history.eventsMs[at] = phases.eventsMs; history.environmentMs[at] = phases.environmentMs; history.saveMs[at] = phases.saveMs;
   history.renderSetupMs[at] = phases.renderSetupMs; history.floorDrawMs[at] = phases.floorDrawMs;
   history.groundDrawMs[at] = phases.groundDrawMs; history.renderSortMs[at] = phases.renderSortMs;
   history.depthDrawMs[at] = phases.depthDrawMs; history.effectDrawMs[at] = phases.effectDrawMs;
@@ -215,11 +216,13 @@ export function profileFinishFrame(world) {
   history.combatTextMs[at] = phases.combatTextMs; history.cinematicOverlayMs[at] = phases.cinematicOverlayMs;
   history.lightingMs[at] = phases.lightingMs; history.screenOverlayMs[at] = phases.screenOverlayMs;
   history.automapMs[at] = phases.automapMs;
-  if ((frameSerial++ % 15) === 0) {
+  if (shouldSampleCounts(frameSerial, latestCountsWorld, world)) {
     latestCounts = readCounts(world);
+    latestCountsWorld = world;
     history.heapBytes[at] = performance.memory?.usedJSHeapSize || 0;
     history.telemetry[at] = JSON.stringify(latestCounts.telemetry);
   } else { history.heapBytes[at] = history.heapBytes[(at - 1 + CAP) % CAP]; history.telemetry[at] = ''; }
+  frameSerial++;
   history.samples[at] = latestCounts ? 1 : 0;
   for (const key of COUNT_KEYS) history.counts[key][at] = latestCounts?.[key] || 0;
   cursor = (cursor + 1) % CAP; count = Math.min(CAP, count + 1);
@@ -258,7 +261,7 @@ function paintPanel(lastFrameMs) {
     ['AI', phases?.aiMs], ['Pathfinding', phases?.pathMs], ['Collision', phases?.collisionMs],
     ['Hazards', phases?.hazardMs], ['Loot', phases?.lootMs], ['VFX', phases?.vfxMs], ['HUD', phases?.uiMs],
     ['Enemy history (HUD subphase)', phases?.enemyHistoryMs], ['Minimap (HUD subphase)', phases?.minimapMs],
-    ['Events / world scripts', phases?.eventsMs], ['Environment', phases?.environmentMs],
+    ['Events / world scripts', phases?.eventsMs], ['Environment', phases?.environmentMs], ['Saves', phases?.saveMs],
     ['Render setup / floor tiles', phases?.renderSetupMs], ['Floor chunk draw', phases?.floorDrawMs],
     ['Ground decals / effects', phases?.groundDrawMs], ['Render queue + sorting', phases?.renderSortMs],
     ['Depth-sorted actors / terrain', phases?.depthDrawMs], ['Particles / effects', phases?.effectDrawMs],
@@ -394,7 +397,7 @@ export function performanceReport() {
     },
     availability: { jsHeap: !!performance.memory, gcEvents: false, gpuFrameTime: false, listenerCounts: false, timerCounts: false, offscreenCachesBytes: false },
     frames,
-    note: 'History is bounded to 180 seconds, retains at most 100 worst 60 Hz-budget frame/gap samples, and stores object lifecycle/type breakdowns every 15 frames. Long-task observation is active only while the profiler is enabled and retains at most 128 entries. This measures main-thread processing and animation-frame cadence, not true display presentation. Browser/GPU frame time, GPU memory, GC events, timer/listener totals, and audio hardware latency are unavailable here and are not fabricated. A missing runtime field means that runtime does not expose it.',
+    note: 'History is bounded to 180 seconds, retains at most 100 worst 60 Hz-budget frame/gap samples, and stores object lifecycle/type breakdowns every 15 frames and immediately when the world changes. Synchronous save time is included as saveMs in frame data. Long-task observation is active only while the profiler is enabled and retains at most 128 entries. This measures main-thread processing and animation-frame cadence, not true display presentation. Browser/GPU frame time, GPU memory, GC events, timer/listener totals, and audio hardware latency are unavailable here and are not fabricated. A missing runtime field means that runtime does not expose it.',
   };
 }
 

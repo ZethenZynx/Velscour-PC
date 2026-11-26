@@ -6,7 +6,7 @@ const TIMING_KEYS = [
   'topEffectDrawMs', 'lightingMs', 'screenOverlayMs', 'skyFrontMs', 'seeThroughMs',
   'screenFeedbackMs', 'hudLabelsMs', 'combatTextMs', 'cinematicOverlayMs', 'automapMs',
   'worldMs', 'aiMs', 'pathMs', 'collisionMs', 'hazardMs', 'lootMs', 'vfxMs', 'uiMs',
-  'enemyHistoryMs', 'minimapMs', 'eventsMs', 'environmentMs',
+  'enemyHistoryMs', 'minimapMs', 'eventsMs', 'environmentMs', 'saveMs',
 ];
 
 const percentile = (sorted, p) => sorted.length ? sorted[Math.min(sorted.length - 1, Math.floor((sorted.length - 1) * p))] : 0;

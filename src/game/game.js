@@ -392,10 +392,12 @@ export const game = {
 
   autosave() {
     if (!G.char) return false;
+    const saveStart = G.settings?.performanceProfiler ? profileStart() : 0;
     this.snapshotRiftCompletion(G.char);
     const characterSaved = writeSave(G.char);
     const marksSaved = saveMarkXp();   // post-level-cap per-hero XP progress (game/marks.js)
     saveT = 0;
+    if (saveStart) profileRecord('save', profileEnd(saveStart));
     return characterSaved && marksSaved;
   },
 
