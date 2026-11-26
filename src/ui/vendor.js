@@ -18,7 +18,7 @@ import { VENDORS } from '../world/town.js';
 import { depthLevel } from '../data/depth.js';
 import { sheetItem, bannerKitItem, BANNER_KIT_PRICE, goldLvl } from '../data/items.js';
 import { SHEET_PRICE } from '../data/tabs.js';
-import { POTION_BELT_CAPACITY, potionPurchaseQuote } from '../game/potionpurchase.js';
+import { potionCapacity, potionPurchaseQuote, setPotionCounts } from '../game/potionpurchase.js';
 import { keepUpgrade } from '../game/keep.js';
 
 const VBY = Object.fromEntries(VENDORS.map((v) => [v.id, v]));
@@ -248,18 +248,19 @@ export const Vendor = {
       const ic = potionIcon({ hp: 'red', mp: 'blue', rejuv: 'purple', fury: 'orange' }[k], 40);
       row.appendChild(ic);
       const held = Math.max(0, Number(c.potions[k]) || 0);
+      const capacity = potionCapacity(c, k);
       row.appendChild(el('div', 'alchemist-potion-description', `<b>${{ hp: 'Healing Potion', mp: 'Mana Potion', rejuv: 'Rejuvenation Potion', fury: 'Elixir of Fury' }[k]}</b> <span class="dim">(you have ${held})</span><div class="dim" style="font-size:12px">${POTION_INFO[k]}</div>`));
       const price = buyPrice(Math.round(POTION_PRICE[k] * (1 + c.level * 0.08)));
       const actions = el('div', 'alchemist-buy-actions');
       for (const n of [1, 5, 'max']) {
-        const quote = potionPurchaseQuote(held, c.gold, price, n);
+        const quote = potionPurchaseQuote(held, c.gold, price, n, capacity);
         const label = n === 'max' ? 'Buy Max' : `Buy ${n}`;
         const b = el('button', 'btn small alchemist-buy-button', label);
         b.appendChild(el('span', 'alchemist-buy-price', `${fmtInt(quote.total)}g`));
         b.disabled = !quote.canBuy;
         b.title = n === 'max'
-          ? quote.quantity ? `Buy ${quote.quantity} to reach ${POTION_BELT_CAPACITY} potions for ${fmtInt(quote.total)} gold` : 'Already at maximum carrying capacity'
-          : quote.canBuy ? `Buy ${quote.quantity} for ${fmtInt(quote.total)} gold` : held + quote.quantity > POTION_BELT_CAPACITY ? 'Exceeds potion belt capacity' : `Costs ${fmtInt(quote.total)} gold; you have ${fmtInt(c.gold)} gold`;
+          ? quote.quantity ? `Buy ${quote.quantity} to reach ${capacity} potions for ${fmtInt(quote.total)} gold` : 'Already at maximum carrying capacity'
+          : quote.canBuy ? `Buy ${quote.quantity} for ${fmtInt(quote.total)} gold` : held + quote.quantity > capacity ? 'Exceeds potion belt capacity' : `Costs ${fmtInt(quote.total)} gold; you have ${fmtInt(c.gold)} gold`;
         b.onclick = () => this.buyPotions(k, n);
         actions.appendChild(b);
       }
@@ -273,7 +274,7 @@ export const Vendor = {
     if (!c?.potions || !Object.hasOwn(c.potions, kind)) return false;
     const held = Math.max(0, Number(c.potions[kind]) || 0);
     const unitPrice = buyPrice(Math.round(POTION_PRICE[kind] * (1 + c.level * 0.08)));
-    const quote = potionPurchaseQuote(held, c.gold, unitPrice, requested);
+    const quote = potionPurchaseQuote(held, c.gold, unitPrice, requested, potionCapacity(c, kind));
     if (!quote.canBuy) {
       UI.log(quote.quantity > quote.remaining ? 'Your potion belt cannot hold that many.' : 'Not enough gold or carrying capacity.', '#ff8080');
       sfx('error');
@@ -282,7 +283,7 @@ export const Vendor = {
     // Recheck the whole purchase against current state before changing either value;
     // Buy Max is never silently reduced to a quantity the character can afford.
     c.gold -= quote.total;
-    c.potions[kind] = held + quote.quantity;
+    setPotionCounts(c, { [kind]: held + quote.quantity });
     sfx('potion');
     changed();
     return true;

@@ -27,7 +27,7 @@ import { MAX_TEMPORARY_BUFF_SECONDS, normalizeTemporaryBuff } from './buffdurati
 import { bardCompose, bardUpdate, harmonyMul } from './bard.js';
 import { ASTRONOMER, astroAfterCast, astroUpdate } from './astronomer.js';
 import { sigCast, sigHit, sigUpdate } from './signature.js';
-import { POTION_BELT_CAPACITY } from './potionpurchase.js';
+import { changePotionCount, invalidatePotionAvailability, potionCapacity } from './potionpurchase.js';
 import { bladeOnBack } from './sigs/deathknight.js';
 import { rogueHit, rogueUpdate } from './rogue.js';
 import { ninjaHit, ninjaUpdate } from './ninja.js';
@@ -287,6 +287,7 @@ export class Player extends Creature {
     this.speed = 4.2 * (this.classId === 'barbarian' ? 1.25 : 1) * (1 + st.moveSpeed / 100);
     this.ghost = !!legendary.wraith && false;
     this.dirty = false;
+    invalidatePotionAvailability(c);
   }
 
   skillLevel(sk) { return effLevel(this, sk); }
@@ -522,8 +523,8 @@ export class Player extends Creature {
         return true;
       }
       case 'potion':
-        if ((c.potions[g.item.kind] || 0) >= POTION_BELT_CAPACITY) { if (g.t > 0.6 && !g.warned) { g.warned = true; floatText(this.x, this.y, 50, 'Potion belt full', '#ccc', 11); G.ui?.event?.({ category: 'loot.inventoryFull', text: 'Potion belt full.', color: '#ff7777', meta: { important: true } }); } return false; }
-        c.potions[g.item.kind] = (c.potions[g.item.kind] || 0) + 1; sfx('pickup');
+        if ((c.potions[g.item.kind] || 0) >= potionCapacity(c, g.item.kind)) { if (g.t > 0.6 && !g.warned) { g.warned = true; floatText(this.x, this.y, 50, 'Potion belt full', '#ccc', 11); G.ui?.event?.({ category: 'loot.inventoryFull', text: 'Potion belt full.', color: '#ff7777', meta: { important: true } }); } return false; }
+        changePotionCount(c, g.item.kind, 1); sfx('pickup');
         G.ui?.event?.({ category: 'loot.consumable', text: `Picked up ${g.item.name || g.item.kind}.` });
         G.ui && G.ui.refresh();
         return true;
@@ -552,7 +553,7 @@ export class Player extends Creature {
     if (this.dead || this.potionCd > 0) return;
     if (!heresyAllows('potion', c)) { floatText(this.x, this.y, 50, 'The Heresy forbids it', '#ff8060', 11); sfx('error'); return; } // Dry Throat
     if (!c.potions[kind]) { floatText(this.x, this.y, 50, 'No potions', '#ccc', 11); sfx('error'); return; }
-    c.potions[kind]--;
+    changePotionCount(c, kind, -1);
     keepPotion();
     this.potionCd = 0.9;
     sfx('potion', 1, 1, { category: 'playerBuff', source: 'Player potion use', sourceActive: false });

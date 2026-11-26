@@ -18,7 +18,7 @@ import { UI } from '../ui/ui.js';
 import { TOWNSFOLK, ANIMALS } from '../data/townsfolk.js';
 import { makeFolk } from './folk.js';
 import { townFacingFlip } from './townsfolkvisuals.js';
-import { POTION_BELT_CAPACITY } from './potionpurchase.js';
+import { changePotionCount, potionCapacity, setPotionCounts } from './potionpurchase.js';
 
 export const ENCOUNTER_CHANCE = 0.5;
 // One event check feeds this complete pool. Legacy encounters remain in the pool, while the new
@@ -246,7 +246,7 @@ const BUILD = {
     n.use = () => {
       if (e.used) { n.say('The salve is holding. Thank you.', 2.5); return; }
       choices(n, 'Wounded Warrior', 'A healing potion would get me back on my feet. You may also leave me to recover.', [
-        { label: 'Give healing potion', run: () => { const c = G.char; if (!c || !(c.potions?.hp > 0)) { n.say('You have no healing potion to spare.', 2.5); return; } c.potions.hp--; e.used = true; n.hp = 100; n.feel('proud', 3); buff(world.player, 'wounded_warrior', 'Warrior’s Resolve', 'phys', { dmg: 12, reduce: 5 }, 25, '+12% damage and +5% damage reduction', '#d8a46b'); reward(world, n, { gold: 0.6 }); UI.refresh(); } },
+        { label: 'Give healing potion', run: () => { const c = G.char; if (!c || !(c.potions?.hp > 0)) { n.say('You have no healing potion to spare.', 2.5); return; } changePotionCount(c, 'hp', -1); e.used = true; n.hp = 100; n.feel('proud', 3); buff(world.player, 'wounded_warrior', 'Warrior’s Resolve', 'phys', { dmg: 12, reduce: 5 }, 25, '+12% damage and +5% damage reduction', '#d8a46b'); reward(world, n, { gold: 0.6 }); UI.refresh(); } },
       ]);
     };
     return e;
@@ -263,10 +263,10 @@ const BUILD = {
       UI.dialog({ title: 'Wandering Merchant', html: '<p>A few road supplies, while my stock lasts.</p>', buttons: [
         ...['hp', 'mp', 'gem'].filter((id) => e.stock[id] > 0).map((id) => ({ label: id === 'hp' ? `Healing Potion · ${prices[id]}g` : id === 'mp' ? `Mana Potion · ${prices[id]}g` : `Depth Gem · ${prices[id]}g`, fn: () => {
           if (G.char !== c || c.gold < prices[id] || e.stock[id] <= 0) { sfx('error'); return; }
-          if (id !== 'gem' && (c.potions[id] || 0) >= POTION_BELT_CAPACITY) { UI.log('Your potion belt is full.', '#ff8080'); return; }
+          if (id !== 'gem' && (c.potions[id] || 0) >= potionCapacity(c, id)) { UI.log('Your potion belt is full.', '#ff8080'); return; }
           c.gold -= prices[id]; e.stock[id]--;
           if (id === 'gem') world.addLoot(new GroundItem(n.x + 0.4, n.y, 'item', { item: rollGroundGem(lvlOf(world) + 2, world) }));
-          else c.potions[id] = (c.potions[id] || 0) + 1;
+          else changePotionCount(c, id, 1);
           UI.refresh(); sfx('gold');
         } })), { label: 'Leave' },
       ] });
@@ -315,7 +315,7 @@ const BUILD = {
     e.n.use = () => {
       if (e.quest.state !== 'available') { e.n.say(e.quest.state === 'failed' ? 'The curse has claimed what remains of me.' : 'The chains are gone. You have my thanks.', 2.5); return; }
       choices(e.n, e.quest.title, 'A curse is eating at me. A rejuvenation draught might break it, but the binding could lash out.', [
-      { label: 'Spend a rejuvenation potion', run: () => { const c = G.char; if (!c || !(c.potions?.rejuv > 0)) { e.n.say('You carry no rejuvenation draught.', 2.5); return; } c.potions.rejuv--; questState(e, 'rewarded', 'The curse is lifted.'); e.quest.rewardClaimed = true; e.n.use = () => e.n.say('The chains are gone. You have my thanks.', 2.5); e.n.feel('relieved', 4); e.n.say('The chains are gone. You have my thanks.', 3); reward(world, e.n, { gold: 0.75 }); buff(world.player, 'cursebreaker', 'Cursebreaker’s Grace', 'holy', { res: 12 }, 45, '+12 all resistances', '#b8e8ff'); UI.refresh(); } },
+      { label: 'Spend a rejuvenation potion', run: () => { const c = G.char; if (!c || !(c.potions?.rejuv > 0)) { e.n.say('You carry no rejuvenation draught.', 2.5); return; } changePotionCount(c, 'rejuv', -1); questState(e, 'rewarded', 'The curse is lifted.'); e.quest.rewardClaimed = true; e.n.use = () => e.n.say('The chains are gone. You have my thanks.', 2.5); e.n.feel('relieved', 4); e.n.say('The chains are gone. You have my thanks.', 3); reward(world, e.n, { gold: 0.75 }); buff(world.player, 'cursebreaker', 'Cursebreaker’s Grace', 'holy', { res: 12 }, 45, '+12 all resistances', '#b8e8ff'); UI.refresh(); } },
       { label: 'Refuse', run: () => { e.n.say('Then the curse will choose for me!', 2); e.n.feel('angry', 2); const m = pack(world, [e.x, e.y], 1, 'champion')[0]; if (m) { m.name = 'The Cursed Wanderer'; m.awake = true; m.maxHp *= 1.4; m.hp = m.maxHp; } world.npcs.splice(world.npcs.indexOf(e.n), 1); questState(e, 'failed', 'The curse took hold; the wanderer is lost.'); } },
       ]);
     };
@@ -594,7 +594,7 @@ const BUILD = {
       const c = G.char;
       n.face(world.player.x, world.player.y); n.feel('excited', 3);
       n.say(pick(['A hero! Potions for the road, on the house!', 'You look half dead. Here!', 'Free samples! Tell your friends!']), 3);
-      if (c?.potions) { c.potions.hp = (c.potions.hp || 0) + 2; c.potions.mp = (c.potions.mp || 0) + 1; }
+      if (c?.potions) setPotionCounts(c, { hp: (c.potions.hp || 0) + 2, mp: (c.potions.mp || 0) + 1 });
       floatText(n.x, n.y, 70, '+2 HEALING, +1 MANA', '#ff9080', 13, { life: 2 });
       if (chance(0.5)) reward(world, n, { items: 1, gold: 0.5 });
       UI.log(`<b>${n.name}</b> shares potions from their pack.`, '#ffb060');

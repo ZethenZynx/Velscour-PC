@@ -8,6 +8,7 @@ const local = new Map();
 globalThis.localStorage = {
   getItem: (key) => local.get(key) ?? null,
   setItem: (key, value) => local.set(key, String(value)),
+  removeItem: (key) => local.delete(key),
 };
 
 G.char = null;

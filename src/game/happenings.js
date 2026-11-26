@@ -5,6 +5,7 @@
 // Wiring: game.buildDungeon -> setupHappenings, game.update -> happeningsTick, combat kill -> world.onKill,
 // game.enterTown -> townHappening, loot.dropLoot reads world.lootMul / world.goldMul. Shrines, remains and cursed
 import { G } from '../state.js';
+import { changePotionCount } from './potionpurchase.js';
 import { CURSED_CHEST_VARIANT } from '../data/chestappearances.js';
 import { rand, randi, chance, pick, TAU, dist } from '../core/util.js';
 import { sfx } from '../core/audio.js';
@@ -885,7 +886,7 @@ function firework(x, y) {
 
 // ------------------------------------------------------------------------------------------------ town
 export const TOWN_EVENTS = {
-  festival: { name: 'Harvest Festival', color: '#ffb040', text: 'The Hollow celebrates! Free potions for the hero.', fn: (c) => { c.potions.hp += 3; c.potions.mp += 3; c.potions.rejuv += 1; return 'Received 3 healing, 3 mana and 1 rejuvenation potion.'; } },
+  festival: { name: 'Harvest Festival', color: '#ffb040', text: 'The Hollow celebrates! Free potions for the hero.', fn: (c) => { changePotionCount(c, 'hp', 3); changePotionCount(c, 'mp', 3); changePotionCount(c, 'rejuv', 1); return 'Received 3 healing, 3 mana and 1 rejuvenation potion.'; } },
   priestess: { name: "The Priestess's Blessing", color: '#ffe080', text: 'Blessed for the next 3 depths: +15% damage, +15% life.', bless: { dmg: 15, life: 15 } },
   oracle: { name: 'The Fortune Teller', color: '#d080ff', text: 'Your stars align for 3 depths: +60% magic and gold find.', bless: { mf: 60, gf: 60 } },
   scholar: { name: 'A Travelling Scholar', color: '#60e0ff', text: 'Lessons in monster lore: +30% experience for 3 depths.', bless: { xp: 30 } },

@@ -11,6 +11,7 @@ import { AUGMENTS, SCOPE_MUL, augPower } from '../data/rings.js';
 import { FINAL_DEPTH, MAX_LEVEL } from '../data/depth.js';
 import { MAX_MASTERY } from './augments.js';
 import { addToBag } from './player.js';
+import { setPotionCounts } from './potionpurchase.js';
 
 export const DEATH_PHRASE = 'DEATH IS THE ONLY WAY OUT, MY KIND SIR.';
 const GIFT_LEVEL = MAX_LEVEL, MYTHIC = 5;
@@ -104,7 +105,7 @@ export function grantDeathGift() {
     c.equip[s] = it;
   }
   // the rest of the best: a full belt, a fortune, and the way to Velscour
-  c.potions = { ...c.potions, hp: 30, mp: 30, rejuv: 30, fury: 30 };
+  setPotionCounts(c, { hp: 30, mp: 30, rejuv: 30, fury: 30 });
   c.gold = Math.max(c.gold, 999999999);
   c.depth = FINAL_DEPTH;
   c.deepest = Math.max(c.deepest || 0, FINAL_DEPTH - 1);

@@ -8,6 +8,7 @@ import { replacementIcon } from '../core/replacementart.js';
 import { pixelSprite, gemIcon, goldIcon, ringIcon } from '../gfx/pixelart.js';
 import { rollItem, rollGem, itemName, itemColor, goldPile, goldScale, MATERIALS, GEMS, potionItem, RARITY_COLORS, RARITY_RARE, RARITY_EPIC, RARITY_LEGENDARY, qualityAtDepth, rarityAt } from '../data/items.js';
 import { potionIcon } from '../core/assets.js';
+import { potionLabelCanCollect } from './potionpurchase.js';
 import { artIcon } from '../core/classart.js';
 import { gearIcon } from '../core/gearart.js';
 import { heldIcon } from '../gfx/heldart.js';
@@ -536,6 +537,10 @@ export function drawLootLabels(ctx, world, mouse) {
     if (l.kind !== 'item' && l.kind !== 'potion' && l.kind !== 'key' && !(l.kind === 'gold' && l.amount > 0)) continue;
     const dx = p ? p.x - l.x : 0, dy = p ? p.y - l.y : 0, d2 = dx * dx + dy * dy;
     if (d2 > 196) continue;
+    if (l.kind === 'potion') {
+      l._potionLabelSuppressedForCapacity = !potionLabelCanCollect(p?.char, l.item?.kind);
+      if (l._potionLabelSuppressedForCapacity) { l.named = false; silent.push(l); continue; }
+    }
     const d = Math.sqrt(d2);
     if (l.kind === 'gold' && !S.showGoldLabels) continue;
     const r = labelRank(l);
@@ -593,6 +598,10 @@ export function drawLootLabels(ctx, world, mouse) {
     const [gx, gy] = camera.tileToScreen(l.x, l.y, 6);
     const box = { x: gx, y: gy, w: 30 * z, h: 24 * z, loot: l };
     boxes.push(box);
+    if (l._potionLabelSuppressedForCapacity) {
+      if (mouse && Math.abs(mouse.x - gx) < box.w / 2 && Math.abs(mouse.y - gy) < box.h / 2) shown = true;
+      continue;
+    }
     if (shown || Math.abs(mouse.x - gx) >= box.w / 2 || Math.abs(mouse.y - gy) >= box.h / 2) continue;
     shown = true;
     const [sx, sy] = camera.tileToScreen(l.x, l.y, 26), spr = labelSprite(l.label, l.color, font), w = spr.tw / G.dpr + 10;

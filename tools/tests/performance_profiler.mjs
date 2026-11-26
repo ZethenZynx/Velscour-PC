@@ -30,7 +30,7 @@ assert.match(profiler, /skyFrontMs.*seeThroughMs.*screenFeedbackMs.*hudLabelsMs.
 assert.match(profiler, /visibleParticles:\s*world\?\._perfVisibleParticles/, 'visible particle workload is counted separately from retained particles');
 assert.match(profiler, /resolutionScale.*devicePixelRatio.*canvasWidth.*canvasHeight/s, 'per-frame reports capture backing-store resolution');
 assert.match(profiler, /frameSummariesByEnvironmentAndResolution:\s*summarizeFrameGroups\(frames\)/, 'exported diagnostics separate statistics by environment and render scale');
-assert.match(buildVersion, /GAME_BUILD_ID = 'fork-main-town-ai-transition-diagnostics-2026-11-26'/, 'reports identify this deployed source build instead of using generic development');
+assert.match(buildVersion, /GAME_BUILD_ID = 'fork-main-potion-label-visibility-2026-11-26'/, 'reports identify this deployed source build instead of using generic development');
 assert.match(main, /renderResolutionScale\(G\.settings\)/, 'backing-store resolution follows the selected graphics preset');
 assert.doesNotMatch(main, /adaptRes|ar\.upAt/, 'performance variation no longer silently changes render resolution');
 assert.match(resolution, /graphicsPreset === 'extreme' \? 0\.7 : 1/, 'standard rendering retains native resolution and only the explicit preset reduces backing-store scale');

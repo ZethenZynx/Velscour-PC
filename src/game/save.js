@@ -14,6 +14,7 @@ import { reliquary } from './reliquary.js';
 import { refundStorageMarks } from './endgame.js';
 import { stashRaw, listRaw } from './herobackup.js';
 import { jewelBoxMigrationComplete } from './jewelboxstorage.mjs';
+import { setPotionCounts } from './potionpurchase.js';
 import {
   BAG_COLS, BAG_ROWS, GEM_BAG_COLS, GEM_BAG_BASE_ROWS, JEWEL_BOX_COLS, JEWEL_BOX_BASE_ROWS,
   fixBag, fixGemBag, fixStash, fixJewelBox,
@@ -423,6 +424,7 @@ export function migrate(c) {
     .filter(([depth, environment]) => Number.isInteger(Number(depth)) && Number(depth) > FINAL_DEPTH && typeof environment === 'string' && environment.length > 0 && !environment.includes('|'))
     .slice(-32));
   c.potions = Object.assign({ hp: 0, mp: 0, rejuv: 0, fury: 0 }, c.potions);
+  setPotionCounts(c, c.potions);
   c.cleared = c.cleared || {};
   // Existing characters who already reached the Act II milestone should never be auto-teleported
   // by this update. Fresh characters keep the one-time arrival available until their first clear.
