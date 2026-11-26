@@ -31,14 +31,14 @@ import { setupWorldObjects } from './worldobjects.js';
 import { setupDungeonEvent } from './dungeonevents.js';
 import { LEGACY_SHRINE_DESCRIPTIONS, shrineFloatingMessage, showShrineActivationMessage } from './shrineeffects.js';
 import { grantMarksWithBonus } from './marks.js';
-import { IMP_BY_ID, IMP_SPRITE_PATH, TREASURE_IMP_SPAWN_DELAY_MAX, TREASURE_IMP_SPAWN_DELAY_MIN, TREASURE_IMP_SPAWN_RETRY_DELAY, advanceTreasureImpSpawnTimer, canSpawnTreasureImp, hasActiveTreasureImp, hasTreasureImpArea, selectImpMovementPattern, selectPrismaticRewards, selectTreasureImp, treasureImpAreaKey, treasureImpPayoutMultiplier, treasureImpSpawnDelay, treasureImpSpriteScale, treasureImpTrailInterval, treasureImpTrailType } from '../data/treasureimps.js';
+import { IMP_BY_ID, IMP_SPRITE_PATH, TREASURE_IMP_ESCAPE_DURATION, TREASURE_IMP_SPAWN_DELAY_MAX, TREASURE_IMP_SPAWN_DELAY_MIN, TREASURE_IMP_SPAWN_RETRY_DELAY, advanceTreasureImpSpawnTimer, canSpawnTreasureImp, hasActiveTreasureImp, hasTreasureImpArea, selectImpMovementPattern, selectPrismaticRewards, selectTreasureImp, treasureImpAreaKey, treasureImpDeathGoldPayout, treasureImpGoldReserve, treasureImpPayoutMultiplier, treasureImpSpawnDelay, treasureImpSpriteScale, treasureImpTrailInterval, treasureImpTrailType } from '../data/treasureimps.js';
 import { endgameUnlocked, canEarnInfernalMarks } from './endgame.js';
 import { makeCovenant } from '../data/relics.js';
 import { grantMarks } from './marks.js';
 import { rollTreasureImpSigilDrop } from './sigildrops.mjs';
 import { TOWN_REWARD_MAX_DEPTH } from './defiance.js';
 
-const IMP_ESCAPE_SECONDS = 38;
+const IMP_ESCAPE_SECONDS = TREASURE_IMP_ESCAPE_DURATION;
 const IMP_WARNING_SECONDS = 6;
 const IMP_GATHERING_CHANCE = 0.025;
 const IMP_JACKPOT_CHANCE = 0.025;
@@ -347,7 +347,9 @@ export function spawnNemesis(world, [x, y], N) {
 
 // ------------------------------------------------------------------------------------------------ treasure imp
 /** Treasure Imp coins respect the same additive Greed gold bonus as other endgame ground rewards. */
-const impGold = (world, lvl, base) => Math.round(base * goldScale(lvl) * rand(0.7, 1.5) * ((1 + (((G.player && G.player.st.goldFind) || 0) + ((G.player && G.player.st.markGold) || 0)) / 100) * (world.goldMul || 1) + ((world.greedGoldPct || 0) + (world.heresyGoldPct || 0)) / 100));
+const impGoldModifier = (world) =>
+  (1 + (((G.player && G.player.st.goldFind) || 0) + ((G.player && G.player.st.markGold) || 0)) / 100) * (world.goldMul || 1) + ((world.greedGoldPct || 0) + (world.heresyGoldPct || 0)) / 100;
+const impGold = (world, lvl, base, modifier = impGoldModifier(world)) => Math.round(base * goldScale(lvl) * rand(0.7, 1.5) * modifier);
 const IMP_JACKPOT_REWARDS = new Set(['gold', 'relic', 'merchant', 'hoarder', 'jackpot', 'jewel', 'alchemist', 'sigil', 'set', 'enchanted', 'mystic', 'fortune', 'artisan', 'abyssal']);
 function impEncounteredInArea(world) {
   return hasTreasureImpArea(treasureImpAreaKey(world), G.char?.treasureImpRandomAreas);
@@ -399,6 +401,17 @@ function impDrop(world, m, kind, data = {}, trail = false) {
   // evicted by the world's existing loot cap if several rare multi-imp encounters overlap.
   world.addLoot(new GroundItem(x, y, kind, trail ? { ...data, fades: data.fades ?? 120 } : data));
   return true;
+}
+function impDropGoldReserve(world, m, total) {
+  const amount = Math.max(0, Math.floor(Number(total) || 0));
+  if (!amount) return 0;
+  // A handful of reachable piles gives the death payout a visible burst without flooding loot entities.
+  const piles = Math.min(5, amount), each = Math.floor(amount / piles), extra = amount % piles;
+  for (let i = 0; i < piles; i++) {
+    const pile = each + (i < extra ? 1 : 0);
+    if (pile > 0) impDrop(world, m, 'gold', { amount: pile });
+  }
+  return amount;
 }
 function impDropSigil(world, m) {
   const stats = G.player?.st || {};
@@ -518,8 +531,13 @@ function dropImpTrailLoot(world, m, dt) {
   } else if (type === 'highGems') {
     impDrop(world, m, 'item', { item: rollGroundGem(lvl + 18, world) }, true);
   } else {
-    // Keep repeatable trail rewards modest; rare/specialized rewards stay in the death payout.
-    impDrop(world, m, 'gold', { amount: impGold(world, lvl, randi(1, 3) + lvl * 0.18) }, true);
+    // Gold is drawn from the spawn-time reserve; the final remainder and kill bonus are paid on death.
+    const reserve = Math.max(0, Number(m.impGoldReserve) || 0);
+    if (reserve > 0) {
+      const requested = impGold(world, lvl, randi(1, 3) + lvl * 0.18, m.impGoldModifier);
+      const amount = Math.min(reserve, requested);
+      if (amount > 0 && impDrop(world, m, 'gold', { amount }, true)) m.impGoldReserve = Math.max(0, reserve - amount);
+    }
     if (type === 'mixed' && chance(0.18)) {
       impDrop(world, m, 'item', { item: rollGroundGem(lvl + 4, world) }, true);
     }
@@ -543,13 +561,17 @@ function discoverImp(world, m) {
 
 function createTreasureImp(world, at, variant, options = {}) {
   const lvl = depthLevel(world.depth), m = makeMonster(world, 'imp', world.biome, lvl + 1, 'normal', at[0], at[1], 0, null);
+  const goldModifier = impGoldModifier(world);
+  const hasGoldTrail = ['gold', 'mixed'].includes(treasureImpTrailType(variant.id));
+  const goldReserve = hasGoldTrail ? treasureImpGoldReserve(lvl, goldScale(lvl), goldModifier) : 0;
   Object.assign(m, { name: variant.name, impVariant: variant.id, impColor: variant.color, nameColor: variant.color,
     goblin: true, aura: variant.color, scale: 0.9, dmg: 0, xp: m.xp * 8, awake: true, rank: 'unique', affixes: [], impEffect: variant.effect,
     impLeft: null, impDiscovered: false, impEscapeWarned: false, impParticleT: 0, dungeonEventImp: !!options.event,
     impSpawnSource: options.event ? 'dungeon-event' : options.specialEncounter || 'natural',
+    impGoldReserve: goldReserve, impGoldOriginalReserve: goldReserve, impGoldModifier: goldModifier, impGoldForfeited: false,
     impMovementPattern: selectImpMovementPattern(), impPatternTimer: rand(0, 0.12), impPatternSign: chance(0.5) ? 1 : -1,
     impTrailTimer: treasureImpTrailInterval() });
-  m.maxHp *= 15; m.hp = m.maxHp; m.speed = 3.5;
+  m.maxHp *= 30; m.hp = m.maxHp; m.speed = 3.5;
   m.moves = null; m.summoner = false; m.proj = null; m.aoeCaster = false;
   // Match the normalized sprite foreground to the actual legacy imp sprite height.
   // This accounts for sprite scale and any biome-specific original imp artwork.
@@ -572,6 +594,11 @@ function createTreasureImp(world, at, variant, options = {}) {
     explosionFx(m.x, m.y, 1.6, effect, 'eruption');
     addEffect(new Ring(m.x, m.y, 0.2, 2.8, 0.65, variant.color, 5));
     for (let i = 0; i < 24; i++) sparkle(m.x + rand(-0.8, 0.8), m.y + rand(-0.8, 0.8), rand(20, 34), variant.color, rand(0.8, 1.25), rand(0.25, 0.42));
+    if (!m.impGoldForfeited) {
+      const reservePayout = treasureImpDeathGoldPayout(m.impGoldReserve, m.impGoldOriginalReserve);
+      impDropGoldReserve(world, m, reservePayout);
+      m.impGoldReserve = 0;
+    }
     if (!m.dungeonEventImp) {
       const jackpot = IMP_JACKPOT_REWARDS.has(variant.reward) && chance(IMP_JACKPOT_CHANCE);
       if (jackpot) UI.log(`<b style="color:#ffd040">Jackpot!</b> ${variant.name}'s reward is increased.`, '#ffd040');
@@ -736,6 +763,7 @@ function impTick(world, dt) {
         addEffect(new Ring(m.x, m.y, 2, 0.1, 0.5, m.impColor, 4)); addEffect(new Column(m.x, m.y, m.impColor, 0.5, 20, 240));
         floatText(m.x, m.y, 70, 'Escaped!', m.impColor, 14, { life: 1.6 });
         UI.log(`<b style="color:${m.impColor}">${m.name}</b> escaped through a rift.`, '#c0a060');
+        m.impGoldReserve = 0; m.impGoldOriginalReserve = 0; m.impGoldForfeited = true;
         m.dungeonEventImpEscaped = true; m.dead = true; sfx('portal', 0.5);
       }
     }

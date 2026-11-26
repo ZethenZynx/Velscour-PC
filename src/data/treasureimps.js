@@ -37,6 +37,29 @@ export const IMP_BY_ID = Object.freeze(Object.fromEntries(TREASURE_IMPS.map((imp
 const IMP_TRAIL_TYPES = Object.freeze({ jewel: 'gems', mystic: 'highGems', jackpot: 'mixed', hoarder: 'mixed', prismatic: 'mixed' });
 export const TREASURE_IMP_TRAIL_INTERVAL_MIN = 0.25;
 export const TREASURE_IMP_TRAIL_INTERVAL_MAX = 0.5;
+export const TREASURE_IMP_ESCAPE_DURATION = 38;
+export const TREASURE_IMP_KILL_GOLD_BONUS = 0.25;
+const TREASURE_IMP_TRAIL_GOLD_BASE_PER_DEPTH = 0.18;
+const TREASURE_IMP_TRAIL_GOLD_RANDOM_MEAN = (0.7 + 1.5) / 2;
+
+/** Budget the expected full flee trail up front so early kills cannot pay less than a completed trail. */
+export function treasureImpGoldReserve(depth, depthGoldScale, goldModifier = 1) {
+  const lvl = Math.max(1, Number(depth) || 1);
+  const scale = Math.max(0, Number(depthGoldScale) || 0);
+  const modifier = Math.max(0, Number(goldModifier) || 0);
+  const meanInterval = (TREASURE_IMP_TRAIL_INTERVAL_MIN + TREASURE_IMP_TRAIL_INTERVAL_MAX) / 2;
+  const expectedDrops = TREASURE_IMP_ESCAPE_DURATION / meanInterval;
+  const meanBase = 2 + lvl * TREASURE_IMP_TRAIL_GOLD_BASE_PER_DEPTH;
+  return Math.max(0, Math.round(expectedDrops * meanBase * scale * TREASURE_IMP_TRAIL_GOLD_RANDOM_MEAN * modifier));
+}
+
+/** Existing trail drops and death payout share one reserve; the kill bonus is based on its spawn-time value. */
+export function treasureImpDeathGoldPayout(remaining, original) {
+  const left = Math.max(0, Number(remaining) || 0);
+  const reserve = Math.max(0, Number(original) || 0);
+  return Math.round(left + reserve * TREASURE_IMP_KILL_GOLD_BONUS);
+}
+
 export function treasureImpTrailType(id) { return IMP_TRAIL_TYPES[id] || 'gold'; }
 
 /** Randomized interval between collectible trail drops while an imp is actively fleeing. */

@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
-import { TREASURE_IMPS, IMP_BY_ID, IMP_SPRITE_PATH, IMP_MOVEMENT_PATTERNS, IMP_MAX_FOREGROUND_PIXELS, TREASURE_IMP_SPAWN_DELAY_MIN, TREASURE_IMP_SPAWN_DELAY_MAX, TREASURE_IMP_TRAIL_INTERVAL_MIN, TREASURE_IMP_TRAIL_INTERVAL_MAX, advanceTreasureImpSpawnTimer, hasTreasureImpArea, selectImpMovementPattern, selectPrismaticRewards, selectTreasureImp, treasureImpAreaKey, treasureImpEligible, treasureImpPayoutMultiplier, treasureImpSpawnDelay, treasureImpSpriteScale, treasureImpTrailInterval, treasureImpTrailType } from '../../src/data/treasureimps.js';
+import { TREASURE_IMPS, IMP_BY_ID, IMP_SPRITE_PATH, IMP_MOVEMENT_PATTERNS, IMP_MAX_FOREGROUND_PIXELS, TREASURE_IMP_ESCAPE_DURATION, TREASURE_IMP_KILL_GOLD_BONUS, TREASURE_IMP_SPAWN_DELAY_MIN, TREASURE_IMP_SPAWN_DELAY_MAX, TREASURE_IMP_TRAIL_INTERVAL_MIN, TREASURE_IMP_TRAIL_INTERVAL_MAX, advanceTreasureImpSpawnTimer, hasTreasureImpArea, selectImpMovementPattern, selectPrismaticRewards, selectTreasureImp, treasureImpAreaKey, treasureImpDeathGoldPayout, treasureImpEligible, treasureImpGoldReserve, treasureImpPayoutMultiplier, treasureImpSpawnDelay, treasureImpSpriteScale, treasureImpTrailInterval, treasureImpTrailType } from '../../src/data/treasureimps.js';
 import { canEarnInfernalMarks } from '../../src/game/endgame.js';
 import { newCharData, migrate } from '../../src/game/save.js';
 import { itemValue, itemSellValue } from '../../src/data/items.js';
@@ -20,6 +20,8 @@ for (const imp of TREASURE_IMPS) {
 }
 assert.equal(TREASURE_IMP_TRAIL_INTERVAL_MIN, 0.25, 'trail drops can be as frequent as four per second');
 assert.equal(TREASURE_IMP_TRAIL_INTERVAL_MAX, 0.5, 'trail drops remain randomized up to twice per second');
+assert.equal(TREASURE_IMP_ESCAPE_DURATION, 38, 'the reserve covers the existing escape duration');
+assert.equal(TREASURE_IMP_KILL_GOLD_BONUS, 0.25, 'kills add one quarter of the spawn-time reserve');
 assert.equal(treasureImpTrailInterval(() => 0), TREASURE_IMP_TRAIL_INTERVAL_MIN);
 assert.equal(treasureImpTrailInterval(() => 1), TREASURE_IMP_TRAIL_INTERVAL_MAX);
 assert.ok(treasureImpTrailInterval(() => 0.5) > TREASURE_IMP_TRAIL_INTERVAL_MIN && treasureImpTrailInterval(() => 0.5) < TREASURE_IMP_TRAIL_INTERVAL_MAX);
@@ -33,6 +35,27 @@ assert.doesNotMatch(impRuntime, /TREASURE_IMP_TRAIL_DROP_LIMIT|impTrailDrops|imp
 const trailDropFunction = impRuntime.match(/function dropImpTrailLoot\(world, m, dt\) \{[\s\S]*?\n\}/)?.[0] || '';
 assert.ok(trailDropFunction.includes('m.impDiscovered') && trailDropFunction.includes('m.moving') && trailDropFunction.includes('m.status?.fear?.t'), 'drops require an actively fleeing, discovered imp');
 assert.doesNotMatch(trailDropFunction, /nearestHostile/, 'trail rewards continue regardless of player distance until flight ends');
+const initialReserve = treasureImpGoldReserve(100, 2, 1.5);
+assert.ok(initialReserve > 0, 'reserve scales from depth gold scaling and the applicable reward multiplier');
+assert.equal(treasureImpDeathGoldPayout(initialReserve, initialReserve), Math.round(initialReserve * 1.25), 'early kill pays the full reserve plus the 25% kill bonus');
+assert.equal(treasureImpDeathGoldPayout(0, initialReserve), Math.round(initialReserve * 0.25), 'after the full trail, the kill still adds the same reserve-based bonus');
+for (const goldModifier of [0.8, 1, 1.5, 3]) {
+  const reserve = treasureImpGoldReserve(100, 2, goldModifier);
+  let left = reserve, trailPaid = 0;
+  for (const requested of [13, 28, 7, 100, 4, 2, 50, 3]) {
+    const drop = Math.min(left, requested);
+    left -= drop;
+    trailPaid += drop;
+  }
+  const kill = treasureImpDeathGoldPayout(left, reserve);
+  assert.equal(trailPaid + kill, Math.round(reserve * (1 + TREASURE_IMP_KILL_GOLD_BONUS)), `trail plus kill payout conserves the original reserve at gold modifier ${goldModifier}`);
+}
+assert.equal(TREASURE_IMPS.filter((imp) => ['gold', 'mixed'].includes(treasureImpTrailType(imp.id))).length, 18,
+  'every gold-trailing variant receives a reserve; Jewel and Mystic retain gem-only trails');
+assert.match(impRuntime, /m\.maxHp \*= 30/, 'Treasure Imp health is doubled from its previous 15x base multiplier');
+assert.match(impRuntime, /impGoldReserve: goldReserve, impGoldOriginalReserve: goldReserve/, 'the reserve and its original amount are fixed at spawn');
+assert.match(impRuntime, /m\.impGoldReserve = 0; m\.impGoldOriginalReserve = 0; m\.impGoldForfeited = true/, 'escape forfeits both remaining reserve and the kill bonus');
+assert.match(impRuntime, /const piles = Math\.min\(5, amount\)/, 'reserve payouts use a bounded five-pile burst');
 assert.equal(treasureImpTrailType('treasure'), 'gold');
 assert.equal(treasureImpTrailType('jewel'), 'gems');
 assert.equal(treasureImpTrailType('mystic'), 'highGems');
@@ -115,4 +138,4 @@ const merchantValue = itemValue({ ...item, vendorValueMult: 2.5 });
 assert.ok(merchantValue > itemValue(item) * 2.4, 'merchant equipment has substantially higher vendor value');
 assert.equal(itemSellValue({ ...item, vendorValueMult: 2.5 }), Math.max(1, Math.floor(merchantValue / 4)), 'vendor value and actual sell payout use the same calculation');
 
-console.log('Treasure Imp registry, frequent uncapped trail rewards, varied death payouts, delayed spawn timing, pause handling, progression gates, movement patterns, sprite scale, Prismatic rewards, save migration, and merchant value checks passed.');
+console.log('Treasure Imp registry, reserve-funded trails and kill bonuses, varied death payouts, spawn timing, progression gates, movement patterns, Prismatic rewards, save migration, and merchant value checks passed.');
