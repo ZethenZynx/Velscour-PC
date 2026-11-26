@@ -1,9 +1,7 @@
-// Herrington Hollow's animals. Cats and dogs wander the lanes, joined by a few chickens that forage and cluck. On
-// the outskirts rabbits graze and hop, rats scurry by the barrels and a stag or a doe crops the grass at the treeline; all of them
-// bolt when the hero comes close. They are town-life agents (src/game/townlife.js) with `animal` set, drawn from the
-// People and Animals pack like everyone else.
+// Ambient animal directors for Herrington Hollow and Sunscorch Oasis. Act I cats, dogs, chickens, and outskirts wildlife
+// use the town-life agent system; Act II desert critters use a small world-local walker. All reuse the People and Animals pack.
 import { G } from '../state.js';
-import { dist, rand, randi, pick, chance, TAU } from '../core/util.js';
+import { dist, rand, randi, pick, chance, TAU, RNG } from '../core/util.js';
 import { ANIMALS } from '../data/townsfolk.js';
 import { sfx } from '../core/audio.js';
 
@@ -48,6 +46,91 @@ export function addTownAnimals(d, rng, force = G.townAnimalsForce) {
       makeAnimal(d, v, at[0] + rand(-0.4, 0.4), at[1] + rand(-0.4, 0.4), s === 'chicken' ? { targetable: false, hostile: false } : {});
     }
   }
+}
+
+/** Add a small, visit-local wildlife population to Sunscorch Oasis. */
+export function startAct2AmbientCritters(world, town) {
+  if (!world || world.townId !== 'act2_town' || world._act2CrittersStarted) return 0;
+  world._act2CrittersStarted = true;
+  const map = world.map;
+  if (!map?.walkable || !map?.circleFree || !map?.findPath) return 0;
+  const rng = new RNG(((town?.seed || 1) ^ 0x2f84c5ab) >>> 0);
+  const nearProps = (pattern) => (world.props || []).filter((p) => pattern.test(p.spr?.name || p.name || ''));
+  const rocks = nearProps(/boulder|basalt|cairn|rock|rubble/i);
+  const shade = nearProps(/acacia|palm|awning|shade|tent|market_cloth/i);
+  const safe = (x, y) => map.walkable(x, y) && map.circleFree(x, y, 0.16) &&
+    !(world.portals || []).some((p) => Math.hypot(p.x - x, p.y - y) < 2.2) &&
+    !(world.npcs || []).some((n) => Number.isFinite(n.x) && Math.hypot(n.x - x, n.y - y) < 1.45) &&
+    !(G.player && Math.hypot(G.player.x - x, G.player.y - y) < 2.1);
+  const land = [];
+  // This one-time map scan supplies all species with safe, walkable resting points.
+  for (let y = 3; y < map.h - 3; y += 1) for (let x = 3; x < map.w - 3; x += 1) {
+    const px = x + 0.5, py = y + 0.5;
+    if (safe(px, py)) land.push({ x: px, y: py });
+  }
+  const counts = { scorpion: rng.int(2, 3), scarab: rng.int(4, 6), snake: rng.int(1, 2) };
+  const habitats = {
+    scorpion: rocks.length ? land.filter((p) => rocks.some((o) => Math.hypot(o.x - p.x, o.y - p.y) < 2.8)) : land,
+    scarab: land.filter((p) => (map.v?.[Math.floor(p.y) * map.w + Math.floor(p.x)] ?? 0) < 30),
+    snake: shade.length ? land.filter((p) => shade.some((o) => Math.hypot(o.x - p.x, o.y - p.y) < 3.2)) : land,
+  };
+  // Keep the preferred habitats where available, falling back to safe open ground on unusual maps.
+  for (const species of Object.keys(counts)) if (habitats[species].length < counts[species] * 2) habitats[species] = land;
+  const placed = [];
+  for (const [species, count] of Object.entries(counts)) {
+    const variants = ANIMALS.filter((v) => v.species === species), spots = habitats[species];
+    if (!variants.length || !spots.length) continue;
+    for (let i = 0; i < count; i++) {
+      const open = spots.filter((p) => placed.every((q) => Math.hypot(q.x - p.x, q.y - p.y) >= 0.9));
+      const candidates = open.length ? open : spots;
+      const at = candidates[rng.int(0, candidates.length - 1)];
+      if (!at) continue;
+      const v = variants[0], a = {
+        id: `act2_${species}_${i}`, name: v.name, role: species, group: 'animal', townAgent: true,
+        townCritter: true, animal: true, species, wild: false, passive: true,
+        targetable: false, hostile: false, sprite: 'townsfolk', townsfolkSpriteId: v.spriteId, spriteId: v.spriteId,
+        townsfolkId: v.id, frameCount: v.frame.count, idleH: v.h, speed: v.speed, runSpeed: v.run,
+        x: at.x, y: at.y, flip: false, animT: rand(0, 6), walkT: 0, idleSeed: randi(0, 9),
+        walking: false, running: false, path: null, goal: null, waitT: rand(1, 5), turnT: 0,
+        use() {},
+      };
+      a.update = (dt) => updateDesertCritter(a, dt, map, spots, rng);
+      world.npcs.push(a); placed.push(a);
+    }
+  }
+  return placed.length;
+}
+
+function updateDesertCritter(a, dt, map, spots, rng) {
+  a.animT += dt;
+  a.waitT = Math.max(0, a.waitT - dt);
+  a.turnT = Math.max(0, a.turnT - dt);
+  a.walking = false;
+  if (a.goal && a.path?.length && a.turnT <= 0) {
+    const [tx, ty] = a.path[0], dx = tx - a.x, dy = ty - a.y, length = Math.hypot(dx, dy);
+    if (length < 0.1) { a.path.shift(); if (!a.path.length) { a.goal = null; a.waitT = a.species === 'snake' ? rand(4, 9) : rand(2, 6); } }
+    else {
+      const step = Math.min(length, a.speed * dt), x = a.x + dx / length * step, y = a.y + dy / length * step;
+      if (G.player && Math.hypot(G.player.x - x, G.player.y - y) < 0.78) {
+        a.goal = a.path = null; a.waitT = 1.2;
+      } else if (map.walkable(x, y) && map.circleFree(x, y, 0.14)) {
+        const screenDx = (x - a.x) - (y - a.y);
+        if (Math.abs(screenDx) > 0.02) a.flip = screenDx < 0;
+        a.x = x; a.y = y; a.walking = true; a.walkT += dt;
+      } else { a.goal = a.path = null; a.waitT = 1.5; }
+    }
+  } else if (a.waitT <= 0 && spots.length) {
+    for (let tries = 0; tries < 4; tries++) {
+      const q = spots[rng.int(0, spots.length - 1)];
+      if (Math.hypot(q.x - a.x, q.y - a.y) < 2.2) continue;
+      const path = map.findPath(a.x, a.y, q.x, q.y, 900, 0.16);
+      if (!path?.length) continue;
+      a.path = path; a.goal = [q.x, q.y]; a.waitT = rand(5, 10); a.turnT = 0.4;
+      break;
+    }
+    if (!a.goal) a.waitT = rand(3, 6);
+  }
+  if (!a.walking) a.walkT = 0;
 }
 
 export function makeAnimal(d, v, x, y, opts = {}) {

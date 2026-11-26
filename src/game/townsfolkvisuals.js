@@ -106,6 +106,11 @@ export function townFrame(n) {
     if (n.chickenPeckT > 0) return 6 + Math.min(2, Math.floor(((n.chickenPeckDuration || 1.1) - n.chickenPeckT) * 3));
     return Math.floor((n.animT || 0) * 0.55) % 3;
   }
+  if (n.species === 'scorpion' || n.species === 'scarab' || n.species === 'snake') {
+    if (n.turnT > 0) return 6 + Math.floor((0.4 - n.turnT) * 7) % 3;
+    if (n.walking) return 3 + Math.floor((n.walkT || 0) * (n.species === 'scarab' ? 8 : 5)) % 3;
+    return Math.floor((n.animT || 0) * 0.45) % 3;
+  }
   const e = n.emotion && n.emotionT > 0 ? EMOTIONS[n.emotion] : null;
   if (e && e.pose && (!n.walking || e.walk || n.animal)) {
     const list = poseList(sid, e);
@@ -134,6 +139,11 @@ export function townMotion(animT = 0, moving = false, emotion = null, running = 
   if (moving && animal === 'chicken') {
     m.bob = Math.abs(Math.sin(animT * 10)) * 1.1;
     const s = Math.sin(animT * 10) * 0.018; m.sy = 1 + s; m.sx = 1 - s * 0.5;
+    return m;
+  }
+  if (moving && (animal === 'scorpion' || animal === 'scarab' || animal === 'snake')) {
+    const f = animal === 'scarab' ? 12 : 7;
+    m.bob = Math.abs(Math.sin(animT * f)) * (animal === 'scarab' ? 0.45 : 0.25);
     return m;
   }
   if (moving) {

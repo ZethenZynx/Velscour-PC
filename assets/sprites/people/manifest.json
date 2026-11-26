@@ -48,6 +48,57 @@
    "idleH": 62
   },
   {
+   "id": "desert_scorpion_01",
+   "kind": "animal",
+   "frames": [
+    "idle",
+    "angry",
+    "scared",
+    "point",
+    "dead",
+    "excited",
+    "love",
+    "cheer",
+    "attack",
+    "happy"
+   ],
+   "idleH": 48
+  },
+  {
+   "id": "desert_scarab_01",
+   "kind": "animal",
+   "frames": [
+    "idle",
+    "angry",
+    "scared",
+    "point",
+    "dead",
+    "excited",
+    "love",
+    "cheer",
+    "attack",
+    "happy"
+   ],
+   "idleH": 34
+  },
+  {
+   "id": "desert_snake_01",
+   "kind": "animal",
+   "frames": [
+    "idle",
+    "angry",
+    "scared",
+    "point",
+    "dead",
+    "excited",
+    "love",
+    "cheer",
+    "attack",
+    "happy"
+   ],
+   "idleH": 46
+  },
+  {
    "id": "cat_01_black",
    "kind": "animal",
    "frames": [

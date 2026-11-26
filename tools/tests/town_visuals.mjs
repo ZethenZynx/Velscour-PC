@@ -18,6 +18,7 @@ assert.equal(townFacingFlip(-0.012,-0.0105,false),false,'nearly vertical steps k
 assert.equal(townFrameCount('18_king'),10);
 assert.equal(townFrameCount('dog_02_hound'),10);
 assert.equal(townFrameCount('chicken_01_hen'),10);
+for(const id of ['desert_scorpion_01','desert_scarab_01','desert_snake_01']) assert.equal(townFrameCount(id),10);
 assert.equal(townFrameCount('00_greener_spooky_goofy_a'),20);
 assert.equal(townFrameOf('18_king','attack'),8);
 assert.equal(townFrameOf('18_king','thinking'),-1,'extras only on the Greener sheets');
@@ -48,6 +49,15 @@ hen.walking=true;hen.walkT=.25;assert.equal(townFrame(hen),4,'chickens animate t
 hen.walking=false;hen.chickenPeckDuration=1;hen.chickenPeckT=.9;assert.equal(townFrame(hen),6,'chickens begin the peck sequence');
 hen.chickenPeckT=.2;assert.equal(townFrame(hen),8,'peck sequence settles then lifts to the final pose');
 hen.chickenPeckT=0;hen.chickenCluckT=.2;assert.equal(townFrame(hen),9,'clucking uses its dedicated pose');
+for(const species of ['scorpion','scarab','snake']){
+  const critter={animal:true,species,townsfolkSpriteId:`desert_${species==='snake'?'snake':'scarab'}_01`,animT:0};
+  if(species==='scorpion')critter.townsfolkSpriteId='desert_scorpion_01';
+  assert.equal(townFrame(critter),0,`${species} idles on the first frame`);
+  critter.animT=3;assert.ok(townFrame(critter)>=0&&townFrame(critter)<=2,`${species} cycles idle poses`);
+  critter.turnT=.2;assert.ok(townFrame(critter)>=6&&townFrame(critter)<=8,`${species} has a short turning pose`);
+  critter.turnT=0;
+  critter.walking=true;critter.walkT=.25;assert.ok(townFrame(critter)>=3&&townFrame(critter)<=5,`${species} uses crawling poses`);
+}
 // every emotion: its poses exist (or fall back), its icon is drawn, its motion stays sane
 for(const sid of ['18_king','00_greener_20_frames','cat_01_black']){
   const idle={walking:false,animT:1,townsfolkSpriteId:sid,emotionT:5,emoteClock:0,animal:sid.startsWith('cat')};

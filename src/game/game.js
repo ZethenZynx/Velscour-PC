@@ -179,6 +179,7 @@ import { Vendor } from '../ui/vendor.js';
 import { Stash } from '../ui/stash.js';
 import { JewelBox } from '../ui/jewelbox.js';
 import { startTownLife } from './townlife.js';
+import { startAct2AmbientCritters } from './townanimals.js';
 import { toggleInventory, toggleCharacter } from '../ui/inventory.js';
 import { toggleTree, toggleBook, showFirstSkillTutorial } from '../ui/skills.js';
 import { toggleTalents } from '../ui/talents.js';
@@ -718,6 +719,8 @@ export const game = {
 
     const arrive = t.start || [t.center.x, t.center.y];
     this.setWorld(world, arrive, old);
+    startAct2AmbientCritters(world, t);
+    void preloadTownSheets(world.npcs.filter((n) => n.townCritter).map((n) => n.townsfolkSpriteId));
     void warmLevelArt(world);
     HUD.setArea('Sunscorch Oasis', 'Act II Town — Desert Haven');
     playMusic(locationMusicKind(world));
