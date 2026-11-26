@@ -60,6 +60,7 @@ export const Marks = {
       p.root.style.height = `${Math.min(820, Math.max(500, pref.h || defaultPanel.h), window.innerHeight * 0.88)}px`;
       p.root.style.maxHeight = '88vh';
       if (Number.isFinite(pref.x) && Number.isFinite(pref.y) && UI.desktopPanels()) UI.placePanel('marks', pref.x, pref.y);
+      else UI.layoutPanels();
     }
     p.head.title = 'Drag to move · resize from the lower-right corner';
     if (!p._marksPersist) {

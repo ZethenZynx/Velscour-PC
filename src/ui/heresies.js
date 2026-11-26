@@ -86,10 +86,9 @@ export const Heresies = {
     const milestoneDetails = el('details', 'hx-milestone-details');
     milestoneDetails.innerHTML = `<summary>Milestone rewards <span>${HERESY_MILESTONES.filter((m) => rank >= m.rank).length} / ${HERESY_MILESTONES.length} reached</span></summary><div class="hx-miles">${milestoneRows}</div>`;
     milestoneDetails.addEventListener('toggle', () => {
-      // Default paired positions are vertically centered against their content.
-      // Keep manually dragged coordinates fixed when the disclosure changes size.
-      const positions = G.settings.panelPositions || {};
-      if (positions.heresies || positions.marks) return;
+      // Recalculate the shared pair height when the disclosure changes. Saved
+      // drag coordinates remain authoritative; only their viewport-relative
+      // placement is clamped to accommodate the new window size.
       requestAnimationFrame(() => {
         if (UI.isOpen('heresies') && UI.isOpen('marks')) UI.layoutPanels();
       });

@@ -1,7 +1,7 @@
 // Non-browser checks for paired Altar/Marks positions and title-bar drag offsets.
 // Run: node tools/tests/heresy_pair_layout.mjs
 import assert from 'node:assert/strict';
-import { heresyPairLayout, panelDragPosition, panelDragMovedFrom, isHeresyPairManagedPanel } from '../../src/ui/ui.js';
+import { heresyPairLayout, singleEndgamePanelPosition, panelDragPosition, panelDragMovedFrom, isHeresyPairManagedPanel } from '../../src/ui/ui.js';
 import { heresyModifierColumns } from '../../src/ui/heresies.js';
 
 const columns = heresyModifierColumns();
@@ -16,6 +16,8 @@ assert.ok(wide.panels.heresies.x < wide.panels.marks.x, 'the Altar is on the lef
 assert.equal(wide.panels.marks.x - wide.panels.heresies.x - wide.panels.heresies.w, wide.gap, 'default gap is consistent');
 assert.ok(Math.abs((wide.panels.heresies.x + wide.panels.marks.x + wide.panels.marks.w) / 2 - 960) < 1, 'the pair is horizontally centered');
 assert.equal(wide.panels.heresies.y, wide.panels.marks.y, 'both windows share a centered top edge');
+assert.equal(wide.panels.heresies.w, wide.panels.marks.w, 'the Marks window matches the Altar width');
+assert.equal(wide.panels.heresies.h, wide.panels.marks.h, 'both windows share aligned top and bottom edges');
 
 const compact = heresyPairLayout(1366, 768, {}, { heresies: 700, marks: 620 });
 assert.equal(compact.stacked, false, 'a compact landscape resolution remains side by side when both fit');
@@ -28,12 +30,15 @@ const capped = heresyPairLayout(1920, 1080, {}, { heresies: 1400, marks: 640 });
 assert.equal(capped.panels.heresies.h, 1056, 'small viewports cap oversized content to the visible area');
 
 assert.ok(wide.panels.heresies.w >= 900, 'the Altar uses the available horizontal space');
-assert.ok(wide.panels.marks.w >= 840, 'the Marks panel retains a comfortable desktop width');
+assert.equal(wide.panels.marks.w, wide.panels.heresies.w, 'the Marks panel uses the Altar reference width');
 assert.equal(wide.panels.heresies.h, collapsedHeights.heresies, 'collapsed Altar uses its natural content height');
+assert.equal(wide.panels.marks.h, collapsedHeights.heresies, 'the Marks panel matches the Altar height');
 const expanded = heresyPairLayout(1920, 1080, {}, expandedHeights);
 assert.equal(expanded.panels.heresies.h, expandedHeights.heresies, 'expanded milestones increase the Altar height to fit content');
+assert.equal(expanded.panels.marks.h, expandedHeights.heresies, 'the Marks panel grows with the Altar to keep edges aligned');
 assert.ok(expanded.panels.heresies.y < wide.panels.heresies.y, 'default pair recenters vertically when Altar content expands');
 assert.equal(expanded.panels.marks.y, expanded.panels.heresies.y, 'expanded pair remains aligned without overlap');
+assert.deepEqual(singleEndgamePanelPosition(1920, 1080, 900, 800), { x: 510, y: 140 }, 'a standalone window is centered in both axes');
 const saved = heresyPairLayout(1920, 1080, { heresies: { x: 0, y: 0.1 }, marks: { x: 0.99, y: 0.1 } }, collapsedHeights);
 assert.equal(saved.panels.heresies.x, 0, 'valid saved Altar coordinates restore');
 assert.equal(saved.panels.marks.x, 0.99 * (1920 - saved.panels.marks.w), 'saved Marks coordinates restore proportionally');

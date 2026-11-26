@@ -7,18 +7,19 @@ import { sfx, notificationSfx } from '../core/audio.js';
 
 /** Calculate a responsive, untransformed default for the paired Altar/Marks windows. */
 export function heresyPairLayout(viewW, viewH, saved = {}, naturalHeights = {}) {
-  const margin = 12, gap = 14, maxW = Math.max(1, viewW - margin * 2), maxH = Math.max(1, viewH - margin * 2);
+  const margin = 12, gap = 10, maxW = Math.max(1, viewW - margin * 2), maxH = Math.max(1, viewH - margin * 2);
   const available = maxW - gap;
   if (available < 1300 || maxH < 520) return { stacked: true, margin, gap };
-  // Give the wider three-column altar just over half of the available width;
-  // the Marks panel receives every remaining pixel. No UI transform is used.
-  const altarW = Math.min(1040, Math.max(680, available * 0.53)), marksW = available - altarW;
-  const altarH = Math.max(1, Math.min(maxH, Number(naturalHeights.heresies) || 1));
-  const marksH = Math.max(1, Math.min(maxH, Number(naturalHeights.marks) || 1));
-  const groupW = altarW + gap + marksW, groupH = Math.max(altarH, marksH);
+  // Match both windows to the Altar's width, using equal halves of the viewport
+  // so the complete pair fits at desktop resolutions without scaling either UI.
+  const panelW = Math.min(1040, available / 2);
+  // Use one shared height so the top and bottom edges align. Expanded milestone
+  // content can grow the pair together; viewport limits become internal scrolling.
+  const sharedH = Math.max(1, Math.min(maxH, Math.max(Number(naturalHeights.heresies) || 1, Number(naturalHeights.marks) || 1)));
+  const groupW = panelW * 2 + gap, groupH = sharedH;
   const defaults = {
-    heresies: { x: (viewW - groupW) / 2, y: (viewH - groupH) / 2, w: altarW, h: altarH },
-    marks: { x: (viewW - groupW) / 2 + altarW + gap, y: (viewH - groupH) / 2, w: marksW, h: marksH },
+    heresies: { x: (viewW - groupW) / 2, y: (viewH - groupH) / 2, w: panelW, h: sharedH },
+    marks: { x: (viewW - groupW) / 2 + panelW + gap, y: (viewH - groupH) / 2, w: panelW, h: sharedH },
   };
   for (const [name, panel] of Object.entries(defaults)) {
     const position = saved[name];
@@ -32,11 +33,16 @@ export function heresyPairLayout(viewW, viewH, saved = {}, naturalHeights = {}) 
   // Old paired-window preferences can overlap after widening the altar. Discard
   // only the incompatible pair and restore the side-by-side defaults.
   if (overlap || a.x >= m.x) {
-    defaults.heresies = { x: (viewW - groupW) / 2, y: (viewH - groupH) / 2, w: altarW, h: altarH };
-    defaults.marks = { x: (viewW - groupW) / 2 + altarW + gap, y: (viewH - groupH) / 2, w: marksW, h: marksH };
+    defaults.heresies = { x: (viewW - groupW) / 2, y: (viewH - groupH) / 2, w: panelW, h: sharedH };
+    defaults.marks = { x: (viewW - groupW) / 2 + panelW + gap, y: (viewH - groupH) / 2, w: panelW, h: sharedH };
     return { stacked: false, margin, gap, panels: defaults, resetSavedPositions: true };
   }
-  return { stacked: false, margin, gap, panels: defaults };
+  return { stacked: false, margin, gap, panels: defaults, height: sharedH };
+}
+
+/** Center a standalone Altar or Marks panel inside the available panel area. */
+export function singleEndgamePanelPosition(viewW, viewH, panelW, panelH) {
+  return { x: Math.max(0, (viewW - panelW) / 2), y: Math.max(0, (viewH - panelH) / 2) };
 }
 
 /** Convert a screen pointer position and its preserved title-bar offset to host-relative panel coordinates. */
@@ -285,6 +291,8 @@ export const UI = {
     const wasPaired = this.panelsEl.classList.contains('heresy-marks-pair');
     this.panelsEl.classList.toggle('heresy-marks-pair', paired);
     this.panelsEl.classList.toggle('heresy-marks-stacked', false);
+    const loneEndgame = this.panels.size === 1 && ['heresies', 'marks'].some((name) => this.panels.has(name));
+    this.panelsEl.classList.toggle('heresy-marks-single', loneEndgame);
     if (wasPaired && !paired) {
       this.windowPositions.delete('heresies');
       this.windowPositions.delete('marks');
@@ -337,7 +345,7 @@ export const UI = {
           panel.root.style.setProperty('right', 'auto', 'important');
           panel.root.style.setProperty('bottom', 'auto', 'important');
           panel.root.style.setProperty('width', `${w}px`, 'important');
-          panel.root.style.setProperty('height', 'auto', 'important');
+          panel.root.style.setProperty('height', `${layout.panels[name].h}px`, 'important');
           panel.root.style.setProperty('min-width', '0', 'important');
           panel.root.style.setProperty('min-height', '0', 'important');
           panel.root.style.setProperty('max-width', 'none', 'important');
@@ -354,10 +362,9 @@ export const UI = {
           panel.root.style.setProperty('top', 'auto', 'important');
           panel.root.style.setProperty('right', 'auto', 'important');
           panel.root.style.setProperty('bottom', 'auto', 'important');
-          const heresyPanel = panel.root.dataset.panel === 'heresies';
-          panel.root.style.setProperty('width', heresyPanel ? 'min(96vw, 1040px)' : 'min(96vw, 920px)', 'important');
-          panel.root.style.setProperty('height', 'auto', 'important');
-          panel.root.style.setProperty('max-height', heresyPanel ? 'min(68vh, 760px)' : 'min(48vh, 480px)', 'important');
+          panel.root.style.setProperty('width', 'min(96vw, 1040px)', 'important');
+          panel.root.style.setProperty('height', 'min(78vh, 760px)', 'important');
+          panel.root.style.setProperty('max-height', 'min(78vh, 760px)', 'important');
           panel.root.style.setProperty('min-width', '0', 'important');
           panel.root.style.setProperty('min-height', '0', 'important');
           panel.root.style.setProperty('translate', 'none', 'important');
@@ -366,6 +373,24 @@ export const UI = {
           if (panel.root.classList.contains('ui-layout-hidden')) panel.root.classList.remove('ui-layout-hidden');
         }
       }
+      return;
+    }
+    if (loneEndgame && this.desktopPanels()) {
+      const [name, panel] = this.panels.entries().next().value;
+      const { w, h, pw, ph } = this.panelBounds(panel);
+      const saved = G.settings.panelPositions?.[name];
+      const moved = this.windowPositions.get(name);
+      let x, y;
+      if (moved?.moved) ({ x, y } = moved);
+      else if (Number.isFinite(saved?.x) && Number.isFinite(saved?.y)) {
+        x = Math.max(0, Math.min(saved.x, 1) * Math.max(0, w - pw));
+        y = Math.max(0, Math.min(saved.y, 1) * Math.max(0, h - ph));
+      } else ({ x, y } = singleEndgamePanelPosition(w, h, pw, ph));
+      panel.root.style.setProperty('position', 'absolute', 'important');
+      panel.root.style.setProperty('left', `${x}px`, 'important');
+      panel.root.style.setProperty('top', `${y}px`, 'important');
+      panel.root.style.setProperty('right', 'auto', 'important');
+      panel.root.style.setProperty('bottom', 'auto', 'important');
       return;
     }
     this.panelsEl.classList.toggle('vendor-trio', trio);
