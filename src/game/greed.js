@@ -2,6 +2,7 @@
 import { G } from '../state.js';
 import { clamp } from '../core/util.js';
 import { chooseDungeonAffix, normalizeDungeonAffixIds } from '../data/dungeonaffixes.js';
+import { endgameUnlocked } from './endgame.js';
 
 export const GREED_MAX = 5;
 export const GREED_LEVELS = Object.freeze([
@@ -95,6 +96,13 @@ export function getGreedAffixPreview(character, depth, environment = '', selecte
     if (level === greedOf(character)) character.greedAffixPreview = { level, depth: n, environment, ids: [...ids] };
   }
   return ids;
+}
+
+/** Shared eligibility/roll path for Infinite Endgame environments outside the standard depth generator. */
+export function getEndgameDungeonAffixes(character, depth, environment = '') {
+  const n = Math.floor(Number(depth) || 0);
+  if (!character || n <= 100 || !endgameUnlocked(character)) return [];
+  return getGreedAffixPreview(character, n, environment, greedOf(character));
 }
 
 /** Save a preferred difficulty. Its effects are applied only when a Depth 101+ dungeon is built. */

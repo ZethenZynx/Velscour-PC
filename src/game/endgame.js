@@ -10,7 +10,7 @@ const MARKS_RESET_VERSION = 2;
 export const MARK_CATS = INFERNAL_UPGRADES.map((u) => u.id);
 let E = null;
 
-function blank() { return { v: 1, marksResetVersion: MARKS_RESET_VERSION, markXpMigrationV1: false, unlocked: 0, marks: { pts: 0, xp: 0, spentValue: 0, rewardRemainder: 0, legacyFerocity: 0, spent: Object.fromEntries(MARK_CATS.map((id) => [id, 0])) }, storageRefundV1: { heroes: {}, reliquary: false }, bests: {}, keysFound: 0, unboundWins: 0 }; }
+function blank() { return { v: 1, marksResetVersion: MARKS_RESET_VERSION, markXpMigrationV1: false, unlocked: 0, heresySelection: [], heresySelectionSet: false, marks: { pts: 0, xp: 0, spentValue: 0, rewardRemainder: 0, legacyFerocity: 0, spent: Object.fromEntries(MARK_CATS.map((id) => [id, 0])) }, storageRefundV1: { heroes: {}, reliquary: false }, bests: {}, keysFound: 0, unboundWins: 0 }; }
 /** A record with every field present and sane (a damaged one keeps what it can). */
 export function fixEndgame(r) {
   const o = blank();
@@ -20,6 +20,8 @@ export function fixEndgame(r) {
   o.marksResetVersion = MARKS_RESET_VERSION;
   o.markXpMigrationV1 = !!r.markXpMigrationV1;
   o.unlocked = Number(r.unlocked) > 0 ? Number(r.unlocked) : 0;
+  o.heresySelection = Array.isArray(r.heresySelection) ? [...new Set(r.heresySelection.filter((id) => typeof id === 'string'))] : [];
+  o.heresySelectionSet = !!r.heresySelectionSet;
   const m = r.marks && typeof r.marks === 'object' ? r.marks : {};
   // The historical v1 reset removed campaign-era points. Keep that policy for v0 data;
   // the v1 -> v2 upgrade below preserves valid progression and refunds removed Fortune.
@@ -109,6 +111,15 @@ if (typeof addEventListener === 'function') addEventListener('velscour-overhaul-
 export function endgameUnlocked(c = G.char) { return !!(endgame().unlocked || (c && c.cleared && c.cleared[FINAL_DEPTH])); }
 /** Authoritative campaign victory record; unlike cleared[FINAL_DEPTH], this is only written by Velscour's real defeat. */
 export function campaignVictoryRecorded() { return Number(endgame().unlocked) > 0; }
+/** Account default for new heroes' Breach runs; each established hero keeps their own saved selection. */
+export function accountHeresySelection() { return [...endgame().heresySelection]; }
+/** Save the last altar selection as the default for heroes that have not configured their own. */
+export function saveAccountHeresySelection(ids) {
+  const record = endgame();
+  record.heresySelection = [...new Set((Array.isArray(ids) ? ids : []).filter((id) => typeof id === 'string'))];
+  record.heresySelectionSet = true;
+  return saveEndgame();
+}
 /** Direct activity rewards come only from an unlocked endgame activity, never campaign replay or town systems. */
 export function canEarnInfernalMarks(world = G.world, c = G.char) {
   if (!endgameUnlocked(c) || !world) return false;

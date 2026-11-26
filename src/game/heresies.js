@@ -16,6 +16,7 @@ import { depthLevel } from '../data/depth.js';
 import { makeMonster } from './monster.js';
 import { hit } from './combat.js';
 import { applyToughHealthModifier } from './championBalance.mjs';
+import { accountHeresySelection, campaignVictoryRecorded, endgame, saveAccountHeresySelection } from './endgame.js';
 
 export { HERESIES, HERESY_BY_ID, HERESY_MAX_RANK, heresyRank, heresyMods, KEYS_RANK, MARKS_RANK };
 
@@ -44,7 +45,8 @@ export function setHeresy(id, on, c = G.char) {
   if (!c || !HERESY_BY_ID[id]) return false;
   const ids = heresiesOf(c), has = ids.includes(id);
   if (!!on === has) return false;
-  c.heresy = { on: on ? [...ids, id] : ids.filter((k) => k !== id) };
+  c.heresy = { ...c.heresy, on: on ? [...ids, id] : ids.filter((k) => k !== id), configured: true };
+  if (campaignVictoryRecorded()) saveAccountHeresySelection(c.heresy.on);
   const H = HERESY_BY_ID[id], rank = heresyRankOf(c), M = heresyMods(rank);
   if (G.ui && G.ui.log) G.ui.log(`<b style="color:${H.color}">${escapeHtml(H.name)}</b> ${on ? 'embraced' : 'renounced'}: Heresy rank <b>${rank}</b> (x${M.loot.toFixed(2)} drops, +${M.mf}% magic find, +${Math.round((M.xp - 1) * 100)}% XP) from the next level.`, '#ffb090');
   if (G.player) G.player.recompute();
@@ -74,9 +76,33 @@ export function heresySpawns(spawns, ids) {
   return out;
 }
 /** Which Heresies a level is built with: set before its monsters are made (BOSS ROOM bosses read it), none in rifts and Unbound. */
-export function heresyBegin(world, c = G.char) {
+export function heresyBegin(world, c = G.char, { accountWide = false } = {}) {
   if (!world || world.kind !== 'dungeon' || world.rift || world.unbound || world.unboundExploration) { if (world) world.heresy = null; return []; }
-  const ids = heresiesOf(c);
+  let ids = heresiesOf(c);
+  if (accountWide) {
+    if (!campaignVictoryRecorded()) ids = [];
+    else if (ids.length) {
+      // Older character saves predate the account-wide default. Seed it once from
+      // the first established hero without changing that hero's own selection.
+      if (!endgame().heresySelectionSet) saveAccountHeresySelection(ids);
+    } else if (!c?.heresy?.configured) {
+      // A new/never-configured hero can experience the account's unlocked altar
+      // in the campaign Breach. Explicitly renouncing all remains an empty set.
+      let shared = accountHeresySelection().filter((id) => HERESY_BY_ID[id]);
+      if (!endgame().heresySelectionSet && !shared.length) {
+        // Migrate legacy per-hero choices once, so a newly created hero can enter
+        // the campaign Breach with the prior account's active altar selection.
+        try {
+          const saves = JSON.parse(localStorage.getItem('velscour_saves_v1') || '[]');
+          const veteran = Array.isArray(saves) ? saves.filter((save) => save?.id !== c?.id).sort((a, b) => (b.lastPlayed || 0) - (a.lastPlayed || 0)).find((save) =>
+            Array.isArray(save?.heresy?.on) && save.heresy.on.some((id) => HERESY_BY_ID[id])) : null;
+          shared = (veteran?.heresy?.on || []).filter((id) => HERESY_BY_ID[id]);
+          if (shared.length) saveAccountHeresySelection(shared);
+        } catch (_) { /* malformed legacy storage remains untouched; this floor stays unmodified */ }
+      }
+      ids = shared;
+    }
+  }
   world.heresy = { ids, rank: heresyRank(ids), encounters: null };
   return ids;
 }
