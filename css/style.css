@@ -399,6 +399,12 @@ body.touch.portrait #hud-btncol { display: contents; }
 #boss-bar.classic #boss-frame,#boss-bar.classic #boss-emblem { display:none; }
 #boss-bar.classic { --hb-target-base-height:64px;width:min(calc(520px * var(--hb-target-width,1)),60vw);height:min(calc(var(--hb-target-base-height) * var(--hb-target-height,1)),18vh); }
 #boss-bar.classic #boss-track { top:41%;height:20%;left:4%;right:4%;border:2px solid #6a1a10;border-radius:3px; }
+#boss-bar.classic #boss-fill { background-image:linear-gradient(#ff3a20,#8a0a02);box-shadow:none; }
+#boss-bar.classic.healthbar-champion #boss-fill { background-image:linear-gradient(#5594ff,#183b8c); }
+#boss-bar.classic.healthbar-unique #boss-fill { background-image:linear-gradient(#ffd357,#a66a12); }
+#boss-bar.classic.healthbar-nemesis #boss-fill { background-image:linear-gradient(#c47aff,#5c168f); }
+#boss-bar.classic.healthbar-imp #boss-fill { background-image:linear-gradient(#75e052,#14752a); }
+#boss-bar.classic.healthbar-companion #boss-fill { background-image:linear-gradient(#65e8df,#11777a); }
 #boss-bar.classic #boss-name { top:12%;left:4%;right:4%; }
 #boss-bar.classic #boss-sub { top:69%; }
 #boss-bar.no-frame:not(.classic) #boss-frame { display:none; }
