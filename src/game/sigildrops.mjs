@@ -39,6 +39,13 @@ export function naturalSigilDropChance(baseChance, world = {}, stats = {}, { inc
   return Math.min(1, base * sigilMul * lootMul * markMul * breachMul) * NATURAL_SIGIL_DROP_SCALE;
 }
 
+/** Imp reward Sigils keep their normal reward roll but never consume the floor's natural-drop allowance. */
+export function rollTreasureImpSigilDrop(world, char, stats = {}, random = Math.random) {
+  if (world?.kind !== 'dungeon' || !char || typeof random !== 'function') return false;
+  const roll = Number(random());
+  return Number.isFinite(roll) && roll < naturalSigilDropChance(1, world, stats);
+}
+
 export function canDropNaturalSigil(world, char) {
   const key = naturalSigilDropLevelKey(world);
   if (!key || !char) return false;

@@ -35,7 +35,7 @@ import { IMP_BY_ID, IMP_SPRITE_PATH, TREASURE_IMP_SPAWN_DELAY_MAX, TREASURE_IMP_
 import { endgameUnlocked, canEarnInfernalMarks } from './endgame.js';
 import { makeCovenant } from '../data/relics.js';
 import { grantMarks } from './marks.js';
-import { canDropNaturalSigil, naturalSigilDropChance, recordNaturalSigilDrop } from './sigildrops.mjs';
+import { rollTreasureImpSigilDrop } from './sigildrops.mjs';
 import { TOWN_REWARD_MAX_DEPTH } from './defiance.js';
 
 const IMP_ESCAPE_SECONDS = 38;
@@ -402,10 +402,12 @@ function impDrop(world, m, kind, data = {}, trail = false) {
 }
 function impDropSigil(world, m) {
   const stats = G.player?.st || {};
-  if (!canDropNaturalSigil(world, G.char) || !chance(naturalSigilDropChance(1, world, stats))) return false;
+  if (!rollTreasureImpSigilDrop(world, G.char, stats)) return false;
+  // This reward is intentionally outside the natural one-Sigil-per-level cap:
+  // Imp Sigils neither check nor record that separate allowance.
   const dropped = impDrop(world, m, 'item', { item: rollGroundSigil(world, world.depth || 1, 0) });
-  if (dropped && recordNaturalSigilDrop(world, G.char)) G.game?.autosave?.();
-  return !!dropped;
+  if (dropped) G.game?.autosave?.();
+  return dropped;
 }
 function impDropGold(world, m, lvl, base, count, multiplier = 1) {
   for (let i = 0; i < impQuantity(count, multiplier); i++) impDrop(world, m, 'gold', { amount: impGold(world, lvl, base) });

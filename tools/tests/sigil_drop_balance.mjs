@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { CHEST_RARITIES } from '../../src/data/treasurechests.js';
 import {
   NATURAL_SIGIL_DROP_SCALE, canDropNaturalSigil, naturalSigilDropChance,
-  naturalSigilDropLevelKey, recordNaturalSigilDrop,
+  naturalSigilDropLevelKey, recordNaturalSigilDrop, rollTreasureImpSigilDrop,
 } from '../../src/game/sigildrops.mjs';
 
 const ENEMY_CHANCES = { normal: 0.004, champion: 0.03, unique: 0.08, boss: 0.45 };
@@ -45,7 +45,7 @@ function statsFor(mode, index) {
 }
 function simulate(mode, scale = NATURAL_SIGIL_DROP_SCALE) {
   const random = rng({ campaign: 0x51a11, infinite: 0x51a12, rift: 0x51a13, breach: 0x51a14 }[mode]);
-  let oldDrops = 0, adjustedDrops = 0, cappedLevels = 0;
+  let oldDrops = 0, adjustedDrops = 0, impDrops = 0;
   for (let i = 0; i < 1000; i++) {
     const depth = mode === 'campaign' ? [1, 26, 51, 76, 100][i % 5]
       : mode === 'infinite' ? [101, 150, 250, 500, 1000][i % 5]
@@ -64,14 +64,14 @@ function simulate(mode, scale = NATURAL_SIGIL_DROP_SCALE) {
         recordNaturalSigilDrop(world, char);
       }
     };
+    const hitImp = () => { if (rollTreasureImpSigilDrop(world, char, stats, random)) impDrops++; };
     for (const [rank, count] of enemies) for (let j = 0; j < count; j++) hit(ENEMY_CHANCES[rank]);
     for (let j = 0; j < chests; j++) if (random() < 0.89) hit(chestChance(random));
-    if (sigilImp) hit(1, 1.5);
-    if (artisanImp) hit(1, 3);
-    cappedLevels = adjustedDrops;
+    if (sigilImp) hitImp();
+    if (artisanImp) hitImp();
     assert.ok(char.sigilDropLevels.length <= 1, `${mode} level ${i} exceeded its one-Sigil cap`);
   }
-  return { oldPer100: oldDrops / 10, newPer100: adjustedDrops / 10 };
+  return { oldPer100: oldDrops / 10, newPer100: (adjustedDrops + impDrops) / 10 };
 }
 
 test('natural drop probabilities use the final tuned 5% rate after bonuses', () => {
@@ -93,6 +93,36 @@ test('level identifiers persist across re-entry and separate new Rift/Breach ins
   assert.equal(canDropNaturalSigil({ kind: 'dungeon', depth: 136, biome: { id: 'crypt' } }, reloadedChar), true, 'a new depth is eligible');
   assert.notEqual(naturalSigilDropLevelKey({ kind: 'dungeon', depth: 100, biome: { id: 'crypt' }, rift: { tier: 2 }, riftSeed: 10 }), naturalSigilDropLevelKey({ kind: 'dungeon', depth: 100, biome: { id: 'crypt' }, rift: { tier: 2 }, riftSeed: 11 }));
   assert.notEqual(naturalSigilDropLevelKey({ kind: 'dungeon', depth: 100, biome: { id: 'crypt' }, breach: { floor: 2, seed: 10 } }), naturalSigilDropLevelKey({ kind: 'dungeon', depth: 100, biome: { id: 'crypt' }, breach: { floor: 3, seed: 10 } }));
+});
+
+test('Imp Sigils do not consume or depend on the natural one-per-level allowance', () => {
+  const worlds = [
+    { kind: 'dungeon', depth: 120, biome: { id: 'crypt' } },
+    { kind: 'dungeon', depth: 220, biome: { id: 'catacombs' } },
+    { kind: 'dungeon', depth: 100, biome: { id: 'crypt' }, rift: { tier: 2 }, riftSeed: 20 },
+    { kind: 'dungeon', depth: 100, biome: { id: 'crypt' }, breach: { floor: 2, seed: 30 } },
+    { kind: 'dungeon', depth: 100, biome: { id: 'throne' }, heresyChallenge: { kind: 'hunt', seed: 40 } },
+    { kind: 'dungeon', depth: 101, biome: { id: 'catacombs' }, unboundExploration: { floor: 3 }, environmentTrapSeed: 50 },
+  ];
+  for (const world of worlds) {
+    const impFirst = { sigilDropLevels: [] };
+    assert.equal(rollTreasureImpSigilDrop(world, impFirst, {}, () => 0), true, 'Imp reward can roll first');
+    assert.equal(canDropNaturalSigil(world, impFirst), true, 'Imp reward leaves the later natural drop eligible');
+    assert.equal(recordNaturalSigilDrop(world, impFirst), true, 'natural reward still records the level cap after an Imp');
+    assert.equal(canDropNaturalSigil(world, impFirst), false, 'the natural cap still blocks another natural reward');
+
+    const normalFirstWorld = structuredClone(world);
+    delete normalFirstWorld._sigilDropCommittedKey;
+    const normalFirst = { sigilDropLevels: [] };
+    assert.equal(recordNaturalSigilDrop(normalFirstWorld, normalFirst), true, 'natural reward can record first');
+    assert.equal(rollTreasureImpSigilDrop(normalFirstWorld, normalFirst, {}, () => 0), true, 'Imp reward remains eligible after natural drop');
+    assert.equal(normalFirst.sigilDropLevels.length, 1, 'Imp reward does not add another cap record');
+    assert.equal(canDropNaturalSigil(normalFirstWorld, normalFirst), false, 'Imp reward leaves the existing natural cap intact');
+  }
+  assert.equal(rollTreasureImpSigilDrop({ kind: 'town' }, { sigilDropLevels: [] }, {}, () => 0), false, 'Imp Sigils remain dungeon-only');
+  assert.equal(rollTreasureImpSigilDrop(worlds[0], null, {}, () => 0), false, 'missing character data safely rejects the reward');
+  assert.equal(rollTreasureImpSigilDrop(worlds[0], { sigilDropLevels: [] }, {}, () => 0.049), true, 'the existing Imp reward chance remains unchanged');
+  assert.equal(rollTreasureImpSigilDrop(worlds[0], { sigilDropLevels: [] }, {}, () => 0.05), false, 'the Imp chance retains its existing boundary');
 });
 
 test('simulates 1,000 eligible levels per mode and enforces one random Sigil maximum per level', () => {
