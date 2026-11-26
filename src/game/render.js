@@ -1196,6 +1196,7 @@ export function renderWorld(ctx, world) {
   if (profiling) markRenderPhase('groundDraw');
 
   // depth sorted pass
+  const depthQueueBuildStarted = profiling ? performance.now() : 0;
   const p = world.player;
   const pd = p ? p.x + p.y : 0;
   const heroBld = map.c3bld && p ? map.c3bld[map.tileIdx(p.x, p.y)] : 0;
@@ -1341,7 +1342,10 @@ export function renderWorld(ctx, world) {
     if (!world.cave) occludersFor(map, vr, views, occ); // the caves' 3D terrain hides its own (game/caverns.js horizon)
     for (let i = 0; i < occ.length; i += 2) enqueue(occ[i], 14, occ[i + 1]);
   }
+  const depthQueueSortStarted = profiling ? performance.now() : 0;
+  if (profiling) profileRecord('depthQueueBuild', depthQueueSortStarted - depthQueueBuildStarted);
   sorted.sort((a, b) => a.d - b.d);
+  if (profiling) profileRecord('depthQueueSort', performance.now() - depthQueueSortStarted);
   if (profiling) {
     const counts = { queue: sorted.length, views: views.length, creatures: 0, walls: 0, props: 0, loot: 0 };
     for (const item of sorted) {
@@ -1357,8 +1361,13 @@ export function renderWorld(ctx, world) {
   if (profiling) markRenderPhase('renderSort');
   let q = hq;
   xray.n = 0; xray.on = true; // creatures note their rims and bars for the see-through layer (drawSeeThrough)
+  let depthDrawChunkStarted = profiling ? performance.now() : 0, depthDrawChunkTotal = 0, depthDrawChunkMax = 0, depthDrawChunkCount = 0;
+  const depthDrawSamples = profiling ? (frame.profileDrawSamples || (frame.profileDrawSamples = new Uint16Array(16))) : null;
+  if (depthDrawSamples) depthDrawSamples.fill(0);
   for (const it of sorted) {
     const o = it.o, lq = it.f === 2 ? 'low' : hq;
+    const sampleDraw = profiling && ((depthDrawSamples[it.f]++ & 7) === 0);
+    const sampleStarted = sampleDraw ? performance.now() : 0;
     if (lq !== q) ctx.imageSmoothingQuality = q = lq;
     switch (it.f) {
       case 1: o.draw(ctx); break;
@@ -1441,6 +1450,19 @@ export function renderWorld(ctx, world) {
       }
       case 15: drawPlunge(ctx, o); break;
     }
+    if (sampleDraw) profileRecord(`depthDrawKind${it.f}`, (performance.now() - sampleStarted) * 8);
+    if (profiling && ((depthDrawChunkCount + 1) % 64 === 0)) {
+      const elapsed = performance.now() - depthDrawChunkStarted;
+      depthDrawChunkTotal += elapsed; depthDrawChunkMax = Math.max(depthDrawChunkMax, elapsed);
+      depthDrawChunkStarted = performance.now();
+    }
+    depthDrawChunkCount++;
+  }
+  if (profiling) {
+    const tail = performance.now() - depthDrawChunkStarted;
+    depthDrawChunkTotal += tail; depthDrawChunkMax = Math.max(depthDrawChunkMax, tail);
+    profileRecord('depthDrawChunkTotal', depthDrawChunkTotal);
+    profileRecord('depthDrawChunkMax', depthDrawChunkMax);
   }
   xray.on = false;
   if (q !== hq) ctx.imageSmoothingQuality = hq;
@@ -1452,6 +1474,7 @@ export function renderWorld(ctx, world) {
   }
   if (world.tower) world.tower.front(ctx); // the tower's railings and chandeliers over whoever stands behind them
   if (profiling) markRenderPhase('depthDraw');
+  const ambientDebugStarted = profiling ? performance.now() : 0;
   if (G.debugWalk) {
     // test shots only: blocked tiles red and the tiles a test points at (G.debugMarks) cyan, to check art against collision
     const tile = (tx, ty, c) => {
@@ -1461,8 +1484,11 @@ export function renderWorld(ctx, world) {
     for (let ty = ty0; ty <= ty1; ty++) for (let tx = tx0; tx <= tx1; tx++) if (map.block[ty * map.w + tx]) tile(tx, ty, 'rgba(255,0,0,0.22)');
     for (const [tx, ty] of G.debugMarks || []) tile(tx, ty, 'rgba(0,255,255,0.55)');
   }
+  if (profiling) profileRecord('ambientDebugDraw', performance.now() - ambientDebugStarted);
+  const ambientWorldFxStarted = profiling ? performance.now() : 0;
   if (world.sky) skyFx(ctx, world); // furnaces, braziers, chains, cannon shot, lightning
   if (world.wyrm) drawWyrm(ctx, world.wyrm, 'top'); // the Breach's wyrm flying over everything
+  if (profiling) profileRecord('ambientWorldFxDraw', performance.now() - ambientWorldFxStarted);
   if (profiling) markRenderPhase('ambientTopDraw');
   const visibleParticles = drawParticles(ctx, vr, profiling);
   if (profiling) { world._perfVisibleParticles = visibleParticles; markRenderPhase('particleDraw'); }

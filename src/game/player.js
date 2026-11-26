@@ -619,6 +619,12 @@ export class Player extends Creature {
   }
 
   tryUseSkill(skOrId, tx, ty, target = null) {
+    const started = profileStart();
+    try { return this._tryUseSkill(skOrId, tx, ty, target); }
+    finally { profileRecord('playerSkillAttempt', profileEnd(started)); }
+  }
+
+  _tryUseSkill(skOrId, tx, ty, target = null) {
     const sk = typeof skOrId === 'string' ? SKILLS[skOrId] : skOrId;
     if (this.dead || !sk) return false;
     if (sk.kind === 'dash' && (!Number.isFinite(tx) || !Number.isFinite(ty) || dist(this.x, this.y, tx, ty) <= 0.05)) return false;
@@ -974,6 +980,12 @@ export class Player extends Creature {
   }
 
   walkTo(x, y, dt) {
+    const started = profileStart();
+    try { return this._walkTo(x, y, dt); }
+    finally { profileRecord('playerWalkTo', profileEnd(started)); }
+  }
+
+  _walkTo(x, y, dt) {
     const m = this.world.map;
     const key = Math.floor(x) + ',' + Math.floor(y);
     const pathStarted = profileStart();

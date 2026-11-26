@@ -11,10 +11,13 @@ import { shouldSampleCounts } from './perf-count-sampling.mjs';
 const CAP = 27000; // 3 minutes at 150 Hz; longer on typical 60-120 Hz displays
 const MAX_EXPORTED_FRAMES = 9000;
 const MAX_LONG_TASKS = 128;
-const PLAYER_TIMING_KEYS = ['playerUpdateWallMs', 'playerUpdateUnattributedMs', 'playerRecoveryMs', 'playerTimersGearAffixesMs', 'playerClassPassivesMs', 'playerStatusMs', 'playerResourcesBuffsMs', 'playerAutoSummonMs', 'playerCooldownsLegendaryMs', 'playerActionMovementMs', 'playerPathMs', 'playerMoveCollisionMs'];
-const KEYS = ['frameMs', 'gapMs', 'updateMs', 'renderMs', 'renderSetupMs', 'floorDrawMs', 'groundDrawMs', 'renderSortMs', 'depthDrawMs', 'effectDrawMs', 'ambientTopDrawMs', 'particleDrawMs', 'topHazardDrawMs', 'topEffectDrawMs', 'lightingMs', 'screenOverlayMs', 'skyFrontMs', 'seeThroughMs', 'screenFeedbackMs', 'hudLabelsMs', 'combatTextMs', 'cinematicOverlayMs', 'automapMs', 'worldMs', 'aiMs', 'playerUpdateMs', ...PLAYER_TIMING_KEYS, 'creatureUpdateMs', 'townLifeUpdateMs', 'keepDirectorUpdateMs', 'keepCompanionUpdateMs', 'keepFolkUpdateMs', 'keepLightingUpdateMs', 'townAgentUpdateMs', 'otherNpcUpdateMs', 'doorUpdateMs', 'aiSlowestCallbackMs', 'pathMs', 'collisionMs', 'hazardMs', 'lootMs', 'vfxMs', 'uiMs', 'enemyHistoryMs', 'minimapMs', 'eventsMs', 'environmentMs', 'saveMs'];
+const PLAYER_TIMING_KEYS = ['playerUpdateWallMs', 'playerUpdateUnattributedMs', 'playerRecoveryMs', 'playerTimersGearAffixesMs', 'playerClassPassivesMs', 'playerStatusMs', 'playerResourcesBuffsMs', 'playerAutoSummonMs', 'playerCooldownsLegendaryMs', 'playerActionMovementMs', 'playerSkillAttemptMs', 'playerWalkToMs', 'playerPathMs', 'playerMoveCollisionMs'];
+const DEPTH_DRAW_KIND_KEYS = Array.from({ length: 16 }, (_, kind) => `depthDrawKind${kind}Ms`);
+const KEYS = ['frameMs', 'gapMs', 'updateMs', 'renderMs', 'renderSetupMs', 'floorDrawMs', 'groundDrawMs', 'renderSortMs', 'depthQueueBuildMs', 'depthQueueSortMs', 'depthDrawMs', 'depthDrawChunkTotalMs', 'depthDrawChunkMaxMs', ...DEPTH_DRAW_KIND_KEYS, 'effectDrawMs', 'ambientTopDrawMs', 'ambientDebugDrawMs', 'ambientWorldFxDrawMs', 'particleDrawMs', 'topHazardDrawMs', 'topEffectDrawMs', 'lightingMs', 'screenOverlayMs', 'skyFrontMs', 'seeThroughMs', 'screenFeedbackMs', 'hudLabelsMs', 'combatTextMs', 'cinematicOverlayMs', 'automapMs', 'worldMs', 'aiMs', 'playerUpdateMs', ...PLAYER_TIMING_KEYS, 'creatureUpdateMs', 'creatureUpdateCallbacksMs', 'creatureUpdateOverheadMs', 'townLifeUpdateMs', 'keepDirectorUpdateMs', 'keepCompanionUpdateMs', 'keepFolkUpdateMs', 'keepLightingUpdateMs', 'townAgentUpdateMs', 'otherNpcUpdateMs', 'doorUpdateMs', 'aiSlowestCallbackMs', 'pathMs', 'collisionMs', 'hazardMs', 'lootMs', 'vfxMs', 'uiMs', 'enemyHistoryMs', 'minimapMs', 'eventsMs', 'environmentMs', 'saveMs'];
+const DISTRIBUTION_KEYS = ['frameMs', 'gapMs', 'updateMs', 'renderMs'];
+const HISTOGRAM_WIDTH_MS = 0.5, HISTOGRAM_MAX_BUCKET = 2048;
 const AI_TIMING_KEYS = ['playerUpdateMs', ...PLAYER_TIMING_KEYS, 'creatureUpdateMs', 'townLifeUpdateMs', 'keepDirectorUpdateMs', 'keepCompanionUpdateMs', 'keepFolkUpdateMs', 'keepLightingUpdateMs', 'townAgentUpdateMs', 'otherNpcUpdateMs', 'doorUpdateMs', 'aiSlowestCallbackMs'];
-const COUNT_KEYS = ['creatures', 'enemies', 'inactiveEnemies', 'offscreenCreatures', 'deadCreatures', 'npcs', 'companions', 'keepFolk', 'keepDirectors', 'keepLightingUpdaters', 'townAgents', 'corpses', 'projectiles', 'hazards', 'traps', 'groundItems', 'lootLabels', 'particles', 'visibleParticles', 'effects', 'groundEffects', 'topEffects', 'decals', 'gore', 'damageText', 'audio', 'spatialCandidates', 'collisionPairs', 'pathSearches', 'renderQueue', 'renderViews', 'renderCreatures', 'renderWalls', 'renderProps', 'renderLoot'];
+const COUNT_KEYS = ['creatures', 'enemies', 'inactiveEnemies', 'offscreenCreatures', 'deadCreatures', 'creaturesVisited', 'creaturesUpdated', 'inactiveEnemiesSkipped', 'deadCreaturesSkipped', 'npcs', 'companions', 'keepFolk', 'keepDirectors', 'keepLightingUpdaters', 'townAgents', 'corpses', 'projectiles', 'hazards', 'traps', 'groundItems', 'lootLabels', 'particles', 'visibleParticles', 'effects', 'groundEffects', 'topEffects', 'decals', 'gore', 'damageText', 'audio', 'spatialCandidates', 'collisionPairs', 'pathSearches', 'renderQueue', 'renderViews', 'renderCreatures', 'renderWalls', 'renderProps', 'renderLoot'];
 const CONTEXT_SAMPLE_MS = 100, INCIDENT_PRE_MS = 3000, INCIDENT_POST_MS = 2500, MAX_INCIDENTS = 24;
 const INPUT_CODES = ['ShiftLeft', 'ShiftRight', 'KeyW', 'KeyA', 'KeyS', 'KeyD', 'Space', 'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight',
   'Digit1', 'Digit2', 'Digit3', 'Digit4', 'Digit5', 'Digit6', 'Digit7', 'Digit8', 'Digit9', 'Digit0', 'Minus', 'Equal'];
@@ -35,7 +38,18 @@ function resetFrameTotals() {
     lastLifecycleWorldId: null, lastWorldLifecycle: null, lastVfxLifecycle: null,
     heap: { samples: 0, firstBytes: null, latestBytes: null, peakBytes: null },
     diagnosticOverhead: { samples: 0, totalMs: 0, maximumMs: 0 },
+    distributions: Object.fromEntries(DISTRIBUTION_KEYS.map((key) => [key, new Uint32Array(HISTOGRAM_MAX_BUCKET + 1)])),
     simulation: { rafSamples: 0, rafRealMs: 0, rafSimulatedMs: 0, rafDiscardedMs: 0, catchupRuns: 0, catchupUpdates: 0, catchupRealMs: 0, catchupSimulatedMs: 0, catchupDiscardedMs: 0, catchupUnprocessedMs: 0, catchupMaxWorkMs: 0 } };
+}
+
+function histogramQuantile(histogram, total, percentile) {
+  if (!histogram || !total) return null;
+  const target = Math.max(1, Math.ceil(total * percentile)); let seen = 0;
+  for (let i = 0; i < histogram.length; i++) {
+    seen += histogram[i];
+    if (seen >= target) return Number((i === HISTOGRAM_MAX_BUCKET ? HISTOGRAM_MAX_BUCKET * HISTOGRAM_WIDTH_MS : (i + 0.5) * HISTOGRAM_WIDTH_MS).toFixed(2));
+  }
+  return null;
 }
 
 function allocateHistory() {
@@ -176,7 +190,7 @@ function compactFrame(at) {
     timestampUtc: new Date((performance.timeOrigin || Date.now() - performance.now()) + history.timestamps[at]).toISOString(),
     environment: history.environments[at] || null, worldId: history.worldIds[at] || null, depth: history.depths[at] || null,
     frameMs: Number(history.frameMs[at].toFixed(2)), gapMs: Number(history.gapMs[at].toFixed(2)), updateMs: Number(history.updateMs[at].toFixed(2)), renderMs: Number(history.renderMs[at].toFixed(2)),
-    timingsMs: Object.fromEntries(['worldMs', 'aiMs', 'playerUpdateMs', ...PLAYER_TIMING_KEYS, 'pathMs', 'collisionMs', 'renderSortMs', 'depthDrawMs', 'floorDrawMs'].map((key) => [key, Number(history[key][at].toFixed(2))])),
+    timingsMs: Object.fromEntries(['worldMs', 'aiMs', 'playerUpdateMs', 'creatureUpdateMs', 'creatureUpdateCallbacksMs', 'creatureUpdateOverheadMs', ...PLAYER_TIMING_KEYS, 'pathMs', 'collisionMs', 'renderSortMs', 'depthQueueBuildMs', 'depthQueueSortMs', 'depthDrawMs', 'depthDrawChunkTotalMs', 'depthDrawChunkMaxMs', ...DEPTH_DRAW_KIND_KEYS, 'ambientTopDrawMs', 'ambientDebugDrawMs', 'ambientWorldFxDrawMs', 'floorDrawMs'].map((key) => [key, Number(history[key][at].toFixed(2))])),
     player: player ? { x: Number.isFinite(history.playerX[at]) ? Number(history.playerX[at].toFixed(3)) : null, y: Number.isFinite(history.playerY[at]) ? Number(history.playerY[at].toFixed(3)) : null, z: Number.isFinite(history.playerZ[at]) ? Number(history.playerZ[at].toFixed(3)) : null,
       moveVector: [Number(history.playerMoveX[at].toFixed(3)), Number(history.playerMoveY[at].toFixed(3))],
       target: playerFlags & 512 ? [Number(history.playerTargetX[at].toFixed(3)), Number(history.playerTargetY[at].toFixed(3))] : null,
@@ -270,7 +284,7 @@ export function profileBeginFrame(rafNow, simulation = {}) {
     simulatedMs: Number(simulation.simulationDeltaMs) || 0, discardedMs: Number(simulation.discardedMs) || 0 });
   frameStarted = performance.now();
   updateMs = renderMs = 0;
-  phases = { worldMs: 0, aiMs: 0, playerUpdateMs: 0, ...Object.fromEntries(PLAYER_TIMING_KEYS.map((key) => [key, 0])), creatureUpdateMs: 0, townLifeUpdateMs: 0, keepDirectorUpdateMs: 0, keepCompanionUpdateMs: 0, keepFolkUpdateMs: 0, keepLightingUpdateMs: 0, townAgentUpdateMs: 0, otherNpcUpdateMs: 0, doorUpdateMs: 0, aiSlowestCallbackMs: 0, aiSlowestCallback: '', pathMs: 0, collisionMs: 0, hazardMs: 0, lootMs: 0, vfxMs: 0, uiMs: 0, enemyHistoryMs: 0, minimapMs: 0, eventsMs: 0, environmentMs: 0, saveMs: 0, renderSetupMs: 0, floorDrawMs: 0, groundDrawMs: 0, renderSortMs: 0, depthDrawMs: 0, effectDrawMs: 0, ambientTopDrawMs: 0, particleDrawMs: 0, topHazardDrawMs: 0, topEffectDrawMs: 0, lightingMs: 0, screenOverlayMs: 0, skyFrontMs: 0, seeThroughMs: 0, screenFeedbackMs: 0, hudLabelsMs: 0, combatTextMs: 0, cinematicOverlayMs: 0, automapMs: 0 };
+  phases = { worldMs: 0, aiMs: 0, playerUpdateMs: 0, ...Object.fromEntries(PLAYER_TIMING_KEYS.map((key) => [key, 0])), ...Object.fromEntries(DEPTH_DRAW_KIND_KEYS.map((key) => [key, 0])), creatureUpdateMs: 0, creatureUpdateCallbacksMs: 0, creatureUpdateOverheadMs: 0, townLifeUpdateMs: 0, keepDirectorUpdateMs: 0, keepCompanionUpdateMs: 0, keepFolkUpdateMs: 0, keepLightingUpdateMs: 0, townAgentUpdateMs: 0, otherNpcUpdateMs: 0, doorUpdateMs: 0, aiSlowestCallbackMs: 0, aiSlowestCallback: '', pathMs: 0, collisionMs: 0, hazardMs: 0, lootMs: 0, vfxMs: 0, uiMs: 0, enemyHistoryMs: 0, minimapMs: 0, eventsMs: 0, environmentMs: 0, saveMs: 0, renderSetupMs: 0, floorDrawMs: 0, groundDrawMs: 0, renderSortMs: 0, depthQueueBuildMs: 0, depthQueueSortMs: 0, depthDrawMs: 0, depthDrawChunkTotalMs: 0, depthDrawChunkMaxMs: 0, effectDrawMs: 0, ambientTopDrawMs: 0, ambientDebugDrawMs: 0, ambientWorldFxDrawMs: 0, particleDrawMs: 0, topHazardDrawMs: 0, topEffectDrawMs: 0, lightingMs: 0, screenOverlayMs: 0, skyFrontMs: 0, seeThroughMs: 0, screenFeedbackMs: 0, hudLabelsMs: 0, combatTextMs: 0, cinematicOverlayMs: 0, automapMs: 0 };
   return true;
 }
 
@@ -298,6 +312,8 @@ function readCounts(world) {
     npcs: world?.npcs?.length || 0, companions, keepFolk, keepDirectors, keepLightingUpdaters, townAgents,
     enemies, inactiveEnemies, deadCreatures,
     offscreenCreatures: Math.max(0, enemies - (world?._perfVisibleEnemyCount || 0)),
+    creaturesVisited: world?._perfCreaturesVisited || 0, creaturesUpdated: world?._perfCreaturesUpdated || 0,
+    inactiveEnemiesSkipped: world?._perfInactiveEnemiesSkipped || 0, deadCreaturesSkipped: world?._perfDeadCreaturesSkipped || 0,
     corpses: world?.corpses?.length || 0,
     projectiles,
     hazards: world?.hazards?.length || 0,
@@ -372,6 +388,7 @@ export function profileFinishFrame(world) {
   history.renderMs[at] = renderMs;
   history.worldMs[at] = phases.worldMs; history.aiMs[at] = phases.aiMs;
   for (const key of AI_TIMING_KEYS) history[key][at] = phases[key];
+  history.creatureUpdateCallbacksMs[at] = phases.creatureUpdateCallbacksMs; history.creatureUpdateOverheadMs[at] = phases.creatureUpdateOverheadMs;
   history.slowestAILabels[at] = phases.aiSlowestCallback || '';
   history.pathMs[at] = phases.pathMs; history.collisionMs[at] = phases.collisionMs;
   history.hazardMs[at] = phases.hazardMs; history.lootMs[at] = phases.lootMs;
@@ -380,8 +397,11 @@ export function profileFinishFrame(world) {
   history.eventsMs[at] = phases.eventsMs; history.environmentMs[at] = phases.environmentMs; history.saveMs[at] = phases.saveMs;
   history.renderSetupMs[at] = phases.renderSetupMs; history.floorDrawMs[at] = phases.floorDrawMs;
   history.groundDrawMs[at] = phases.groundDrawMs; history.renderSortMs[at] = phases.renderSortMs;
+  history.depthQueueBuildMs[at] = phases.depthQueueBuildMs; history.depthQueueSortMs[at] = phases.depthQueueSortMs;
   history.depthDrawMs[at] = phases.depthDrawMs; history.effectDrawMs[at] = phases.effectDrawMs;
+  history.depthDrawChunkTotalMs[at] = phases.depthDrawChunkTotalMs; history.depthDrawChunkMaxMs[at] = phases.depthDrawChunkMaxMs;
   history.ambientTopDrawMs[at] = phases.ambientTopDrawMs; history.particleDrawMs[at] = phases.particleDrawMs;
+  history.ambientDebugDrawMs[at] = phases.ambientDebugDrawMs; history.ambientWorldFxDrawMs[at] = phases.ambientWorldFxDrawMs;
   history.topHazardDrawMs[at] = phases.topHazardDrawMs; history.topEffectDrawMs[at] = phases.topEffectDrawMs;
   history.skyFrontMs[at] = phases.skyFrontMs; history.seeThroughMs[at] = phases.seeThroughMs;
   history.screenFeedbackMs[at] = phases.screenFeedbackMs; history.hudLabelsMs[at] = phases.hudLabelsMs;
@@ -395,6 +415,11 @@ export function profileFinishFrame(world) {
     frameTotals.sums[key] += value;
     frameTotals.minima[key] = Math.min(frameTotals.minima[key], value);
     frameTotals.maxima[key] = Math.max(frameTotals.maxima[key], value);
+  }
+  for (const key of DISTRIBUTION_KEYS) {
+    const value = key === 'frameMs' ? frameMs : key === 'gapMs' ? rafGap : key === 'updateMs' ? updateMs : renderMs;
+    const bucket = Math.min(HISTOGRAM_MAX_BUCKET, Math.max(0, Math.floor(value / HISTOGRAM_WIDTH_MS)));
+    frameTotals.distributions[key][bucket]++;
   }
   if (rafGap > FRAME_BUDGET_MS) frameTotals.overBudgetFrames++;
   if (frameMs > 50) frameTotals.over50msFrames++;
@@ -655,6 +680,8 @@ export function performanceReport() {
       sampledEntityCounts: { sampleCount: frameTotals.entityCountSamples, latest: { ...frameTotals.entityCountsLatest }, maximum: { ...frameTotals.entityCountsMaximum } },
       lifecycleChangeDeltasBetweenSamples: { world: { ...frameTotals.lifecycleDeltaObserved.world }, vfx: { ...frameTotals.lifecycleDeltaObserved.vfx }, note: 'Deltas begin at the recording baseline and are accumulated at supported entity-count sample points.' },
       timingMs: Object.fromEntries(KEYS.map((key) => [key, { mean: frameTotals.frames ? Number((frameTotals.sums[key] / frameTotals.frames).toFixed(3)) : 0, minimum: Number((frameTotals.minima[key] === Infinity ? 0 : frameTotals.minima[key]).toFixed(3)), maximum: Number(frameTotals.maxima[key].toFixed(3)) }])),
+      completeFrameTimeDistributions: { scope: 'all frames observed for this recording; histogram approximation with bounded fixed-memory buckets', bucketWidthMs: HISTOGRAM_WIDTH_MS,
+        overflowBucket: `>=${(HISTOGRAM_MAX_BUCKET * HISTOGRAM_WIDTH_MS).toFixed(1)}ms`, percentiles: Object.fromEntries(DISTRIBUTION_KEYS.map((key) => [key, { p50: histogramQuantile(frameTotals.distributions[key], frameTotals.frames, 0.5), p90: histogramQuantile(frameTotals.distributions[key], frameTotals.frames, 0.9), p95: histogramQuantile(frameTotals.distributions[key], frameTotals.frames, 0.95), p99: histogramQuantile(frameTotals.distributions[key], frameTotals.frames, 0.99), p99_9: histogramQuantile(frameTotals.distributions[key], frameTotals.frames, 0.999) }])) },
       framesOver16Point67msBudget: frameTotals.overBudgetFrames, framesOver50ms: frameTotals.over50msFrames, framesOver100ms: frameTotals.over100msFrames,
       simulationTime: { ...frameTotals.simulation, rafRealMs: Number(frameTotals.simulation.rafRealMs.toFixed(2)), rafSimulatedMs: Number(frameTotals.simulation.rafSimulatedMs.toFixed(2)),
         rafDiscardedMs: Number(frameTotals.simulation.rafDiscardedMs.toFixed(2)), catchupRealMs: Number(frameTotals.simulation.catchupRealMs.toFixed(2)),
@@ -715,9 +742,9 @@ export function performanceReport() {
     lifecycle: { latest: lastSample?.telemetry || null, ratesPerSecondBetweenLastSamples: objectRatesPerSecond,
       visualEffectSources: vfxDiagnosticReport(), tessarielsKeepArtCache: keepCacheDiagnosticReport() },
     memory: {
-      supported: !!performance.memory, latestHeapBytes: performance.memory?.usedJSHeapSize || 0, peakSampledHeapBytes: peakHeapBytes,
+      supported: !!performance.memory, liveAtExportHeapBytes: performance.memory?.usedJSHeapSize || 0, peakRetainedFrameSampleHeapBytes: peakHeapBytes,
       firstSampledHeapBytes: firstHeap, growthBytes: firstHeap && peakHeapBytes ? peakHeapBytes - firstHeap : null,
-      completeSessionSamples: frameTotals?.heap || null,
+      completeSessionSamples: frameTotals?.heap ? { ...frameTotals.heap, scope: 'complete recording; values sampled at supported entity-count sample points' } : null,
     },
     availability: { jsHeap: !!performance.memory, gcEvents: false, gpuFrameTime: false, listenerCounts: false, timerCounts: false, offscreenCachesBytes: false },
     incidentCaptureScope: { triggersObserved: incidentSerial, capturesStored: incidents.length, captureLimit: MAX_INCIDENTS,
@@ -725,7 +752,7 @@ export function performanceReport() {
       note: 'Frame spike totals and important event counts continue for the full recording; detailed incident windows are bounded to the most recent 24 captures.' },
     incidents: incidents.map(({ _lastSamplePerfMs, ...incident }) => ({ ...incident, state: incident.state === 'capturing' ? 'incomplete-at-export' : incident.state })),
     frames,
-    note: 'Detailed frame samples use a bounded ring and are downsampled on export to reduce report size; all significant spike frames are retained, and complete-session timing aggregates remain exact. Marker, error, collision-recovery, and severe-spike incident snapshots retain a sampled 3-second lead-in and 2.5-second follow-up with player position, movement/ability state, key/mouse state, environment, entity counts, and subsystem timings. Player update now reports total wall time, the uninstrumented remainder, and explicit timers for recovery, timers/gear/affixes, passives, status, resources/buffs, cooldowns/legendary work, action/movement, pathfinding, and collision. Nested timings are marked so they are not double-counted. Simulation real time, clamped game time, catch-up timing, and measured diagnostic overhead are reported separately. Object lifecycle/type breakdowns are sampled every 15 frames and at world changes. Long-task observation is recording-only and retains at most 128 entries. Browser/GPU frame time, GPU memory, GC events, timer/listener totals, and audio hardware latency are unavailable here and are not fabricated.',
+    note: 'Detailed frame samples use a bounded ring and are downsampled on export to reduce report size; all significant spike frames are retained, and complete-session timing aggregates remain exact. Complete-session p50/p90/p95/p99/p99.9 use fixed-memory histogram estimates with 0.5ms buckets, separate from retained-ring percentiles. Marker, error, collision-recovery, and severe-spike incident snapshots retain a sampled 3-second lead-in and 2.5-second follow-up with player position, movement/ability state, key/mouse state, environment, entity counts, and subsystem timings. Player update now reports total wall time, the uninstrumented remainder, explicit action/movement time, skill activation attempts, walkTo calls, pathfinding, and collision. These timings overlap where noted and should not be summed. Simulation real time, clamped game time, catch-up timing, and measured diagnostic overhead are reported separately. Object lifecycle/type breakdowns are sampled every 15 frames and at world changes. Long-task observation is recording-only and retains at most 128 entries. Browser/GPU frame time, GPU memory, GC events, timer/listener totals, and audio hardware latency are unavailable here and are not fabricated.',
   };
 }
 

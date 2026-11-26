@@ -41,6 +41,7 @@ test('groups report summaries by world, environment, and actual render scale', (
   assert.equal(groups.length, 2);
   assert.deepEqual(groups[0], {
     worldKind: 'dungeon', environment: 'Plague Sewers', resolutionScale: 0.75, frameCount: 2,
+    framesOver60HzBudget: 2, percentOver60HzBudget: 100,
     frameMs: { median: 10, p95: 10, p99: 10, worst: 20 },
     gapMs: { median: 17, p95: 17, p99: 17, worst: 25 },
     updateMs: { median: 3, p95: 3, p99: 3, worst: 4 },

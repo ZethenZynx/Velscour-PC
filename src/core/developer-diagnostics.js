@@ -90,27 +90,35 @@ export function unifiedDiagnosticReport() {
       audio: { sessionId: session.sessionId, ...audio },
       entitiesAndLifecycle: { sessionId: session.sessionId, sampleCount: counts?.sampleCount ?? 0, latestCounts: counts?.latest || null,
         maximumCounts: counts?.maximum || null, observedLifecycleDeltas: lifecycle, perEnvironmentFrameStats: completePerformance.environments || {} },
-      rendering: { sessionId: session.sessionId, timingMs: pickTimings(['renderMs', 'renderSetupMs', 'floorDrawMs', 'groundDrawMs', 'renderSortMs', 'depthDrawMs', 'effectDrawMs', 'lightingMs', 'screenOverlayMs', 'particleDrawMs', 'topHazardDrawMs']),
+      inactiveEnemyProcessing: { sessionId: session.sessionId,
+        timingMs: pickTimings(['creatureUpdateMs', 'creatureUpdateCallbacksMs', 'creatureUpdateOverheadMs']),
+        latestFrameCounts: Object.fromEntries(['creaturesVisited', 'creaturesUpdated', 'inactiveEnemiesSkipped', 'deadCreaturesSkipped'].map((key) => [key, counts?.latest?.[key] ?? null])),
+        maximumSampledCounts: Object.fromEntries(['creaturesVisited', 'creaturesUpdated', 'inactiveEnemiesSkipped', 'deadCreaturesSkipped'].map((key) => [key, counts?.maximum?.[key] ?? null])),
+        note: 'creatureUpdateCallbacksMs sums timed update() calls and is nested inside creatureUpdateMs. creatureUpdateOverheadMs is the pass wall time less those callbacks; it includes loop and inactive/dead filtering work, so it is a diagnostic estimate, not isolated inactive-enemy CPU time.' },
+      rendering: { sessionId: session.sessionId, timingMs: pickTimings(['renderMs', 'renderSetupMs', 'floorDrawMs', 'groundDrawMs', 'renderSortMs', 'depthQueueBuildMs', 'depthQueueSortMs', 'depthDrawMs', 'depthDrawChunkTotalMs', 'depthDrawChunkMaxMs', ...Array.from({ length: 16 }, (_, kind) => `depthDrawKind${kind}Ms`), 'effectDrawMs', 'ambientTopDrawMs', 'ambientDebugDrawMs', 'ambientWorldFxDrawMs', 'lightingMs', 'screenOverlayMs', 'particleDrawMs', 'topHazardDrawMs']),
+        drawKindMap: { 1: 'hazards', 2: 'walls', 4: 'props and trees', 5: 'buildings', 6: 'creatures and player', 7: 'NPCs', 8: 'loot', 9: 'chests', 10: 'portals', 11: 'orbiting shields', 12: 'wall torches', 13: 'wall hangings', 14: 'terrain columns', 15: 'plunges' },
+        drawKindTimingMethod: 'Sample one in every eight depth-sorted draws of each kind; reported per-kind timing is an 8x extrapolation estimate and is nested inside depthDrawMs. Chunk timing is measured in batches of 64 sorted draws; it includes mixed kinds and is also nested.',
         significantSessionSpikes: completePerformance.significantSpikes || [], retainedDetailedSpikes: performance.framePacing?.spikeFrames || [] },
-      aiCollisionPathfinding: { sessionId: session.sessionId, timingMs: pickTimings(['aiMs', 'playerUpdateMs', 'creatureUpdateMs', 'townLifeUpdateMs', 'keepDirectorUpdateMs', 'keepCompanionUpdateMs', 'keepFolkUpdateMs', 'townAgentUpdateMs', 'otherNpcUpdateMs', 'pathMs', 'collisionMs']) },
+      aiCollisionPathfinding: { sessionId: session.sessionId, timingMs: pickTimings(['aiMs', 'playerUpdateMs', 'creatureUpdateMs', 'creatureUpdateCallbacksMs', 'creatureUpdateOverheadMs', 'townLifeUpdateMs', 'keepDirectorUpdateMs', 'keepCompanionUpdateMs', 'keepFolkUpdateMs', 'townAgentUpdateMs', 'otherNpcUpdateMs', 'pathMs', 'collisionMs']) },
       movementAndCollision: { sessionId: session.sessionId,
         methodMetrics: Object.fromEntries(Object.entries(session.metrics || {}).filter(([key]) => key.startsWith('movement.'))),
         recoveryEvents: timeline.filter((event) => /position-recover|collision-/i.test(event.type)),
-        incidentWindows: performance.incidents || [],
+        incidentWindowIds: (performance.incidents || []).map((incident) => incident.id),
         note: 'Blocked movement counts are measured only for the player and aggregated by movement method/source. Ordinary wall contacts do not create per-frame timeline events. Recovery events contain before/after positions and ability/input lock state.' },
-      inputAndAction: { sessionId: session.sessionId, incidentWindows: performance.incidents || [],
+      inputAndAction: { sessionId: session.sessionId, incidentWindowIds: (performance.incidents || []).map((incident) => incident.id),
         interruptions: timeline.filter((event) => /attack-interruption|input-conflict|loot-interaction/i.test(event.type)),
         note: 'Held movement keys, Shift, mouse buttons, player target, movement vector, cast/channel/attack/interact/loot state are sampled only in retained incident windows and exported frame samples.' },
       functionLevelProfiling: { sessionId: session.sessionId,
-        playerUpdateSubphases: pickTimings(['playerUpdateWallMs', 'playerUpdateUnattributedMs', 'playerRecoveryMs', 'playerTimersGearAffixesMs', 'playerClassPassivesMs', 'playerStatusMs', 'playerResourcesBuffsMs', 'playerAutoSummonMs', 'playerCooldownsLegendaryMs', 'playerActionMovementMs', 'playerPathMs', 'playerMoveCollisionMs']),
+        playerUpdateSubphases: pickTimings(['playerUpdateWallMs', 'playerUpdateUnattributedMs', 'playerRecoveryMs', 'playerTimersGearAffixesMs', 'playerClassPassivesMs', 'playerStatusMs', 'playerResourcesBuffsMs', 'playerAutoSummonMs', 'playerCooldownsLegendaryMs', 'playerActionMovementMs', 'playerSkillAttemptMs', 'playerWalkToMs', 'playerPathMs', 'playerMoveCollisionMs']),
         slowestCallbacksInFrames: (performance.frames || []).filter((frame) => frame.aiSlowestCallback).map((frame) => ({ elapsedSeconds: frame.elapsedSeconds, environment: frame.environment, callback: frame.aiSlowestCallback, durationMs: frame.aiSlowestCallbackMs })),
-        note: 'Player update wall time and uninstrumented remainder are measured explicitly. Group timings are inclusive of their nested path, collision, and auto-summon measurements; do not sum those nested values twice. JavaScript engine garbage-collection timing is unavailable.' },
+        note: 'Player update wall time and uninstrumented remainder are measured explicitly. Skill-attempt and walkTo timings subdivide action/movement; path and collision are nested within walkTo. These timings overlap and must not be summed. JavaScript engine garbage-collection timing is unavailable.' },
       simulationTiming: { sessionId: session.sessionId, summary: completePerformance.simulationTime || null,
-        note: 'Real RAF gaps are separate from clamped game delta and hidden-tab catch-up updates.' },
+      completeSessionDistributions: completePerformance.completeFrameTimeDistributions || null,
+      note: 'Real RAF gaps are separate from clamped game delta and hidden-tab catch-up updates.' },
       diagnosticOverhead: { sessionId: session.sessionId, performance: completePerformance.diagnosticOverhead || null,
         recorderMetrics: Object.fromEntries(Object.entries(session.metrics || {}).filter(([key]) => key.startsWith('diagnostics.'))) },
       memory: { sessionId: session.sessionId, supported: performance.memory?.supported ?? false, completeSessionSamples: performance.memory?.completeSessionSamples || null,
-        latestHeapBytes: performance.memory?.latestHeapBytes ?? null, peakSampledHeapBytes: completePerformance.heap?.peakBytes ?? null },
+        liveAtExportHeapBytes: performance.memory?.liveAtExportHeapBytes ?? null, peakRetainedFrameSampleHeapBytes: completePerformance.heap?.peakBytes ?? null },
       particlesAndHazards: { sessionId: session.sessionId, counts: counts ? { latest: counts.latest, maximum: counts.maximum } : null,
         lifecycleDeltas: lifecycle ? { vfx: lifecycle.vfx, hazards: lifecycle.world } : null },
       uiAndLoot: { sessionId: session.sessionId, timingMs: pickTimings(['uiMs', 'hudLabelsMs', 'lootMs', 'saveMs', 'eventsMs']) },
@@ -213,6 +221,21 @@ function compactIncident(incident, stride = 5) {
     preEventSamples: sample(incident.preEventSamples), postEventSamples: sample(incident.postEventSamples) };
 }
 
+function selectCompactIncidents(incidents, limit, stride) {
+  const score = (incident) => {
+    const type = String(incident?.trigger || '');
+    const severity = Number(incident?.details?.frameMs || incident?.details?.severityMs || incident?.details?.durationMs || incident?.details?.rafGapMs || 0);
+    return (/error|exception|position|collision|attack-interruption/.test(type) ? 1_000_000 : 0) + severity;
+  };
+  return incidents.slice().sort((a, b) => score(b) - score(a)).slice(0, limit).map((incident) => compactIncident(incident, stride));
+}
+
+function omitIncidentWindows(section) {
+  if (!section) return null;
+  const { incidentWindows, ...summary } = section;
+  return summary;
+}
+
 function compactReport(full) {
   if (!full?.sessionId) return full;
   const perf = full.sections?.performance || {}, audio = full.sections?.audio || {},
@@ -231,7 +254,7 @@ function compactReport(full) {
       framePacing: { ...perf.framePacing, spikeFrames: frames.slice().sort((a, b) => (b.frameMs || 0) - (a.frameMs || 0)).slice(0, 40) },
       longTasks: { supported: perf.longTasks?.supported, observedCount: perf.longTasks?.observedCount,
         entries: (perf.longTasks?.entries || []).slice(0, 20) }, externalTimingSummary: perf.externalTimingSummary, externalTimings: perf.externalTimings,
-      memory: perf.memory, lifecycle: { ...perf.lifecycle, visualEffectSources: compactVfxLifecycle(perf.lifecycle?.visualEffectSources) }, incidents: incidents.slice(0, 24).map((incident) => compactIncident(incident)),
+      memory: perf.memory, lifecycle: { ...perf.lifecycle, visualEffectSources: compactVfxLifecycle(perf.lifecycle?.visualEffectSources) }, incidents: selectCompactIncidents(incidents, 24, 5),
       incidentCaptureScope: perf.incidentCaptureScope },
     audio: { statisticsScope: audio.statisticsScope, startedUtc: audio.startedUtc, stoppedUtc: audio.stoppedUtc,
       durationMs: audio.durationMs, audioSettings: audio.audioSettings, activeInstancesByCategory: audio.activeInstancesByCategory,
@@ -251,9 +274,14 @@ function compactReport(full) {
         totalRequests: summary.totalRequests, lifecycle: summary.lifecycle ? { totalEvents: summary.lifecycle.totalEvents,
           requests: summary.lifecycle.requests, statisticsScope: summary.lifecycle.statisticsScope } : null },
       importantEvents: (audio.importantEvents || []).filter((event) => /error|unknown|playback|transition|combat|orphan|cancel|source/i.test(`${event.type} ${event.event}`)).slice(0, 100).map((event) => compactValue(event)) },
-    functionTimings: full.sections?.functionLevelProfiling, entitiesAndLifecycle: full.sections?.entitiesAndLifecycle,
-    rendering: full.sections?.rendering, movementAndCollision: full.sections?.movementAndCollision,
-    inputAndAction: full.sections?.inputAndAction, particlesAndHazards: full.sections?.particlesAndHazards,
+    functionTimings: full.sections?.functionLevelProfiling ? { ...full.sections.functionLevelProfiling,
+      slowestCallbacksInFrames: (full.sections.functionLevelProfiling.slowestCallbacksInFrames || []).slice().sort((a, b) => (b.durationMs || 0) - (a.durationMs || 0)).slice(0, 40),
+      retainedSlowCallbackCount: (full.sections.functionLevelProfiling.slowestCallbacksInFrames || []).length } : null,
+    entitiesAndLifecycle: full.sections?.entitiesAndLifecycle, inactiveEnemyProcessing: full.sections?.inactiveEnemyProcessing,
+    rendering: full.sections?.rendering,
+    movementAndCollision: omitIncidentWindows(full.sections?.movementAndCollision),
+    inputAndAction: omitIncidentWindows(full.sections?.inputAndAction),
+    particlesAndHazards: full.sections?.particlesAndHazards,
     simulationTiming: full.sections?.simulationTiming, diagnosticOverhead: full.sections?.diagnosticOverhead,
     memory: full.sections?.memory, uiAndLoot: full.sections?.uiAndLoot, browserLongTasks: full.sections?.browserLongTasks,
     timeline: { sessionId: full.sessionId, events: compactTimelineEvents,
@@ -261,21 +289,25 @@ function compactReport(full) {
       areaTransitions: (full.timeline?.areaTransitions || []).slice(-100).map(compactEvent), combatTransitions: (full.timeline?.combatTransitions || []).slice(-100).map(compactEvent) },
     completeness: full.completeness,
     compacting: { targetBytes: 1_000_000, ordinaryFrameSamplesExcluded: true, incidentContextSamplingMs: 500,
-      prioritization: 'complete aggregates and categorized counts are retained; detailed context favors errors, transitions, movement failures, resource accumulation, and severe spikes' },
+      incidentContextStoredOnceAt: 'performance.incidents',
+      prioritization: 'complete aggregates and categorized event counts are retained; incident context is stored once and shared by ID; detailed context favors errors, transitions, movement failures, resource accumulation, and severe spikes' },
   };
   const bytes = () => new TextEncoder().encode(JSON.stringify(measured)).length;
   // Shrink only contextual detail if a rare error-heavy session exceeds the share target; never drop aggregates.
   if (bytes() > 950_000) measured.timeline.events = compactEvents(full.timeline?.events, 120);
   if (bytes() > 950_000) measured.audio.importantEvents = measured.audio.importantEvents.slice(0, 30);
-  if (bytes() > 950_000) measured.performance.incidents = incidents.slice(0, 12).map((incident) => compactIncident(incident, 10));
+  if (bytes() > 950_000) measured.performance.incidents = selectCompactIncidents(incidents, 12, 10);
   if (bytes() > 950_000) measured.performance.framePacing.spikeFrames = measured.performance.framePacing.spikeFrames.slice(0, 12);
   if (bytes() > 950_000) {
     measured.timeline.events = compactEvents(full.timeline?.events, 80);
-    measured.timeline.markers = (full.timeline?.markers || []).slice(-30);
-    measured.timeline.errors = (full.timeline?.errors || []).slice(-30);
-    measured.timeline.areaTransitions = (full.timeline?.areaTransitions || []).slice(-30);
-    measured.timeline.combatTransitions = (full.timeline?.combatTransitions || []).slice(-30);
-    measured.performance.incidents = incidents.slice(0, 6).map((incident) => ({ ...compactIncident(incident, 100), preEventSamples: [], postEventSamples: [] }));
+    for (const name of ['markers', 'errors', 'areaTransitions', 'combatTransitions']) measured.timeline[name] = (full.timeline?.[name] || []).slice(-30).map(compactEvent);
+    measured.performance.incidents = selectCompactIncidents(incidents, 6, 100).map((incident) => ({ ...incident, preEventSamples: [], postEventSamples: [] }));
+  }
+  if (bytes() > 950_000) {
+    measured.timeline.events = compactEvents(full.timeline?.events, 40);
+    measured.audio.importantEvents = measured.audio.importantEvents.slice(0, 12);
+    measured.performance.incidents = selectCompactIncidents(incidents, 3, 100).map((incident) => ({ ...incident, preEventSamples: incident.preEventSamples.slice(-2), postEventSamples: incident.postEventSamples.slice(0, 2) }));
+    measured.performance.framePacing.spikeFrames = measured.performance.framePacing.spikeFrames.slice(0, 6);
   }
   measured.compacting.actualBytes = bytes();
   measured.compacting.withinTarget = measured.compacting.actualBytes < 1_000_000;

@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { G } from '../../src/state.js';
 import { recordAudioDiagnosticMarker } from '../../src/core/audio.js';
-import { profileBeginFrame, profileExternalTiming, profileFinishFrame } from '../../src/core/perfdiagnostics.js';
+import { profileBeginFrame, profileExternalTiming, profileFinishFrame, profileRecord } from '../../src/core/perfdiagnostics.js';
 import { addUnifiedDiagnosticMarker, clearUnifiedDiagnosticRecording, compactUnifiedDiagnosticReport, createCompressedDiagnosticZip, recordDeveloperDiagnosticEvent, resolveDeployedGitCommitId, startUnifiedDiagnosticRecording, stopUnifiedDiagnosticRecording, unifiedDiagnosticReport, unifiedDiagnosticStatus } from '../../src/core/developer-diagnostics.js';
 import { recordSimulationTiming } from '../../src/core/perfdiagnostics.js';
 import { TileMap } from '../../src/world/map.js';
@@ -22,7 +22,7 @@ assert.ok(sessionId);
 let fetchCount = 0;
 const fakeFetch = async (url) => {
   fetchCount++;
-  if (String(url).includes('src/data/build-version.js')) return { ok: true, text: async () => "export const GAME_BUILD_ID = 'fork-main-unified-diagnostics-2026-11-26';" };
+  if (String(url).includes('src/data/build-version.js')) return { ok: true, text: async () => "export const GAME_BUILD_ID = 'fork-main-diagnostics-investigation-2026-11-26';" };
   if (String(url).includes('/deployments?')) return { ok: true, json: async () => [{ sha: 'test-deployed-sha', statuses_url: 'https://mock/statuses' }] };
   return { ok: true, json: async () => [{ state: 'success' }] };
 };
@@ -32,6 +32,10 @@ assert.equal(recordAudioDiagnosticMarker('area-enter', { environment: 'Diagnosti
 recordDeveloperDiagnosticEvent('area-enter', { worldId: 'new-world-context', kind: 'town', environment: 'New Area', depth: 23, inCombat: false }, 'game-event');
 assert.equal(addUnifiedDiagnosticMarker('synthetic test marker'), true);
 assert.equal(profileBeginFrame(16.67), true);
+profileRecord('playerSkillAttempt', 2.5);
+profileRecord('playerWalkTo', 1.25);
+profileRecord('depthQueueBuild', 3.5);
+profileRecord('depthQueueSort', 0.75);
 profileFinishFrame(G.world);
 profileExternalTiming('synthetic.transition-stage', performance.now() - 2, { biome: 'Diagnostics Cave' });
 class DiagnosticProbeEffect { constructor() { this.src = { name: 'Probe Owner' }; this.dur = 4; } update() { return true; } }
@@ -67,6 +71,11 @@ assert.equal(report.recording.metadata.game.version, report.game.version);
 assert.equal(report.sections.performance.sessionId, sessionId);
 assert.equal(report.sections.audio.sessionId, sessionId);
 assert.equal(report.sections.performance.completeSessionStatistics.framesObserved, 7);
+assert.ok(report.sections.performance.completeSessionStatistics.completeFrameTimeDistributions.percentiles.frameMs.p50 !== null, 'whole-session frame percentiles are retained independently of the detailed-frame ring');
+assert.equal(report.sections.performance.frames[0].playerSkillAttemptMs, 2.5, 'player skill attempts have explicit per-frame timing');
+assert.equal(report.sections.performance.frames[0].playerWalkToMs, 1.25, 'player walkTo has explicit per-frame timing');
+assert.equal(report.sections.performance.frames[0].depthQueueBuildMs, 3.5, 'depth queue construction is split from its sort');
+assert.equal(report.sections.performance.frames[0].depthQueueSortMs, 0.75);
 assert.equal(report.sections.performance.externalTimingSummary['synthetic.transition-stage'].count, 1, 'out-of-frame timings retain complete-session aggregate stats');
 assert.equal(report.sections.performance.lifecycle.visualEffectSources.effects.DiagnosticProbeEffect.activeNow, 1, 'effect report distinguishes active objects from cumulative creates');
 assert.ok(report.sections.performance.completeSessionStatistics.significantSpikes.length > 0, 'noteworthy pacing spikes survive in the complete-session aggregate');
@@ -98,6 +107,8 @@ assert.ok(compactBytes < 1_000_000, `compact report remains under 1 MB (actual $
 assert.equal(compact.compacting.withinTarget, true);
 assert.ok(compact.performance.completeSessionStatistics.framesObserved >= 7, 'compact report retains complete performance aggregates');
 assert.ok(compact.timeline.markers.some((event) => event.details.marker === 'synthetic test marker'), 'compact report retains user markers');
+assert.ok(!Object.hasOwn(compact.movementAndCollision, 'incidentWindows') && !Object.hasOwn(compact.inputAndAction, 'incidentWindows'), 'compact report stores incident context once rather than duplicating it in both movement and input sections');
+assert.equal(compact.performance.incidents[0].id, report.sections.performance.incidents[0].id, 'the shared incident context retains its stable ID');
 assert.equal(compact.performance.frames, undefined, 'compact report omits ordinary frame dumps');
 const zipBlob = await createCompressedDiagnosticZip(JSON.stringify({ sessionId, check: 'zip' }), 'test.json');
 const zip = new Uint8Array(await zipBlob.arrayBuffer()), zipView = new DataView(zip.buffer);

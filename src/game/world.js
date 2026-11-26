@@ -442,15 +442,24 @@ export class World {
     if (G.world && G.world !== this) { if (profiling) { profileRecord('ai', profileEnd(aiStart)); profileRecord('world', profileEnd(worldStart)); } return; } // the hero just stepped through a portal: this world stops with him gone
     const ax = p ? p.x : 0, ay = p ? p.y : 0;
     const creatureStart = profiling ? profileStart() : 0;
+    let creatureCallbacksMs = 0, creaturesVisited = 0, creaturesUpdated = 0, inactiveEnemiesSkipped = 0, deadCreaturesSkipped = 0;
     for (const c of this.creatures) {
-      if (c === p || c.dead) continue;
+      if (c === p) continue;
+      if (profiling) creaturesVisited++;
+      if (c.dead) { if (profiling) deadCreaturesSkipped++; continue; }
       // only simulate creatures near the action
-      if (c.team === 'enemy' && !c.awake && dist2(c.x, c.y, ax, ay) > 26 * 26) continue;
+      if (c.team === 'enemy' && !c.awake && dist2(c.x, c.y, ax, ay) > 26 * 26) { if (profiling) inactiveEnemiesSkipped++; continue; }
       const started = profiling ? profileStart() : 0;
       c.update(dt);
-      if (profiling) profileRecordAIUpdate(c, c.team || 'creature', profileEnd(started));
+      if (profiling) { const elapsed = profileEnd(started); creatureCallbacksMs += elapsed; creaturesUpdated++; profileRecord('creatureUpdateCallbacks', elapsed); profileRecordAIUpdate(c, c.team || 'creature', elapsed); }
     }
-    if (profiling) profileRecord('creatureUpdate', profileEnd(creatureStart));
+    if (profiling) {
+      const creaturePassMs = profileEnd(creatureStart);
+      this._perfCreaturesVisited = creaturesVisited; this._perfCreaturesUpdated = creaturesUpdated;
+      this._perfInactiveEnemiesSkipped = inactiveEnemiesSkipped; this._perfDeadCreaturesSkipped = deadCreaturesSkipped;
+      profileRecord('creatureUpdate', creaturePassMs);
+      profileRecord('creatureUpdateOverhead', Math.max(0, creaturePassMs - creatureCallbacksMs));
+    }
     if (this.townLife) {
       const started = profiling ? profileStart() : 0;
       this.townLife.update(dt);
