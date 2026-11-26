@@ -753,18 +753,19 @@ function statsBlock() {
   const breakdown = buildEquipmentStatReport(p, c);
   const auditDetails = el('details', 'character-equipment-breakdown');
   auditDetails.dataset.statDetails = 'equipment-root';
-  auditDetails.innerHTML = '<summary>Equipment Bonus Breakdown</summary><p class="character-breakdown-note">Live totals use the same player calculations as combat. Equipment contributions include items, sockets, item powers and Covenant sets; other active sources remain in the character total. No stat uses a diminishing-return curve. A cap is shown only where the game enforces one.</p>';
+  auditDetails.innerHTML = '<summary>Equipment Bonus Breakdown</summary><p class="character-breakdown-note">Live totals use combat calculations. Equipment contributions include items, sockets, powers and Covenant sets; other active sources remain in the character total. Select a stat for its source details.</p>';
+  const prefsKey = 'velscour:equipment-stat-browser:v1';
+  let prefs = {};
+  try { prefs = JSON.parse(localStorage.getItem(prefsKey) || '{}') || {}; } catch { prefs = {}; }
   const controls = el('div', 'character-breakdown-controls');
   const search = el('input', 'character-breakdown-search');
-  search.type = 'search'; search.placeholder = 'Search stats or bonuses…'; search.setAttribute('aria-label', 'Search equipment bonuses');
+  search.type = 'search'; search.placeholder = 'Search every stat, item bonus, socket or modifier'; search.setAttribute('aria-label', 'Search equipment bonuses');
+  search.value = typeof prefs.query === 'string' ? prefs.query : '';
   controls.appendChild(search);
-  const expandAll = el('button', 'btn small', 'Expand All'); expandAll.type = 'button';
-  const collapseAll = el('button', 'btn small', 'Collapse All'); collapseAll.type = 'button';
-  controls.append(expandAll, collapseAll);
   const filters = el('div', 'character-breakdown-filters');
   const addFilter = (key, label) => {
     const wrap = el('label', 'character-breakdown-filter');
-    const input = el('input'); input.type = 'checkbox'; input.dataset.statFilter = key;
+    const input = el('input'); input.type = 'checkbox'; input.dataset.statFilter = key; input.checked = Boolean(prefs[key]);
     wrap.append(input, document.createTextNode(label)); filters.appendChild(wrap); return input;
   };
   const filterOver = addFilter('over', 'Show Overcapped Stats');
@@ -774,106 +775,146 @@ function statsBlock() {
   auditDetails.appendChild(controls);
 
   const metricByKey = new Map(breakdown.rows.map((row) => [row.key, row]));
-  const modifierCapState = (key) => {
+  const groups = breakdown.metricGroups.map((group) => ({ ...group, entries: [] }));
+  const groupById = new Map(groups.map((group) => [group.id, group]));
+  const modifierByKey = new Map(breakdown.metricGroups.flatMap((group) => group.modifiers.map((row) => [row.key, { ...row, group }])));
+  const capStateFor = (key) => {
     const direct = metricByKey.get(key === 'resLight' ? 'resLightning' : key);
     if (direct) return direct.capState;
     if (key === 'resAll') {
-      const resists = ['resFire', 'resCold', 'resLightning', 'resPoison', 'resMagic'].map((id) => metricByKey.get(id)).filter(Boolean);
-      if (resists.some((row) => row.capState === 'over')) return 'over';
-      if (resists.length && resists.every((row) => row.capState === 'at')) return 'at';
-      if (resists.some((row) => row.capState === 'approaching' || row.capState === 'at')) return 'approaching';
+      const resistances = ['resFire', 'resCold', 'resLightning', 'resPoison', 'resMagic'].map((id) => metricByKey.get(id)).filter(Boolean);
+      if (resistances.some((row) => row.capState === 'over')) return 'over';
+      if (resistances.length && resistances.every((row) => row.capState === 'at')) return 'at';
+      if (resistances.some((row) => row.capState === 'approaching' || row.capState === 'at')) return 'approaching';
     }
     return 'uncapped';
   };
-  const overcapSummary = el('section', 'character-overcap-summary');
-  const overcapHeader = el('h4', '', `Overcapped Stats (${breakdown.rows.filter((row) => row.excess > 0).length})`);
-  overcapSummary.appendChild(overcapHeader);
-  const overcapList = el('div', 'character-overcap-list');
-  for (const row of breakdown.rows.filter((stat) => stat.excess > 0)) {
-    const button = el('button', 'character-overcap-link', `${row.label}: +${Math.round(row.excess * 10) / 10}${row.unit} over`);
-    button.type = 'button'; button.dataset.jumpStat = row.key;
-    overcapList.appendChild(button);
-  }
-  if (!overcapList.childElementCount) overcapList.appendChild(el('span', 'dim', 'No stats currently exceed their cap.'));
-  overcapSummary.appendChild(overcapList);
-  auditDetails.appendChild(overcapSummary);
-
-  const categoriesRoot = el('div', 'character-breakdown-categories');
-  const searchHaystack = (row, group, extra = '') => `${group.name} ${row.label} ${row.note || ''} ${extra}`.toLocaleLowerCase();
-  for (const group of breakdown.metricGroups) {
-    const count = group.metrics.length + group.modifiers.length;
-    if (!count) continue;
-    const section = el('details', 'character-breakdown-section');
-    section.dataset.statDetails = `modifiers-${group.id}`;
-    section.innerHTML = `<summary><span>${escapeHtml(group.name)}</span><span class="character-category-count">${count}</span></summary>`;
-    const metrics = el('div', 'character-breakdown-metrics');
-    for (const row of group.metrics) {
-      const effective = row.effectiveText || `${Math.round(row.effective * 10) / 10}${row.unit}`;
-      const equipment = row.rawEquipmentText || `${Math.round(row.rawEquipment * 10) / 10}${row.unit}`;
-      const over = row.excess > 0 ? `+${Math.round(row.excess * 10) / 10}${row.unit}` : '—';
-      const stateText = { below: 'Below cap', approaching: 'Approaching cap', at: 'At cap', over: 'Over cap', uncapped: 'No cap' }[row.capState];
-      const metric = el('article', `character-stat-card cap-${row.capState}`);
-      metric.dataset.statEntry = row.key; metric.dataset.capState = row.capState;
-      metric.dataset.zero = String(Math.abs(row.combined) < 0.0001 && Math.abs(row.rawEquipment) < 0.0001 && Math.abs(row.effective) < 0.0001);
-      metric.dataset.search = searchHaystack(row, group).toLocaleLowerCase();
-      metric.title = row.note || '';
-      metric.innerHTML = `<div class="character-stat-card-title"><b>${escapeHtml(row.label)}</b><span class="character-cap-state">${stateText}</span></div><div class="character-stat-card-values"><div><small>Equipment</small><b>${escapeHtml(equipment)}</b></div><div><small>Total</small><b>${Math.round(row.combined * 10) / 10}${row.unit}</b></div><div><small>Effective</small><b>${escapeHtml(effective)}</b></div><div><small>Cap</small><b>${row.cap == null ? 'No Cap' : `${row.cap}${row.unit}`}</b></div><div><small>Over cap</small><b>${row.excess > 0 ? escapeHtml(over) : '—'}</b></div></div>${row.wasted > 0 ? `<small class="character-cap-explanation">${escapeHtml(row.overCapText || '')}</small>` : ''}<small class="character-stat-formula">${escapeHtml(row.diminishing || 'No diminishing returns')} · ${escapeHtml(row.note || '')}</small>`;
-      metrics.appendChild(metric);
-    }
-    section.appendChild(metrics);
-
-    const modifiers = el('div', 'character-modifier-table');
-    for (const row of group.modifiers) {
-      const amount = `${Math.round(row.raw * 10) / 10}${row.unit}`;
-      const sourceText = row.sources.length
-        ? row.sources.map((source) => {
-          const equipped = source.slot === 'set' || source.slot === 'bonus' ? null : c.equip[source.slot];
-          const sourceName = equipped ? itemName(equipped) : source.name;
-          return `${source.slot === 'set' || source.slot === 'bonus' ? source.name : `${source.slot}: ${sourceName}`} ${source.value > 0 ? '+' : ''}${Math.round(source.value * 10) / 10}${row.unit}`;
-        }).join(' · ')
-        : 'No equipped item currently grants this modifier.';
-      const rowState = modifierCapState(row.key);
-      const item = el('div', `character-modifier-row cap-${rowState}`);
-      item.dataset.capState = rowState; item.dataset.zero = String(Math.abs(row.raw) < 0.0001);
-      item.dataset.search = searchHaystack(row, group, sourceText).toLocaleLowerCase();
-      item.innerHTML = `<span>${escapeHtml(row.label)}</span><b>${amount}</b><small>Equipped contribution: ${Math.round(row.raw * 10) / 10}${row.unit} · total from equipment, sockets and sets: ${Math.round(row.combined * 10) / 10}${row.unit}</small><small class="character-modifier-sources">${escapeHtml(sourceText)}</small>`;
-      modifiers.appendChild(item);
-    }
-    section.appendChild(modifiers);
-    categoriesRoot.appendChild(section);
-  }
-  auditDetails.appendChild(categoriesRoot);
-
-  const applyBreakdownFilters = () => {
-    const query = search.value.trim().toLocaleLowerCase();
-    const entries = [...categoriesRoot.querySelectorAll('[data-search]')];
-    for (const entry of entries) {
-      const state = entry.dataset.capState;
-      const visible = (!query || entry.dataset.search.includes(query))
-        && (!filterOver.checked || state === 'over')
-        && (!filterCapped.checked || state !== 'uncapped')
-        && (!hideZero.checked || entry.dataset.zero !== 'true');
-      entry.hidden = !visible;
-    }
-    for (const section of categoriesRoot.querySelectorAll('.character-breakdown-section')) {
-      section.hidden = !section.querySelector('[data-search]:not([hidden])');
-    }
+  const sourceLinesFor = (keys) => [...new Set(keys.flatMap((key) => {
+    const modifier = modifierByKey.get(key);
+    return (modifier?.sources || []).map((source) => {
+      const equipped = source.slot === 'set' || source.slot === 'bonus' ? null : c.equip[source.slot];
+      const name = equipped ? itemName(equipped) : source.name;
+      const label = source.slot === 'set' || source.slot === 'bonus' ? source.name : `${SLOT_NAMES[source.slot] || source.slot}: ${name}`;
+      return `${label} ${source.value > 0 ? '+' : ''}${Math.round(source.value * 10) / 10}${modifier.unit}`;
+    });
+  }))];
+  const relatedKeys = (key) => ({
+    maxHealth: ['life', 'lifePct', 'vit', 'allAttr'], maxMana: ['mana', 'int', 'allAttr'],
+    armor: ['armor', 'baseArmor', 'armorPct', 'str', 'allAttr'],
+    str: ['str', 'allAttr'], dex: ['dex', 'allAttr'], vit: ['vit', 'allAttr'], int: ['int', 'allAttr'],
+    resFire: ['resFire', 'resAll'], resCold: ['resCold', 'resAll'], resLightning: ['resLight', 'resAll'], resPoison: ['resPoison', 'resAll'], resMagic: ['resAll'],
+    critChance: ['critChance', 'dex', 'allAttr'], atkSpeed: ['atkSpeed', 'dex', 'allAttr'], castSpeed: ['castSpeed', 'int', 'allAttr'],
+  }[key] || [key]);
+  const capLabels = { below: 'Below cap', approaching: 'Near cap', at: 'At cap', over: 'Over cap', uncapped: 'No cap' };
+  const itemPowerText = (slot) => {
+    const item = breakdown.audit.bySlot?.[slot], equipped = c.equip[slot], lines = [];
+    if (!item || !equipped) return lines;
+    const gems = equipped.gems || [];
+    const gemNames = gems.map((gem) => gem?.gem ? gemName(gem.gem, gem.tier) : typeof gem === 'string' ? gem : gem?.name || gem?.type).filter(Boolean);
+    if (gemNames.length) lines.push(`Sockets: ${gemNames.join(', ')}`);
+    const glyph = (breakdown.audit.itemPowers || []).find((power) => power.slot === slot);
+    if (glyph && POWERS[glyph.power]) lines.push(`${glyph.glyph || 'Item power'}: ${powerText(POWERS[glyph.power], powerLevel(glyph.ilvl, 5))}`);
+    for (const augment of item.augments || []) { const def = AUGMENTS[augment.id]; if (def) lines.push(`${def.name} (${augTarget(augment)}): ${def.desc(augment.pow || 1)}`); }
+    if (item.legendary) lines.push(legendaryDesc(c.equip[slot]));
+    return lines;
   };
-  for (const control of [search, filterOver, filterCapped, hideZero]) control.addEventListener(control === search ? 'input' : 'change', applyBreakdownFilters);
-  expandAll.onclick = () => { for (const section of categoriesRoot.querySelectorAll('.character-breakdown-section')) if (!section.hidden) section.open = true; };
-  collapseAll.onclick = () => { for (const section of categoriesRoot.querySelectorAll('.character-breakdown-section')) section.open = false; };
-  overcapList.addEventListener('click', (event) => {
-    const button = event.target.closest('[data-jump-stat]'); if (!button) return;
-    const row = metricByKey.get(button.dataset.jumpStat);
-    const group = breakdown.metricGroups.find((category) => category.metrics.includes(row));
-    const section = group && categoriesRoot.querySelector(`[data-stat-details="modifiers-${group.id}"]`);
-    if (section) {
-      search.value = ''; filterOver.checked = false; filterCapped.checked = false; hideZero.checked = false;
-      applyBreakdownFilters(); section.hidden = false; section.open = true;
-      section.querySelector(`[data-stat-entry="${button.dataset.jumpStat}"]`)?.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+  let expandedDetail = null;
+  const makeEntry = (row, group, modifier = modifierByKey.get(row.key)) => {
+    const state = row.capState || capStateFor(row.key), unit = row.unit ?? modifier?.unit ?? '';
+    const equipment = row.rawEquipmentText || `${Math.round((row.rawEquipment ?? modifier?.raw ?? 0) * 10) / 10}${unit}`;
+    const total = row.combined ?? modifier?.combined ?? modifier?.raw ?? 0;
+    const effective = row.effectiveText || `${Math.round((row.effective ?? total) * 10) / 10}${unit}`;
+    const keys = relatedKeys(row.key), capMetric = metricByKey.get(row.key === 'resLight' ? 'resLightning' : row.key);
+    const cap = row.cap ?? capMetric?.cap ?? (row.key === 'resAll' ? 75 : null);
+    const excess = row.excess || capMetric?.excess || (cap == null ? 0 : Math.max(0, total - cap));
+    const capText = cap == null ? 'No Cap' : `${Math.round(cap * 10) / 10}${unit}${excess > 0 ? ` · +${Math.round(excess * 10) / 10} over` : ''}`;
+    const detailCap = cap == null ? 'No hard cap' : `Cap ${cap}${unit}; ${Math.max(0, excess)}${unit} above cap`;
+    const sourceLines = sourceLinesFor(keys);
+    if (row.key === 'weaponBase') {
+      for (const [slot, item] of Object.entries(breakdown.audit.bySlot || {})) if (item.weapon) sourceLines.push(`${SLOT_NAMES[slot] || slot}: ${itemName(c.equip[slot])} ${Math.round(item.weapon[0])}-${Math.round(item.weapon[1])} base damage`);
     }
+    const searchable = `${group.name} ${row.label} ${row.note || ''} ${equipment} ${sourceLines.join(' ')} ${modifier?.sources.map((source) => `${source.name} ${source.value}`).join(' ') || ''}`.toLocaleLowerCase();
+    const entry = el('article', `character-stat-card cap-${state}`);
+    entry.dataset.statEntry = row.key; entry.dataset.category = group.id; entry.dataset.capState = state;
+    entry.dataset.zero = String(Math.abs(total) < 0.0001 && Math.abs(Number(modifier?.raw || 0)) < 0.0001 && Math.abs(Number(row.effective ?? total)) < 0.0001);
+    entry.dataset.search = searchable;
+    const toggle = el('button', 'character-stat-row'); toggle.type = 'button'; toggle.setAttribute('aria-expanded', 'false');
+    toggle.innerHTML = `<span class="character-stat-name">${escapeHtml(row.label)}</span><span class="character-stat-eq">${escapeHtml(equipment)}</span><span class="character-stat-total">${Math.round(total * 10) / 10}${escapeHtml(unit)}</span><span class="character-stat-effective">${escapeHtml(effective)}</span><span class="character-stat-cap">${escapeHtml(capText)}</span><span class="character-cap-state">${capLabels[state] || 'No cap'}</span>`;
+    const detail = el('div', 'character-stat-detail'); detail.hidden = true;
+    const sources = el('div', 'character-stat-detail-sources');
+    sources.innerHTML = `<b>Equipment sources</b><span>${sourceLines.length ? sourceLines.map(escapeHtml).join('<br>') : 'No direct equipment contribution; this value may come from attributes or other active sources.'}</span>`;
+    detail.appendChild(sources);
+    const slots = new Set(keys.flatMap((key) => (modifierByKey.get(key)?.sources || []).filter((source) => source.slot !== 'set' && source.slot !== 'bonus').map((source) => source.slot)));
+    for (const slot of slots) for (const text of itemPowerText(slot)) detail.appendChild(el('div', 'character-stat-detail-source', escapeHtml(text)));
+    for (const set of (breakdown.audit.setSources || []).filter((candidate) => (candidate.stats || []).some(([key]) => keys.includes(key)))) {
+      const power = set.power && POWERS[set.power];
+      const bonuses = (set.stats || []).filter(([key]) => keys.includes(key)).map(([key, value]) => `${key} ${value > 0 ? '+' : ''}${Math.round(value * 10) / 10}`).join(' · ');
+      detail.appendChild(el('div', 'character-stat-detail-source', `${escapeHtml(set.name)} (${set.pieces} pieces)${power ? ` · ${escapeHtml(powerText(power, powerLevel(set.ilvl, 3)))}` : ''}${bonuses ? ` · ${escapeHtml(bonuses)}` : ''}`));
+    }
+    detail.appendChild(el('div', 'character-stat-detail-formula', `${escapeHtml(row.diminishing || 'No diminishing returns')} · ${escapeHtml(row.note || modifier?.label || '')} · ${detailCap}${row.wasted > 0 ? ` · ${row.wasted}${unit} is wasted after overflow conversion` : ''}`));
+    toggle.addEventListener('click', () => {
+      const opening = detail.hidden;
+      if (expandedDetail && expandedDetail !== detail) { expandedDetail.hidden = true; expandedDetail.previousElementSibling?.setAttribute('aria-expanded', 'false'); }
+      detail.hidden = !opening; toggle.setAttribute('aria-expanded', String(opening));
+      expandedDetail = opening ? detail : null;
+    });
+    entry.append(toggle, detail);
+    return entry;
+  };
+  for (const group of breakdown.metricGroups) {
+    const target = groupById.get(group.id), seen = new Set();
+    for (const row of group.metrics) { target.entries.push(makeEntry(row, target)); seen.add(row.key); }
+    for (const row of group.modifiers) if (!seen.has(row.key)) target.entries.push(makeEntry(row, target, row));
+  }
+
+  const nav = el('nav', 'character-stat-categories'); nav.setAttribute('aria-label', 'Stat categories');
+  const browserBody = el('div', 'character-breakdown-body');
+  const resultHeader = el('div', 'character-breakdown-result-header');
+  const resultTitle = el('h3', 'character-breakdown-result-title'), resultCount = el('span', 'character-breakdown-result-count');
+  resultHeader.append(resultTitle, resultCount);
+  const results = el('div', 'character-breakdown-results');
+  const categoryDefs = [{ id: 'all', name: 'All Stats' }, ...groups.map(({ id, name }) => ({ id, name }))];
+  const categoryButtons = new Map();
+  for (const category of categoryDefs) {
+    const button = el('button', 'character-stat-category'); button.type = 'button'; button.dataset.category = category.id;
+    const count = category.id === 'all' ? groups.reduce((sum, group) => sum + group.entries.length, 0) : groupById.get(category.id)?.entries.length || 0;
+    button.innerHTML = `<span>${escapeHtml(category.name)}</span><small>${count}</small>`;
+    nav.appendChild(button); categoryButtons.set(category.id, button);
+  }
+  browserBody.append(resultHeader, results);
+  const layout = el('div', 'character-breakdown-layout'); layout.append(nav, browserBody);
+  auditDetails.appendChild(layout);
+  let selectedCategory = categoryButtons.has(prefs.category) ? prefs.category : 'all';
+  const persistPrefs = () => { try { localStorage.setItem(prefsKey, JSON.stringify({ category: selectedCategory, query: search.value, over: filterOver.checked, capped: filterCapped.checked, nonzero: hideZero.checked })); } catch { /* preferences are optional */ } };
+  const allEntries = groups.flatMap((group) => group.entries.map((entry) => ({ group, entry })));
+  const renderResults = () => {
+    const query = search.value.trim().toLocaleLowerCase();
+    const selected = selectedCategory === 'all' || query ? allEntries : allEntries.filter(({ group }) => group.id === selectedCategory);
+    const visible = selected.filter(({ entry }) => (!query || entry.dataset.search.includes(query))
+      && (!filterOver.checked || entry.dataset.capState === 'over')
+      && (!filterCapped.checked || entry.dataset.capState !== 'uncapped')
+      && (!hideZero.checked || entry.dataset.zero !== 'true'));
+    resultTitle.textContent = query ? 'Search Results' : categoryDefs.find((category) => category.id === selectedCategory)?.name || 'All Stats';
+    resultCount.textContent = `${visible.length} ${visible.length === 1 ? 'stat' : 'stats'}`;
+    for (const button of categoryButtons.values()) { const selectedNow = button.dataset.category === selectedCategory; button.classList.toggle('selected', selectedNow); button.setAttribute('aria-current', selectedNow ? 'page' : 'false'); }
+    results.replaceChildren();
+    const tableHeader = el('div', 'character-stat-table-header');
+    tableHeader.innerHTML = '<span>Stat</span><span>Equipment</span><span>Total</span><span>Effective</span><span>Cap / Overcap</span><span>Status</span>';
+    results.appendChild(tableHeader);
+    for (const { group, entry } of visible) {
+      entry.dataset.groupLabel = group.name;
+      results.appendChild(entry);
+    }
+    if (!visible.length) results.appendChild(el('div', 'character-stat-empty', 'No stats match the current search and filters.'));
+    persistPrefs();
+  };
+  for (const button of categoryButtons.values()) button.addEventListener('click', () => {
+    selectedCategory = button.dataset.category;
+    if (expandedDetail) { expandedDetail.hidden = true; expandedDetail.previousElementSibling?.setAttribute('aria-expanded', 'false'); expandedDetail = null; }
+    renderResults();
   });
-  applyBreakdownFilters();
+  for (const control of [search, filterOver, filterCapped, hideZero]) control.addEventListener(control === search ? 'input' : 'change', renderResults);
+  renderResults();
   const itemPowers = breakdown.audit.itemPowers || [];
   const powerItems = Object.entries(breakdown.audit.bySlot || {}).filter(([slot, item]) => item.legendary || (item.augments || []).length || itemPowers.some((power) => power.slot === slot));
   const setPowers = breakdown.audit.setSources || [];

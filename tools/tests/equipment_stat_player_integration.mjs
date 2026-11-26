@@ -27,7 +27,7 @@ assert.equal(stat('resFire').rawEquipment, 30 + 25, 'item and Covenant set resis
 assert.ok(p.st.equipmentAudit.setStats.holyPct > 0, 'wearing two Covenant pieces contributes a set bonus to the audit');
 assert.ok(report.affixRows.flatMap((group) => group.rows).find((row) => row.key === 'holyPct').sources.some((source) => /Vows of the Ashen Templar/.test(source.name)), 'Covenant set lines identify the originating set');
 assert.equal(stat('cdr').rawEquipment, 10);
-assert.ok(report.affixRows.find((group) => group.id === 'offense').rows.some((row) => row.key === 'critChance' && row.sources.some((source) => source.slot === 'weapon')));
+assert.ok(report.affixRows.find((group) => group.id === 'critical').rows.some((row) => row.key === 'critChance' && row.sources.some((source) => source.slot === 'weapon')));
 
 // Temporary sources alter the displayed live total without being misattributed to equipment.
 p.buffs.push({ stats: { crit: 40, reduce: 15, speed: 10 } });

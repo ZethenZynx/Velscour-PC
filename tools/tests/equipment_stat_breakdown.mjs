@@ -86,10 +86,17 @@ assert.equal(afterLoad.rows.find((row) => row.key === 'critChance').effective, 7
 
 const inventorySource = readFileSync(new URL('../../src/ui/inventory.js', import.meta.url), 'utf8');
 const styleSource = readFileSync(new URL('../../css/style.css', import.meta.url), 'utf8');
-for (const control of ['Expand All', 'Collapse All', 'Show Overcapped Stats', 'Show Capped Stats', 'Hide Zero-Value Stats']) assert.ok(inventorySource.includes(control), `Character & Stats exposes ${control}`);
-assert.match(inventorySource, /Search stats or bonuses/);
-assert.match(inventorySource, /Overcapped Stats \(/);
-assert.match(inventorySource, /data-jump-stat/);
+for (const control of ['Show Overcapped Stats', 'Show Capped Stats', 'Hide Zero-Value Stats', 'All Stats']) assert.ok(inventorySource.includes(control), `Character & Stats exposes ${control}`);
+assert.doesNotMatch(inventorySource, /Expand All|Collapse All|data-jump-stat/, 'the stat browser replaces the expandable category cards and oversized overcap block');
+assert.match(inventorySource, /Search every stat, item bonus, socket or modifier/);
+assert.match(inventorySource, /velscour:equipment-stat-browser:v1/);
+assert.match(inventorySource, /character-breakdown-layout/);
+assert.match(inventorySource, /character-stat-detail/);
+assert.match(inventorySource, /let expandedDetail = null/, 'only one detailed stat row can remain expanded');
+assert.match(inventorySource, /itemPowerText/, 'expanded details retain socket and item power attribution');
+assert.match(inventorySource, /character-stat-table-header/, 'the compact results table labels its value columns');
 for (const state of ['below', 'approaching', 'at', 'over']) assert.ok(styleSource.includes(`cap-${state}`), `cap state ${state} has a visual style`);
+assert.match(styleSource, /character-breakdown-layout[^{]*\{[^}]*minmax\(0, 1fr\)/s, 'the right pane can shrink without forcing horizontal overflow');
+assert.match(styleSource, /character-breakdown-results[^{]*\{[^}]*overflow-y: auto/s, 'stat rows use a vertical results scroller');
 
 console.log(`Equipment stat breakdown passed: ${AFFIXES.length} equipment affixes present, cap stages and source attribution verified.`);
