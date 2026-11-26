@@ -24,6 +24,7 @@ import { changesAfterBundledBuild, showUpdateDialog, checkForGameUpdates } from 
 import { initTitleForkUpdater } from '../game/forkreleaseupdater.js';
 import { MOUSE_CURSOR_DEFAULTS, refreshMouseCursor } from './mousecursor.js';
 import { CharacterPortrait } from './characterportrait.js';
+import { openHealthBarSettings } from './healthbar-settings.mjs';
 import { openCustomizeUI } from './layoutcustomizer.js';
 import { GORE_PERFORMANCE_WARNING_LIMIT, GORE_PRESET_VERSION, GORE_PRESETS, MAX_CUSTOM_GORE_LIMIT, normalizeGorePreset, goreLimit } from '../gfx/goresettings.mjs';
 import { applyGoreSettings } from '../gfx/vfx.js';
@@ -698,7 +699,7 @@ export function settingsDialog() {
       <label>Portrait size <output data-portrait-size>${st.characterPortrait?.size || 100}%</output></label><input type="range" min="75" max="150" step="25" value="${st.characterPortrait?.size || 100}" data-portrait="size">
       <label>Portrait position</label><button type="button" class="btn small" data-portrait-reset>Reset position</button>
       <label>Damage numbers</label><input type="checkbox" data-k="dmgNumbers" ${st.dmgNumbers ? 'checked' : ''}>
-      <label title="Off: a bar shows only for a moment over a monster you hit, and never over bosses">Life bars over every enemy (bosses too)</label><input type="checkbox" data-k="lifeBars" ${st.lifeBars !== false ? 'checked' : ''}>
+      <label>Health bar design and visibility</label><button type="button" class="btn small" data-health-bars-open>Customize Health Bars</button>
       <label>Hero stats plaque (Battle Ledger)</label><input type="checkbox" data-k="showHeroStats" ${st.showHeroStats !== false ? 'checked' : ''}>
       <label>Target info box</label><input type="checkbox" data-k="showTargetBox" ${st.showTargetBox !== false ? 'checked' : ''}>
       <label>Target portrait sprite</label><input type="checkbox" data-k="showTargetSprite" ${st.showTargetSprite !== false ? 'checked' : ''}>
@@ -1004,6 +1005,7 @@ export function settingsDialog() {
   lf.onclick = () => { sfx('ui'); lootFilterDialog(() => { lf.textContent = `${lootFilter().on ? 'On' : 'Off'} · Set up`; }); };
   const labelFilterButton = d.box.querySelector('[data-label-filter]');
   labelFilterButton.onclick = () => { sfx('ui'); groundLabelFilterDialog(() => { labelFilterButton.textContent = `${lootLabelFilter().on ? 'On' : 'Off'} · Set up`; }); };
+  d.box.querySelector('[data-health-bars-open]').onclick = () => { sfx('ui'); openHealthBarSettings(); };
   d.box.querySelectorAll('[data-k]').forEach((inp) => {
     inp.oninput = inp.onchange = () => {
       const k = inp.dataset.k;

@@ -41,6 +41,7 @@ import { townStorageChestArtFor } from '../data/town-storage-chests.js';
 import { CURSED_CHEST_VARIANT, selectDungeonChestVariant } from '../data/chestappearances.js';
 import { MAP_TERRAIN_COLORS, eternalBreachMapColor, terrainColor, terrainKindFromName } from '../gfx/mapcolors.js';
 import { profileRecord } from '../core/perfdiagnostics.js';
+import { healthBarClass, healthBarSettings } from '../ui/healthbars.mjs';
 
 let lightCanvas = null, glowCanvas = null, vignette = null, vigKey = '';
 const viewTileBounds = {}, actorTileBounds = {};
@@ -1816,11 +1817,17 @@ function drawOverheadNames(ctx, world, visibleCreatures = world.creatures) {
   ctx.textAlign = 'center';
   const d = G.dpr;
   const nameFont = `700 ${Math.round(11 * d)}px Cinzel, Georgia, serif`;
+  const barInfo = healthBarSettings().info, showNames = barInfo.showEnemyName;
   for (const c of visibleCreatures) {
     if (c.dead || !c.sbox || (c.goblin && !c.impDiscovered)) continue;
-    if (c.rank === 'champion' || c.rank === 'unique' || c.depthQuestNameplate) {
-      const x = (c.sbox[0] + c.sbox[2]) / 2, y = c.barTop != null ? camera.toScreen(0, c.barTop)[1] - 3 : c.sbox[1] - 8; // above its life bar
-      drawLabel(ctx, c.name, x * d, y * d, nameFont, c.nameColor || (c.depthQuestNameplate ? '#ffe080' : c.rank === 'unique' ? '#ffc040' : '#80b0ff'), 3 * d);
+    if (c.depthQuestNameplate || (!c.isPlayer && c.barTop != null && showNames)) {
+      const x = (c.sbox[0] + c.sbox[2]) / 2, y = c.barTop != null ? camera.toScreen(0, c.barTop + c.barHeight * 0.28)[1] : c.sbox[1] - 8;
+      const classification = healthBarClass(c);
+      drawLabel(ctx, c.name, x * d, y * d, nameFont, c.nameColor || (c.depthQuestNameplate ? '#ffe080' : classification.color), 3 * d);
+    }
+    if (!c.isPlayer && c.barTop != null && barInfo.showEnemyLevel && Number.isFinite(c.level)) {
+      const x = (c.sbox[0] + c.sbox[2]) / 2, y = camera.toScreen(0, c.barTop + c.barHeight)[1] + 8;
+      drawLabel(ctx, `Lv. ${c.level}`, x * d, y * d, `600 ${Math.round(9 * d)}px Georgia, serif`, '#ead9ba', 2 * d);
     }
   }
   // townsfolk names: only the one nearest the hero (a crowd of labels hides the crowd)
@@ -1845,9 +1852,13 @@ function drawOverheadNames(ctx, world, visibleCreatures = world.creatures) {
     const sprite = nameLabel(String(text), font, fill, lw);
     occupied.push({ x: x - sprite.width / 2, y: y - sprite.height, w: sprite.width, h: sprite.height });
   };
-  for (const c of visibleCreatures) if (!c.dead && c.sbox && (c.rank === 'champion' || c.rank === 'unique' || c.depthQuestNameplate)) {
-    const x = (c.sbox[0] + c.sbox[2]) / 2, y = c.barTop != null ? camera.toScreen(0, c.barTop)[1] - 3 : c.sbox[1] - 8;
-    reserveLabel(c.name, x * d, y * d, nameFont, c.depthQuestNameplate ? '#ffe080' : c.rank === 'unique' ? '#ffc040' : '#80b0ff', 3 * d);
+  for (const c of visibleCreatures) if (!c.dead && c.sbox && (c.depthQuestNameplate || (!c.isPlayer && c.barTop != null && showNames))) {
+    const x = (c.sbox[0] + c.sbox[2]) / 2, y = c.barTop != null ? camera.toScreen(0, c.barTop + c.barHeight * 0.28)[1] : c.sbox[1] - 8;
+    reserveLabel(c.name, x * d, y * d, nameFont, c.depthQuestNameplate ? '#ffe080' : healthBarClass(c).color, 3 * d);
+  }
+  if (barInfo.showEnemyLevel) for (const c of visibleCreatures) if (!c.dead && !c.isPlayer && c.sbox && c.barTop != null && Number.isFinite(c.level)) {
+    const x = (c.sbox[0] + c.sbox[2]) / 2, y = camera.toScreen(0, c.barTop + c.barHeight)[1] + 8;
+    reserveLabel(`Lv. ${c.level}`, x * d, y * d, `600 ${Math.round(9 * d)}px Georgia, serif`, '#ead9ba', 2 * d);
   }
   for (const n of world.npcs) {
     if (!n.sbox || n.hidden || (!n.vendor && !n.stash && !n.altar && (n !== nearest || n.talkT > 0))) continue;
@@ -1893,25 +1904,6 @@ function drawOverheadNames(ctx, world, visibleCreatures = world.creatures) {
     const [sx, sy] = camera.tileToScreen(po.x, po.y, 100);
     if (sx < -200 || sy < -40 || sx > G.W + 200 || sy > G.H + 40) continue;
     drawLabel(ctx, label, sx * d, sy * d, nameFont, po.active ? '#ffd0a0' : '#909090', 3 * d);
-  }
-  // hovered monster info (desktop)
-  const h = G.hover;
-  if (isPlayerTargetable(h) && h.rank !== 'boss') {
-    const W = G.W * d;
-    const bw = Math.min(360, G.W * 0.5) * d;
-    const y = 18 * d;
-    ctx.fillStyle = 'rgba(0,0,0,0.75)';
-    ctx.fillRect(W / 2 - bw / 2, y, bw, 22 * d);
-    ctx.fillStyle = h.rank === 'unique' ? '#a06010' : h.rank === 'champion' ? '#2a4a90' : '#7a0a06';
-    ctx.fillRect(W / 2 - bw / 2 + 2 * d, y + 2 * d, (bw - 4 * d) * clamp(h.hp / h.maxHp, 0, 1), 18 * d);
-    ctx.fillStyle = '#fff';
-    ctx.font = `700 ${Math.round(12 * d)}px Cinzel, Georgia, serif`;
-    ctx.fillText(h.name, W / 2, y + 15 * d);
-    if (h.affixes && h.affixes.length) {
-      ctx.font = `${Math.round(11 * d)}px "Alegreya Sans", sans-serif`;
-      ctx.fillStyle = '#c8b0ff';
-      ctx.fillText(h.affixes.map((a) => ({ strong: 'Extra Strong', fast: 'Extra Fast', tough: 'Stone Skin', fiery: 'Fire Enchanted', frozen: 'Cold Aura', shocking: 'Lightning Enchanted', vampiric: 'Vampiric', teleport: 'Teleporting', multishot: 'Multishot', thorns: 'Thorns', regen: 'Regenerating' }[a] || a)).join(' · '), W / 2, y + 36 * d);
-    }
   }
 }
 

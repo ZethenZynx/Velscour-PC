@@ -22,6 +22,22 @@ import { DUNGEON_AFFIX_BY_ID } from '../data/dungeonaffixes.js';
 import { dungeonAffixIconURL } from './dungeonaffixicons.js';
 import { appendEnemyHistory, createEnemyHistorySaveQueue, loadEnemyHistory } from './enemyhistory.js';
 import { profileEnd, profileRecord, profileStart } from '../core/perfdiagnostics.js';
+import { HEALTH_BAR_CLASSES, drawHealthBarFrame, healthBarClass, healthBarSettings, healthBarText, healthBarVisible, healthBarAffixText, healthBarStatusText, preloadHealthBarArt } from './healthbars.mjs';
+
+preloadHealthBarArt();
+function redrawTargetHealthBarFrame() {
+  const bar = $('#boss-bar'), canvas = $('#boss-frame');
+  if (!bar || !canvas || bar.classList.contains('hidden') || bar.classList.contains('classic') || bar.classList.contains('no-frame')) return;
+  const cls = HEALTH_BAR_CLASSES.find((entry) => entry.id === bar.dataset.healthbarClass);
+  const rect = bar.getBoundingClientRect(), dpr = Math.max(1, Number(G.dpr) || 1);
+  if (!cls || !rect.width || !rect.height) return;
+  const width = Math.ceil(rect.width * dpr), height = Math.ceil(rect.height * dpr);
+  if (canvas.width !== width || canvas.height !== height) { canvas.width = width; canvas.height = height; }
+  const ctx = canvas.getContext('2d');
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0); ctx.clearRect(0, 0, rect.width, rect.height);
+  drawHealthBarFrame(ctx, cls, 0, 0, rect.width, rect.height, 'target');
+}
+if (typeof document !== 'undefined') document.addEventListener('healthbarartready', redrawTargetHealthBarFrame);
 
 const TAUNT_KEY = 'velscour_taunts_v1'; // Velscour's level-up deck: the last mood and the lines already shown
 import { Meter } from '../game/dpsmeter.js';
@@ -676,22 +692,55 @@ export const HUD = {
       if (s.last.cdt !== cdTxt) { s.last.cdt = cdTxt; s.cdt.textContent = cdTxt; }
       if (s.last.nm !== nm) { s.last.nm = nm; s.nomana.classList.toggle('hidden', !nm); }
     }
-    // boss bar
-    const boss = w && w.boss && !w.boss.dead && w.boss.awake ? w.boss : null;
-    set('boss', boss ? boss.id : 0, () => {
-      $('#boss-bar').classList.toggle('hidden', !boss);
-      if (boss) $('#boss-name').textContent = boss.name;
-      // a raid boss's phase changes, as marks on the bar
+    // The ornate top banner shows the awake boss first, then the current live target.
+    const activeBoss = w && w.boss && !w.boss.dead && w.boss.awake ? w.boss : null;
+    const attackTarget = p.attackTarget && p.attackTarget.target;
+    let ordinaryTarget = null;
+    if (isPlayerTargetable(G.hover)) ordinaryTarget = G.hover;
+    else if (isPlayerTargetable(attackTarget)) ordinaryTarget = attackTarget;
+    else if (isPlayerTargetable(G.lastHit)) ordinaryTarget = G.lastHit;
+    const barSettings = healthBarSettings();
+    const barTarget = activeBoss && healthBarVisible(activeBoss, 'target') ? activeBoss
+      : ordinaryTarget && healthBarVisible(ordinaryTarget, 'target') ? ordinaryTarget : null;
+    const barClass = healthBarClass(barTarget);
+    set('boss', barTarget ? `${barTarget.id}|${barClass.id}|${barSettings.theme}|${barSettings.target.width}|${barSettings.target.height}|${barSettings.target.opacity}|${barSettings.target.verticalOffset}|${barSettings.target.decorativeBorders}|${barSettings.target.smoothHealthDepletion}|${barSettings.info.showEnemyName}|${G.W}|${G.H}|${G.dpr}` : '', () => {
+      const bar = $('#boss-bar'), visible = !!barTarget;
+      bar.classList.toggle('hidden', !visible);
+      for (const id of ['normal', 'champion', 'unique', 'boss', 'nemesis', 'imp', 'companion']) bar.classList.toggle(`healthbar-${id}`, visible && id === barClass.id);
+      bar.dataset.healthbarClass = barClass.id;
+      bar.classList.toggle('classic', barSettings.theme === 'classic');
+      bar.classList.toggle('no-frame', !barSettings.target.decorativeBorders);
+      bar.classList.toggle('healthbar-smooth', !!barSettings.target.smoothHealthDepletion);
+      bar.style.setProperty('--hb-target-width', String(barSettings.target.width / 100));
+      bar.style.setProperty('--hb-target-height', String(barSettings.target.height / 100));
+      bar.style.setProperty('--hb-target-base-height', barClass.id === 'boss' ? '160px' : barSettings.theme === 'classic' ? '64px' : '124px');
+      bar.style.setProperty('--hb-target-opacity', String(barSettings.target.opacity / 100));
+      bar.style.setProperty('--hb-target-offset', `${barSettings.target.verticalOffset}px`);
+      if (!visible) return;
+      redrawTargetHealthBarFrame();
+      $('#boss-emblem').src = `assets/ui/healthbars/${barClass.icon}.webp`;
+      $('#boss-emblem').alt = barClass.label;
+      $('#boss-name').textContent = barSettings.info.showEnemyName ? (barTarget.name || barClass.label) : barClass.label;
       const tr = $('#boss-track');
       tr.querySelectorAll('.boss-mark').forEach((e) => e.remove());
-      if (boss && boss.raid) for (const k of boss.raid.marks) { const d = el('div', 'boss-mark'); d.style.left = k * 100 + '%'; tr.appendChild(d); }
+      if (barTarget === activeBoss && activeBoss.raid) for (const k of activeBoss.raid.marks) { const d = el('div', 'boss-mark'); d.style.left = k * 100 + '%'; tr.appendChild(d); }
+      const root = bar.parentElement;
+      if (root) root.style.setProperty('--healthbar-objective-top', `${bar.offsetTop + bar.offsetHeight + 8}px`);
     });
-    if (boss) set('bossHp', Math.round((boss.hp / boss.maxHp) * 500) / 5, (v) => { $('#boss-fill').style.width = v + '%'; });
-    set('bossSub', boss && boss.raid ? boss.raid.label() : boss && boss.vel ? boss.vel.label() : '', (v) => { $('#boss-sub').textContent = v; });
-    set('bossWard', !!(boss && boss.ward < 1), (v) => { $('#boss-bar').classList.toggle('warded', v); });
+    if (barTarget) {
+      const actualHp = Math.max(0, Math.min(1, Number(barTarget.hp) / Math.max(1, Number(barTarget.maxHp))));
+      set('bossHp', Math.round(actualHp * 1000) / 10, (v) => { $('#boss-fill').style.width = v + '%'; });
+      const encounterState = barTarget === activeBoss ? (activeBoss.raid ? activeBoss.raid.label() : activeBoss.vel ? activeBoss.vel.label() : '') : '';
+      set('bossSub', [healthBarText(barTarget), encounterState].filter(Boolean).join('  ·  '), (v) => { $('#boss-sub').textContent = v; });
+      set('bossExtra', [healthBarAffixText(barTarget), healthBarStatusText(barTarget)].filter(Boolean).join('   ·   '), (v) => { $('#boss-extra').textContent = v; });
+      set('bossWard', !!(barTarget.ward && barTarget.ward < 1), (v) => { $('#boss-bar').classList.toggle('warded', v); });
+    } else {
+      set('bossExtra', '', (v) => { $('#boss-extra').textContent = v; });
+      set('bossWard', false, (v) => { $('#boss-bar').classList.toggle('warded', v); });
+    }
     // the Abyssal Rift's clock and quota (game/rifts.js)
     const R = w && w.rift;
-    set('rift', R ? `${R.tier}|${Math.ceil(R.left)}|${R.pct}|${R.guardian ? 1 : 0}|${R.done ? 1 : 0}|${R.failed ? 1 : 0}|${boss ? 1 : 0}` : '', (v) => {
+    set('rift', R ? `${R.tier}|${Math.ceil(R.left)}|${R.pct}|${R.guardian ? 1 : 0}|${R.done ? 1 : 0}|${R.failed ? 1 : 0}|${activeBoss ? 1 : 0}` : '', (v) => {
       $('#rift-bar').classList.toggle('hidden', !R);
       if (!R) return;
       const left = Math.ceil(R.left);
@@ -700,7 +749,7 @@ export const HUD = {
       $('#rift-fill').style.width = (R.done ? 100 : R.pct) + '%';
       $('#rift-pct').textContent = R.done ? 'closed' : R.failed ? 'collapsed' : R.guardian ? 'the Guardian' : R.pct + '%';
       $('#rift-bar').classList.toggle('urgent', !R.done && !R.failed && left <= 60);
-      $('#rift-bar').classList.toggle('boss', !!boss);
+      $('#rift-bar').classList.toggle('boss', !!activeBoss);
       $('#rift-bar').classList.toggle('guard', !!R.guardian && !R.done && !R.failed);
     });
     const forest = w?.biome?.id === 'dark_forest';

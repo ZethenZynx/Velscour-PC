@@ -14,6 +14,7 @@ import { isPlayerHostile, isPlayerTargetable } from './targeting.js';
 import { MAX_TEMPORARY_BUFF_SECONDS, normalizeTemporaryBuff } from './buffduration.mjs';
 import { RectGrid } from './rectgrid.mjs';
 import { goesOver, sheerCount } from '../gfx/sheer.js';
+import { drawOverheadHealthBar, healthBarSettings, healthBarVisible } from '../ui/healthbars.mjs';
 
 // Bounds for the visible sprite after its local flip/rotation/scale transforms.
 // Kept in world-pixel coordinates and projected by render.js with the current camera.
@@ -208,20 +209,14 @@ export function drawXray(oc, camT, rings, box, under) {
       oc.setTransform(camT);
       oc.globalCompositeOperation = 'source-over';
       oc.globalAlpha = Math.max(0.5, e.a);
-      lifeBar(oc, e.bx, e.by, e.bw, e.bh, e.bf, e.bc);
+      drawOverheadHealthBar(oc, e.barCreature, e.bx, e.by, e.bw, e.bh);
       lay(camT, e.bx - 1, e.by, e.bw + 2, e.bh);
     }
-    e.who = e.img = e.t = null; e.bar = false; // nothing held past the frame
+    e.who = e.img = e.t = e.barCreature = null; e.bar = false; // nothing held past the frame
   }
   oc.globalCompositeOperation = 'source-over'; oc.globalAlpha = 1;
   xray.n = 0;
 }
-function lifeBar(ctx, x, y, w, h, f, col) {
-  ctx.fillStyle = 'rgba(0,0,0,0.7)'; ctx.fillRect(x - 1, y, w + 2, h);
-  ctx.fillStyle = col; ctx.fillRect(x, y + 1, w * f, h - 2);
-}
-const BAR = { normal: '#c02010', champion: '#4a8aff', unique: '#e0a030', boss: '#ff7a1a' };
-
 export class Creature {
   constructor(o = {}) {
     this.id = ++UID;
@@ -697,21 +692,27 @@ export class Creature {
     }
     // life bars: over every enemy, bosses too (Settings › life bars; off, one only flashes up over a monster that was
     // hit, bosses aside) and over hurt summons. In the world's frame they go on the see-through layer, over the spells.
-    let col = null, bw = 24, bh = 4;
-    if (isPlayerTargetable(this) && (G.settings.lifeBars !== false || this.hpShow > 0 && this.rank !== 'boss')) {
-      const big = this.rank === 'boss';
-      bw = big ? Math.max(40, Math.min(84, w * 0.75)) : Math.max(22, Math.min(46, w * 0.8)); bh = big ? 6 : 4;
-      col = BAR[this.rank] || BAR.normal;
-    } else if (this.team === 'player' && !this.isPlayer && this.summon && this.maxHp > 0 && this.hp < this.maxHp) col = '#30c040';
-    this.barTop = null;
-    if (!col) return;
+    let bw = 24, bh = 4;
+    const isSummon = this.team === 'player' && !this.isPlayer && this.summon;
+    const showHealth = this.isPlayer
+      ? healthBarVisible(this, 'overhead')
+      : (isPlayerTargetable(this) || isSummon) && healthBarVisible(this, 'overhead');
+    if (showHealth) {
+      const appearance = healthBarSettings().overhead;
+      const big = this.rank === 'boss' || this.rank === 'raid' || this.isRaid || this.world?.boss === this;
+      bw = (big ? Math.max(48, Math.min(104, w * 0.95)) : Math.max(54, Math.min(92, w * 0.9))) * appearance.width / 100;
+      bh = (big ? 34 : 25) * appearance.height / 100;
+    }
+    this.barTop = null; this.barHeight = 0;
+    if (!showHealth) return;
     const kb = G.barK || 1; // first person scales a creature by its depth; its bar keeps near a fixed size
     bw *= kb; bh *= kb;
-    const x = px - bw / 2, y = py - 4 * kb - bh, f = clamp(this.hp / this.maxHp, 0, 1);
-    this.barTop = y; // champion and unique names sit above it (render.js drawOverheadNames)
+    const appearance = healthBarSettings().overhead;
+    const x = px - bw / 2, y = py - 4 * kb - bh + appearance.verticalOffset, f = clamp(this.hp / this.maxHp, 0, 1);
+    this.barTop = y; this.barHeight = bh; // name and level labels are anchored to this bar (render.js drawOverheadNames)
     const e = xray.on && xray.n && xray.list[xray.n - 1];
-    if (e && e.who === this) { e.bar = true; e.bx = x; e.by = y; e.bw = bw; e.bh = bh; e.bf = f; e.bc = col; }
-    else lifeBar(ctx, x, y, bw, bh, f, col);
+    if (e && e.who === this) { e.bar = true; e.barCreature = this; e.bx = x; e.by = y; e.bw = bw; e.bh = bh; e.bf = f; e.bc = col; }
+    else drawOverheadHealthBar(ctx, this, x, y, bw, bh);
   }
 }
 

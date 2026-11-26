@@ -8,6 +8,7 @@ import { makeCanvas, rand, TAU, shade, randi, pick, fmt, shuffle, clamp, colourS
 import { groundHidden } from './terrain.js';
 import { bonesReady, boneDeck, boneLook, drawBoneGib } from './bonegibs.js';
 import { damageNumberAboveBarZ } from '../game/damage-number-layout.mjs';
+import { healthBarClass, healthBarVisible } from '../ui/healthbars.mjs';
 import { addGoreDecal, goreDecalAge, goreDecalAlphaForAge, goreDecalGrowForAge, goreDecalOutsideView, GORE_DECAL_LIFETIME, goreLimit, goreMultiplier, trimGoreDecals } from './goresettings.mjs';
 import { writeBoltGeometry, appendBoltGeometry } from './lightninggeometry.mjs';
 import { effectOutsideView } from './effectvisibility.mjs';
@@ -914,9 +915,7 @@ export function damageText(x, y, z, amount, style = 'hit', color = null, target 
   const S = DMG_STYLE[style];
   if (texts.length > 120) texts.shift();
   const crit = style === 'crit';
-  const hasEnemyBar = target && target.team === 'enemy' && (G.settings?.lifeBars !== false
-    ? target.targetable !== false
-    : target.hpShow > 0 && target.rank !== 'boss');
+  const hasEnemyBar = target && target.team === 'enemy' && healthBarVisible(target, 'overhead');
   if (hasEnemyBar) {
     const glyphHeight = glyphSet(style, color).h * PIX * (G.touch ? 0.8 : 1);
     const nameHeight = target.rank === 'champion' || target.rank === 'unique' || target.depthQuestNameplate ? 16 : 0;
@@ -924,7 +923,7 @@ export function damageText(x, y, z, amount, style = 'hit', color = null, target 
       spriteHeight: target.spriteH || target.artH || 40,
       scale: target.scale || 1,
       creatureZ: target.z || 0,
-      barHeight: target.rank === 'boss' ? 6 : 4,
+      barHeight: healthBarClass(target).id === 'boss' ? 6 : 4,
       barScale: G.barK || 1,
       textHeight: glyphHeight,
       zoom: camera.zoom,
