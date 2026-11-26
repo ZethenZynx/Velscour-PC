@@ -523,22 +523,26 @@ function chestArtFallback() {
 }
 
 function drawHeresyChestSeal(ctx, x, y, floorY, chestH) {
-  // A small, sharp rune is deliberately painted over the shared chest art so the
-  // reward reads as infernal without adding an asset, blur pass, or animated layer.
+  // Heretical caches use a small flame seal to identify their reward pool. Keep
+  // the mark distinct from a shield icon and cheap to draw over shared chest art.
   const cy = floorY - chestH * 0.42;
   ctx.save();
   ctx.translate(x, cy);
-  ctx.fillStyle = 'rgba(38,5,13,.92)';
+  ctx.fillStyle = 'rgba(38,5,13,.94)';
   ctx.strokeStyle = '#ffb45c';
-  ctx.lineWidth = 1.5;
+  ctx.lineWidth = 1.25;
   ctx.beginPath();
-  ctx.moveTo(0, -8); ctx.lineTo(7, -3); ctx.lineTo(5, 6); ctx.lineTo(0, 9); ctx.lineTo(-5, 6); ctx.lineTo(-7, -3); ctx.closePath();
+  ctx.arc(0, 0, 7, 0, TAU);
   ctx.fill(); ctx.stroke();
-  ctx.strokeStyle = '#ff593b'; ctx.lineWidth = 2;
+  ctx.strokeStyle = '#ff593b'; ctx.lineWidth = 1.7;
   ctx.beginPath();
-  ctx.moveTo(-4, 3); ctx.lineTo(-2, -1); ctx.lineTo(0, 3); ctx.lineTo(2, -3); ctx.lineTo(4, 1);
+  ctx.moveTo(-3.4, 3.6); ctx.lineTo(-2.1, 1.2); ctx.lineTo(-2.6, -1.2);
+  ctx.lineTo(-0.7, -4.1); ctx.lineTo(-0.1, -1.1); ctx.lineTo(1.8, -3.6);
+  ctx.lineTo(1.7, -0.8); ctx.lineTo(3.2, 0.5); ctx.lineTo(2.8, 2.7);
+  ctx.lineTo(1.2, 4); ctx.closePath();
   ctx.stroke();
-  ctx.fillStyle = '#ffd06a'; ctx.fillRect(-1, -6, 2, 2);
+  ctx.fillStyle = '#ffd06a';
+  ctx.beginPath(); ctx.arc(0, 1.3, 1.15, 0, TAU); ctx.fill();
   ctx.restore();
 }
 
@@ -595,7 +599,7 @@ function drawChest(ctx, c) {
     ctx.drawImage(glowSprite(c.glow || (c.rare ? '#c080ff' : '#ffd060')), x - 24, y - 34, 48, 40);
     if (c.tint) { ctx.globalAlpha = 0.14; ctx.drawImage(glowSprite(c.tint), x - 20, y - 28, 40, 34); }
     ctx.globalAlpha = 1; ctx.globalCompositeOperation = 'source-over';
-    if (c.heretical) drawHeresyChestSeal(ctx, x, y, y + 46 / 4, 46);
+    if (c.heretical && !c.opened) drawHeresyChestSeal(ctx, x, y, y + 46 / 4, 46);
   }
   if (c.opened && c.glowWhileOpen && !c.done) {
     ctx.globalCompositeOperation = 'lighter'; ctx.globalAlpha = 0.25 + Math.sin(G.time * 3) * 0.15;
