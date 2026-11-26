@@ -737,18 +737,18 @@ export const game = {
         openHeresies: () => Heresies.open(),
         describeFlame: () => UI.log("Tessariel's green flame burns steadily at the heart of the Keep.", '#c8f060'),
       });
-      if (buildStarted) profileExternalTiming('keep.build', buildStarted, { npcs: built.world?.npcs?.length || 0, props: built.world?.props?.length || 0 });
+      if (buildStarted) profileExternalTiming('keep.build', buildStarted, { npcs: built.world?.npcs?.length || 0, props: built.world?.props?.length || 0, async: true });
       LoadingScreen.setProgress(80, 'Preparing the Keep.');
       this.setWorld(built.world, built.start, old);
       const artWarmStarted = profileStart();
       await warmLevelArt(built.world);
-      if (artWarmStarted) profileExternalTiming('keep.baseArtWarm', artWarmStarted);
+      if (artWarmStarted) profileExternalTiming('keep.baseArtWarm', artWarmStarted, { async: true });
       const heroArt = built.world.keepFolk?.arts;
       if (heroArt?.length) {
         LoadingScreen.setProgress(90, 'Preparing the companions.');
         const companionWaitStarted = profileStart();
         await waitBounded(Promise.all(heroArt), 5000);
-        if (companionWaitStarted) profileExternalTiming('keep.companionArtWait', companionWaitStarted, { companions: heroArt.length });
+        if (companionWaitStarted) profileExternalTiming('keep.companionArtWait', companionWaitStarted, { companions: heroArt.length, async: true });
         const outlineWarmStarted = profileStart();
         warmKeepHeroes(built.world);
         if (outlineWarmStarted) profileExternalTiming('keep.companionOutlineWarm', outlineWarmStarted, { companions: heroArt.length });
@@ -773,7 +773,7 @@ export const game = {
     } finally {
       this._enteringTessarielKeep = false;
       await LoadingScreen.hide();
-      if (entryStarted) profileExternalTiming('keep.entryTotal', entryStarted, { success: G.world?.keep === true });
+      if (entryStarted) profileExternalTiming('keep.entryTotal', entryStarted, { success: G.world?.keep === true, async: true });
     }
   },
 
@@ -1456,6 +1456,7 @@ export const game = {
 
   enterDungeon() {
     closeHearthPortals();
+    const entryPrepareStarted = profileStart();
     const c = G.char;
     const depth = c.depth;
     if (c) {
@@ -1463,7 +1464,9 @@ export const game = {
         c.cleared[depth - 1] = true;
         c.deepest = Math.max(c.deepest || 0, depth - 1);
       }
+      const autosaveStarted = profileStart();
       this.autosave();
+      if (autosaveStarted) profileExternalTiming('dungeon.entryAutosave', autosaveStarted, { depth, biome: c.nextBiome || null });
     }
     let destination = resolveDepthDestination(depth, c.breach?.best, c.nextBiome);
     if (destination.kind === 'breach') {
@@ -1481,6 +1484,7 @@ export const game = {
     }
     const biome = BIOME_BY_ID[destination.id] || BIOME_BY_ID.catacombs;
     const mix = mixPartner(biome); // a like-coloured biome whose tiles this level borrows, or null
+    if (entryPrepareStarted) profileExternalTiming('dungeon.entryPreparation', entryPrepareStarted, { biome: biome.id, depth });
     LoadingScreen.show({
       title: biome.name,
       subtitle: `Descending to Depth ${depth}`,
@@ -1496,14 +1500,18 @@ export const game = {
         }
         LoadingScreen.setProgress(25, `Loading ${biome.name} assets…`);
         await yieldForLoadingPaint();
-        await this.loadLevelArt(biome, mix);
+        const loadArtStarted = profileStart();
+        try { await this.loadLevelArt(biome, mix); }
+        finally { if (loadArtStarted) profileExternalTiming('dungeon.requiredArtLoad', loadArtStarted, { biome: biome.id, depth, async: true }); }
       } catch (e) { console.warn(e); }
       try {
         LoadingScreen.setProgress(40, `Mapping ${biome.name}…`);
         await yieldForLoadingPaint();
         LoadingScreen.setProgress(50, 'Forging labyrinth…');
         await yieldForLoadingPaint();
-        this.buildDungeon(depth, biome, mix, isStarterDepth);
+        const buildStarted = profileStart();
+        try { this.buildDungeon(depth, biome, mix, isStarterDepth); }
+        finally { if (buildStarted) profileExternalTiming('dungeon.buildAndSpawn', buildStarted, { biome: biome.id, depth, creatures: G.world?.creatures?.length || 0, mapTiles: (G.world?.map?.w || 0) * (G.world?.map?.h || 0) }); }
         // the level's monster art (set 2 sheets load per level); a failed sheet falls back to pixel sprites
         const w = G.world;
         LoadingScreen.setProgress(75, 'Loading inhabitants…');
@@ -1511,11 +1519,18 @@ export const game = {
         const levelArt = [...w.creatures.map((m) => m.art), ...(w.looks ? w.looks.ids() : [])];
         // Monster atlases have a pixel-art fallback. Keep the world paused through setup, then let it start while
         // larger optional sheets finish downloading; detailed sprites replace the fallback as they arrive.
-        const artReady = loadArtFor(levelArt, true).catch((e) => { console.warn(e); });
+        const artLoadStarted = profileStart();
+        const artReady = loadArtFor(levelArt, true).catch((e) => { console.warn(e); }).finally(() => {
+          if (artLoadStarted) profileExternalTiming('dungeon.creatureArtLoadAsync', artLoadStarted, { requestedArt: levelArt.length, worldId: w.id, async: true });
+        });
         LoadingScreen.setProgress(90, 'Preparing the veil…');
         await yieldForLoadingPaint();
+        const warmStarted = profileStart();
         await warmLevelArt(w);
+        if (warmStarted) profileExternalTiming('dungeon.levelArtWarm', warmStarted, { biome: biome.id, depth, worldId: w.id, async: true });
+        const releaseStarted = profileStart();
         releaseLevelArt(biome, w);
+        if (releaseStarted) profileExternalTiming('dungeon.previousArtRelease', releaseStarted, { biome: biome.id, worldId: w.id });
         LoadingScreen.setProgress(100, 'Arriving…');
         void artReady.then(async () => {
           let active = G.world;
@@ -1560,12 +1575,14 @@ export const game = {
     let gen, accessibilityError = null, generationSeed = seed;
     for (let attempt = 0; attempt <= 4; attempt++) {
       generationSeed = attempt === 0 ? seed : ((seed + Math.imul(attempt, 0x9e3779b9)) >>> 0);
+      const layoutStarted = profileStart();
       try { gen = generateAt(generationSeed); }
       catch (error) {
         if (!/accessibility|movement-access|unreachable/i.test(String(error?.message || error))) throw error;
         accessibilityError = error; continue;
-      }
+      } finally { if (layoutStarted) profileExternalTiming('dungeon.layoutGenerationAttempt', layoutStarted, { biome: biome.id, depth, attempt: attempt + 1, seed: generationSeed }); }
       accessibilityError = null;
+      const accessStarted = profileStart();
       try {
     // A common final guard for custom world generators. Castle and Breach already run
     // progression-aware checks inside their generators; all other TileMap layouts get the
@@ -1636,7 +1653,7 @@ export const game = {
         if (!/accessibility|movement-access|unreachable|walk-collision validator/i.test(String(error?.message || error))) throw error;
         accessibilityError = error;
         continue;
-      }
+      } finally { if (accessStarted) profileExternalTiming('dungeon.accessibilityValidationAttempt', accessStarted, { biome: biome.id, depth, attempt: attempt + 1, seed: generationSeed }); }
     if (!accessibilityError) break;
     }
     if (!gen || accessibilityError) throw new Error(`${biome.name} could not generate a walk-accessible layout after 5 attempts: ${accessibilityError?.message || 'unknown failure'}`);
@@ -1778,6 +1795,7 @@ export const game = {
       const at = findReachableInteractableSpot(gen.map, gen.start, s.x + 2.2, s.y - 2.2, 4.5, 0.42, 0.42);
       if (at) { s.x = at[0]; s.y = at[1]; } else s.heresySkip = true;
     }
+    const enemyInitStarted = profileStart();
     for (const s of scheduledSpawns) {
       if (s.heresySkip) continue;
       if (s.rank === 'raid') {
@@ -1815,6 +1833,7 @@ export const game = {
       }
       assignPackLeader(world, packMembers, biome, depth, s);
     }
+    if (enemyInitStarted) profileExternalTiming('dungeon.enemyInitialization', enemyInitStarted, { biome: biome.id, depth, requestedSpawns: scheduledSpawns.length, initializedCreatures: world.creatures.length });
     // Apply rank modifiers before the first simulation tick, including raid bosses,
     // generated elites and the ordinary packs. heresyTick remains the fallback for
     // later event spawns.

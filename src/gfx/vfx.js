@@ -55,6 +55,104 @@ const ONE_SHOT_IMPACTS = new Set(['Ring', 'Slash', 'Beam', 'Column', 'Flash', 'S
 export const texts = [];
 export const lights = [];
 const lifecycle = { particlesCreated: 0, particlesRemoved: 0, decalsCreated: 0, decalsRemoved: 0, effectsCreated: 0, effectsRemoved: 0, textsCreated: 0, textsRemoved: 0 };
+// Detailed effect provenance is only collected during a unified recording. Type totals are exact;
+// stack provenance is sampled to keep diagnostics cheap in particle-heavy fights.
+let vfxDiagnostics = null, vfxSourceSampleCounter = 0;
+const vfxMetadata = new WeakMap();
+const VFX_SOURCE_SAMPLE_EVERY = 64;
+const VFX_DIAGNOSTIC_TYPE_LIMIT = 256, VFX_DIAGNOSTIC_SOURCE_LIMIT = 128;
+function diagnosticType(kind, object) { return String(object?.type || object?.constructor?.name || 'other').slice(0, 64); }
+function boundedDiagnosticRow(group, object) {
+  const type = diagnosticType(group, object), rows = vfxDiagnostics[group].byType;
+  const key = (rows[type] || Object.keys(rows).length < VFX_DIAGNOSTIC_TYPE_LIMIT) ? type : 'other (type limit)';
+  return [key, rows[key] || (rows[key] = { created: 0, removed: 0, activeFromSession: 0, expired: 0, replaced: 0, qualityChanged: 0, qualityRejected: 0, cleared: 0, duplicateReference: 0, lifetimeMsTotal: 0, lifetimeSamples: 0, sourceSamples: Object.create(null) })];
+}
+function boundedSourceKey(rows, source) {
+  return (rows[source] || Object.keys(rows).length < VFX_DIAGNOSTIC_SOURCE_LIMIT) ? source : 'other (source limit)';
+}
+function diagnosticSource(object, kind) {
+  const owner = object?.owner || object?.src || object?.source || object?.caster;
+  const ownerType = owner?.classId || owner?.constructor?.name;
+  const ownerName = owner?.name || null, ownerId = owner?.id ?? owner?.entityId ?? owner?.uid ?? null;
+  if (ownerType || ownerName || ownerId !== null) return `${kind}:owner:${String(ownerType || 'unknown').slice(0, 36)}${ownerName ? `:${String(ownerName).slice(0, 36)}` : ''}${ownerId !== null ? `#${String(ownerId).slice(0, 24)}` : ''}`.slice(0, 120);
+  if (++vfxSourceSampleCounter % VFX_SOURCE_SAMPLE_EVERY !== 0) return null;
+  const stack = new Error().stack || '';
+  const frames = stack.split('\n').slice(3);
+  for (const frame of frames) {
+    if (/addEffect|spawn|diagnosticSource/.test(frame)) continue;
+    const match = frame.match(/(?:at\s+)?([^\s(]+)?\s*\(?([^()]*?\.(?:js|mjs):\d+:\d+)\)?$/);
+    if (match) return `${kind}:sample:${(match[1] || 'anonymous').slice(0, 48)}@${match[2].replace(/^.*?src\//, '')}`.slice(0, 120);
+  }
+  return `${kind}:sample:unknown`;
+}
+function trackVfxCreate(object, kind) {
+  if (!developerRecordingActive() || !vfxDiagnostics || !object) return;
+  // Adding the same object reference twice is an array registration defect,
+  // not a second effect. Count unique objects and let the update pass report
+  // the duplicate reference separately.
+  if (vfxMetadata.get(object)?.sessionStartedAt === vfxDiagnostics.startedAt) return;
+  const [type, row] = boundedDiagnosticRow(kind, object), source = diagnosticSource(object, kind);
+  vfxMetadata.set(object, { kind, type, source, createdAt: performance.now(), sessionStartedAt: vfxDiagnostics.startedAt });
+  row.created++; row.activeFromSession++;
+  if (source) { const sourceKey = boundedSourceKey(row.sourceSamples, source); row.sourceSamples[sourceKey] = (row.sourceSamples[sourceKey] || 0) + 1; }
+}
+function trackVfxRemove(object, reason) {
+  const meta = object && vfxMetadata.get(object);
+  if (!meta || !vfxDiagnostics) return;
+  if (meta.sessionStartedAt !== vfxDiagnostics.startedAt) return;
+  const item = vfxDiagnostics[meta.kind], row = item?.byType?.[meta.type];
+  if (!row) return;
+  // A duplicate array reference was removed, but the effect object itself may
+  // still be present and running. Count the array repair without ending its
+  // tracked lifetime or decrementing active object totals.
+  if (reason === 'duplicate-reference') { row.duplicateReference++; return; }
+  vfxMetadata.delete(object);
+  row.removed++; row.activeFromSession = Math.max(0, row.activeFromSession - 1);
+  if (reason === 'expired') row.expired++;
+  else if (reason === 'replaced') row.replaced++;
+  else if (reason === 'quality-change') row.qualityChanged++;
+  else if (reason === 'clear') row.cleared++;
+  const age = Math.max(0, performance.now() - meta.createdAt);
+  row.lifetimeMsTotal += age; row.lifetimeSamples++;
+  if (meta.source) {
+    const sourceKey = boundedSourceKey(item.sourceLifetimes, meta.source);
+    const source = item.sourceLifetimes[sourceKey] || (item.sourceLifetimes[sourceKey] = { removed: 0, lifetimeMsTotal: 0 });
+    source.removed++; source.lifetimeMsTotal += age;
+  }
+}
+
+export function resetVfxDiagnostics() {
+  vfxDiagnostics = { particles: { byType: Object.create(null), sourceLifetimes: Object.create(null) }, effects: { byType: Object.create(null), sourceLifetimes: Object.create(null) }, startedAt: new Date().toISOString(), sourceSampleEvery: VFX_SOURCE_SAMPLE_EVERY };
+  vfxSourceSampleCounter = 0;
+}
+
+export function vfxDiagnosticReport() {
+  if (!vfxDiagnostics) return { active: false, note: 'Effect provenance is collected only during a unified diagnostic recording.' };
+  const summarize = (group, activeObjects) => {
+    const activeByType = Object.create(null), trackedAge = Object.create(null), now = performance.now();
+    for (const object of activeObjects) {
+      const meta = object && vfxMetadata.get(object);
+      const type = meta?.kind === group ? meta.type : diagnosticType(group, object);
+      activeByType[type] = (activeByType[type] || 0) + 1;
+      if (meta?.kind === group && meta.sessionStartedAt === vfxDiagnostics.startedAt) {
+        const ages = trackedAge[type] || (trackedAge[type] = { count: 0, totalMs: 0, oldestMs: 0 });
+        const age = Math.max(0, now - meta.createdAt); ages.count++; ages.totalMs += age; ages.oldestMs = Math.max(ages.oldestMs, age);
+      }
+    }
+    return Object.fromEntries(Object.entries(vfxDiagnostics[group].byType).map(([type, row]) => [type, {
+      ...row, activeNow: activeByType[type] || 0,
+      trackedActiveAgeMs: trackedAge[type] ? { samples: trackedAge[type].count, mean: Number((trackedAge[type].totalMs / trackedAge[type].count).toFixed(2)), oldest: Number(trackedAge[type].oldestMs.toFixed(2)) } : null,
+      meanLifetimeMs: row.lifetimeSamples ? Number((row.lifetimeMsTotal / row.lifetimeSamples).toFixed(2)) : null,
+      lifetimeMsTotal: Number(row.lifetimeMsTotal.toFixed(2)),
+      sourceSamples: Object.fromEntries(Object.entries(row.sourceSamples).sort((a, b) => b[1] - a[1]).slice(0, 16)),
+    }]));
+  };
+  const sourceLifetimes = (group) => Object.fromEntries(Object.entries(vfxDiagnostics[group].sourceLifetimes).map(([source, row]) => [source, { removed: row.removed, meanLifetimeMs: row.removed ? Number((row.lifetimeMsTotal / row.removed).toFixed(2)) : null }]));
+  return { active: developerRecordingActive(), startedAt: vfxDiagnostics.startedAt, exactTypeTotals: true,
+    sourceAttribution: `owner metadata when available; otherwise one stack sample per ${VFX_SOURCE_SAMPLE_EVERY} creations`,
+    particles: summarize('particles', particles), effects: summarize('effects', effects),
+    particleSourceLifetimes: sourceLifetimes('particles'), effectSourceLifetimes: sourceLifetimes('effects') };
+}
 
 // ---------------------------------------------------------------- caches
 // colour-keyed sprites: snapped colours, bounded, repainted in place (util.colourSprites)
@@ -115,15 +213,21 @@ const particleCursor = { get index() { return evict; }, set index(value) { evict
 function kill(p) { if (p.life > 0) { p.life = -1; dead++; if (p.spr) spriteGibs--; } }
 export function spawn(p) {
   const tier = G.performanceQualityTier || 0;
-  if (!allowParticleType(p?.type, tier)) return null;
+  if (!allowParticleType(p?.type, tier)) {
+    if (developerRecordingActive() && vfxDiagnostics) {
+      const [, row] = boundedDiagnosticRow('particles', p);
+      row.qualityRejected = (row.qualityRejected || 0) + 1;
+    }
+    return null;
+  }
   p.life = p.life ?? 0.6; p.max = p.life;
   p.z = p.z ?? 0; p.vx = p.vx ?? 0; p.vy = p.vy ?? 0; p.vz = p.vz ?? 0;
   p.g = p.g ?? 0; p.drag = p.drag ?? 0; p.size = p.size ?? 2; p.size1 = p.size1 ?? p.size;
   p.rot = p.rot ?? 0; p.vr = p.vr ?? 0;
   const replaced = insertCappedParticle(particles, p, MAX_P(), particleCursor);
-  if (developerRecordingActive()) lifecycle.particlesCreated++;
+  if (developerRecordingActive()) { lifecycle.particlesCreated++; trackVfxCreate(p, 'particles'); }
   if (replaced) {
-    if (developerRecordingActive()) lifecycle.particlesRemoved++;
+    if (developerRecordingActive()) { lifecycle.particlesRemoved++; trackVfxRemove(replaced, 'replaced'); }
     if (replaced.life <= 0) dead = Math.max(0, dead - 1);
     else if (replaced.spr) spriteGibs--;
   }
@@ -136,6 +240,7 @@ export function applyPerformanceQuality() {
   let write = 0;
   for (const p of particles) {
     if (!allowParticleType(p.type, tier) || write >= budget) {
+      if (developerRecordingActive()) { lifecycle.particlesRemoved++; trackVfxRemove(p, 'quality-change'); }
       if (p.life > 0 && p.spr) spriteGibs--;
       if (p.life <= 0) dead = Math.max(0, dead - 1);
       continue;
@@ -691,7 +796,7 @@ export function addEffect(e, layer = 'top') {
   // persistent buff/owner effects and gameplay warning fields use other classes.
   if (ONE_SHOT_IMPACTS.has(e?.constructor?.name) && Number.isFinite(e.dur)) e.dur = Math.min(e.dur, OBJECT_LIFETIMES.impact.max);
   e.layer = layer; effects.push(e);
-  if (developerRecordingActive()) lifecycle.effectsCreated++;
+  if (developerRecordingActive()) { lifecycle.effectsCreated++; trackVfxCreate(e, 'effects'); }
   const bucket = effectsByLayer[layer]; if (bucket) bucket.push(e);
   return e;
 }
@@ -844,6 +949,8 @@ export function clearVfx() {
   if (developerRecordingActive()) {
     lifecycle.particlesRemoved += particles.length; lifecycle.decalsRemoved += decals.length + goreDecals.length;
     lifecycle.effectsRemoved += effects.length; lifecycle.textsRemoved += texts.length;
+    for (const particle of particles) trackVfxRemove(particle, 'clear');
+    for (const effect of effects) trackVfxRemove(effect, 'clear');
   }
   particles.length = 0; spriteGibs = 0; evict = 0; dead = 0; decals.length = 0; goreDecals.length = 0; bakedDecals.length = 0; effects.length = 0; effectsByLayer.ground.length = effectsByLayer.top.length = 0; texts.length = 0; lights.length = 0;
   goreClock = 0;
@@ -868,9 +975,9 @@ export function updateVfx(dt, world) {
   // of shifting the surviving array on every expired particle (quadratic work).
   let live = 0;
   for (const p of particles) {
-    if (p.life <= 0) { if (developerRecordingActive()) lifecycle.particlesRemoved++; continue; }
+    if (p.life <= 0) { if (developerRecordingActive()) { lifecycle.particlesRemoved++; trackVfxRemove(p, 'expired'); } continue; }
     p.life -= dt;
-    if (p.life <= 0) { if (developerRecordingActive()) lifecycle.particlesRemoved++; if (p.spr) spriteGibs--; }
+    if (p.life <= 0) { if (developerRecordingActive()) { lifecycle.particlesRemoved++; trackVfxRemove(p, 'expired'); } if (p.spr) spriteGibs--; }
     else particles[live++] = p;
   }
   particles.length = live; evict = 0; dead = 0;
@@ -931,12 +1038,12 @@ export function updateVfx(dt, world) {
     // A defensive identity guard also repairs duplicate references left by an
     // older runtime or introduced by an external effect registrar.
     if (effect._vfxUpdateEpoch === updateEpoch) {
-      if (developerRecordingActive()) lifecycle.effectsRemoved++;
+      if (developerRecordingActive()) { lifecycle.effectsRemoved++; trackVfxRemove(effect, 'duplicate-reference'); }
       continue;
     }
     effect._vfxUpdateEpoch = updateEpoch;
     if (effect.update(dt)) effects[--effectWrite] = effect;
-    else if (developerRecordingActive()) lifecycle.effectsRemoved++;
+    else if (developerRecordingActive()) { lifecycle.effectsRemoved++; trackVfxRemove(effect, 'expired'); }
   }
   // Reverse traversal packs surviving effects into the tail. Move that tail
   // back to the front before truncating; using only the live count here leaves

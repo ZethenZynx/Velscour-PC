@@ -8,20 +8,25 @@ import { makeCanvas, clamp, TAU } from '../core/util.js';
 import { HW, HH } from '../core/view.js';
 import { loadBaked, castle3dState } from './castle3dart.js';
 import { glowSprite } from './vfx.js';
+import { developerRecordingActive } from '../core/developer-session.js';
 
 export const KEEP_DIR = 'assets/tiles/tkeep/';
 const DECOR_DIR = KEEP_DIR + 'decor/';
 const R = 2;   // decoration canvases are drawn at 2x (k = 0.5) so they stay crisp zoomed in
 let A = null, loading = null;
 let generation = 0;
+let keepCacheDiagnostics = null;
+export function resetKeepCacheDiagnostics() { keepCacheDiagnostics = { loads: 0, cachedLoads: 0, inFlightJoins: 0, releases: 0, cacheEvictions: 0, spriteCacheHits: 0, spriteCacheMisses: 0, residentSpritesAtRelease: 0 }; }
+export function keepCacheDiagnosticReport() { return keepCacheDiagnostics ? { ...keepCacheDiagnostics, recordingActive: developerRecordingActive(), residentSpritesNow: A?.cache?.size || 0, assetsResident: !!A, loadInFlight: !!loading } : { enabled: false }; }
 const loadImg = (src) => new Promise((ok, no) => { const i = new Image(); i.onload = () => ok(i); i.onerror = () => no(new Error(src)); i.src = src; });
 
 /** Everything the keep draws: the baked set, the decor atlases, the Castle Keep pack's props. Safe to call again. */
 export function loadKeepArt() {
   // The baked pages are shared with Castle/Skyship and may be replaced while the Keep pack is cached.
   if (A && A.baked !== castle3dState()) { A.cache.clear(); A = null; loading = null; generation++; }
-  if (A) return Promise.resolve(A);
-  if (loading) return loading;
+  if (A) { if (developerRecordingActive() && keepCacheDiagnostics) keepCacheDiagnostics.cachedLoads++; return Promise.resolve(A); }
+  if (loading) { if (developerRecordingActive() && keepCacheDiagnostics) keepCacheDiagnostics.inFlightJoins++; return loading; }
+  if (developerRecordingActive() && keepCacheDiagnostics) keepCacheDiagnostics.loads++;
   const requestGeneration = generation;
   const pending = Promise.all([
     loadBaked(KEEP_DIR),
@@ -44,6 +49,7 @@ export const keepArt = () => A;
 /** Release Keep-owned canvases and let the shared baked pages reload on the next visit. */
 export function releaseKeepArt() {
   generation++;
+  if (developerRecordingActive() && keepCacheDiagnostics) { keepCacheDiagnostics.releases++; keepCacheDiagnostics.residentSpritesAtRelease += A?.cache?.size || 0; keepCacheDiagnostics.cacheEvictions += A?.cache?.size || 0; }
   if (A) A.cache.clear();
   A = null;
   loading = null;
@@ -90,7 +96,8 @@ export function bannerSprite(id, s, standLv) {
   const m = A && findMeta(A.meta.banners, id);
   if (!m) return null;
   const key = 'b|' + id + '|' + s.axis + s.a + s.c + s.z0;
-  if (A.cache.has(key)) return A.cache.get(key);
+  if (A.cache.has(key)) { if (developerRecordingActive() && keepCacheDiagnostics) keepCacheDiagnostics.spriteCacheHits++; return A.cache.get(key); }
+  if (developerRecordingActive() && keepCacheDiagnostics) keepCacheDiagnostics.spriteCacheMisses++;
   const [, , rw, rh] = m.r, w = s.w, faceLen = w * Math.hypot(HW, HH), hLv = Math.min(s.z0 - s.z1 + 6, faceLen * (rh / rw) / 4);
   const zt = s.z0, zb = zt - hLv;
   const P = facePlane(s.axis, s.a, s.c + 0.04, w, zt, zb);
@@ -119,7 +126,8 @@ export function glassSprite(id, win, standLv) {
   const m = A && findMeta(A.meta.glass, id);
   if (!m) return null;
   const key = 'g|' + id + '|' + win.axis + win.a;
-  if (A.cache.has(key)) return A.cache.get(key);
+  if (A.cache.has(key)) { if (developerRecordingActive() && keepCacheDiagnostics) keepCacheDiagnostics.spriteCacheHits++; return A.cache.get(key); }
+  if (developerRecordingActive() && keepCacheDiagnostics) keepCacheDiagnostics.spriteCacheMisses++;
   const panes = win.wide ? 2 : 1, gap = win.wide ? 0.22 : 0, pw = (win.w - gap * (panes - 1)) / panes;
   const g = win.axis === 'x' ? ground(win.a, win.c + 0.1, standLv) : ground(win.c + 0.1, win.a, standLv);
   const all = []; for (let p = 0; p < panes; p++) all.push(facePlane(win.axis, win.a - win.w / 2 + pw / 2 + p * (pw + gap), win.c + 0.02, pw, win.z1 + 1.2, win.z0 - 0.2));
@@ -148,7 +156,8 @@ export function rugCanvas(id, rect) {
   const m = A && findMeta(A.meta.rugs, id);
   if (!m) return null;
   const key = 'r|' + id + '|' + rect.x0 + rect.y0 + rect.x1 + rect.y1;
-  if (A.cache.has(key)) return A.cache.get(key);
+  if (A.cache.has(key)) { if (developerRecordingActive() && keepCacheDiagnostics) keepCacheDiagnostics.spriteCacheHits++; return A.cache.get(key); }
+  if (developerRecordingActive() && keepCacheDiagnostics) keepCacheDiagnostics.spriteCacheMisses++;
   const { x0, y0, x1, y1 } = rect, z = rect.z || 0;
   const pts = [ground(x0, y0, z), ground(x1, y0, z), ground(x1, y1, z), ground(x0, y1, z)];
   const bx0 = Math.floor(Math.min(...pts.map((p) => p[0]))) - 2, by0 = Math.floor(Math.min(...pts.map((p) => p[1]))) - 2;

@@ -34,7 +34,7 @@ import { ninjaHit, ninjaUpdate } from './ninja.js';
 import { ninjaGearLayer } from '../gfx/ninjagear.js';
 import { CRIT_OVER } from '../data/statformulas.mjs';
 import { clearInterruptedMovement } from './movement-recovery.mjs';
-import { profileEnd, profileRecord, profileStart } from '../core/perfdiagnostics.js';
+import { performanceProfilerEnabled, profileEnd, profileRecord, profileStart } from '../core/perfdiagnostics.js';
 
 const FREE_CAST = new Set(['buff', 'summon']);
 import { relicBonuses } from '../data/relics.js';
@@ -790,12 +790,24 @@ export class Player extends Creature {
 
   // ------------------------------------------------------------------ update
   update(dt) {
+    if (!performanceProfilerEnabled()) return this._update(dt, null);
+    const updateStarted = profileStart(), timing = { explicitMs: 0 };
+    try { return this._update(dt, timing); }
+    finally {
+      const wallMs = profileEnd(updateStarted);
+      profileRecord('playerUpdateWall', wallMs);
+      profileRecord('playerUpdateUnattributed', Math.max(0, wallMs - timing.explicitMs));
+    }
+  }
+
+  _update(dt, timing) {
     const c = this.char, st = this.st;
     const recoveryStarted = profileStart();
     if (!this.dead && this.world?.map?.recoverEmbedded?.(this)) {
       clearInterruptedMovement(this);
     }
-    profileRecord('playerRecovery', profileEnd(recoveryStarted));
+    const recoveryMs = profileEnd(recoveryStarted); profileRecord('playerRecovery', recoveryMs); if (timing) timing.explicitMs += recoveryMs;
+    const timersStarted = profileStart();
     this.animT += dt;
     const gfx = this.gearFx();
     if (gfx) updateGearFx(this, gfx.fx, gfx.col, dt);
@@ -821,22 +833,24 @@ export class Player extends Creature {
       this.hp = Math.min(this.hp, this.maxHp);
     }
     if (this.noRageT > 0) this.noRageT -= dt;
+    const timersMs = profileEnd(timersStarted); profileRecord('playerTimersGearAffixes', timersMs); if (timing) timing.explicitMs += timersMs;
     const passivesStarted = profileStart();
     if (this.classId === 'bard' && this.world) bardUpdate(this, dt);
     if (this.classId === ASTRONOMER && this.world) astroUpdate(this, dt);
     if (this.classId === 'rogue' && this.world) rogueUpdate(this, dt);
     else if (this.classId === 'ninja' && this.world) ninjaUpdate(this, dt);
     if (this.world) sigUpdate(this, dt);
-    profileRecord('playerClassPassives', profileEnd(passivesStarted));
+    const passivesMs = profileEnd(passivesStarted); profileRecord('playerClassPassives', passivesMs); if (timing) timing.explicitMs += passivesMs;
     const statusStarted = profileStart();
     const canAct = this.tickStatus(dt, (k, amount, src) => {
       hit(src, this, amount, k === 'burn' ? 'fire' : k === 'poison' ? 'poison' : 'blood', { dot: true });
     });
-    profileRecord('playerStatus', profileEnd(statusStarted));
+    const statusMs = profileEnd(statusStarted); profileRecord('playerStatus', statusMs); if (timing) timing.explicitMs += statusMs;
     if (this.dead) return;
     // a dash, leap or beam whose effect was swept away under him (a level section changing round him: game/caverns.js,
     // dunes.js, tower.js) would hold him channelling for good, unable to move or fight: let it go
     if (this.channel && this.world && !this.world.hazards.includes(this.channel)) { if (this.channel instanceof Leap) this.z = 0; this.channel = null; }
+    const resourcesStarted = profileStart();
     // regen: natural baseline HP regen only recovers in town; outside town only gear/buff regen applies
     const inTown = this.world && this.world.kind === 'town';
     const healingMul = (this.world && this.world.dungeonAffixes?.includes('healing_suppression') ? 0.7 : this.world && this.world.dungeonAffixes?.includes('cursed_fortune') ? 0.75 : 1) * heresyHero(c).healingMul;
@@ -879,6 +893,8 @@ export class Player extends Creature {
     }
     if (changed) this.recompute();
     this.scale = (this.buffs.some((b) => b.transform) ? 1.22 : 1) * (this.sigScale || 1); // sigScale: the Slime Lord's mass
+    const resourcesMs = profileEnd(resourcesStarted); profileRecord('playerResourcesBuffs', resourcesMs); if (timing) timing.explicitMs += resourcesMs;
+    const cooldownsStarted = profileStart();
     for (const k in this.cooldowns) if (this.cooldowns[k] > 0) this.cooldowns[k] -= dt;
     const summonStarted = profileStart();
     this.autoSummon(dt);
@@ -902,6 +918,9 @@ export class Player extends Creature {
         this.world.addHazard(new Area({ world: this.world, src: this, x: this.x, y: this.y, r: 0.7, dur: 2, tick: 0.5, dmg: d.map((v) => v * 0.3), el: 'fire', fx: 'fire' }));
       }
     }
+    const cooldownsMs = profileEnd(cooldownsStarted); profileRecord('playerCooldownsLegendary', cooldownsMs); if (timing) timing.explicitMs += cooldownsMs;
+    const actionMovementStarted = profileStart();
+    try {
     if (!canAct) { this.moving = false; return; }
     if (this.channel) return;
     // movement: completely frozen during cutscenes
@@ -945,6 +964,7 @@ export class Player extends Creature {
       return;
     }
     if (this.moveTarget) this.walkTo(this.moveTarget[0], this.moveTarget[1], dt);
+    } finally { const actionMs = profileEnd(actionMovementStarted); profileRecord('playerActionMovement', actionMs); if (timing) timing.explicitMs += actionMs; }
   }
 
   setMoveTarget(x, y) {

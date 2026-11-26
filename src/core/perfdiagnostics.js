@@ -1,7 +1,8 @@
 // Optional, rolling performance diagnostics. No collection, timer reads, DOM, or entity scans while disabled.
 import { G } from '../state.js';
 import { developerRecordingActive, developerSessionStatus, setDeveloperEventObserver, recordDeveloperEvent, recordDeveloperMetric } from './developer-session.js';
-import { vfxStats } from '../gfx/vfx.js';
+import { vfxStats, vfxDiagnosticReport } from '../gfx/vfx.js';
+import { keepCacheDiagnosticReport } from '../gfx/keepart.js';
 import { audioActiveCount } from './audio.js';
 import { GAME_BUILD_ID, GAME_VERSION } from '../data/build-version.js';
 import { FRAME_BUDGET_MS, summarizeFrameGroups, summarizeFrameSpikes } from './performance-analysis.js';
@@ -10,7 +11,7 @@ import { shouldSampleCounts } from './perf-count-sampling.mjs';
 const CAP = 27000; // 3 minutes at 150 Hz; longer on typical 60-120 Hz displays
 const MAX_EXPORTED_FRAMES = 9000;
 const MAX_LONG_TASKS = 128;
-const PLAYER_TIMING_KEYS = ['playerRecoveryMs', 'playerClassPassivesMs', 'playerStatusMs', 'playerAutoSummonMs', 'playerPathMs', 'playerMoveCollisionMs'];
+const PLAYER_TIMING_KEYS = ['playerUpdateWallMs', 'playerUpdateUnattributedMs', 'playerRecoveryMs', 'playerTimersGearAffixesMs', 'playerClassPassivesMs', 'playerStatusMs', 'playerResourcesBuffsMs', 'playerAutoSummonMs', 'playerCooldownsLegendaryMs', 'playerActionMovementMs', 'playerPathMs', 'playerMoveCollisionMs'];
 const KEYS = ['frameMs', 'gapMs', 'updateMs', 'renderMs', 'renderSetupMs', 'floorDrawMs', 'groundDrawMs', 'renderSortMs', 'depthDrawMs', 'effectDrawMs', 'ambientTopDrawMs', 'particleDrawMs', 'topHazardDrawMs', 'topEffectDrawMs', 'lightingMs', 'screenOverlayMs', 'skyFrontMs', 'seeThroughMs', 'screenFeedbackMs', 'hudLabelsMs', 'combatTextMs', 'cinematicOverlayMs', 'automapMs', 'worldMs', 'aiMs', 'playerUpdateMs', ...PLAYER_TIMING_KEYS, 'creatureUpdateMs', 'townLifeUpdateMs', 'keepDirectorUpdateMs', 'keepCompanionUpdateMs', 'keepFolkUpdateMs', 'keepLightingUpdateMs', 'townAgentUpdateMs', 'otherNpcUpdateMs', 'doorUpdateMs', 'aiSlowestCallbackMs', 'pathMs', 'collisionMs', 'hazardMs', 'lootMs', 'vfxMs', 'uiMs', 'enemyHistoryMs', 'minimapMs', 'eventsMs', 'environmentMs', 'saveMs'];
 const AI_TIMING_KEYS = ['playerUpdateMs', ...PLAYER_TIMING_KEYS, 'creatureUpdateMs', 'townLifeUpdateMs', 'keepDirectorUpdateMs', 'keepCompanionUpdateMs', 'keepFolkUpdateMs', 'keepLightingUpdateMs', 'townAgentUpdateMs', 'otherNpcUpdateMs', 'doorUpdateMs', 'aiSlowestCallbackMs'];
 const COUNT_KEYS = ['creatures', 'enemies', 'inactiveEnemies', 'offscreenCreatures', 'deadCreatures', 'npcs', 'companions', 'keepFolk', 'keepDirectors', 'keepLightingUpdaters', 'townAgents', 'corpses', 'projectiles', 'hazards', 'traps', 'groundItems', 'lootLabels', 'particles', 'visibleParticles', 'effects', 'groundEffects', 'topEffects', 'decals', 'gore', 'damageText', 'audio', 'spatialCandidates', 'collisionPairs', 'pathSearches', 'renderQueue', 'renderViews', 'renderCreatures', 'renderWalls', 'renderProps', 'renderLoot'];
@@ -20,7 +21,7 @@ const INPUT_CODES = ['ShiftLeft', 'ShiftRight', 'KeyW', 'KeyA', 'KeyS', 'KeyD', 
 let history = null, cursor = 0, count = 0, frameSerial = 0, prevRaf = 0, nextPaint = 0, latestCounts = null, latestCountsWorld = null;
 let frameStarted = 0, rafGap = 16.667, updateMs = 0, renderMs = 0, phases = null;
 let panel = null, graph = null;
-let longTaskObserver = null, longTasks = [], longTaskCount = 0, externalTimings = [];
+let longTaskObserver = null, longTasks = [], longTaskCount = 0, externalTimings = [], externalTimingTotals = Object.create(null);
 let frameTotals = null;
 let incidents = [], incidentSerial = 0, sessionStartPerfMs = 0;
 let accumulationAlerts = new Set();
@@ -111,7 +112,7 @@ export function setPerformanceProfilerEnabled(enabled) {
 export function resetPerformanceStatistics() {
   stopLongTaskObserver();
   history = null; latestCounts = null; latestCountsWorld = null; count = cursor = frameSerial = 0; resetFrameTotals();
-  longTasks = []; longTaskCount = 0; externalTimings = [];
+  longTasks = []; longTaskCount = 0; externalTimings = []; externalTimingTotals = Object.create(null);
   incidents = []; incidentSerial = 0;
   prevRaf = nextPaint = 0; phases = null;
   if (performanceProfilerEnabled()) { allocateHistory(); mountPanel(); startLongTaskObserver(); }
@@ -214,7 +215,7 @@ export function capturePerformanceIncident(trigger, details = {}) {
 }
 
 setDeveloperEventObserver((event) => {
-  if (/error|exception|marker|transition|area-|combat-|movement-|collision-|position-invalid|position-recover|attack-interruption|simulation-spike|accumulation/i.test(event.type)) {
+  if (/error|exception|marker|transition|area-|combat-|movement-|collision-|position-invalid|position-recover|attack-interruption|simulation-spike|external-operation-spike|accumulation/i.test(event.type)) {
     captureContext(event.type, { eventId: event.id, category: event.category, details: event.details }, event.perfMs);
   }
 });
@@ -248,8 +249,14 @@ export function profileRecordAIUpdate(entity, kind, elapsed) {
 /** Record synchronous work outside RAF (for example world construction during a transition). */
 export function profileExternalTiming(name, startedAtMs, details = null) {
   if (!performanceProfilerEnabled() || !Number.isFinite(startedAtMs)) return;
-  externalTimings.push({ name: String(name), durationMs: Number((performance.now() - startedAtMs).toFixed(3)),
+  const durationMs = Math.max(0, performance.now() - startedAtMs), key = String(name).slice(0, 100), env = String(details?.biome || details?.environment || 'unknown').slice(0, 80);
+  const total = externalTimingTotals[key] || (externalTimingTotals[key] = { count: 0, totalMs: 0, minMs: Infinity, maxMs: 0, byEnvironment: Object.create(null) });
+  total.count++; total.totalMs += durationMs; total.minMs = Math.min(total.minMs, durationMs); total.maxMs = Math.max(total.maxMs, durationMs);
+  const envTotal = total.byEnvironment[env] || (total.byEnvironment[env] = { count: 0, totalMs: 0, minMs: Infinity, maxMs: 0 });
+  envTotal.count++; envTotal.totalMs += durationMs; envTotal.minMs = Math.min(envTotal.minMs, durationMs); envTotal.maxMs = Math.max(envTotal.maxMs, durationMs);
+  externalTimings.push({ name: key, durationMs: Number(durationMs.toFixed(3)),
     timestampMs: Number(performance.now().toFixed(3)), details: details && typeof details === 'object' ? details : null });
+  if (durationMs >= 50 && details?.async !== true) recordDeveloperEvent('external-operation-spike', { name: key, durationMs: Number(durationMs.toFixed(2)), details }, 'timing');
   if (externalTimings.length > 128) externalTimings.splice(0, externalTimings.length - 128);
 }
 
@@ -698,10 +705,15 @@ export function performanceReport() {
       observedCount: longTaskCount, retainedEntryCount: longTasks.length, retainedEntryLimit: MAX_LONG_TASKS, importantEntriesTruncated: longTaskCount > longTasks.length,
       entries: longTasks.slice().sort((a, b) => b.durationMs - a.durationMs).map((task) => ({ ...task, timestampUtc: new Date((performance.timeOrigin || Date.now() - performance.now()) + task.startTimeMs).toISOString() })),
     },
+    externalTimingSummary: Object.fromEntries(Object.entries(externalTimingTotals).map(([name, value]) => [name, {
+      count: value.count, meanMs: Number((value.totalMs / value.count).toFixed(3)), minMs: Number((value.minMs === Infinity ? 0 : value.minMs).toFixed(3)), maxMs: Number(value.maxMs.toFixed(3)),
+      byEnvironment: Object.fromEntries(Object.entries(value.byEnvironment).map(([environment, row]) => [environment, { count: row.count, meanMs: Number((row.totalMs / row.count).toFixed(3)), minMs: Number((row.minMs === Infinity ? 0 : row.minMs).toFixed(3)), maxMs: Number(row.maxMs.toFixed(3)) }]))
+    }])),
     externalTimings: externalTimings.map((timing) => ({ ...timing,
       timestampUtc: new Date((performance.timeOrigin || Date.now() - performance.now()) + timing.timestampMs).toISOString() })),
     pageState: { visibility: typeof document !== 'undefined' ? document.visibilityState : null, focused: typeof document !== 'undefined' ? document.hasFocus?.() ?? null : null },
-    lifecycle: { latest: lastSample?.telemetry || null, ratesPerSecondBetweenLastSamples: objectRatesPerSecond },
+    lifecycle: { latest: lastSample?.telemetry || null, ratesPerSecondBetweenLastSamples: objectRatesPerSecond,
+      visualEffectSources: vfxDiagnosticReport(), tessarielsKeepArtCache: keepCacheDiagnosticReport() },
     memory: {
       supported: !!performance.memory, latestHeapBytes: performance.memory?.usedJSHeapSize || 0, peakSampledHeapBytes: peakHeapBytes,
       firstSampledHeapBytes: firstHeap, growthBytes: firstHeap && peakHeapBytes ? peakHeapBytes - firstHeap : null,
@@ -713,7 +725,7 @@ export function performanceReport() {
       note: 'Frame spike totals and important event counts continue for the full recording; detailed incident windows are bounded to the most recent 24 captures.' },
     incidents: incidents.map(({ _lastSamplePerfMs, ...incident }) => ({ ...incident, state: incident.state === 'capturing' ? 'incomplete-at-export' : incident.state })),
     frames,
-    note: 'Detailed frame samples use a bounded ring and are downsampled on export to reduce report size; all significant spike frames are retained, and complete-session timing aggregates remain exact. Marker, error, collision-recovery, and severe-spike incident snapshots retain a sampled 3-second lead-in and 2.5-second follow-up with player position, movement/ability state, key/mouse state, environment, entity counts, and subsystem timings. Player update now includes separate recovery, class-passive, status, auto-summon, pathfinding, and movement/collision timings. Simulation real time, clamped game time, catch-up timing, and measured diagnostic overhead are reported separately. Object lifecycle/type breakdowns are sampled every 15 frames and at world changes. Long-task observation is recording-only and retains at most 128 entries. Browser/GPU frame time, GPU memory, GC events, timer/listener totals, and audio hardware latency are unavailable here and are not fabricated.',
+    note: 'Detailed frame samples use a bounded ring and are downsampled on export to reduce report size; all significant spike frames are retained, and complete-session timing aggregates remain exact. Marker, error, collision-recovery, and severe-spike incident snapshots retain a sampled 3-second lead-in and 2.5-second follow-up with player position, movement/ability state, key/mouse state, environment, entity counts, and subsystem timings. Player update now reports total wall time, the uninstrumented remainder, and explicit timers for recovery, timers/gear/affixes, passives, status, resources/buffs, cooldowns/legendary work, action/movement, pathfinding, and collision. Nested timings are marked so they are not double-counted. Simulation real time, clamped game time, catch-up timing, and measured diagnostic overhead are reported separately. Object lifecycle/type breakdowns are sampled every 15 frames and at world changes. Long-task observation is recording-only and retains at most 128 entries. Browser/GPU frame time, GPU memory, GC events, timer/listener totals, and audio hardware latency are unavailable here and are not fabricated.',
   };
 }
 

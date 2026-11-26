@@ -581,7 +581,7 @@ function audioSettingsMarkup(settings) {
 }
 
 function unifiedDiagnosticsMarkup() {
-  return `<div class="developer-action-row"><button type="button" class="btn small" data-unified-record-start>Start Recording</button><button type="button" class="btn small" data-unified-record-stop disabled>Stop Recording</button><button type="button" class="btn small" data-unified-record-clear>Clear Recording</button><button type="button" class="btn small" data-unified-record-export>Export Report</button></div>
+  return `<div class="developer-action-row"><button type="button" class="btn small" data-unified-record-start>Start Recording</button><button type="button" class="btn small" data-unified-record-stop disabled>Stop Recording</button><button type="button" class="btn small" data-unified-record-clear>Clear Recording</button><select aria-label="Diagnostic export format" data-unified-export-format><option value="compact" selected>Compact Report (default)</option><option value="full">Full Report</option><option value="compressed">Compressed ZIP</option></select><button type="button" class="btn small" data-unified-record-export>Export Report</button></div>
     <div class="developer-marker-row"><input type="text" maxlength="120" data-unified-marker placeholder="Diagnostic marker"><button type="button" class="btn small" data-unified-marker-add>Add Marker</button></div>
     <div class="developer-recording-status" data-unified-status role="status" aria-live="polite">Recording is off.</div>`;
 }
@@ -820,7 +820,13 @@ export function settingsDialog() {
   d.box.querySelector('[data-unified-record-start]').onclick = () => { startUnifiedDiagnosticRecording(); refreshUnifiedDiagnostics(); };
   d.box.querySelector('[data-unified-record-stop]').onclick = () => { stopUnifiedDiagnosticRecording(); refreshUnifiedDiagnostics(); };
   d.box.querySelector('[data-unified-record-clear]').onclick = () => { clearUnifiedDiagnosticRecording(); refreshUnifiedDiagnostics(); };
-  d.box.querySelector('[data-unified-record-export]').onclick = () => exportUnifiedDiagnosticReport();
+  d.box.querySelector('[data-unified-record-export]').onclick = async () => {
+    try { await exportUnifiedDiagnosticReport({ format: d.box.querySelector('[data-unified-export-format]')?.value || 'compact' }); }
+    catch (error) {
+      const status = d.box.querySelector('[data-unified-status]');
+      if (status) status.textContent = `Could not export report: ${error?.message || 'unknown error'}`;
+    }
+  };
   d.box.querySelector('[data-unified-marker-add]').onclick = () => {
     const input = d.box.querySelector('[data-unified-marker]');
     if (addUnifiedDiagnosticMarker(input.value)) input.value = '';

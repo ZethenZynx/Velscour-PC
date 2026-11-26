@@ -5,6 +5,7 @@ import { G } from '../state.js';
 const EVENT_LIMIT = 5000;
 const IMPORTANT_LIMIT = 1500;
 const METRIC_LIMIT = 256;
+const EVENT_COUNT_KEY_LIMIT = 512;
 let session = null;
 let eventObserver = null;
 
@@ -18,7 +19,7 @@ export function beginDeveloperSession(metadata = {}) {
     id: uuid(), active: true, startedUtc: new Date().toISOString(), startedPerfMs: performance.now(),
     stoppedUtc: null, stoppedPerfMs: null, stopReason: null, metadata: { ...metadata },
     events: [], importantEvents: [], countsByCategory: Object.create(null), countsByType: Object.create(null),
-    metrics: Object.create(null), metricCount: 0,
+    metrics: Object.create(null), metricCount: 0, countOverflow: Object.create(null),
     totalEvents: 0, droppedEvents: 0, droppedImportantEvents: 0,
   };
   return session;
@@ -64,20 +65,28 @@ export function recordDeveloperEvent(type, details = {}, category = 'game') {
   const event = {
     id: ++session.totalEvents, sessionId: session.id, type: name, category: group,
     timeUtc: new Date().toISOString(), perfMs: Number(now.toFixed(3)), elapsedMs: Number((now - session.startedPerfMs).toFixed(3)),
-    worldId: G.world?.id ?? null, environment: G.world?.biome?.name || G.world?.kind || null,
-    depth: G.world?.depth ?? null, inCombat: typeof G.world?._audioCombatUntil === 'number' ? G.world._audioCombatUntil > Number(G.world.time || 0) : null,
+    worldId: details?.worldId ?? G.world?.id ?? null,
+    worldKind: details?.worldKind ?? (details?.worldId ? details.kind : null) ?? G.world?.kind ?? null,
+    environment: details?.environment ?? G.world?.biome?.name ?? G.world?.kind ?? null,
+    depth: details?.depth ?? G.world?.depth ?? null,
+    inCombat: typeof details?.inCombat === 'boolean' ? details.inCombat : (typeof G.world?._audioCombatUntil === 'number' ? G.world._audioCombatUntil > Number(G.world.time || 0) : null),
     details: details && typeof details === 'object' ? { ...details } : { value: details },
   };
-  session.countsByCategory[group] = (session.countsByCategory[group] || 0) + 1;
-  session.countsByType[name] = (session.countsByType[name] || 0) + 1;
-  const important = /error|exception|marker|transition|area-|combat-|guardian|recording-stop|movement-|collision-|position-invalid|position-recover|attack-interruption|input-focus-reset|input-mouse-(down|up)|simulation-spike|accumulation/i.test(name);
+  const addCount = (counts, key, overflowKey) => {
+    if (counts[key] !== undefined) counts[key]++;
+    else if (Object.keys(counts).length < EVENT_COUNT_KEY_LIMIT) counts[key] = 1;
+    else { counts[overflowKey] = (counts[overflowKey] || 0) + 1; session.countOverflow[overflowKey] = (session.countOverflow[overflowKey] || 0) + 1; }
+  };
+  addCount(session.countsByCategory, group, 'other-category');
+  addCount(session.countsByType, name, 'other-type');
+  const important = /error|exception|marker|transition|area-|combat-|guardian|recording-stop|movement-|collision-|position-invalid|position-recover|attack-interruption|input-focus-reset|input-mouse-(down|up)|simulation-spike|external-operation-spike|accumulation/i.test(name);
   if (session.events.length < EVENT_LIMIT) session.events.push(event);
   else session.droppedEvents++;
   if (important) {
     if (session.importantEvents.length < IMPORTANT_LIMIT) session.importantEvents.push(event);
     else session.droppedImportantEvents++;
   }
-  if (eventObserver && /error|exception|marker|transition|area-|combat-|movement-|collision-|position-invalid|position-recover|attack-interruption|simulation-spike|accumulation/i.test(name)) {
+  if (eventObserver && /error|exception|marker|transition|area-|combat-|movement-|collision-|position-invalid|position-recover|attack-interruption|simulation-spike|external-operation-spike|accumulation/i.test(name)) {
     try { eventObserver(event); } catch { /* diagnostics must never affect gameplay */ }
   }
   return true;
@@ -97,7 +106,7 @@ export function developerSessionReport() {
       detailedEventsStored: session.events.length, detailedEventLimit: EVENT_LIMIT, detailedEventsDropped: session.droppedEvents,
       importantEventsStored: session.importantEvents.length, importantEventLimit: IMPORTANT_LIMIT,
       importantEventsDropped: session.droppedImportantEvents, timelineTruncated: session.droppedEvents > 0 || session.droppedImportantEvents > 0 },
-    eventCounts: { byCategory: { ...session.countsByCategory }, byType: { ...session.countsByType } }, timeline: unique,
+    eventCounts: { byCategory: { ...session.countsByCategory }, byType: { ...session.countsByType }, overflowKeys: { ...session.countOverflow }, keyLimit: EVENT_COUNT_KEY_LIMIT }, timeline: unique,
     metrics: Object.fromEntries(Object.entries(session.metrics).map(([key, metric]) => [key, {
       samples: metric.samples, total: Number(metric.total.toFixed(3)), mean: Number((metric.total / metric.samples).toFixed(3)),
       minimum: Number(metric.minimum.toFixed(3)), maximum: Number(metric.maximum.toFixed(3)), accumulatedDetails: { ...metric.details },
