@@ -65,7 +65,7 @@ export async function buildTessarielKeep(game, services) {
   const folk = startKeepFolk(world, A);
   folk.castellan.use = () => KeepUI.open('sagas');
   world.keepFolk = folk;
-  world.npcs.push({ hidden: true, name: '', x: -9, y: -9, update: (dt) => folk.update(dt) });
+  world.npcs.push({ hidden: true, keepDirector: true, name: 'Companion director', x: -9, y: -9, update: (dt) => folk.update(dt) });
   const mark = (o) => world.npcs.push({ keepMarker: true, reach: 1.7, flip: false, ...o });
   mark({ name: 'The War Table', x: A.warTable[0], y: A.warTable[1], h: 34, use: () => KeepUI.open('war') });
   mark({ name: 'The Chronicle of Deeds', x: A.chronicle[0], y: A.chronicle[1], h: 40, use: () => KeepUI.open('chronicle') });
@@ -117,7 +117,7 @@ export async function buildTessarielKeep(game, services) {
   }
 
   // Keep lighting is emitted by one town-owned updater and remains bounded.
-  world.npcs.push({ hidden: true, x: -9, y: -9, update(dt) {
+  world.npcs.push({ hidden: true, keepLightingUpdater: true, name: 'Keep lighting', x: -9, y: -9, update(dt) {
     this.animT = (this.animT || 0) + dt;
     const t = this.animT;
     addLight(A.flame[0], A.flame[1], 5.2 + Math.sin(t * 2.1) * 0.25, 0.82, 34, '#9cff68', true);

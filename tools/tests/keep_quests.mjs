@@ -30,6 +30,11 @@ for (const [kind, id] of Object.values(D.SAGAS).flatMap((s) => s.ch.filter((c) =
   if (!D.DECOR[kind].some((d) => d.id === id)) fail(`a reward hangs ${kind} ${id}, which isn't one`);
 // the keep's layout: spots to walk, every anchor slot count the decor expects
 const L = tkeepLayout(), A = L.anchors;
+const keepSpotCache = keepSpots(L);
+if (keepSpots(L) !== keepSpotCache) fail('Keep companion walk spots are not cached per layout');
+const copiedLayout = { ...L, t: L.t.slice(), solid: L.solid.slice(), kind: L.kind.slice(), hgt: L.hgt.slice() };
+if (keepSpots(copiedLayout) === keepSpotCache) fail('separate Keep layouts incorrectly share cached walk spots');
+if (keepSpots(copiedLayout).length !== keepSpotCache.length) fail('cached Keep spots differ for an equivalent layout');
 if (A.banners.length !== 14 || A.windows.length !== 10 || A.rugs.length !== 3 || A.pedestals.length !== 16 || A.plinths.length !== 4) fail('layout slot counts changed: update defaultDecor');
 if (keepSpots(L).length < 300) fail('too few walkable spots: ' + keepSpots(L).length);
 

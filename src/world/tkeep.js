@@ -218,8 +218,12 @@ export function tkeepLayout() {
   return cache;
 }
 
+const keepSpotsByLayout = new WeakMap();
+
 /** Where a hero can stand at random on the hall's floor or the balcony (for companions' walks). */
 export function keepSpots(L = tkeepLayout()) {
+  const cached = keepSpotsByLayout.get(L);
+  if (cached) return cached;
   const out = [];
   for (let y = 0; y < L.H; y++) for (let x = 0; x < L.W; x++) {
     const i = y * L.W + x;
@@ -227,5 +231,6 @@ export function keepSpots(L = tkeepLayout()) {
     const k = L.kind[i];
     if (k === KK.floor || k === KK.walk || k === KK.dais) out.push([x + 0.5, y + 0.5, L.hgt[i]]);
   }
+  keepSpotsByLayout.set(L, out);
   return out;
 }

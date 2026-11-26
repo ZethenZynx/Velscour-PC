@@ -108,7 +108,7 @@ export function startTownLife(world, t, c, visit) {
   // ------------------------------------------------------------------ agents
   const makeAgent = (v, x, y, opts = {}) => {
     const a = {
-      id: v.id, name: v.name, role: v.role, group: v.group, worker: v.worker, child: v.child, knight: v.knight, royal: v.royal || v.courtier,
+      id: v.id, name: v.name, role: v.role, group: v.group, townAgent: true, worker: v.worker, child: v.child, knight: v.knight, royal: v.royal || v.courtier,
       guard: v.guard, merchant: v.merchant, old: v.old, caster: v.caster, healer: v.healer,
       sprite: 'townsfolk', townsfolkSpriteId: v.spriteId, spriteId: v.spriteId, townsfolkId: v.id, frameCount: v.frame.count, pal: null,
       idleH: v.child ? 150 : undefined,

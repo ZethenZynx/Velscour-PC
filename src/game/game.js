@@ -6,7 +6,7 @@ import { rollTreasureChest } from '../data/treasurechests.js';
 import { addMarkBonusChest } from './markchests.js';
 import { input } from '../core/input.js';
 import { camera } from '../core/view.js';
-import { profileEnd, profileRecord, profileStart } from '../core/perfdiagnostics.js';
+import { profileEnd, profileExternalTiming, profileRecord, profileStart } from '../core/perfdiagnostics.js';
 import { sfx, playMusic, stopMusic, setAmbience, stopAmbience, footsteps, stopIronExpressWhistleSfx, audioDiagnosticsEnabled, isAudioCombatActive, recordAudioDiagnosticMarker } from '../core/audio.js';
 import { rand, pick, randi, chance, escapeHtml, dist, dist2, RNG, makeCanvas, fmtInt, swapKey, hexToRgb, clamp, shuffle } from '../core/util.js';
 import { biomeTileSet, loadBiomeArt, mixedTileSet, keepTileSets } from '../core/assets.js';
@@ -450,6 +450,7 @@ export const game = {
   },
 
   setWorld(world, start, oldWorld) {
+    const transitionStarted = G.settings?.performanceProfiler === true ? profileStart() : 0;
     const p = G.player;
     if (oldWorld && oldWorld !== world && audioDiagnosticsEnabled()) {
       const from = { worldId: oldWorld.id, kind: oldWorld.kind, environment: oldWorld.biome?.name || oldWorld.kind, depth: oldWorld.depth ?? null };
@@ -501,6 +502,11 @@ export const game = {
     world.map.stepMask(); // the steps every path search reads (map.js), worked out here rather than mid fight
     propReach(world); // and the props' culling box (render.js), once the ground's heights are set
     preloadBarFx(p, SKILLS);
+    if (transitionStarted) profileExternalTiming('world.setWorld', transitionStarted, {
+      from: oldWorld?.biome?.name || oldWorld?.kind || null,
+      to: world.biome?.name || world.kind || null,
+      depth: world.depth ?? null,
+    });
   },
 
   enterTown() {
@@ -710,6 +716,7 @@ export const game = {
     const c = G.char;
     if (!c || !act4Unlocked(c) || this._enteringTessarielKeep) return false;
     this._enteringTessarielKeep = true;
+    const entryStarted = profileStart();
     const old = G.world;
     c.lastTown = 'act4';
     c.visitedAct4Town = true;
@@ -720,6 +727,7 @@ export const game = {
     LoadingScreen.show({ title: "TESSARIEL'S KEEP", subtitle: 'Act IV', text: 'Opening the halls of the Sacred Flame.', progress: 25 });
     try {
       keepTileSets(null);
+      const buildStarted = profileStart();
       const built = await buildTessarielKeep(this, {
         openVendor: (id) => Vendor.open(id),
         openStash: () => Stash.open(),
@@ -728,14 +736,21 @@ export const game = {
         openHeresies: () => Heresies.open(),
         describeFlame: () => UI.log("Tessariel's green flame burns steadily at the heart of the Keep.", '#c8f060'),
       });
+      if (buildStarted) profileExternalTiming('keep.build', buildStarted, { npcs: built.world?.npcs?.length || 0, props: built.world?.props?.length || 0 });
       LoadingScreen.setProgress(80, 'Preparing the Keep.');
       this.setWorld(built.world, built.start, old);
+      const artWarmStarted = profileStart();
       await warmLevelArt(built.world);
+      if (artWarmStarted) profileExternalTiming('keep.baseArtWarm', artWarmStarted);
       const heroArt = built.world.keepFolk?.arts;
       if (heroArt?.length) {
         LoadingScreen.setProgress(90, 'Preparing the companions.');
+        const companionWaitStarted = profileStart();
         await waitBounded(Promise.all(heroArt), 5000);
+        if (companionWaitStarted) profileExternalTiming('keep.companionArtWait', companionWaitStarted, { companions: heroArt.length });
+        const outlineWarmStarted = profileStart();
         warmKeepHeroes(built.world);
+        if (outlineWarmStarted) profileExternalTiming('keep.companionOutlineWarm', outlineWarmStarted, { companions: heroArt.length });
         await waitBounded(yieldForLoadingPaint(), 250);
       }
       HUD.setArea("Tessariel's Keep", 'Act IV — Sanctuary of the Sacred Flame');
@@ -757,6 +772,7 @@ export const game = {
     } finally {
       this._enteringTessarielKeep = false;
       await LoadingScreen.hide();
+      if (entryStarted) profileExternalTiming('keep.entryTotal', entryStarted, { success: G.world?.keep === true });
     }
   },
 

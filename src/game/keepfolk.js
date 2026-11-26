@@ -73,7 +73,7 @@ function interestSpots(A) {
  */
 export function startKeepFolk(world, A) {
   const L = world.layout, spots = keepSpots(L), interest = interestSpots(A).filter((s) => world.map.walkable(s.x, s.y));
-  const d = { agents: [], heroes: [], arts: [], chatT: rand(2, 4), greetT: 0, world };
+  const d = { agents: [], heroes: [], arts: [], spots, chatT: rand(2, 4), greetT: 0, world };
   const base = (o) => ({ x: 0, y: 0, flip: false, animT: rand(0, 5), idleSeed: randi(0, 9), talkText: '', talkT: 0, talkAge: 0, emotion: null, emotionT: 0, iconT: 0, iconAge: 0, reach: 1.6, ...o });
   const upd = (n) => (dt) => { n.talkT = Math.max(0, n.talkT - dt); n.talkAge += dt; n.emotionT = Math.max(0, n.emotionT - dt); n.iconT = Math.max(0, (n.iconT || 0) - dt); };
 
@@ -169,7 +169,8 @@ function director(d, dt, interest) {
   // wanderers pick somewhere to go: a place of interest, now and then just a walk round the hall or the balcony
   for (const n of H) if (n.state === 'pick') {
     const s = chance(0.7) && interest.length ? pick(interest) : null;
-    const [x, y] = s ? [s.x, s.y] : (() => { const q = pick(keepSpots(w.layout)); return [q[0], q[1]]; })();
+    const q = s ? null : pick(d.spots);
+    const x = s ? s.x : q[0], y = s ? s.y : q[1];
     n.at = s; n.state = walkTo(w, n, x, y) ? 'walk' : 'idle'; n.waitT = rand(2, 5);
   }
   // a conversation: two idle heroes, the second walks over, then they take turns

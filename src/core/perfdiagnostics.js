@@ -9,12 +9,13 @@ import { shouldSampleCounts } from './perf-count-sampling.mjs';
 const CAP = 27000; // 3 minutes at 150 Hz; longer on typical 60-120 Hz displays
 const HISTORY_MS = 180000;
 const MAX_LONG_TASKS = 128;
-const KEYS = ['frameMs', 'gapMs', 'updateMs', 'renderMs', 'renderSetupMs', 'floorDrawMs', 'groundDrawMs', 'renderSortMs', 'depthDrawMs', 'effectDrawMs', 'ambientTopDrawMs', 'particleDrawMs', 'topHazardDrawMs', 'topEffectDrawMs', 'lightingMs', 'screenOverlayMs', 'skyFrontMs', 'seeThroughMs', 'screenFeedbackMs', 'hudLabelsMs', 'combatTextMs', 'cinematicOverlayMs', 'automapMs', 'worldMs', 'aiMs', 'pathMs', 'collisionMs', 'hazardMs', 'lootMs', 'vfxMs', 'uiMs', 'enemyHistoryMs', 'minimapMs', 'eventsMs', 'environmentMs', 'saveMs'];
-const COUNT_KEYS = ['creatures', 'enemies', 'inactiveEnemies', 'offscreenCreatures', 'deadCreatures', 'corpses', 'projectiles', 'hazards', 'traps', 'groundItems', 'lootLabels', 'particles', 'visibleParticles', 'effects', 'groundEffects', 'topEffects', 'decals', 'gore', 'damageText', 'audio', 'spatialCandidates', 'collisionPairs', 'pathSearches', 'renderQueue', 'renderViews', 'renderCreatures', 'renderWalls', 'renderProps', 'renderLoot'];
+const KEYS = ['frameMs', 'gapMs', 'updateMs', 'renderMs', 'renderSetupMs', 'floorDrawMs', 'groundDrawMs', 'renderSortMs', 'depthDrawMs', 'effectDrawMs', 'ambientTopDrawMs', 'particleDrawMs', 'topHazardDrawMs', 'topEffectDrawMs', 'lightingMs', 'screenOverlayMs', 'skyFrontMs', 'seeThroughMs', 'screenFeedbackMs', 'hudLabelsMs', 'combatTextMs', 'cinematicOverlayMs', 'automapMs', 'worldMs', 'aiMs', 'playerUpdateMs', 'creatureUpdateMs', 'townLifeUpdateMs', 'keepDirectorUpdateMs', 'keepCompanionUpdateMs', 'keepFolkUpdateMs', 'keepLightingUpdateMs', 'townAgentUpdateMs', 'otherNpcUpdateMs', 'doorUpdateMs', 'aiSlowestCallbackMs', 'pathMs', 'collisionMs', 'hazardMs', 'lootMs', 'vfxMs', 'uiMs', 'enemyHistoryMs', 'minimapMs', 'eventsMs', 'environmentMs', 'saveMs'];
+const AI_TIMING_KEYS = ['playerUpdateMs', 'creatureUpdateMs', 'townLifeUpdateMs', 'keepDirectorUpdateMs', 'keepCompanionUpdateMs', 'keepFolkUpdateMs', 'keepLightingUpdateMs', 'townAgentUpdateMs', 'otherNpcUpdateMs', 'doorUpdateMs', 'aiSlowestCallbackMs'];
+const COUNT_KEYS = ['creatures', 'enemies', 'inactiveEnemies', 'offscreenCreatures', 'deadCreatures', 'npcs', 'companions', 'keepFolk', 'keepDirectors', 'keepLightingUpdaters', 'townAgents', 'corpses', 'projectiles', 'hazards', 'traps', 'groundItems', 'lootLabels', 'particles', 'visibleParticles', 'effects', 'groundEffects', 'topEffects', 'decals', 'gore', 'damageText', 'audio', 'spatialCandidates', 'collisionPairs', 'pathSearches', 'renderQueue', 'renderViews', 'renderCreatures', 'renderWalls', 'renderProps', 'renderLoot'];
 let history = null, cursor = 0, count = 0, frameSerial = 0, prevRaf = 0, nextPaint = 0, latestCounts = null, latestCountsWorld = null;
 let frameStarted = 0, rafGap = 16.667, updateMs = 0, renderMs = 0, phases = null;
 let panel = null, graph = null;
-let longTaskObserver = null, longTasks = [];
+let longTaskObserver = null, longTasks = [], externalTimings = [];
 
 export const performanceProfilerEnabled = () => G.settings?.performanceProfiler === true;
 
@@ -34,6 +35,7 @@ function allocateHistory() {
   history.visible = new Uint8Array(CAP);
   history.focused = new Uint8Array(CAP);
   history.telemetry = new Array(CAP);
+  history.slowestAILabels = new Array(CAP);
   history.counts = Object.fromEntries(COUNT_KEYS.map((key) => [key, new Uint32Array(CAP)]));
   cursor = count = frameSerial = 0;
 }
@@ -66,7 +68,7 @@ export function setPerformanceProfilerEnabled(enabled) {
   else {
     stopLongTaskObserver();
     history = null; latestCounts = null; latestCountsWorld = null; count = cursor = frameSerial = 0;
-    longTasks = [];
+    longTasks = []; externalTimings = [];
     prevRaf = nextPaint = 0; phases = null;
     dropPanel();
   }
@@ -76,7 +78,7 @@ export function resetPerformanceStatistics() {
   if (!performanceProfilerEnabled()) return false;
   stopLongTaskObserver();
   history = null; latestCounts = null; latestCountsWorld = null; count = cursor = frameSerial = 0;
-  longTasks = [];
+  longTasks = []; externalTimings = [];
   prevRaf = nextPaint = 0; phases = null;
   allocateHistory(); mountPanel();
   startLongTaskObserver();
@@ -125,6 +127,25 @@ export function profileRecord(key, elapsed) {
   if (field in phases) phases[field] += elapsed;
 }
 
+/** Capture an individual AI callback only while the profiler is active. */
+export function profileRecordAIUpdate(entity, kind, elapsed) {
+  if (!history || !phases || !Number.isFinite(elapsed) || elapsed <= 0) return;
+  if (elapsed > phases.aiSlowestCallbackMs) {
+    phases.aiSlowestCallbackMs = elapsed;
+    // Avoid allocating labels for normal sub-millisecond updates.
+    const name = entity?.name || entity?.classId || entity?.constructor?.name || 'unknown';
+    phases.aiSlowestCallback = elapsed >= 1 ? `${kind || 'unknown'}:${name}` : '';
+  }
+}
+
+/** Record synchronous work outside RAF (for example world construction during a transition). */
+export function profileExternalTiming(name, startedAtMs, details = null) {
+  if (!performanceProfilerEnabled() || !Number.isFinite(startedAtMs)) return;
+  externalTimings.push({ name: String(name), durationMs: Number((performance.now() - startedAtMs).toFixed(3)),
+    timestampMs: Number(performance.now().toFixed(3)), details: details && typeof details === 'object' ? details : null });
+  if (externalTimings.length > 128) externalTimings.splice(0, externalTimings.length - 128);
+}
+
 export function profileBeginFrame(rafNow) {
   if (!performanceProfilerEnabled()) return false;
   allocateHistory(); mountPanel();
@@ -133,7 +154,7 @@ export function profileBeginFrame(rafNow) {
   prevRaf = now;
   frameStarted = performance.now();
   updateMs = renderMs = 0;
-  phases = { worldMs: 0, aiMs: 0, pathMs: 0, collisionMs: 0, hazardMs: 0, lootMs: 0, vfxMs: 0, uiMs: 0, enemyHistoryMs: 0, minimapMs: 0, eventsMs: 0, environmentMs: 0, saveMs: 0, renderSetupMs: 0, floorDrawMs: 0, groundDrawMs: 0, renderSortMs: 0, depthDrawMs: 0, effectDrawMs: 0, ambientTopDrawMs: 0, particleDrawMs: 0, topHazardDrawMs: 0, topEffectDrawMs: 0, lightingMs: 0, screenOverlayMs: 0, skyFrontMs: 0, seeThroughMs: 0, screenFeedbackMs: 0, hudLabelsMs: 0, combatTextMs: 0, cinematicOverlayMs: 0, automapMs: 0 };
+  phases = { worldMs: 0, aiMs: 0, playerUpdateMs: 0, creatureUpdateMs: 0, townLifeUpdateMs: 0, keepDirectorUpdateMs: 0, keepCompanionUpdateMs: 0, keepFolkUpdateMs: 0, keepLightingUpdateMs: 0, townAgentUpdateMs: 0, otherNpcUpdateMs: 0, doorUpdateMs: 0, aiSlowestCallbackMs: 0, aiSlowestCallback: '', pathMs: 0, collisionMs: 0, hazardMs: 0, lootMs: 0, vfxMs: 0, uiMs: 0, enemyHistoryMs: 0, minimapMs: 0, eventsMs: 0, environmentMs: 0, saveMs: 0, renderSetupMs: 0, floorDrawMs: 0, groundDrawMs: 0, renderSortMs: 0, depthDrawMs: 0, effectDrawMs: 0, ambientTopDrawMs: 0, particleDrawMs: 0, topHazardDrawMs: 0, topEffectDrawMs: 0, lightingMs: 0, screenOverlayMs: 0, skyFrontMs: 0, seeThroughMs: 0, screenFeedbackMs: 0, hudLabelsMs: 0, combatTextMs: 0, cinematicOverlayMs: 0, automapMs: 0 };
   return true;
 }
 
@@ -142,6 +163,14 @@ export function profileSetRender(ms) { if (history) renderMs = ms; }
 
 function readCounts(world) {
   let enemies = 0, inactiveEnemies = 0, deadCreatures = 0, projectiles = 0;
+  let companions = 0, keepFolk = 0, keepDirectors = 0, keepLightingUpdaters = 0, townAgents = 0;
+  for (const n of world?.npcs || []) {
+    if (n.keepHero) companions++;
+    if (n.keepFolk || n.keepCastellan) keepFolk++;
+    if (n.keepDirector) keepDirectors++;
+    if (n.keepLightingUpdater) keepLightingUpdaters++;
+    if (n.townAgent) townAgents++;
+  }
   for (const c of world?.creatures || []) {
     if (c.dead) { deadCreatures++; continue; }
     if (c.team === 'enemy') { enemies++; if (!c.awake) inactiveEnemies++; }
@@ -150,6 +179,7 @@ function readCounts(world) {
   const vfx = vfxStats();
   return {
     creatures: world?.creatures?.length || 0,
+    npcs: world?.npcs?.length || 0, companions, keepFolk, keepDirectors, keepLightingUpdaters, townAgents,
     enemies, inactiveEnemies, deadCreatures,
     offscreenCreatures: Math.max(0, enemies - (world?._perfVisibleEnemyCount || 0)),
     corpses: world?.corpses?.length || 0,
@@ -201,6 +231,8 @@ export function profileFinishFrame(world) {
   history.updateMs[at] = updateMs;
   history.renderMs[at] = renderMs;
   history.worldMs[at] = phases.worldMs; history.aiMs[at] = phases.aiMs;
+  for (const key of AI_TIMING_KEYS) history[key][at] = phases[key];
+  history.slowestAILabels[at] = phases.aiSlowestCallback || '';
   history.pathMs[at] = phases.pathMs; history.collisionMs[at] = phases.collisionMs;
   history.hazardMs[at] = phases.hazardMs; history.lootMs[at] = phases.lootMs;
   history.vfxMs[at] = phases.vfxMs; history.uiMs[at] = phases.uiMs;
@@ -258,7 +290,12 @@ function paintPanel(lastFrameMs) {
   const show = (n) => Number(n || 0).toFixed(2);
   panel.querySelector('[data-pd-summary]').textContent = `FPS ${currentFps.toFixed(0)} current · ${averageFps.toFixed(0)} average · ${lowFps.toFixed(0)} 1% low · ${show(lastFrameMs)} ms processing`;
   const items = [
-    ['AI', phases?.aiMs], ['Pathfinding', phases?.pathMs], ['Collision', phases?.collisionMs],
+    ['AI', phases?.aiMs], ['Player update', phases?.playerUpdateMs], ['Creature updates', phases?.creatureUpdateMs],
+    ['Keep companion director', phases?.keepDirectorUpdateMs], ['Keep companions', phases?.keepCompanionUpdateMs],
+    ['Keep townsfolk', phases?.keepFolkUpdateMs], ['Keep lighting updater', phases?.keepLightingUpdateMs],
+    ['Town agents', phases?.townAgentUpdateMs], ['Other NPCs', phases?.otherNpcUpdateMs],
+    ['Town life director', phases?.townLifeUpdateMs], ['Doors', phases?.doorUpdateMs], ['Slowest AI callback', phases?.aiSlowestCallbackMs],
+    ['Pathfinding', phases?.pathMs], ['Collision', phases?.collisionMs],
     ['Hazards', phases?.hazardMs], ['Loot', phases?.lootMs], ['VFX', phases?.vfxMs], ['HUD', phases?.uiMs],
     ['Enemy history (HUD subphase)', phases?.enemyHistoryMs], ['Minimap (HUD subphase)', phases?.minimapMs],
     ['Events / world scripts', phases?.eventsMs], ['Environment', phases?.environmentMs], ['Saves', phases?.saveMs],
@@ -271,7 +308,8 @@ function paintPanel(lastFrameMs) {
   const statsEl = panel.querySelector('[data-pd-stats]');
   statsEl.innerHTML = `<span>Frame p50 / p95 / p99 / max</span><span>${show(frameStats.p50)} / ${show(frameStats.p95)} / ${show(frameStats.p99)} / ${show(frameStats.worst)} ms</span><span>Update / render</span><span>${show(updateMs)} / ${show(renderMs)} ms</span>` + items.map(([name, value]) => `<span>${name}</span><span>${show(value)} ms</span>`).join('') + COUNT_KEYS.map((key) => `<span>${key.replace(/[A-Z]/g, (c) => ` ${c.toLowerCase()}`)}</span><span>${latestCounts?.[key] || 0}</span>`).join('');
   const mem = performance.memory?.usedJSHeapSize;
-  panel.querySelector('[data-pd-note]').textContent = `Rolling up to 180 s · ${mem ? `JS heap ${(mem / 1048576).toFixed(1)} MiB` : 'JS heap unavailable in this runtime'} · Entity counts refresh every 15 frames.`;
+  const slowLabel = phases?.aiSlowestCallback ? ` · Slowest AI callback: ${phases.aiSlowestCallback}` : '';
+  panel.querySelector('[data-pd-note]').textContent = `Rolling up to 180 s · ${mem ? `JS heap ${(mem / 1048576).toFixed(1)} MiB` : 'JS heap unavailable in this runtime'} · Entity counts refresh every 15 frames${slowLabel}.`;
   paintGraph();
 }
 
@@ -314,6 +352,7 @@ export function performanceReport() {
       for (const key of COUNT_KEYS) row[key] = history.counts[key][at];
       try { row.telemetry = JSON.parse(history.telemetry[at] || 'null'); } catch { row.telemetry = null; }
     }
+    row.aiSlowestCallback = history.slowestAILabels[at] || '';
     frames.push(row);
   }
   const summaries = Object.fromEntries(KEYS.map((key) => [key, stat(ordered(key))]));
@@ -389,6 +428,8 @@ export function performanceReport() {
       observedCount: longTasks.length,
       entries: longTasks.map((task) => ({ ...task, timestampUtc: new Date((performance.timeOrigin || Date.now() - performance.now()) + task.startTimeMs).toISOString() })),
     },
+    externalTimings: externalTimings.map((timing) => ({ ...timing,
+      timestampUtc: new Date((performance.timeOrigin || Date.now() - performance.now()) + timing.timestampMs).toISOString() })),
     pageState: { visibility: typeof document !== 'undefined' ? document.visibilityState : null, focused: typeof document !== 'undefined' ? document.hasFocus?.() ?? null : null },
     lifecycle: { latest: lastSample?.telemetry || null, ratesPerSecondBetweenLastSamples: objectRatesPerSecond },
     memory: {
@@ -397,7 +438,7 @@ export function performanceReport() {
     },
     availability: { jsHeap: !!performance.memory, gcEvents: false, gpuFrameTime: false, listenerCounts: false, timerCounts: false, offscreenCachesBytes: false },
     frames,
-    note: 'History is bounded to 180 seconds, retains at most 100 worst 60 Hz-budget frame/gap samples, and stores object lifecycle/type breakdowns every 15 frames and immediately when the world changes. Synchronous save time is included as saveMs in frame data. Long-task observation is active only while the profiler is enabled and retains at most 128 entries. This measures main-thread processing and animation-frame cadence, not true display presentation. Browser/GPU frame time, GPU memory, GC events, timer/listener totals, and audio hardware latency are unavailable here and are not fabricated. A missing runtime field means that runtime does not expose it.',
+    note: 'History is bounded to 180 seconds, retains at most 100 worst 60 Hz-budget frame/gap samples, and stores object lifecycle/type breakdowns every 15 frames and immediately when the world changes. AI updates are split by player, creatures, Keep companions/director/folk/lighting, town agents, other NPCs, and doors; spike frames include the slowest individual callback when it takes at least 1 ms. Instrumented Keep entry and world setup phases are recorded separately because they can run outside RAF. Synchronous save time is included as saveMs in frame data. Long-task observation is active only while the profiler is enabled and retains at most 128 entries. Long Task attribution does not expose JavaScript call stacks in this runtime. This measures main-thread processing and animation-frame cadence, not true display presentation. Browser/GPU frame time, GPU memory, GC events, timer/listener totals, and audio hardware latency are unavailable here and are not fabricated. A missing runtime field means that runtime does not expose it.',
   };
 }
 

@@ -8,7 +8,7 @@ import { rand, dist2, TAU, chance } from '../core/util.js';
 import { sfx, audioDiagnosticsEnabled, audioCombatStatus, recordAudioDiagnosticMarker } from '../core/audio.js';
 import { spawn, updateVfx, addLight, sparkle, smoke, lights } from '../gfx/vfx.js';
 import { bodyR } from '../world/map.js';
-import { profileEnd, profileRecord, profileStart } from '../core/perfdiagnostics.js';
+import { profileEnd, profileRecord, profileRecordAIUpdate, profileStart } from '../core/perfdiagnostics.js';
 import { groundLootLifetime, OBJECT_LIFETIMES } from '../core/objectlifetimes.mjs';
 import { reconcileBossDefeats } from './bosscompletion.js';
 import { sheerUpdate } from './sheer.js';
@@ -429,18 +429,45 @@ export class World {
     this.rebuildGrid();
     if (profiling) profileRecord('collision', profileEnd(collisionStart));
     const aiStart = profiling ? profileStart() : 0;
-    if (p && !p.dead) p.update(dt);
+    if (p && !p.dead) {
+      const started = profiling ? profileStart() : 0;
+      p.update(dt);
+      if (profiling) {
+        const elapsed = profileEnd(started);
+        profileRecord('playerUpdate', elapsed);
+        profileRecordAIUpdate(p, 'player', elapsed);
+      }
+    }
     if (G.world && G.world !== this) { if (profiling) { profileRecord('ai', profileEnd(aiStart)); profileRecord('world', profileEnd(worldStart)); } return; } // the hero just stepped through a portal: this world stops with him gone
     const ax = p ? p.x : 0, ay = p ? p.y : 0;
+    const creatureStart = profiling ? profileStart() : 0;
     for (const c of this.creatures) {
       if (c === p || c.dead) continue;
       // only simulate creatures near the action
       if (c.team === 'enemy' && !c.awake && dist2(c.x, c.y, ax, ay) > 26 * 26) continue;
+      const started = profiling ? profileStart() : 0;
       c.update(dt);
+      if (profiling) profileRecordAIUpdate(c, c.team || 'creature', profileEnd(started));
     }
-    if (this.townLife) this.townLife.update(dt);
-    for (const n of this.npcs) n.update && n.update(dt);
+    if (profiling) profileRecord('creatureUpdate', profileEnd(creatureStart));
+    if (this.townLife) {
+      const started = profiling ? profileStart() : 0;
+      this.townLife.update(dt);
+      if (profiling) profileRecord('townLifeUpdate', profileEnd(started));
+    }
+    for (const n of this.npcs) if (n.update) {
+      const started = profiling ? profileStart() : 0;
+      n.update(dt);
+      if (profiling) {
+        const elapsed = profileEnd(started);
+        const key = n.keepDirector ? 'keepDirectorUpdate' : n.keepHero ? 'keepCompanionUpdate' : n.keepFolk || n.keepCastellan ? 'keepFolkUpdate' : n.keepLightingUpdater ? 'keepLightingUpdate' : n.townAgent ? 'townAgentUpdate' : 'otherNpcUpdate';
+        profileRecord(key, elapsed);
+        profileRecordAIUpdate(n, key, elapsed);
+      }
+    }
+    const doorStart = profiling ? profileStart() : 0;
     this.openDoors();
+    if (profiling) profileRecord('doorUpdate', profileEnd(doorStart));
     if (profiling) profileRecord('ai', profileEnd(aiStart));
     const hazardStart = profiling ? profileStart() : 0;
     for (let i = this.hazards.length - 1; i >= 0; i--) {

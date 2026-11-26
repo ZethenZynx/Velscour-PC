@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
+import { summarizeFrameGroups, summarizeFrameSpikes } from '../../src/core/performance-analysis.js';
 
 const profiler = await readFile(new URL('../../src/core/perfdiagnostics.js', import.meta.url), 'utf8');
 const main = await readFile(new URL('../../src/main.js', import.meta.url), 'utf8');
@@ -10,6 +11,8 @@ const screens = await readFile(new URL('../../src/ui/screens.js', import.meta.ur
 const state = await readFile(new URL('../../src/state.js', import.meta.url), 'utf8');
 const resolution = await readFile(new URL('../../src/core/render-resolution.mjs', import.meta.url), 'utf8');
 const buildVersion = await readFile(new URL('../../src/data/build-version.js', import.meta.url), 'utf8');
+const keepfolk = await readFile(new URL('../../src/game/keepfolk.js', import.meta.url), 'utf8');
+const performanceAnalysis = await readFile(new URL('../../src/core/performance-analysis.js', import.meta.url), 'utf8');
 
 assert.match(state, /performanceProfiler:\s*false/, 'the profiler is disabled for existing and new players by default');
 assert.match(profiler, /if \(!performanceProfilerEnabled\(\)\) return false/, 'disabled collection exits before creating frame history');
@@ -27,7 +30,7 @@ assert.match(profiler, /skyFrontMs.*seeThroughMs.*screenFeedbackMs.*hudLabelsMs.
 assert.match(profiler, /visibleParticles:\s*world\?\._perfVisibleParticles/, 'visible particle workload is counted separately from retained particles');
 assert.match(profiler, /resolutionScale.*devicePixelRatio.*canvasWidth.*canvasHeight/s, 'per-frame reports capture backing-store resolution');
 assert.match(profiler, /frameSummariesByEnvironmentAndResolution:\s*summarizeFrameGroups\(frames\)/, 'exported diagnostics separate statistics by environment and render scale');
-assert.match(buildVersion, /GAME_BUILD_ID = 'fork-main-performance-diagnostics-2026-11-26'/, 'reports identify this deployed source build instead of using generic development');
+assert.match(buildVersion, /GAME_BUILD_ID = 'fork-main-town-ai-transition-diagnostics-2026-11-26'/, 'reports identify this deployed source build instead of using generic development');
 assert.match(main, /renderResolutionScale\(G\.settings\)/, 'backing-store resolution follows the selected graphics preset');
 assert.doesNotMatch(main, /adaptRes|ar\.upAt/, 'performance variation no longer silently changes render resolution');
 assert.match(resolution, /graphicsPreset === 'extreme' \? 0\.7 : 1/, 'standard rendering retains native resolution and only the explicit preset reduces backing-store scale');
@@ -37,6 +40,22 @@ assert.match(main, /profileFinishFrame\(G\.world\)/, 'frame records close after 
 assert.match(main, /observeAdaptivePerformance\(raw, G\.settings/, 'adaptive cosmetic quality is driven by sustained frame pacing');
 assert.match(main, /applyPerformanceQuality\(\)/, 'quality changes trim active particle workload immediately');
 assert.match(world, /profileRecord\('ai'/, 'world profiling separates AI work');
+assert.match(world, /profileRecord\('playerUpdate'/, 'player work is timed separately within the AI phase');
+assert.match(world, /profileRecordAIUpdate\(/, 'the slowest individual AI callback is captured');
+assert.match(profiler, /keepDirectorUpdateMs.*keepCompanionUpdateMs.*keepFolkUpdateMs.*townAgentUpdateMs/s, 'reports separate Keep directors, companions, townsfolk, and town agents');
+assert.match(profiler, /externalTimings/, 'transition work outside animation frames is exported separately');
+assert.match(game, /profileExternalTiming\('keep\.build'/, 'Keep build work is timed outside the animation frame');
+assert.match(game, /profileExternalTiming\('keep\.entryTotal'/, 'total Keep entry work is timed across async boundaries');
+assert.doesNotMatch(keepfolk.slice(keepfolk.indexOf('function director'), keepfolk.indexOf('function director') + 900), /keepSpots\(w\.layout\)/, 'the Keep companion director reuses precomputed walk spots');
+assert.match(performanceAnalysis, /percentOver60HzBudget/, 'environment summaries include frame-budget failure rates');
+const sampleFrames = [
+  { worldKind: 'town', environment: "Tessariel's Keep", frameMs: 4, gapMs: 8, updateMs: 1, renderMs: 3, aiSlowestCallback: '' },
+  { worldKind: 'town', environment: "Tessariel's Keep", frameMs: 22, gapMs: 25, updateMs: 18, renderMs: 4, aiSlowestCallback: 'keepCompanion:Paladin' },
+];
+const [sampleGroup] = summarizeFrameGroups(sampleFrames);
+assert.equal(sampleGroup.percentOver60HzBudget, 50, 'town frame-budget failure percentage is calculated per environment');
+const [sampleSpike] = summarizeFrameSpikes(sampleFrames);
+assert.equal(sampleSpike.aiSlowestCallback, 'keepCompanion:Paladin', 'frame spike summaries retain the slow AI callback label');
 assert.match(world, /profileRecord\('collision'/, 'world profiling separates collision work');
 assert.match(game, /profileRecord\('events'/, 'world event scripts are measured');
 assert.match(render, /markRenderPhase\('renderSort'\)/, 'the renderer reports draw-list construction and sorting time');
