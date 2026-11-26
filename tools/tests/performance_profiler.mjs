@@ -36,7 +36,7 @@ assert.match(main, /renderResolutionScale\(G\.settings\)/, 'backing-store resolu
 assert.doesNotMatch(main, /adaptRes|ar\.upAt/, 'performance variation no longer silently changes render resolution');
 assert.match(resolution, /graphicsPreset === 'extreme' \? 0\.7 : 1/, 'standard rendering retains native resolution and only the explicit preset reduces backing-store scale');
 assert.match(profiler, /renderQueue.*renderViews.*renderCreatures.*renderWalls.*renderProps.*renderLoot/s, 'per-frame counts include visible rendering work');
-assert.match(main, /profileBeginFrame\(now\)/, 'frame sampling is connected to the main loop');
+assert.match(main, /profileBeginFrame\(now,/, 'frame sampling records RAF and simulation timing in the main loop');
 assert.match(main, /profileFinishFrame\(G\.world\)/, 'frame records close after update and rendering');
 assert.match(main, /observeAdaptivePerformance\(raw, G\.settings/, 'adaptive cosmetic quality is driven by sustained frame pacing');
 assert.match(main, /applyPerformanceQuality\(\)/, 'quality changes trim active particle workload immediately');

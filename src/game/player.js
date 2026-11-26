@@ -34,6 +34,7 @@ import { ninjaHit, ninjaUpdate } from './ninja.js';
 import { ninjaGearLayer } from '../gfx/ninjagear.js';
 import { CRIT_OVER } from '../data/statformulas.mjs';
 import { clearInterruptedMovement } from './movement-recovery.mjs';
+import { profileEnd, profileRecord, profileStart } from '../core/perfdiagnostics.js';
 
 const FREE_CAST = new Set(['buff', 'summon']);
 import { relicBonuses } from '../data/relics.js';
@@ -790,9 +791,11 @@ export class Player extends Creature {
   // ------------------------------------------------------------------ update
   update(dt) {
     const c = this.char, st = this.st;
+    const recoveryStarted = profileStart();
     if (!this.dead && this.world?.map?.recoverEmbedded?.(this)) {
       clearInterruptedMovement(this);
     }
+    profileRecord('playerRecovery', profileEnd(recoveryStarted));
     this.animT += dt;
     const gfx = this.gearFx();
     if (gfx) updateGearFx(this, gfx.fx, gfx.col, dt);
@@ -818,14 +821,18 @@ export class Player extends Creature {
       this.hp = Math.min(this.hp, this.maxHp);
     }
     if (this.noRageT > 0) this.noRageT -= dt;
+    const passivesStarted = profileStart();
     if (this.classId === 'bard' && this.world) bardUpdate(this, dt);
     if (this.classId === ASTRONOMER && this.world) astroUpdate(this, dt);
     if (this.classId === 'rogue' && this.world) rogueUpdate(this, dt);
     else if (this.classId === 'ninja' && this.world) ninjaUpdate(this, dt);
     if (this.world) sigUpdate(this, dt);
+    profileRecord('playerClassPassives', profileEnd(passivesStarted));
+    const statusStarted = profileStart();
     const canAct = this.tickStatus(dt, (k, amount, src) => {
       hit(src, this, amount, k === 'burn' ? 'fire' : k === 'poison' ? 'poison' : 'blood', { dot: true });
     });
+    profileRecord('playerStatus', profileEnd(statusStarted));
     if (this.dead) return;
     // a dash, leap or beam whose effect was swept away under him (a level section changing round him: game/caverns.js,
     // dunes.js, tower.js) would hold him channelling for good, unable to move or fight: let it go
@@ -873,7 +880,9 @@ export class Player extends Creature {
     if (changed) this.recompute();
     this.scale = (this.buffs.some((b) => b.transform) ? 1.22 : 1) * (this.sigScale || 1); // sigScale: the Slime Lord's mass
     for (const k in this.cooldowns) if (this.cooldowns[k] > 0) this.cooldowns[k] -= dt;
+    const summonStarted = profileStart();
     this.autoSummon(dt);
+    profileRecord('playerAutoSummon', profileEnd(summonStarted));
     if (this.castLock > 0) {
       this.castLock -= dt;
       if (this.castLock <= 0 && this.queued) { const q = this.queued; this.queued = null; this.tryUseSkill(q.sk, q.tx, q.ty, q.target); }
@@ -911,7 +920,9 @@ export class Player extends Creature {
     if (vx || vy) {
       this.moveTarget = null; this.path = null; this.attackTarget = null; this.interact = null;
       const sp = this.speed * this.speedMul();
+      const moveStarted = profileStart();
       const moved = this.world.map.move(this, vx * sp * dt, vy * sp * dt, false);
+      profileRecord('playerMoveCollision', profileEnd(moveStarted));
       this.moving = moved;
       this.face(Math.atan2(vy, vx));
       return;
@@ -945,14 +956,18 @@ export class Player extends Creature {
   walkTo(x, y, dt) {
     const m = this.world.map;
     const key = Math.floor(x) + ',' + Math.floor(y);
+    const pathStarted = profileStart();
     if (!this.path || this.pathFor !== key) {
       this.pathFor = key;
       this.path = m.losWide(this.x, this.y, x, y) ? [[x, y]] : m.findPath(this.x, this.y, x, y, 2500) || [[x, y]];
     }
+    profileRecord('playerPath', profileEnd(pathStarted));
     const node = this.path[0];
     if (!node) { this.moveTarget = null; return; }
     const sp = this.speed * this.speedMul();
+    const moveStarted = profileStart();
     const rem = this.moveToward(node[0], node[1], dt, sp);
+    profileRecord('playerMoveCollision', profileEnd(moveStarted));
     if (rem < 0.08 || (!this.moving && rem < 0.6)) {
       this.path.shift();
       if (!this.path.length) { this.moveTarget = null; this.path = null; }

@@ -2,6 +2,7 @@
 import { G, saveSettings } from '../state.js';
 import { camera } from './view.js';
 import { clamp } from './util.js';
+import { developerRecordingActive, recordDeveloperEvent } from './developer-session.js';
 
 const GAME_KEYS = new Set(['Tab', 'Space', 'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'KeyW', 'KeyA', 'KeyS', 'KeyD']);
 
@@ -32,6 +33,11 @@ export const KEY_BINDING_ACTIONS = [
 ];
 const ACTION_BY_ALIAS = new Map(KEY_BINDING_ACTIONS.flatMap((action) => action.aliases.map((code) => [code, action.id])));
 const ACTION_BY_ID = new Map(KEY_BINDING_ACTIONS.map((action) => [action.id, action]));
+let lastDiagnosticDragSampleAt = 0;
+function pointerTile(x, y) {
+  try { const tile = camera.screenToTile(x, y); return Array.isArray(tile) ? tile.map((value) => Number(Number(value).toFixed(3))) : null; }
+  catch { return null; }
+}
 const currentBinding = (action) => {
   const item = ACTION_BY_ID.get(action);
   const saved = G.settings.keybinds && G.settings.keybinds[action];
@@ -112,9 +118,20 @@ export function initInput(canvas) {
     if ((GAME_KEYS.has(e.code) || mapped || macroBound) && G.mode === 'game') e.preventDefault();
     if (!e.repeat) input.pressed.add(e.code);
     input.keys.add(e.code);
+    if (!e.repeat && developerRecordingActive() && (GAME_KEYS.has(e.code) || mapped || macroBound || e.code === 'ShiftLeft' || e.code === 'ShiftRight')) {
+      recordDeveloperEvent('input-key-down', { code: e.code, repeat: false, shift: !!e.shiftKey, ctrl: !!e.ctrlKey, alt: !!e.altKey, keyCount: input.keys.size }, 'input');
+    }
   });
-  window.addEventListener('keyup', (e) => { input.keys.delete(e.code); });
-  window.addEventListener('blur', () => input.reset());
+  window.addEventListener('keyup', (e) => {
+    const wasDown = input.keys.delete(e.code);
+    if (wasDown && developerRecordingActive() && (GAME_KEYS.has(e.code) || ACTION_BY_ALIAS.has(e.code) || e.code === 'ShiftLeft' || e.code === 'ShiftRight')) {
+      recordDeveloperEvent('input-key-up', { code: e.code, shift: !!e.shiftKey, keyCount: input.keys.size }, 'input');
+    }
+  });
+  window.addEventListener('blur', () => {
+    if (developerRecordingActive() && (input.keys.size || input.mouse.left || input.mouse.right)) recordDeveloperEvent('input-focus-reset', { keys: [...input.keys], leftMouse: input.mouse.left, rightMouse: input.mouse.right }, 'input');
+    input.reset();
+  });
   canvas.addEventListener('contextmenu', (e) => e.preventDefault());
   document.addEventListener('contextmenu', (e) => { if (G.mode === 'game') e.preventDefault(); });
 
@@ -125,16 +142,24 @@ export function initInput(canvas) {
     input.mouse.x = e.clientX; input.mouse.y = e.clientY;
     if (e.button === 0) { input.mouse.left = true; input.mouse.leftPressed = true; }
     if (e.button === 2) { input.mouse.right = true; input.mouse.rightPressed = true; }
+    if (developerRecordingActive() && (e.button === 0 || e.button === 2)) recordDeveloperEvent('input-mouse-down', { button: e.button === 0 ? 'left' : 'right', x: Number(e.clientX.toFixed(1)), y: Number(e.clientY.toFixed(1)), worldTile: pointerTile(e.clientX, e.clientY), shift: !!e.shiftKey, ctrl: !!e.ctrlKey, alt: !!e.altKey }, 'input');
     try { canvas.setPointerCapture(e.pointerId); } catch (err) { /* ignore */ }
   });
   canvas.addEventListener('pointermove', (e) => {
     if (e.pointerType !== 'mouse') return;
     input.mouse.x = e.clientX; input.mouse.y = e.clientY; input.mouse.inside = true;
+    const now = developerRecordingActive() ? performance.now() : 0;
+    if (now && (input.mouse.left || input.mouse.right) && now - lastDiagnosticDragSampleAt >= 100) {
+      lastDiagnosticDragSampleAt = now;
+      recordDeveloperEvent('input-mouse-drag-sample', { x: Number(e.clientX.toFixed(1)), y: Number(e.clientY.toFixed(1)), worldTile: pointerTile(e.clientX, e.clientY), left: input.mouse.left, right: input.mouse.right, shift: input.keys.has('ShiftLeft') || input.keys.has('ShiftRight') }, 'input');
+    }
   });
   const up = (e) => {
     if (e.pointerType !== 'mouse') return;
+    const wasDown = e.button === 0 ? input.mouse.left : e.button === 2 ? input.mouse.right : false;
     if (e.button === 0) input.mouse.left = false;
     if (e.button === 2) input.mouse.right = false;
+    if (wasDown && developerRecordingActive()) recordDeveloperEvent('input-mouse-up', { button: e.button === 0 ? 'left' : 'right', x: Number(e.clientX.toFixed(1)), y: Number(e.clientY.toFixed(1)), worldTile: pointerTile(e.clientX, e.clientY), shift: !!e.shiftKey, ctrl: !!e.ctrlKey, alt: !!e.altKey }, 'input');
   };
   canvas.addEventListener('pointerup', up);
   window.addEventListener('pointerup', up);

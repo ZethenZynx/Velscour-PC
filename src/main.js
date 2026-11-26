@@ -25,7 +25,7 @@ import { dropBakes } from './game/render.js';
 import { controls } from './game/controls.js';
 import { initSpectate } from './game/spectate.js';
 import { applyVolumes, preloadSong, TITLE_SONG, recordAudioDiagnosticMarker, recordAudioDiagnosticFrame } from './core/audio.js';
-import { profileBeginFrame, profileEnd, profileFinishFrame, profileSetRender, profileSetUpdate, setPerformanceProfilerEnabled } from './core/perfdiagnostics.js';
+import { performanceProfilerEnabled, profileBeginFrame, profileEnd, profileFinishFrame, profileSetRender, profileSetUpdate, recordSimulationTiming, setPerformanceProfilerEnabled } from './core/perfdiagnostics.js';
 import { observeAdaptivePerformance, performanceTier } from './core/performancequality.mjs';
 import { applyPerformanceQuality } from './gfx/vfx.js';
 import { ensureJewelBoxMigration } from './game/jewelboxstorage.mjs';
@@ -222,7 +222,7 @@ function loop(now) {
   const cap = G.mode === 'game' ? G.settings.fpsCap || 0 : 0;
   if (cap && now - last < 1000 / cap - 2) return;
   const raw = Math.max(0, (now - last) / 1000), dt = Math.min(0.05, raw);
-  const profiling = profileBeginFrame(now);
+  const profiling = profileBeginFrame(now, { rawDeltaMs: raw * 1000, simulationDeltaMs: dt * 1000, discardedMs: Math.max(0, raw - dt) * 1000 });
   last = now;
   adaptCosmeticQuality(raw);
   G.time += dt;
@@ -261,18 +261,28 @@ function tick() {
   if (G.loading) { last = now; input.reset(); input.endFrame(); return; }
   // a short gap means the ticks arrive on time: frames stopped, not one long frame holding up this thread
   if (!document.hidden && !(now - lastFrame > 500 && gap < 100)) return;
-  let left = Math.min(now - last, gap, 1000) / 1000;
+  const observedElapsedMs = Math.max(0, Math.min(now - last, gap));
+  let left = Math.min(observedElapsedMs, 1000) / 1000;
+  const catchupBudgetMs = left * 1000, discardedMs = Math.max(0, observedElapsedMs - catchupBudgetMs);
+  let simulatedMs = 0;
+  let updates = 0;
   last = now;
+  const startedAt = performanceProfilerEnabled() ? performance.now() : 0;
   try {
     while (left > 1e-4 && G.mode === 'game' && G.world) {
       const dt = Math.min(1 / 30, left);
       left -= dt;
       G.time += dt; G.dt = dt; G.frame++;
+      simulatedMs += dt * 1000;
       game.update(dt);
       input.endFrame();
+      updates++;
     }
   } catch (err) {
     reportError(err);
+  } finally {
+    if (startedAt) recordSimulationTiming({ source: 'catchup', realElapsedMs: observedElapsedMs, simulatedMs,
+      discardedMs, unprocessedMs: Math.max(0, catchupBudgetMs - simulatedMs), updates, workMs: performance.now() - startedAt });
   }
 }
 function startTicker() {

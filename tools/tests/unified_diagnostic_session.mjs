@@ -3,6 +3,8 @@ import { G } from '../../src/state.js';
 import { recordAudioDiagnosticMarker } from '../../src/core/audio.js';
 import { profileBeginFrame, profileFinishFrame } from '../../src/core/perfdiagnostics.js';
 import { addUnifiedDiagnosticMarker, clearUnifiedDiagnosticRecording, recordDeveloperDiagnosticEvent, resolveDeployedGitCommitId, startUnifiedDiagnosticRecording, stopUnifiedDiagnosticRecording, unifiedDiagnosticReport, unifiedDiagnosticStatus } from '../../src/core/developer-diagnostics.js';
+import { recordSimulationTiming } from '../../src/core/perfdiagnostics.js';
+import { TileMap } from '../../src/world/map.js';
 
 G.settings.developerMode = false;
 assert.equal(startUnifiedDiagnosticRecording(), false, 'recording stays off until Developer Mode is enabled');
@@ -10,6 +12,8 @@ G.settings.developerMode = true;
 G.char = { name: 'Diagnostics Test', classId: 'paladin', level: 12 };
 G.world = { id: 'synthetic-dungeon', kind: 'dungeon', depth: 12, biome: { name: 'Diagnostics Cave' }, time: 1,
   creatures: [], npcs: [], hazards: [], corpses: [], loot: [], environmentTraps: [], lifecycle: {} };
+G.world.player = { isPlayer: true, x: 2.25, y: 3.5, z: 0, r: 0.3, moveVec: [1, 0], moving: true, channel: null, castLock: 0, attackTarget: null, interact: null, lootTarget: null };
+G.input = { keys: new Set(['ShiftLeft', 'KeyW']), mouse: { x: 310, y: 220, left: true, right: false, leftPressed: false, rightPressed: false } };
 
 assert.equal(startUnifiedDiagnosticRecording(), true, 'one action starts the unified session');
 const sessionId = unifiedDiagnosticStatus().sessionId;
@@ -29,16 +33,42 @@ assert.equal(profileBeginFrame(16.67), true);
 profileFinishFrame(G.world);
 assert.equal(profileBeginFrame(100), true);
 profileFinishFrame(G.world);
+recordSimulationTiming({ source: 'raf', realElapsedMs: 120, simulatedMs: 50, discardedMs: 70 });
+recordSimulationTiming({ source: 'catchup', realElapsedMs: 550, simulatedMs: 500, discardedMs: 50, updates: 15, workMs: 22 });
+const collisionMap = new TileMap(8, 7); collisionMap.t.fill(1);
+for (let y = 0; y < collisionMap.h; y++) collisionMap.block[y * collisionMap.w + 4] = 1;
+G.world.map = collisionMap; G.world.player.x = 3.5; G.world.player.y = 3.5;
+collisionMap.rememberPosition(G.world.player);
+assert.ok(collisionMap.moveDash(G.world.player, 2, 0) < 2, 'diagnostic scenario blocks a dash at a wall');
+G.world.player.x = 4.1;
+assert.equal(collisionMap.recoverEmbedded(G.world.player), true, 'diagnostic scenario recovers an embedded player');
+for (let i = 0; i < 4; i++) {
+  await new Promise((resolve) => setTimeout(resolve, 105));
+  assert.equal(profileBeginFrame(120 + i * 16.67, { rawDeltaMs: 16.67, simulationDeltaMs: 16.67 }), true);
+  profileFinishFrame(G.world);
+}
+assert.equal(profileBeginFrame(performance.now(), { rawDeltaMs: 16.67, simulationDeltaMs: 16.67 }), true);
+await new Promise((resolve) => setTimeout(resolve, 55));
+profileFinishFrame(G.world);
 
 let report = unifiedDiagnosticReport();
 assert.equal(report.sessionId, sessionId);
 assert.equal(report.recording.metadata.game.version, report.game.version);
 assert.equal(report.sections.performance.sessionId, sessionId);
 assert.equal(report.sections.audio.sessionId, sessionId);
-assert.equal(report.sections.performance.completeSessionStatistics.framesObserved, 2);
+assert.equal(report.sections.performance.completeSessionStatistics.framesObserved, 7);
 assert.ok(report.sections.performance.completeSessionStatistics.significantSpikes.length > 0, 'noteworthy pacing spikes survive in the complete-session aggregate');
 assert.ok(report.timeline.markers.some((event) => event.details.marker === 'synthetic test marker'));
 assert.ok(report.timeline.areaTransitions.some((event) => event.type === 'area-enter'));
+assert.equal(report.sections.performance.statisticsScope.elapsedSecondsReference, 'unified recording start; does not restart when the ring buffer wraps');
+assert.ok(report.sections.performance.frames.at(-1).elapsedSeconds > 0.3, 'frame elapsed time remains relative to the unified session start');
+assert.ok(report.sections.performance.incidents.some((incident) => incident.trigger === 'player-position-recovered' && incident.preEventSamples.length > 0 && incident.postEventSamples.length > 0), 'movement incidents retain bounded context before and after the event');
+assert.ok(report.sections.performance.incidents.some((incident) => incident.trigger === 'automatic-frame-spike'), 'severe frame times automatically capture context');
+assert.equal(report.sections.performance.incidentCaptureScope.captureLimit, 24);
+assert.equal(report.sections.performance.incidents.find((incident) => incident.trigger === 'player-position-recovered').preEventSamples.at(-1).input.heldKeys.includes('ShiftLeft'), true, 'incident context stores held input');
+assert.ok(report.sections.movementAndCollision.methodMetrics['movement.dash.calls'].accumulatedDetails.blockedAttempts >= 1, 'movement method metrics aggregate blocked movement');
+assert.ok(report.sections.simulationTiming.summary.rafDiscardedMs >= 70, 'real versus simulated RAF delta is measured');
+assert.equal(report.sections.simulationTiming.summary.catchupUpdates, 15);
 for (let i = 0; i < 5050; i++) recordDeveloperDiagnosticEvent('synthetic-detail', { index: i }, 'simulation');
 recordDeveloperDiagnosticEvent('synthetic-error', { message: 'preserved after detail limit' }, 'error');
 report = unifiedDiagnosticReport();

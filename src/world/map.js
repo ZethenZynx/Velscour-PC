@@ -1,4 +1,15 @@
 // Tile map: floor grid, wall segments, collision, line of sight and path finding.
+import { developerRecordingActive, recordDeveloperEvent, recordDeveloperMetric } from '../core/developer-session.js';
+
+function notePlayerMovement(e, method, requested, travelled, blocked = false, elapsedMs = 0) {
+  if (!e?.isPlayer || !developerRecordingActive()) return;
+  const mode = String(e._movementSource || e.channel?.constructor?.name || 'unspecified').slice(0, 40);
+  const details = { blockedAttempts: blocked ? 1 : 0, requestedDistance: requested, travelledDistance: travelled,
+    zeroTravelBlocked: blocked && requested > 0.05 && travelled < 0.005 ? 1 : 0 };
+  if (elapsedMs > 0) details.measuredDurationMs = elapsedMs;
+  recordDeveloperMetric(`movement.${method}.calls`, 1, details);
+  recordDeveloperMetric(`movement.${method}.${mode}.calls`, 1, details);
+}
 
 /**
  * Collision half-size of a creature's body. Capped below half a tile so even a huge boss fits any one-tile gap
@@ -124,6 +135,25 @@ export class TileMap {
   /** Recover an embedded body using only a recent, still-reachable safe point.
    * The broader reachability scan runs only when the local repair radius is insufficient. */
   recoverEmbedded(e, maxDistance = 3) {
+    const recording = !!(e?.isPlayer && developerRecordingActive());
+    const from = recording ? { x: Number(e.x), y: Number(e.y), lastValidX: e._lastValidMap === this ? e._lastValidX : null, lastValidY: e._lastValidMap === this ? e._lastValidY : null } : null;
+    const started = recording ? performance.now() : 0, diagnostic = recording ? { invalid: true } : null;
+    const recovered = this._recoverEmbedded(e, maxDistance, diagnostic);
+    if (recording && diagnostic.invalid) {
+      const durationMs = performance.now() - started;
+      recordDeveloperMetric('movement.recovery.durationMs', durationMs, { attempts: 1, successes: recovered ? 1 : 0, failures: recovered ? 0 : 1 });
+      recordDeveloperEvent(recovered ? 'player-position-recovered' : 'player-position-recovery-failed', {
+        reason: e._movementSource || 'automatic-position-validation', before: from, after: { x: Number(e.x), y: Number(e.y) },
+        displacement: Number.isFinite(from.x) && Number.isFinite(from.y) ? Number(Math.hypot(e.x - from.x, e.y - from.y).toFixed(3)) : null,
+        bodyRadius: bodyR(e), map: { width: this.w, height: this.h, kind: this.sheer ? 'sheer' : this.hgt ? 'height-map' : 'standard' },
+        recoveryDurationMs: Number(durationMs.toFixed(3)), maxDistance,
+        movementState: { moving: !!e.moving, channel: e.channel?.constructor?.name || null, castLock: Number(e.castLock) || 0, queuedCast: !!e.queued, attackTarget: !!e.attackTarget, lootTarget: !!e.lootTarget },
+      }, 'movement-collision');
+    }
+    return recovered;
+  }
+
+  _recoverEmbedded(e, maxDistance = 3, diagnostic = null) {
     if (!e) return false;
     const ax = e._lastValidMap === this ? e._lastValidX : NaN, ay = e._lastValidMap === this ? e._lastValidY : NaN;
     if (!Number.isFinite(e.x) || !Number.isFinite(e.y)) {
@@ -139,6 +169,7 @@ export class TileMap {
       return false;
     }
     if (this.positionFree(e, e.x, e.y)) {
+      if (diagnostic) diagnostic.invalid = false;
       this._recordPosition(e);
       return false;
     }
@@ -247,7 +278,9 @@ export class TileMap {
       }
       x += sx; y += sy; moved += Math.hypot(sx, sy);
     }
-    return { x, y, distance: moved, blocked: moved + 1e-6 < d };
+    const blocked = moved + 1e-6 < d;
+    notePlayerMovement(e, 'trace', d, moved, blocked);
+    return { x, y, distance: moved, blocked };
   }
 
   /**
@@ -294,6 +327,7 @@ export class TileMap {
       return false;
     }
     if (!this.positionFree(e, e.x, e.y)) { this.recoverEmbedded(e); return false; }
+    const startX = e.x, startY = e.y, requested = Math.hypot(dx, dy);
     const moveAxis = (amount, axis) => {
       if (!amount) return false;
       const steps = Math.max(1, Math.ceil(Math.abs(amount) / 0.12)), part = amount / steps;
@@ -308,6 +342,8 @@ export class TileMap {
     };
     const movedX = moveAxis(dx, 'x'), movedY = moveAxis(dy, 'y'), moved = movedX || movedY;
     if (moved) this.rememberPosition(e);
+    const travelled = Math.hypot(e.x - startX, e.y - startY);
+    notePlayerMovement(e, 'walk', requested, travelled, travelled + 1e-5 < requested);
     return !!moved;
   }
 
@@ -326,7 +362,7 @@ export class TileMap {
 
   /** Knockback may carry a body across a brink, but not through props or outside the map. */
   shove(e, dx, dy) {
-    const d = Math.hypot(dx, dy), steps = Math.max(1, Math.ceil(d / 0.06)), sx = dx / steps, sy = dy / steps, r = bodyR(e);
+    const startX = e.x, startY = e.y, d = Math.hypot(dx, dy), steps = Math.max(1, Math.ceil(d / 0.06)), sx = dx / steps, sy = dy / steps, r = bodyR(e);
     let moved = false;
     for (let k = 0; k < steps; k++) {
       const x = e.x + sx, y = e.y + sy;
@@ -336,6 +372,8 @@ export class TileMap {
       if (!e._sheerCrossedVoid && !this.isFloor(x, y)) e._sheerCrossedVoid = { x, y };
     }
     if (moved) this.rememberPosition(e);
+    const travelled = Math.hypot(e.x - startX, e.y - startY);
+    notePlayerMovement(e, 'forced-move', d, travelled, travelled + 1e-5 < d);
     return moved;
   }
 
@@ -426,6 +464,7 @@ export class TileMap {
       // would repeat the same blocked work and are intentionally skipped.
       break;
     }
+    notePlayerMovement(e, 'dash', distance, travelled, travelled + 1e-5 < distance);
     return travelled;
   }
 
@@ -433,6 +472,7 @@ export class TileMap {
   moveStraight(e, dx, dy, ghost = false) {
     const d = Math.hypot(dx, dy);
     if (!d) return false;
+    const startX = e.x, startY = e.y;
     if (this.sheer && aloft(e)) return this.flyMove(e, dx, dy);
     if (ghost) {
       const nx = e.x + dx, ny = e.y + dy;
@@ -458,6 +498,8 @@ export class TileMap {
       e.x = nx; e.y = ny; moved = true;
     }
     if (moved) this.rememberPosition(e);
+    const travelled = Math.hypot(e.x - startX, e.y - startY);
+    notePlayerMovement(e, 'straight', d, travelled, travelled + 1e-5 < d);
     return moved;
   }
 
