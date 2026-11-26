@@ -17,6 +17,7 @@ assert.equal(townFacingFlip(-0.012,-0.0105,false),false,'nearly vertical steps k
 // named frames: ten painted emotions everywhere, ten more on the Greener sheets
 assert.equal(townFrameCount('18_king'),10);
 assert.equal(townFrameCount('dog_02_hound'),10);
+assert.equal(townFrameCount('chicken_01_hen'),10);
 assert.equal(townFrameCount('00_greener_spooky_goofy_a'),20);
 assert.equal(townFrameOf('18_king','attack'),8);
 assert.equal(townFrameOf('18_king','thinking'),-1,'extras only on the Greener sheets');
@@ -40,6 +41,13 @@ const dog={animal:true,species:'dog',walking:true,walkT:0,animT:0,townsfolkSprit
 const trot=new Set();for(let t=0;t<2;t+=.05){dog.walkT=t;trot.add(townFrame(dog));}
 assert.deepEqual([...trot].sort(),[0,3],'a trot alternates idle and the raised paw');
 dog.running=true;assert.equal(townFrame(dog),STD_FRAMES.indexOf('attack'),'a running dog bounds');
+const hen={animal:true,species:'chicken',townsfolkSpriteId:'chicken_01_hen',animT:0};
+assert.equal(townFrame(hen),0,'a chicken starts on an idle frame');
+hen.animT=2;assert.equal(townFrame(hen),1,'chickens cycle their idle poses');
+hen.walking=true;hen.walkT=.25;assert.equal(townFrame(hen),4,'chickens animate their walking steps');
+hen.walking=false;hen.chickenPeckDuration=1;hen.chickenPeckT=.9;assert.equal(townFrame(hen),6,'chickens begin the peck sequence');
+hen.chickenPeckT=.2;assert.equal(townFrame(hen),8,'peck sequence settles then lifts to the final pose');
+hen.chickenPeckT=0;hen.chickenCluckT=.2;assert.equal(townFrame(hen),9,'clucking uses its dedicated pose');
 // every emotion: its poses exist (or fall back), its icon is drawn, its motion stays sane
 for(const sid of ['18_king','00_greener_20_frames','cat_01_black']){
   const idle={walking:false,animT:1,townsfolkSpriteId:sid,emotionT:5,emoteClock:0,animal:sid.startsWith('cat')};

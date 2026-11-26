@@ -31,6 +31,23 @@
  ],
  "sheets": [
   {
+   "id": "chicken_01_hen",
+   "kind": "animal",
+   "frames": [
+    "idle",
+    "angry",
+    "scared",
+    "point",
+    "dead",
+    "excited",
+    "love",
+    "cheer",
+    "attack",
+    "happy"
+   ],
+   "idleH": 62
+  },
+  {
    "id": "cat_01_black",
    "kind": "animal",
    "frames": [

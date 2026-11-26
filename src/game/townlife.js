@@ -192,6 +192,7 @@ export function startTownLife(world, t, c, visit) {
   d.tickAgent = (a, dt) => {
     a.animT += dt; a.emoteClock += dt; a.talkAge += dt; a.iconAge += dt;
     a.talkT = Math.max(0, a.talkT - dt); a.emotionT = Math.max(0, a.emotionT - dt); a.iconT = Math.max(0, a.iconT - dt);
+    a.chickenPeckT = Math.max(0, (a.chickenPeckT || 0) - dt); a.chickenCluckT = Math.max(0, (a.chickenCluckT || 0) - dt);
     a.townPoseT = Math.max(0, (a.townPoseT || 0) - dt); a.townAttackT = Math.max(0, (a.townAttackT || 0) - dt);
     if (a.alpha < 1) a.alpha = Math.min(1, a.alpha + dt * 2.5);
     a.walking = false;
@@ -280,7 +281,9 @@ export function startTownLife(world, t, c, visit) {
   const ordinary = pool.filter((v) => !v.child && !v.knight && !v.guard);
   const take = (list, n) => { const out = []; const l = list.slice(); for (let i = 0; i < n && l.length; i++) out.push(l.splice(Math.floor(rng.next() * l.length), 1)[0]); return out; };
   const kids = take(pool.filter((v) => v.child), rng.int(1, 3));
-  const adults = take(ordinary, rng.int(10, 14));
+  // A smaller everyday human crowd leaves room for animals while retaining the same
+  // named services, guards, children, and event casts.
+  const adults = take(ordinary, rng.int(5, 7));
   const regulars = take(pool.filter((v) => v.regular), 1);
   const guards = take(pool.filter((v) => v.knight || v.guard && !v.regular), rng.int(1, 3));
   // now and then a courtier or the dowager queen takes the air in town

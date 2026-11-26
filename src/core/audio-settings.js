@@ -77,7 +77,7 @@ const LEGACY_SOUND_GROUPS = {
   arcane: 'playerSpell', holy: 'playerSpell', shadow: 'playerSpell', poison: 'playerSpell', acid: 'playerSpell', blood: 'playerSpell',
   sonic: 'playerSpell', thunder: 'playerSpell', summon: 'playerSpell', heal: 'playerBuff', buff: 'playerBuff',
   explode: 'explosions', portal: 'portal', gate: 'portal', iron_express_whistle: 'environment', bell: 'environment', roar: 'boss', boss: 'boss',
-  chest: 'chest', door: 'chest', pickup: 'itemPickup', gold: 'currency', orb: 'itemDrop', potion: 'itemPickup', levelup: 'questAchievement',
+  chest: 'chest', door: 'chest', pickup: 'itemPickup', gold: 'currency', orb: 'itemDrop', potion: 'itemPickup', cluck: 'ambient', levelup: 'questAchievement',
   infernal_mark: 'questAchievement', ready_hearth: 'questAchievement', gore_burst: 'enemyDeath',
 };
 

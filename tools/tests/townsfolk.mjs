@@ -18,17 +18,17 @@ function webpInfo(b,id){
   if(kind==='VP8X')return {w:b.readUIntLE(24,3)+1,h:b.readUIntLE(27,3)+1,alpha:!!(b[20]&0x10)};
   fail(id+': expected a lossless WebP, got '+kind);
 }
-// the roster: 47 people (one sheet each) and 10 animals
+// the roster: 47 people (one sheet each) and 11 animals
 if(TOWNSFOLK.length!==47||new Set(TOWNSFOLK.map(p=>p.spriteId)).size!==47)fail('expected 47 people on 47 sheets');
-if(ANIMALS.length!==10)fail('expected 10 animals');
+if(ANIMALS.length!==11)fail('expected 11 animals');
 const count=(f)=>TOWNSFOLK.filter(f).length;
 if(count(p=>p.knight)!==10||count(p=>p.guard)!==5||count(p=>p.merchant)!==7||count(p=>p.child)!==4)fail('knights, guards, merchants or children miscounted');
 for(const role of ['king','queen','prince','princess','dowager queen','duke','duchess','royal heir','hedge witch','wandering wizard','priest','friar','midwife','baker'])
   if(!TOWNSFOLK.some(p=>p.role===role))fail('no '+role+' in the roster');
-for(const s of ['cat','dog','rabbit','rat','deer'])if(!ANIMALS.some(a=>a.species===s))fail('no '+s);
+for(const s of ['cat','dog','chicken','rabbit','rat','deer'])if(!ANIMALS.some(a=>a.species===s))fail('no '+s);
 if(TOWNSFOLK.some(p=>p.palette))fail('sheets are painted: no runtime recolour');
 // sheets
-if(manifest.sheets.length!==57||manifest.frameSize.join('x')!=='256x200'||manifest.standardFrames.join('|')!==STD_FRAMES.join('|')||manifest.extraFrames.join('|')!==EXTRA_FRAMES.join('|'))fail('people pack contract mismatch');
+if(manifest.sheets.length!==58||manifest.frameSize.join('x')!=='256x200'||manifest.standardFrames.join('|')!==STD_FRAMES.join('|')||manifest.extraFrames.join('|')!==EXTRA_FRAMES.join('|'))fail('people pack contract mismatch');
 for(const p of manifest.sheets){
   const file=path.join(dir,p.id+'.webp');if(!fs.existsSync(file))fail('missing '+p.id+'.webp');
   const {w,h,alpha}=webpInfo(fs.readFileSync(file),p.id);if(w!==256*p.frames.length||h!==200)fail(`${p.id}: expected ${256*p.frames.length}x200, got ${w}x${h}`);

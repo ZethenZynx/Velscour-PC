@@ -100,6 +100,12 @@ export function townFrame(n) {
   const sid = n.townsfolkSpriteId || n.spriteId;
   if (n.townPoseT > 0 && n.townPose) return Math.max(0, townFrameOf(sid, n.townPose));
   if (n.townAttackT > 0) return townFrameOf(sid, 'attack');
+  if (n.species === 'chicken') {
+    if (n.walking) return 3 + Math.floor((n.walkT || 0) * 5) % 3;
+    if (n.chickenCluckT > 0) return 9;
+    if (n.chickenPeckT > 0) return 6 + Math.min(2, Math.floor(((n.chickenPeckDuration || 1.1) - n.chickenPeckT) * 3));
+    return Math.floor((n.animT || 0) * 0.55) % 3;
+  }
   const e = n.emotion && n.emotionT > 0 ? EMOTIONS[n.emotion] : null;
   if (e && e.pose && (!n.walking || e.walk || n.animal)) {
     const list = poseList(sid, e);
@@ -125,6 +131,11 @@ export function townFrame(n) {
  */
 export function townMotion(animT = 0, moving = false, emotion = null, running = false, animal = null) {
   const m = { bob: 0, sx: 1, sy: 1, rot: 0, dx: 0, lean: 0 };
+  if (moving && animal === 'chicken') {
+    m.bob = Math.abs(Math.sin(animT * 10)) * 1.1;
+    const s = Math.sin(animT * 10) * 0.018; m.sy = 1 + s; m.sx = 1 - s * 0.5;
+    return m;
+  }
   if (moving) {
     if (animal === 'rabbit') {
       const ph = (animT * (running ? 3.4 : 2.2)) % 1, air = ph < 0.6 ? Math.sin((ph / 0.6) * Math.PI) : 0;

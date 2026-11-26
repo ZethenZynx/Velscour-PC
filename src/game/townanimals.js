@@ -1,11 +1,11 @@
-// Herrington Hollow's animals. Now and then a cat or two and a dog or two wander the lanes (cats nap, groom, beg a
-// stroke and hiss at dogs; dogs trot about, sniff, greet people and the hero, and chase cats). On the outskirts
-// rabbits graze and hop, rats scurry by the barrels and a stag or a doe crops the grass at the treeline; all of them
+// Herrington Hollow's animals. Cats and dogs wander the lanes, joined by a few chickens that forage and cluck. On
+// the outskirts rabbits graze and hop, rats scurry by the barrels and a stag or a doe crops the grass at the treeline; all of them
 // bolt when the hero comes close. They are town-life agents (src/game/townlife.js) with `animal` set, drawn from the
 // People and Animals pack like everyone else.
 import { G } from '../state.js';
 import { dist, rand, randi, pick, chance, TAU } from '../core/util.js';
 import { ANIMALS } from '../data/townsfolk.js';
+import { sfx } from '../core/audio.js';
 
 export const ANIMAL_CHANCE = { cat: 0.6, dog: 0.55, rabbit: 0.45, rat: 0.35, deer: 0.3 };
 const SOUNDS = { dog: ['Woof!', 'Arf!', 'Ruff ruff!', 'Wuff.'], cat: ['Mrrow.', 'Mew?', 'Prrrr...', 'Mrrp!'] };
@@ -33,18 +33,19 @@ export function addTownAnimals(d, rng, force = G.townAnimalsForce) {
     cat: rng.chance(ANIMAL_CHANCE.cat) ? rng.int(1, 2) : 0, dog: rng.chance(ANIMAL_CHANCE.dog) ? rng.int(1, 2) : 0,
     rabbit: rng.chance(ANIMAL_CHANCE.rabbit) ? rng.int(1, 3) : 0, rat: rng.chance(ANIMAL_CHANCE.rat) ? rng.int(1, 2) : 0,
     deer: rng.chance(ANIMAL_CHANCE.deer) ? rng.int(1, 2) : 0,
+    chicken: d.world?.biome?.id === 'town' ? rng.int(3, 5) : 0,
   };
   for (const [s, n] of Object.entries(counts)) {
     const kinds = species(s);
     if (!kinds.length) continue;
-    // deer come as a doe and a stag; cats and dogs are different animals; rabbits and rats repeat
+    // deer come as a doe and a stag; cats, dogs, and chickens have distinct sprites; rabbits and rats repeat
     const start = rng.int(0, kinds.length - 1);
     let herd = null;
     for (let i = 0; i < n; i++) {
       const v = kinds[(start + i) % kinds.length];
       const at = v.where === 'edge' ? d.edgeSpot(herd, 4) : d.randomSpot();
       herd = herd || at;
-      makeAnimal(d, v, at[0] + rand(-0.4, 0.4), at[1] + rand(-0.4, 0.4));
+      makeAnimal(d, v, at[0] + rand(-0.4, 0.4), at[1] + rand(-0.4, 0.4), s === 'chicken' ? { targetable: false, hostile: false } : {});
     }
   }
 }
@@ -58,6 +59,7 @@ export function makeAnimal(d, v, x, y, opts = {}) {
 /** A click or a passing hero: dogs wag and bark, cats purr or stalk off, wild things bolt. */
 export function animalGreet(d, a, clicked) {
   if (a.wild) { if (clicked || heroDist(a) < 3) bolt(d, a); return; }
+  if (a.species === 'chicken') { if (clicked) d.feel(a, 'curious', 1.2, false); return; }
   d.face(a, G.player?.x ?? a.x, G.player?.y ?? a.y);
   if (a.species === 'dog') { d.feel(a, chance(0.5) ? 'excited' : 'happy', 3); if (clicked || chance(0.5)) d.say(a, pick(SOUNDS.dog), null, 1.6); }
   else { d.feel(a, chance(0.7) ? 'love' : 'suspicious', 3); if (clicked) d.say(a, pick(SOUNDS.cat), null, 1.6); }
@@ -79,6 +81,7 @@ function setTimeout0(d, s, fn) { d.run((function* () { yield s; fn(); })(), []);
 /** The routine of a free animal (townlife.js pickRoutine hands animals here). */
 export function* animalRoutine(d, a) {
   if (a.wild) return yield* wildRoutine(d, a);
+  if (a.species === 'chicken') return yield* chickenRoutine(d, a);
   const r = Math.random();
   const people = d.agents.filter((q) => !q.animal && !q.adv && !q.hidden && !q.busy && dist(q.x, q.y, a.x, a.y) < 10);
   if (a.species === 'cat') {
@@ -105,6 +108,35 @@ export function* animalRoutine(d, a) {
   yield d.go(a, x, y);
   d.feel(a, a.species === 'dog' ? 'point' : 'curious', 2);
   yield rand(2, 6);
+}
+
+/** Chickens keep to walkable town lanes, peck at the ground, and cluck only occasionally. */
+function* chickenRoutine(d, a) {
+  if (d.time >= (a.nextCluckAt || 0)) {
+    a.nextCluckAt = d.time + rand(16, 30);
+    if (chance(0.7)) {
+      a.chickenCluckT = 0.28;
+      sfx('cluck', 0.2, rand(0.92, 1.08), { category: 'ambient', source: 'Act I town chicken', sourceActive: false });
+      yield 0.18;
+    }
+  }
+  if (chance(0.62)) {
+    a.chickenPeckT = rand(0.75, 1.1);
+    a.chickenPeckDuration = a.chickenPeckT;
+    yield () => a.chickenPeckT <= 0;
+    yield rand(1.2, 2.8);
+    return;
+  }
+  const p = G.player;
+  let target = null;
+  for (let i = 0; i < 10; i++) {
+    const q = d.randomSpot();
+    if (!q || !d.map.walkable(q[0], q[1]) || !d.map.circleFree(q[0], q[1], 0.3)) continue;
+    if (dist(a.x, a.y, q[0], q[1]) < 1.4 || p && dist(p.x, p.y, q[0], q[1]) < 2) continue;
+    target = q; break;
+  }
+  if (target) yield d.go(a, target[0], target[1]);
+  yield rand(1.5, 3.5);
 }
 
 function* nuzzle(d, a, q, line) {
