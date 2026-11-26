@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
-import { readFileSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import { G } from '../../src/state.js';
-import { DEFAULT_HEALTH_BAR_SETTINGS, HEALTH_BAR_CLASSES, drawHealthBarCanvas, healthBarClass, healthBarSettings, healthBarText, healthBarSummaryText, healthBarValueText, healthBarVisible, normalizeHealthBarSettings } from '../../src/ui/healthbars.mjs';
+import { DEFAULT_HEALTH_BAR_SETTINGS, HEALTH_BAR_CLASSES, drawHealthBarCanvas, healthBarClass, healthBarSettings, healthBarText, healthBarSummaryText, healthBarValueText, healthBarVisible, normalizeHealthBarSettings, preloadHealthBarArt } from '../../src/ui/healthbars.mjs';
 
 globalThis.localStorage ||= { getItem: () => null, setItem: () => {} };
 
@@ -97,5 +97,44 @@ const throwingContext = {
 G.settings.healthBars = normalizeHealthBarSettings({ theme: 'classic' });
 assert.throws(() => drawHealthBarCanvas(throwingContext, { hp: 1, maxHp: 1 }, 0, 0, 20, 10), /intentional canvas failure/);
 assert.equal(throwingContext.saves, 0, 'nested canvas state is restored even if overhead bar drawing fails');
-assert.equal(restoreCount, 3, 'clipping, compact-bar and renderer canvas states are restored');
+assert.equal(restoreCount, 2, 'compact-bar and renderer canvas states are restored');
+
+const assetRoot = new URL('../../assets/ui/healthbars/', import.meta.url);
+for (const name of ['overhead-frame-left.webp', 'overhead-frame-tile.webp', 'overhead-frame-right.webp', 'overhead-empty.webp', 'overhead-boss-left.webp', 'overhead-boss-right.webp', ...['normal', 'champion', 'nemesis', 'imp', 'companion'].flatMap((id) => [`overhead-frame-${id}-left.webp`, `overhead-frame-${id}-right.webp`]), 'fill-red.webp', 'fill-blue.webp', 'fill-gold.webp', 'fill-crimson.webp', 'fill-purple.webp', 'fill-emerald.webp', 'fill-teal.webp']) {
+  assert.equal(existsSync(new URL(name, assetRoot)), true, `${name} is packaged for overhead bars`);
+}
+class TestImage {
+  complete = true;
+  naturalWidth = 256;
+  naturalHeight = 128;
+  set src(value) { this._src = value; }
+}
+globalThis.Image = TestImage;
+preloadHealthBarArt();
+function recordingContext() {
+  return {
+    globalAlpha: 1, calls: [], saves: 0, restores: 0, save() { this.saves++; }, restore() { this.saves--; this.restores++; }, beginPath() {}, rect() {}, clip() {},
+    drawImage(img, ...args) { this.calls.push(img._src); }, fillRect() {},
+    createLinearGradient() { return { addColorStop() {} }; },
+    set fillStyle(value) {}, set shadowColor(value) {}, set shadowBlur(value) {},
+  };
+}
+G.settings.healthBars = normalizeHealthBarSettings();
+for (const entry of HEALTH_BAR_CLASSES) {
+  const ctx = recordingContext();
+  drawHealthBarCanvas(ctx, { rank: entry.id, hp: 43, maxHp: 100 }, 0, 0, 110, 12, { system: 'overhead' });
+  assert.ok(ctx.calls.some((src) => src.endsWith(`fill-${entry.fill}.webp`)), `${entry.id} uses its textured classification fill`);
+  assert.ok(ctx.calls.includes('assets/ui/healthbars/overhead-frame-tile.webp'), `${entry.id} uses the illustrated, non-distorting center rail`);
+  assert.ok(!ctx.calls.some((src) => /\/normal\.webp|\/champion\.webp|\/unique\.webp|\/boss\.webp|\/nemesis\.webp|\/imp\.webp|\/companion\.webp/.test(src)), `${entry.id} has no overhead classification emblem`);
+  const capId = ['normal', 'champion', 'nemesis', 'imp', 'companion'].includes(entry.id) ? entry.id : null;
+  const leftCap = entry.id === 'boss' ? 'overhead-boss-left.webp' : capId ? `overhead-frame-${capId}-left.webp` : 'overhead-frame-left.webp';
+  const rightCap = entry.id === 'boss' ? 'overhead-boss-right.webp' : capId ? `overhead-frame-${capId}-right.webp` : 'overhead-frame-right.webp';
+  assert.ok(ctx.calls.some((src) => src.endsWith(leftCap)), `${entry.id} uses its appropriate cached left cap`);
+  assert.ok(ctx.calls.some((src) => src.endsWith(rightCap)), `${entry.id} uses its appropriate cached right cap`);
+}
+const isolatedFailureContext = recordingContext();
+isolatedFailureContext.drawImage = () => { throw new Error('intentional artwork draw failure'); };
+assert.throws(() => drawHealthBarCanvas(isolatedFailureContext, { rank: 'normal', hp: 1, maxHp: 1 }, 0, 0, 100, 12, { system: 'overhead' }), /intentional artwork draw failure/);
+assert.equal(isolatedFailureContext.saves, 0, 'image-backed bars restore nested canvas state after a draw failure');
+assert.equal(isolatedFailureContext.restores, 2);
 console.log('health bar models, visibility rules, settings and hook wiring passed');

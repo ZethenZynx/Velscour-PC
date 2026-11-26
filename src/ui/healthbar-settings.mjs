@@ -65,16 +65,16 @@ export function openHealthBarSettings() {
     const w = canvas.width, h = canvas.height;
     ctx.clearRect(0, 0, w, h);
     ctx.fillStyle = 'rgba(8,5,4,.7)'; ctx.fillRect(0, 0, w, h);
-    const barW = (selectedSystem === 'target' ? 760 : 410) * s[selectedSystem].width / 100;
-    const barH = (selectedSystem === 'target' ? 155 : 116) * s[selectedSystem].height / 100;
-    const x = (w - barW) * 0.5, y = selectedSystem === 'target' ? 19 : 46;
+    const barW = (selectedSystem === 'target' ? 760 : 560) * s[selectedSystem].width / 100;
+    const barH = (selectedSystem === 'target' ? 155 : 42) * s[selectedSystem].height / 100;
+    const x = (w - barW) * 0.5, y = selectedSystem === 'target' ? 19 : 68;
     drawHealthBarCanvas(ctx, entity, x, y, barW, barH, { system: selectedSystem, forceFraction: previewFraction });
     const info = s.info;
     ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.shadowColor = '#000'; ctx.shadowBlur = 4;
     ctx.fillStyle = entry.id === 'boss' ? '#ffd29a' : entry.color;
     ctx.font = `700 ${selectedSystem === 'target' ? 30 : 24}px Cinzel, Georgia, serif`;
     const name = info.showEnemyName ? entity.name : '';
-    if (name) ctx.fillText(name, w * 0.56, y + (selectedSystem === 'target' ? barH * 0.28 : -10), barW * 0.64);
+    if (name) ctx.fillText(name, selectedSystem === 'target' ? w * 0.56 : x + barW * 0.5, y + (selectedSystem === 'target' ? barH * 0.28 : -18), barW * 0.9);
     if (selectedSystem === 'target') {
       const values = healthBarValueText(entity, s);
       if (values) { ctx.fillStyle = '#fff0d4'; ctx.font = '700 15px Georgia, serif'; ctx.fillText(values, x + barW * 0.56, y + barH * 0.545, barW * 0.62); }

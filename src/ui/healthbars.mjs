@@ -28,6 +28,7 @@ const STATUS_LABELS = [['burn', 'Burn'], ['poison', 'Poison'], ['bleed', 'Bleed'
 const AFFIX_LABELS = Object.freeze({ strong: 'Strong', fast: 'Fast', tough: 'Stone Skin', fiery: 'Fire', frozen: 'Cold', shocking: 'Lightning', vampiric: 'Vampiric', teleport: 'Teleport', multishot: 'Multishot', thorns: 'Thorns', regen: 'Regeneration' });
 const AFFIX_GLYPHS = Object.freeze({ strong: 'S', fast: 'F', tough: 'T', fiery: 'F', frozen: 'C', shocking: 'L', vampiric: 'V', teleport: 'T', multishot: 'M', thorns: 'R', regen: '+' });
 const OVERHEAD_DRAW_OPTIONS = Object.freeze({ system: 'overhead' });
+const OVERHEAD_TINTED_CAP_CLASSES = new Set(['normal', 'champion', 'nemesis', 'imp', 'companion']);
 const ASSET_ROOT = 'assets/ui/healthbars/';
 const ART = Object.create(null);
 let settingsRef = null;
@@ -53,6 +54,10 @@ export function preloadHealthBarArt() {
   image('frame');
   image('frame-target');
   image('frame-boss');
+  for (const part of ['overhead-frame-left', 'overhead-frame-tile', 'overhead-frame-right', 'overhead-empty', 'overhead-boss-left', 'overhead-boss-right']) image(part);
+  for (const id of ['normal', 'champion', 'nemesis', 'imp', 'companion']) {
+    image(`overhead-frame-${id}-left`); image(`overhead-frame-${id}-right`);
+  }
   for (const c of HEALTH_BAR_CLASSES) { image(c.icon); image(`fill-${c.fill}`); }
 }
 
@@ -180,41 +185,67 @@ function drawFallback(ctx, x, y, w, h, fraction, color) {
   ctx.strokeStyle = '#9a7340'; ctx.lineWidth = Math.max(1, h * 0.08); ctx.strokeRect(x, y, w, h);
 }
 
-/** Small, emblem-free overhead bar. Its pointed, metal-edged shape is independent of the large target frame. */
-function drawCompactOverhead(ctx, x, y, w, h, fraction, color, theme, decorativeBorders) {
+/** Small, emblem-free overhead bar built from cached hand-painted pieces. */
+function drawCompactOverhead(ctx, x, y, w, h, fraction, classification, theme, decorativeBorders) {
   ctx.save();
   try {
-    const mid = y + h / 2, tip = Math.min(h * 0.55, w * 0.06), inset = Math.max(1, h * 0.16);
-    ctx.beginPath();
-    ctx.moveTo(x, mid); ctx.lineTo(x + tip, y); ctx.lineTo(x + w - tip, y);
-    ctx.lineTo(x + w, mid); ctx.lineTo(x + w - tip, y + h); ctx.lineTo(x + tip, y + h); ctx.closePath();
-    ctx.fillStyle = '#100b08'; ctx.fill();
-    ctx.save();
-    try {
-      ctx.clip();
-      const innerX = x + tip + inset, innerW = Math.max(0, w - 2 * (tip + inset));
-      const innerY = y + inset, innerH = Math.max(1, h - inset * 2);
-      if (fraction > 0) {
-        ctx.fillStyle = color;
-        ctx.fillRect(innerX, innerY, innerW * fraction, innerH);
-        if (theme === 'classic') {
-          ctx.fillStyle = 'rgba(255,255,255,.22)';
-        } else {
-          const sheen = ctx.createLinearGradient(0, innerY, 0, innerY + innerH);
-          sheen.addColorStop(0, 'rgba(255,245,215,.62)'); sheen.addColorStop(.38, 'rgba(255,255,255,.12)'); sheen.addColorStop(1, 'rgba(0,0,0,.35)');
-          ctx.fillStyle = sheen;
-        }
-        ctx.fillRect(innerX, innerY, innerW * fraction, innerH);
-      }
-    } finally { ctx.restore(); }
-    if (decorativeBorders && theme !== 'classic') {
-      ctx.beginPath(); ctx.moveTo(x + tip, y + .5); ctx.lineTo(x + w - tip, y + .5); ctx.lineTo(x + w - .5, mid); ctx.lineTo(x + w - tip, y + h - .5); ctx.lineTo(x + tip, y + h - .5); ctx.lineTo(x + .5, mid); ctx.closePath();
-      ctx.strokeStyle = 'rgba(224,190,123,.96)'; ctx.lineWidth = Math.max(.8, h * .12); ctx.stroke();
-      ctx.beginPath(); ctx.moveTo(x + tip + 1, y + 1.5); ctx.lineTo(x + w - tip - 1, y + 1.5);
-      ctx.strokeStyle = 'rgba(255,239,192,.7)'; ctx.lineWidth = Math.max(.45, h * .07); ctx.stroke();
-    } else if (decorativeBorders) {
-      ctx.strokeStyle = '#6a5942'; ctx.lineWidth = Math.max(.8, h * .12); ctx.stroke();
+    // The Classic theme deliberately keeps its simple, original presentation.
+    if (theme === 'classic') {
+      drawFallback(ctx, x, y + h * 0.18, w, Math.max(2, h * 0.64), fraction, classification.color);
+      return;
     }
+    if (!decorativeBorders) {
+      const empty = image('overhead-empty'), fill = image(classification.fillAsset);
+      const trackY = y + h * 0.29, trackH = Math.max(2, h * 0.42);
+      if (empty) ctx.drawImage(empty, x, trackY, w, trackH);
+      else { ctx.fillStyle = '#120c08'; ctx.fillRect(x, trackY, w, trackH); }
+      if (fill && fraction > 0) ctx.drawImage(fill, 0, 0, Math.max(1, fill.naturalWidth * fraction), fill.naturalHeight, x, trackY, w * fraction, trackH);
+      else if (fraction > 0) { ctx.fillStyle = classification.color; ctx.fillRect(x, trackY, w * fraction, trackH); }
+      return;
+    }
+    const boss = classification.id === 'boss';
+    const hasTintedCaps = OVERHEAD_TINTED_CAP_CLASSES.has(classification.id);
+    const left = image(boss ? 'overhead-boss-left' : hasTintedCaps ? `overhead-frame-${classification.id}-left` : 'overhead-frame-left');
+    const center = image('overhead-frame-tile');
+    const right = image(boss ? 'overhead-boss-right' : hasTintedCaps ? `overhead-frame-${classification.id}-right` : 'overhead-frame-right');
+    const empty = image('overhead-empty');
+    const fill = image(classification.fillAsset);
+    if (!left || !center || !right || !empty) {
+      drawFallback(ctx, x, y + h * 0.18, w, Math.max(2, h * 0.64), fraction, classification.color);
+      return;
+    }
+
+    // Caps retain their own proportions while the rail between them stretches to fit.
+    let leftW = h * left.naturalWidth / left.naturalHeight;
+    let rightW = h * right.naturalWidth / right.naturalHeight;
+    const capScale = Math.min(1, w * 0.43 / Math.max(1, leftW + rightW));
+    leftW *= capScale; rightW *= capScale;
+    const railX = x + leftW * 0.55, railRight = x + w - rightW * 0.55;
+    const railW = Math.max(1, railRight - railX);
+    const trackInset = boss ? 0.52 : 0.66;
+    const trackX = x + leftW * trackInset, trackRight = x + w - rightW * trackInset;
+    const trackW = Math.max(1, trackRight - trackX);
+    const trackY = y + h * 0.29, trackH = Math.max(2, h * 0.42);
+
+    // Repeat the center strip at native aspect ratio so settings and creature width
+    // changes never stretch its etched details or textured metal.
+    const tileW = h * center.naturalWidth / center.naturalHeight;
+    for (let dx = railX; dx < railRight; dx += tileW) {
+      const pieceW = Math.min(tileW, railRight - dx);
+      ctx.drawImage(center, 0, 0, Math.max(1, center.naturalWidth * pieceW / tileW), center.naturalHeight, dx, y, pieceW, h);
+    }
+    ctx.drawImage(empty, trackX, trackY, trackW, trackH);
+    if (fill && fraction > 0) {
+      // Existing preloaded fill art contains the class texture, bevel and highlights.
+      // Crop at the health fraction so the artwork remains detailed as the fill shrinks.
+      ctx.drawImage(fill, 0, 0, Math.max(1, fill.naturalWidth * fraction), fill.naturalHeight, trackX, trackY, trackW * fraction, trackH);
+    } else if (fraction > 0) {
+      ctx.fillStyle = classification.color; ctx.fillRect(trackX, trackY, trackW * fraction, trackH);
+    }
+
+    // Cached cap variants carry subtle class accents; no per-frame glow/filter work.
+    ctx.drawImage(left, x, y, leftW, h);
+    ctx.drawImage(right, x + w - rightW, y, rightW, h);
   } finally { ctx.restore(); }
 }
 
@@ -251,7 +282,7 @@ export function drawHealthBarCanvas(ctx, entity, x, y, w, h, { system = 'overhea
   try {
     ctx.globalAlpha *= opacity;
     if (system === 'overhead') {
-      drawCompactOverhead(ctx, x, y, w, h, fraction, classification.color, s.theme, appearance.decorativeBorders);
+      drawCompactOverhead(ctx, x, y, w, h, fraction, classification, s.theme, appearance.decorativeBorders);
       return;
     }
     if (s.theme === 'classic') {
