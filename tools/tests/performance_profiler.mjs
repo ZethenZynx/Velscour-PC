@@ -33,7 +33,11 @@ assert.match(profiler, /skyFrontMs.*seeThroughMs.*screenFeedbackMs.*hudLabelsMs.
 assert.match(profiler, /visibleParticles:\s*world\?\._perfVisibleParticles/, 'visible particle workload is counted separately from retained particles');
 assert.match(profiler, /resolutionScale.*devicePixelRatio.*canvasWidth.*canvasHeight/s, 'per-frame reports capture backing-store resolution');
 assert.match(profiler, /frameSummariesByEnvironmentAndResolution:\s*summarizeFrameGroups\(frames\)/, 'exported diagnostics separate statistics by environment and render scale');
-assert.match(buildVersion, /GAME_BUILD_ID = 'fork-main-diagnostics-investigation-2026-11-26'/, 'reports identify this deployed source build instead of using generic development');
+assert.match(buildVersion, /GAME_BUILD_ID = 'fork-main-diagnostics-investigation-2-2026-11-26'/, 'reports identify this deployed source build instead of using generic development');
+assert.match(game, /profileExternalTiming\('breach\.entryTotal'/, 'Eternal Breach reports full asynchronous entry time');
+for (const stage of ['requiredArtLoad', 'buildAndSpawn', 'creatureArtLoad', 'levelArtWarm', 'previousArtRelease']) {
+  assert.match(game, new RegExp(`profileExternalTiming\\('breach\\.${stage}'`), `Eternal Breach reports ${stage}`);
+}
 assert.match(profiler, /completeFrameTimeDistributions.*p50.*p90.*p95.*p99.*p99_9/s, 'complete-session frame distributions remain available after detailed frame samples wrap');
 assert.match(main, /renderResolutionScale\(G\.settings\)/, 'backing-store resolution follows the selected graphics preset');
 assert.doesNotMatch(main, /adaptRes|ar\.upAt/, 'performance variation no longer silently changes render resolution');

@@ -6,7 +6,7 @@ import { rollTreasureChest } from '../data/treasurechests.js';
 import { addMarkBonusChest } from './markchests.js';
 import { input } from '../core/input.js';
 import { camera } from '../core/view.js';
-import { profileEnd, profileExternalTiming, profileRecord, profileStart } from '../core/perfdiagnostics.js';
+import { performanceProfilerEnabled, profileEnd, profileExternalTiming, profileRecord, profileStart } from '../core/perfdiagnostics.js';
 import { sfx, playMusic, stopMusic, setAmbience, stopAmbience, footsteps, stopIronExpressWhistleSfx, audioDiagnosticsEnabled, isAudioCombatActive, recordAudioDiagnosticMarker } from '../core/audio.js';
 import { rand, pick, randi, chance, escapeHtml, dist, dist2, RNG, makeCanvas, fmtInt, swapKey, hexToRgb, clamp, shuffle } from '../core/util.js';
 import { biomeTileSet, loadBiomeArt, mixedTileSet, keepTileSets } from '../core/assets.js';
@@ -2469,6 +2469,7 @@ export const game = {
   enterBreach(floor) {
     const c = G.char;
     floor = Math.max(1, Math.min(this.breachOpen(), floor | 0 || 1));
+    const entryStarted = performanceProfilerEnabled() ? performance.now() : 0;
     c.breach ||= { best: 0, cleared: {} };
     c.breach.floor = floor;
     LoadingScreen.show({
@@ -2481,19 +2482,32 @@ export const game = {
     setTimeout(async () => {
       try {
         LoadingScreen.setProgress(30, 'Unsealing breach wards…');
-        await this.loadLevelArt(BREACH_BIOME);
+        const artStarted = performanceProfilerEnabled() ? performance.now() : 0;
+        try { await this.loadLevelArt(BREACH_BIOME); }
+        finally { if (artStarted) profileExternalTiming('breach.requiredArtLoad', artStarted, { floor, biome: BREACH_BIOME.id, async: true }); }
       } catch (e) { console.warn(e); }
       try {
         LoadingScreen.setProgress(55, 'Forging the shattered rift…');
-        this.buildBreach(floor);
+        const buildStarted = performanceProfilerEnabled() ? performance.now() : 0;
+        try { this.buildBreach(floor); }
+        finally { if (buildStarted) profileExternalTiming('breach.buildAndSpawn', buildStarted, { floor, biome: BREACH_BIOME.id, depth: breachDepth(floor), creatures: G.world?.creatures?.length || 0, mapTiles: (G.world?.map?.w || 0) * (G.world?.map?.h || 0) }); }
         const w = G.world;
         LoadingScreen.setProgress(75, 'Summoning breach horrors…');
-        await loadArtFor(BREACH_ART.map((a) => a.id), true).catch((e) => console.warn(e)); // the Breach's six atlases (~1.6 MB)
+        const creatureArtStarted = performanceProfilerEnabled() ? performance.now() : 0;
+        try { await loadArtFor(BREACH_ART.map((a) => a.id), true).catch((e) => console.warn(e)); } // the Breach's six atlases (~1.6 MB)
+        finally { if (creatureArtStarted) profileExternalTiming('breach.creatureArtLoad', creatureArtStarted, { floor, requestedArt: BREACH_ART.length, async: true }); }
         LoadingScreen.setProgress(90, 'Stabilizing dimensions…');
-        await warmLevelArt(w);
-        releaseLevelArt(BREACH_BIOME, w);
+        const artWarmStarted = performanceProfilerEnabled() ? performance.now() : 0;
+        try { await warmLevelArt(w); }
+        finally { if (artWarmStarted) profileExternalTiming('breach.levelArtWarm', artWarmStarted, { floor, worldId: w.id, async: true }); }
+        const releaseStarted = performanceProfilerEnabled() ? performance.now() : 0;
+        try { releaseLevelArt(BREACH_BIOME, w); }
+        finally { if (releaseStarted) profileExternalTiming('breach.previousArtRelease', releaseStarted, { floor, worldId: w.id }); }
         LoadingScreen.setProgress(100, 'Arriving…');
-      } finally { await LoadingScreen.hide(); }
+      } finally {
+        if (entryStarted) profileExternalTiming('breach.entryTotal', entryStarted, { floor, biome: BREACH_BIOME.id, depth: breachDepth(floor), async: true });
+        await LoadingScreen.hide();
+      }
     }, 40);
   },
 
