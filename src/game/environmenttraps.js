@@ -204,6 +204,23 @@ export function findDartWallMount(world, x, y, rng = Math.random, diagnostics = 
   return null;
 }
 
+/** World-space anchor for a wall fixture. The wall/floor contact is halfway
+ * between the adjacent tile centers; keeping this separate from the trap site
+ * leaves activation and damage coordinates on their original floor tiles. */
+export function wallDartMountPose(x, y, mount) {
+  const wallX = Math.sign(mount?.wallX || 0), wallY = Math.sign(mount?.wallY || 0);
+  if (Math.abs(wallX) + Math.abs(wallY) !== 1) return null;
+  return {
+    x: x + wallX * 0.5,
+    y: y + wallY * 0.5,
+    wallX, wallY,
+    renderDepth: x + y + (wallX + wallY) * 0.5 + 0.015,
+    // Preserve the sheet's front-facing mirror convention for all four
+    // cardinal mount directions.
+    flip: wallX === 1 || wallY === -1,
+  };
+}
+
 function makeSite(world, kind, x, y, id, rng, variant, mount = null) {
   const baseType = ENVIRONMENT_TRAP_TYPES[kind];
   const art = trapArtFor(kind, variant);
@@ -218,13 +235,19 @@ function makeSite(world, kind, x, y, id, rng, variant, mount = null) {
     trigger: 'lane-entry',
   } : baseType;
   const tint = tintFor(variant, type.element);
+  const wallPose = kind === 'dartTrap' && mount ? wallDartMountPose(x, y, mount) : null;
+  const spriteScale = Math.max(52, 148 * (world.tileset?.k || 0.4)) / Math.round(image.naturalWidth / columns);
   const fixture = {
     kind: 'environmentTrapFixture', trapKind: type.fixture,
-    x: x + (mount?.wallX || 0) * 0.38, y: y + (mount?.wallY || 0) * 0.38, z: 0, tint, material: materialFor(variant),
-    groundTrapLayer: GROUND_TRAP_FIXTURES.has(type.fixture),
+    x: wallPose?.x ?? x, y: wallPose?.y ?? y, z: 0, tint, material: materialFor(variant),
+    groundTrapLayer: GROUND_TRAP_FIXTURES.has(type.fixture) && !wallPose,
+    wallMountedTrap: !!wallPose, renderDepth: wallPose?.renderDepth,
+    // The openings sit about halfway up the illustrated wall face. Keep dart
+    // visuals at that height while their collision path remains on the floor.
+    trapMuzzleLift: wallPose ? Math.round(image.naturalHeight / rows * spriteScale * 0.5) : 0,
     active: false, trapState: 'idle', id, trapSheet: art.sheet, trapRow: art.row,
     trapColumns: columns, trapRows: rows,
-    k: world.tileset?.k || 0.4, flip: mount ? (mount.wallX === 1 || mount.wallY === -1) : rng() < 0.5,
+    k: world.tileset?.k || 0.4, flip: wallPose?.flip ?? (mount ? (mount.wallX === 1 || mount.wallY === -1) : rng() < 0.5),
   };
   world.props.push(fixture);
   const intervalScale = world.heresyTrapIntervalMul || 1;
@@ -309,9 +332,13 @@ function targetOnDartLane(site, target) {
 
 class DartProjectile {
   constructor(world, site, lane, delay) {
-    this.world = world; this.site = site; this.x = site.x + site.fireY * lane; this.y = site.y - site.fireX * lane;
+    // Start at the mounted sprite's wall contact point, then let the volley
+    // fan out from its visible holes into the five warned floor tiles.
+    this.world = world; this.site = site;
+    this.x = site.fixture.x + site.fireY * lane; this.y = site.fixture.y - site.fireX * lane;
     this.dx = site.fireX; this.dy = site.fireY;
     this.range = site.fireRange; this.speed = 13; this.wait = delay; this.traveled = 0; this.dead = false;
+    this.launchLift = site.fixture.trapMuzzleLift || 0;
     this.depth = this.x + this.y + 0.03; this.ground = false;
   }
   update(dt) {
@@ -338,7 +365,7 @@ class DartProjectile {
     return true;
   }
   draw(ctx) {
-    const x = isoX(this.x, this.y), y = isoY(this.x, this.y) - 3;
+    const x = isoX(this.x, this.y), y = isoY(this.x, this.y) - 3 - this.launchLift;
     ctx.save(); ctx.translate(x, y); ctx.rotate(screenAngle(Math.atan2(this.dy, this.dx)));
     ctx.fillStyle = this.site.type.shaft || '#6d5540';
     ctx.fillRect(-8, -1.2, 13, 2.4);

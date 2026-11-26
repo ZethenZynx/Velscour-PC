@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 import { hit } from '../../src/game/combat.js';
 import { BIOMES, BETA_BIOMES, BREACH_BIOME, SCORPION_KING_PYRAMID_BIOME, TOWN_BIOME, ACT2_TOWN_BIOME } from '../../src/data/biomes.js';
-import { DART_TRAP_VARIANTS, ENVIRONMENT_TRAP_GROUND_FIXTURES, ENVIRONMENT_TRAP_PROFILES, ENVIRONMENT_TRAP_TYPES, selectDartTrapVariant, setupEnvironmentalTraps, trapArtFor, trapDamageAmount, trapDamageScale } from '../../src/game/environmenttraps.js';
+import { DART_TRAP_VARIANTS, ENVIRONMENT_TRAP_GROUND_FIXTURES, ENVIRONMENT_TRAP_PROFILES, ENVIRONMENT_TRAP_TYPES, selectDartTrapVariant, setupEnvironmentalTraps, trapArtFor, trapDamageAmount, trapDamageScale, wallDartMountPose } from '../../src/game/environmenttraps.js';
 import { generateDungeon } from '../../src/world/dungeon.js';
 import { A } from '../../src/core/assets.js';
 
@@ -161,6 +161,18 @@ test('dart atlas loading races leave the trap manager retryable instead of perma
   assert.ok(world.environmentTraps.some((site) => site.kind === 'dartTrap'));
 });
 
+test('wall dart fixtures meet the wall/floor edge in all four orientations', () => {
+  for (const [wallX, wallY] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
+    const pose = wallDartMountPose(12, 18, { wallX, wallY });
+    assert.ok(pose, `mount ${wallX},${wallY} is valid`);
+    assert.equal(pose.x, 12 + wallX * 0.5, 'sprite anchor reaches the shared wall/floor boundary');
+    assert.equal(pose.y, 18 + wallY * 0.5, 'sprite anchor reaches the shared wall/floor boundary');
+    assert.equal(pose.renderDepth, 30 + (wallX + wallY) * 0.5 + 0.015, 'sprite sorts just in front of its mounting wall edge');
+    assert.equal(pose.flip, wallX === 1 || wallY === -1, 'front-facing art is consistently mirrored for the mount direction');
+  }
+  assert.equal(wallDartMountPose(12, 18, { wallX: 1, wallY: 1 }), null, 'diagonal walls are not treated as supported mounts');
+});
+
 test('wall dart traps require a nearby wall, warn, and send a resistible projectile volley down a clear lane', () => {
   A.environmentTrapAtlases = Object.fromEntries(Object.entries(ATLAS_DIMENSIONS).map(([id, [naturalWidth, naturalHeight]]) => [id, { naturalWidth, naturalHeight }]));
   let world, site, manager;
@@ -177,6 +189,11 @@ test('wall dart traps require a nearby wall, warn, and send a resistible project
     manager = world.hazards.find((hazard) => hazard.ground && hazard.update);
   }
   assert.ok(site, 'a seeded catacomb layout can place a wall dart trap');
+  assert.equal(site.fixture.wallMountedTrap, true, 'the launcher uses the wall-attached render path');
+  assert.equal(site.fixture.groundTrapLayer, false, 'wall-mounted dart sprites participate in depth sorting');
+  assert.equal(site.fixture.x, site.x + site.wallX * 0.5, 'launcher anchor touches the neighboring wall tile edge');
+  assert.equal(site.fixture.y, site.y + site.wallY * 0.5, 'launcher anchor touches the neighboring wall tile edge');
+  assert.ok(site.fixture.trapMuzzleLift > 0, 'projectile visuals originate at the visible firing-hole height');
   assert.equal(site.fireRange, 4.5, 'the wall dart path covers five complete tiles from the wall');
   assert.equal(site.damageTiles.length, 5, 'the dart warning and hit lane are exactly five tiles long');
   assert.ok(Math.abs(site.fireX) + Math.abs(site.fireY) === 1, 'projectile direction points from its wall into a clear path');
@@ -188,6 +205,9 @@ test('wall dart traps require a nearby wall, warn, and send a resistible project
   manager.update(1.2);
   const darts = world.hazards.filter((hazard) => hazard !== manager && typeof hazard.draw === 'function');
   assert.equal(darts.length, 3, 'a warning launches a three-dart spread');
+  assert.ok(darts.every((dart) => dart.launchLift === site.fixture.trapMuzzleLift), 'each projectile starts visually at the launcher openings');
+  assert.ok(darts.every((dart) => Math.abs((dart.x - site.fixture.x) * site.fireX + (dart.y - site.fixture.y) * site.fireY) < 1e-9), 'projectiles begin at the fixture wall plane before spreading laterally into the lane');
+  assert.ok(darts.every((dart) => Math.hypot(dart.x - site.fixture.x, dart.y - site.fixture.y) <= 0.5), 'the volley emerges from the visible launcher rather than the first floor-tile center');
   const enemy = { id: 'dart-test-target', team: 'enemy', world, x: site.x + site.fireX * 0.7, y: site.y + site.fireY * 0.7, r: 0.36,
     hp: 1000, maxHp: 1000, dead: false, rank: 'normal', res: {}, status: {}, curses: {} };
   world.creatures.push(enemy);

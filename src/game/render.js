@@ -394,7 +394,12 @@ function drawProp(ctx, pr, alpha) {
       const sy = Math.round(pr.trapRow * img.naturalHeight / rows), sy1 = Math.round((pr.trapRow + 1) * img.naturalHeight / rows);
       const sw = sx1 - sx, sh = sy1 - sy, scale = Math.max(52, 148 * (pr.k || 0.4)) / sw;
       const dw = sw * scale, dh = sh * scale;
-      const anchor = trapGroundAnchor(img, pr.trapRow, frame, sx, sy, sw, sh);
+      // Wall fixtures stay anchored to their idle-frame foot point. Animated
+      // flames or broken rubble can extend below the idle silhouette and must
+      // not make a mounted trap visibly jump away from the wall.
+      const anchor = pr.wallMountedTrap
+        ? trapGroundAnchor(img, pr.trapRow, 0, 0, sy, sw, sh)
+        : trapGroundAnchor(img, pr.trapRow, frame, sx, sy, sw, sh);
       const ax = anchor.x * scale, ay = anchor.y * scale;
       ctx.save();
       ctx.imageSmoothingEnabled = false;
@@ -1285,7 +1290,7 @@ export function renderWorld(ctx, world) {
       const y1 = py - (pr.z || 0) + 12;
       if (px < vr.x0 - 100 || px > vr.x1 + 100 || y1 < vr.y0 || y1 - 340 > vr.y1) continue;
     } else if (px < vr.x0 - 100 || px > vr.x1 + 100 || py < vr.y0 - 40 || py > vr.y1 + 220) continue;
-    enqueue(pr.x + pr.y, 4, pr);
+    enqueue(Number.isFinite(pr.renderDepth) ? pr.renderDepth : pr.x + pr.y, 4, pr);
     if (tall && !pr.c3move) occludeStatic(pr, propRect(pr, px, py));
   }
   // the Dark Forest's trees: only the buckets around the view (a tree's base may sit well below it)
