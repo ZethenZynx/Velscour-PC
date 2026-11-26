@@ -92,11 +92,19 @@ assert.match(inventorySource, /Search every stat, item bonus, socket or modifier
 assert.match(inventorySource, /velscour:equipment-stat-browser:v1/);
 assert.match(inventorySource, /character-breakdown-layout/);
 assert.match(inventorySource, /character-stat-detail/);
-assert.match(inventorySource, /let expandedDetail = null/, 'only one detailed stat row can remain expanded');
+assert.match(inventorySource, /let selectedDetail = null/, 'only one selected stat breakdown is displayed');
+assert.match(inventorySource, /character-breakdown-fullwidth/);
+assert.match(inventorySource, /wrap\.appendChild\(box\);[\s\S]*?wrap\.appendChild\(fullWidth\);/, 'the full-width breakdown is placed after the equipment and character columns');
+assert.match(inventorySource, /detailPane\.replaceChildren\(detail\)/, 'selected detail is placed beneath the result table');
 assert.match(inventorySource, /itemPowerText/, 'expanded details retain socket and item power attribution');
 assert.match(inventorySource, /character-stat-table-header/, 'the compact results table labels its value columns');
+assert.match(inventorySource, /character-power-slot/);
+assert.match(inventorySource, /character-power-description/);
 for (const state of ['below', 'approaching', 'at', 'over']) assert.ok(styleSource.includes(`cap-${state}`), `cap state ${state} has a visual style`);
-assert.match(styleSource, /character-breakdown-layout[^{]*\{[^}]*minmax\(0, 1fr\)/s, 'the right pane can shrink without forcing horizontal overflow');
-assert.match(styleSource, /character-breakdown-results[^{]*\{[^}]*overflow-y: auto/s, 'stat rows use a vertical results scroller');
+assert.match(styleSource, /character-breakdown-layout[^{]*\{[^}]*minmax\(0, 2fr\)/s, 'the category pane is one third and the results pane is two thirds');
+assert.match(styleSource, /character-breakdown-fullwidth\s*\{[^}]*grid-column:\s*1\s*\/\s*-1/s, 'the breakdown spans both parent columns');
+assert.doesNotMatch(styleSource.match(/\.character-breakdown-results\s*\{([^}]*)\}/s)?.[1] || '', /overflow-y:\s*auto/, 'results do not create a nested vertical scroller');
+assert.match(styleSource, /data-label\) ': '/, 'narrow layouts retain labels for all stat values instead of hiding a column');
+assert.match(styleSource, /character-power-source\s*\{[^}]*grid-template-columns/s, 'equipment powers use separate slot, item, and description columns');
 
 console.log(`Equipment stat breakdown passed: ${AFFIXES.length} equipment affixes present, cap stages and source attribution verified.`);

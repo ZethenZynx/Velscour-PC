@@ -818,7 +818,7 @@ function statsBlock() {
     if (item.legendary) lines.push(legendaryDesc(c.equip[slot]));
     return lines;
   };
-  let expandedDetail = null;
+  let selectedDetail = null, selectedEntryButton = null, detailPane = null;
   const makeEntry = (row, group, modifier = modifierByKey.get(row.key)) => {
     const state = row.capState || capStateFor(row.key), unit = row.unit ?? modifier?.unit ?? '';
     const equipment = row.rawEquipmentText || `${Math.round((row.rawEquipment ?? modifier?.raw ?? 0) * 10) / 10}${unit}`;
@@ -827,7 +827,7 @@ function statsBlock() {
     const keys = relatedKeys(row.key), capMetric = metricByKey.get(row.key === 'resLight' ? 'resLightning' : row.key);
     const cap = row.cap ?? capMetric?.cap ?? (row.key === 'resAll' ? 75 : null);
     const excess = row.excess || capMetric?.excess || (cap == null ? 0 : Math.max(0, total - cap));
-    const capText = cap == null ? 'No Cap' : `${Math.round(cap * 10) / 10}${unit}${excess > 0 ? ` · +${Math.round(excess * 10) / 10} over` : ''}`;
+    const capText = cap == null ? 'No Cap' : `${capLabels[state]} · ${Math.round(cap * 10) / 10}${unit}${excess > 0 ? ` · +${Math.round(excess * 10) / 10} over` : ''}`;
     const detailCap = cap == null ? 'No hard cap' : `Cap ${cap}${unit}; ${Math.max(0, excess)}${unit} above cap`;
     const sourceLines = sourceLinesFor(keys);
     if (row.key === 'weaponBase') {
@@ -839,8 +839,8 @@ function statsBlock() {
     entry.dataset.zero = String(Math.abs(total) < 0.0001 && Math.abs(Number(modifier?.raw || 0)) < 0.0001 && Math.abs(Number(row.effective ?? total)) < 0.0001);
     entry.dataset.search = searchable;
     const toggle = el('button', 'character-stat-row'); toggle.type = 'button'; toggle.setAttribute('aria-expanded', 'false');
-    toggle.innerHTML = `<span class="character-stat-name">${escapeHtml(row.label)}</span><span class="character-stat-eq">${escapeHtml(equipment)}</span><span class="character-stat-total">${Math.round(total * 10) / 10}${escapeHtml(unit)}</span><span class="character-stat-effective">${escapeHtml(effective)}</span><span class="character-stat-cap">${escapeHtml(capText)}</span><span class="character-cap-state">${capLabels[state] || 'No cap'}</span>`;
-    const detail = el('div', 'character-stat-detail'); detail.hidden = true;
+    toggle.innerHTML = `<span class="character-stat-name">${escapeHtml(row.label)}</span><span class="character-stat-eq" data-label="Equipment">${escapeHtml(equipment)}</span><span class="character-stat-total" data-label="Total">${Math.round(total * 10) / 10}${escapeHtml(unit)}</span><span class="character-stat-effective" data-label="Effective">${escapeHtml(effective)}</span><span class="character-stat-cap" data-label="Cap / Overcap">${escapeHtml(capText)}</span>`;
+    const detail = el('div', 'character-stat-detail'); detail.hidden = false; detail.dataset.statKey = row.key;
     const sources = el('div', 'character-stat-detail-sources');
     sources.innerHTML = `<b>Equipment sources</b><span>${sourceLines.length ? sourceLines.map(escapeHtml).join('<br>') : 'No direct equipment contribution; this value may come from attributes or other active sources.'}</span>`;
     detail.appendChild(sources);
@@ -853,12 +853,19 @@ function statsBlock() {
     }
     detail.appendChild(el('div', 'character-stat-detail-formula', `${escapeHtml(row.diminishing || 'No diminishing returns')} · ${escapeHtml(row.note || modifier?.label || '')} · ${detailCap}${row.wasted > 0 ? ` · ${row.wasted}${unit} is wasted after overflow conversion` : ''}`));
     toggle.addEventListener('click', () => {
-      const opening = detail.hidden;
-      if (expandedDetail && expandedDetail !== detail) { expandedDetail.hidden = true; expandedDetail.previousElementSibling?.setAttribute('aria-expanded', 'false'); }
-      detail.hidden = !opening; toggle.setAttribute('aria-expanded', String(opening));
-      expandedDetail = opening ? detail : null;
+      const opening = selectedDetail !== detail;
+      selectedEntryButton?.setAttribute('aria-expanded', 'false');
+      selectedDetail?.remove();
+      if (opening) {
+        detailPane.replaceChildren(detail); detailPane.hidden = false;
+        selectedDetail = detail; selectedEntryButton = toggle;
+      } else {
+        detailPane.replaceChildren(); detailPane.hidden = true;
+        selectedDetail = null; selectedEntryButton = null;
+      }
+      toggle.setAttribute('aria-expanded', String(opening));
     });
-    entry.append(toggle, detail);
+    entry.append(toggle);
     return entry;
   };
   for (const group of breakdown.metricGroups) {
@@ -873,6 +880,7 @@ function statsBlock() {
   const resultTitle = el('h3', 'character-breakdown-result-title'), resultCount = el('span', 'character-breakdown-result-count');
   resultHeader.append(resultTitle, resultCount);
   const results = el('div', 'character-breakdown-results');
+  detailPane = el('div', 'character-stat-selected-detail'); detailPane.hidden = true;
   const categoryDefs = [{ id: 'all', name: 'All Stats' }, ...groups.map(({ id, name }) => ({ id, name }))];
   const categoryButtons = new Map();
   for (const category of categoryDefs) {
@@ -881,7 +889,7 @@ function statsBlock() {
     button.innerHTML = `<span>${escapeHtml(category.name)}</span><small>${count}</small>`;
     nav.appendChild(button); categoryButtons.set(category.id, button);
   }
-  browserBody.append(resultHeader, results);
+  browserBody.append(resultHeader, results, detailPane);
   const layout = el('div', 'character-breakdown-layout'); layout.append(nav, browserBody);
   auditDetails.appendChild(layout);
   let selectedCategory = categoryButtons.has(prefs.category) ? prefs.category : 'all';
@@ -899,18 +907,25 @@ function statsBlock() {
     for (const button of categoryButtons.values()) { const selectedNow = button.dataset.category === selectedCategory; button.classList.toggle('selected', selectedNow); button.setAttribute('aria-current', selectedNow ? 'page' : 'false'); }
     results.replaceChildren();
     const tableHeader = el('div', 'character-stat-table-header');
-    tableHeader.innerHTML = '<span>Stat</span><span>Equipment</span><span>Total</span><span>Effective</span><span>Cap / Overcap</span><span>Status</span>';
+    tableHeader.innerHTML = '<span>Stat</span><span>Equipment</span><span>Total</span><span>Effective</span><span>Cap / Overcap</span>';
     results.appendChild(tableHeader);
     for (const { group, entry } of visible) {
       entry.dataset.groupLabel = group.name;
       results.appendChild(entry);
     }
     if (!visible.length) results.appendChild(el('div', 'character-stat-empty', 'No stats match the current search and filters.'));
+    if (selectedDetail && !visible.some(({ entry }) => entry.dataset.statEntry === selectedDetail.dataset.statKey)) {
+      selectedEntryButton?.setAttribute('aria-expanded', 'false');
+      selectedDetail.remove(); detailPane.replaceChildren(); detailPane.hidden = true;
+      selectedDetail = null; selectedEntryButton = null;
+    }
     persistPrefs();
   };
   for (const button of categoryButtons.values()) button.addEventListener('click', () => {
     selectedCategory = button.dataset.category;
-    if (expandedDetail) { expandedDetail.hidden = true; expandedDetail.previousElementSibling?.setAttribute('aria-expanded', 'false'); expandedDetail = null; }
+    selectedEntryButton?.setAttribute('aria-expanded', 'false');
+    selectedDetail?.remove(); detailPane.replaceChildren(); detailPane.hidden = true;
+    selectedDetail = null; selectedEntryButton = null;
     renderResults();
   });
   for (const control of [search, filterOver, filterCapped, hideZero]) control.addEventListener(control === search ? 'input' : 'change', renderResults);
@@ -918,8 +933,9 @@ function statsBlock() {
   const itemPowers = breakdown.audit.itemPowers || [];
   const powerItems = Object.entries(breakdown.audit.bySlot || {}).filter(([slot, item]) => item.legendary || (item.augments || []).length || itemPowers.some((power) => power.slot === slot));
   const setPowers = breakdown.audit.setSources || [];
+  let powers = null;
   if (powerItems.length || setPowers.length) {
-    const powers = el('details', 'character-breakdown-section');
+    powers = el('details', 'character-breakdown-section');
     powers.dataset.statDetails = 'equipment-powers';
     powers.innerHTML = '<summary>Equipment powers and skill augments</summary>';
     for (const [slot, item] of powerItems) {
@@ -931,19 +947,21 @@ function statsBlock() {
         const A = AUGMENTS[aug.id];
         if (A) descriptions.push(`${A.name} (${augTarget(aug)}): ${A.desc(aug.pow || 1)}`);
       }
-      powers.appendChild(el('div', 'character-power-source', `<b>${escapeHtml(SLOT_NAMES[slot] || slot)}: ${escapeHtml(itemName(equipped))}</b><span>${escapeHtml(descriptions.join(' '))}</span>`));
+      const source = el('div', 'character-power-source');
+      source.append(el('span', 'character-power-slot', escapeHtml(SLOT_NAMES[slot] || slot)), el('b', 'character-power-item', escapeHtml(itemName(equipped))), el('span', 'character-power-description', escapeHtml(descriptions.join(' '))));
+      powers.appendChild(source);
     }
     for (const set of setPowers) {
       const power = set.power && POWERS[set.power];
       const desc = power ? powerText(power, powerLevel(set.ilvl, 3)) : '';
       const bonuses = set.stats.map(([key, value]) => `${key} ${value > 0 ? '+' : ''}${Math.round(value * 10) / 10}`).join(' · ');
-      powers.appendChild(el('div', 'character-power-source', `<b>${escapeHtml(set.name)} (${set.pieces} pieces)</b><span>${escapeHtml([desc, bonuses].filter(Boolean).join(' · '))}</span>`));
+      const source = el('div', 'character-power-source');
+      source.append(el('span', 'character-power-slot', 'Covenant Set'), el('b', 'character-power-item', `${escapeHtml(set.name)} (${set.pieces} pieces)`), el('span', 'character-power-description', escapeHtml([desc, bonuses].filter(Boolean).join(' · '))));
+      powers.appendChild(source);
     }
-    auditDetails.appendChild(powers);
   }
-  box.appendChild(auditDetails);
-  box.appendChild(el('div', 'character-history', `Kills ${fmtInt(c.kills || 0)} · Deaths ${c.deaths || 0} · Deepest ${c.deepest || 0}`));
-  return box;
+  box.appendChild(el('div', 'character-history', `Kills ${fmtInt(c.kills || 0)} · Deaths ${fmtInt(c.deaths || 0)} · Deepest ${c.deepest || 0}`));
+  return { box, auditDetails, powers };
 }
 
 /** Attribute points spent so far (everything over the class's starting attributes). */
@@ -1013,7 +1031,12 @@ export function renderCharacter(body, panel) {
   body.innerHTML = '';
   const wrap = el('div', 'inv-wrap character-view');
   wrap.appendChild(equipmentColumn(c));
-  wrap.appendChild(statsBlock());
+  const { box, auditDetails, powers } = statsBlock();
+  wrap.appendChild(box);
+  const fullWidth = el('div', 'character-breakdown-fullwidth');
+  fullWidth.appendChild(auditDetails);
+  if (powers) fullWidth.appendChild(powers);
+  wrap.appendChild(fullWidth);
   body.appendChild(wrap);
 }
 
