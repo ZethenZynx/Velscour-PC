@@ -893,13 +893,18 @@ body.touch .reliquary-panel .codex-cell { width: 34px; height: 34px; }
 .developer-warning { margin: 0 0 14px; padding: 11px 13px; border: 1px solid #b77924; border-left: 4px solid #e2a33a; border-radius: 4px; background: linear-gradient(110deg, rgba(101,55,13,.42), rgba(47,28,12,.28)); color: #ffcc72; box-shadow: 0 0 12px rgba(191,117,28,.12); }
 .developer-warning strong { display: block; margin-bottom: 5px; color: #ffd47d; font: 800 14px var(--font-head); letter-spacing: .6px; }
 .developer-warning p { margin: 0; color: #e3c392; font-size: 12px; line-height: 1.45; }
-.developer-settings-group { margin: 10px 0 14px; padding: 9px 10px 11px; border: 1px solid rgba(141,103,48,.48); border-radius: 4px; background: rgba(0,0,0,.18); }
+.developer-mode-card { display: grid; grid-template-columns: 1fr auto; align-items: center; gap: 5px 12px; margin: 0 0 9px; padding: 9px 11px; border: 1px solid rgba(141,103,48,.6); border-left: 3px solid #c28a35; border-radius: 4px; background: rgba(0,0,0,.2); }
+.developer-mode-toggle { color: var(--gold-bright); font: 700 14px var(--font-head); }
+.developer-mode-warning { grid-column: 1 / -1; margin: 0; color: #e3c392; font-size: 11px; line-height: 1.35; }
+.developer-settings-group { margin: 7px 0; padding: 8px 10px; border: 1px solid rgba(141,103,48,.48); border-radius: 4px; background: rgba(0,0,0,.18); }
 .developer-settings-group h3 { margin: 0 0 9px; color: var(--gold-bright); font: 700 13px var(--font-head); }
 .developer-settings-group > summary { display: flex; align-items: center; gap: 7px; color: var(--gold-bright); font: 700 13px var(--font-head); cursor: pointer; list-style: none; }
 .developer-settings-group > summary::-webkit-details-marker { display: none; }
 .developer-settings-group > summary::before { content: '▸'; color: #c59b54; font: 700 13px var(--font-head); }
-.developer-settings-group[open] > summary { margin-bottom: 9px; }
+.developer-settings-group[open] > summary { margin-bottom: 7px; }
 .developer-settings-group[open] > summary::before { content: '▾'; }
+.developer-action-row { display: flex; flex-wrap: wrap; gap: 7px; }
+.developer-action-row button { flex: 1 1 190px; }
 .developer-settings-note { grid-column: 1 / -1; margin: 0; color: var(--text-dim); font-size: 11px; line-height: 1.4; }
 .developer-reset { margin-top: 2px; border-color: #9b6426; color: #ffd080; }
 .developer-settings-group button:disabled { opacity: .48; cursor: not-allowed; }

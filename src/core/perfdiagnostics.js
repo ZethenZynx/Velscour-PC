@@ -1,5 +1,5 @@
-// Optional, rolling performance diagnostics. No history, timer reads, DOM, or entity scans while disabled.
-import { G } from '../state.js';
+// Optional, rolling performance diagnostics. No collection, timer reads, DOM, or entity scans while disabled.
+import { G, developerModeEnabled } from '../state.js';
 import { vfxStats } from '../gfx/vfx.js';
 import { audioActiveCount } from './audio.js';
 import { GAME_BUILD_ID, GAME_VERSION } from '../data/build-version.js';
@@ -17,7 +17,7 @@ let frameStarted = 0, rafGap = 16.667, updateMs = 0, renderMs = 0, phases = null
 let panel = null, graph = null;
 let longTaskObserver = null, longTasks = [], externalTimings = [];
 
-export const performanceProfilerEnabled = () => G.settings?.performanceProfiler === true;
+export const performanceProfilerEnabled = developerModeEnabled;
 
 function allocateHistory() {
   if (history) return;
@@ -67,21 +67,19 @@ export function setPerformanceProfilerEnabled(enabled) {
   if (enabled) { allocateHistory(); mountPanel(); startLongTaskObserver(); }
   else {
     stopLongTaskObserver();
-    history = null; latestCounts = null; latestCountsWorld = null; count = cursor = frameSerial = 0;
-    longTasks = []; externalTimings = [];
+    // Stop monitoring without discarding the report; players can still export it while disabled.
+    latestCounts = null; latestCountsWorld = null;
     prevRaf = nextPaint = 0; phases = null;
     dropPanel();
   }
 }
 
 export function resetPerformanceStatistics() {
-  if (!performanceProfilerEnabled()) return false;
   stopLongTaskObserver();
   history = null; latestCounts = null; latestCountsWorld = null; count = cursor = frameSerial = 0;
   longTasks = []; externalTimings = [];
   prevRaf = nextPaint = 0; phases = null;
-  allocateHistory(); mountPanel();
-  startLongTaskObserver();
+  if (performanceProfilerEnabled()) { allocateHistory(); mountPanel(); startLongTaskObserver(); }
   return true;
 }
 
@@ -330,7 +328,7 @@ function paintGraph() {
 }
 
 export function performanceReport() {
-  if (!history || !count) return { error: 'Profiler is disabled or no frames have been collected.' };
+  if (!history || !count) return { error: 'No performance data has been collected yet.' };
   const first = (cursor - count + CAP) % CAP, frames = [];
   let peakHeapBytes = 0;
   for (let i = 0; i < count; i++) {

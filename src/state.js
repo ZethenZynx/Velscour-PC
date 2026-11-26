@@ -53,7 +53,7 @@ export const G = {
     adaptivePerformance: false, // opt-in cosmetic quality shedding for sustained slow frames
     performanceRecommendationShown: false, // one-time nonmodal recommendation guard
     showHeroStats: true, // show/hide the #hero-stats div
-    performanceProfiler: false, // opt-in rolling diagnostics; collection and HUD stop completely when disabled
+    developerMode: false, // master switch for optional monitoring and debug event logging
     showTargetBox: true, // show/hide the #target-box div
     showTargetSprite: true, // choose if target-box shows the target sprite or not
     keybinds: {}, // player-configured keyboard actions; absent actions use the PC defaults
@@ -72,11 +72,15 @@ export const G = {
 };
 
 export const SETTINGS_KEY = 'velscour_settings_v1';
+export const developerModeEnabled = () => G.settings?.developerMode === true;
 
 export function loadSettings() {
   try {
     const s = JSON.parse(localStorage.getItem(SETTINGS_KEY) || '{}');
     Object.assign(G.settings, s);
+    // Migrate the old profiler-only setting once; new installations default to Developer Mode off.
+    G.settings.developerMode = typeof s.developerMode === 'boolean' ? s.developerMode : s.performanceProfiler === true;
+    delete G.settings.performanceProfiler;
     if (s.audio && typeof s.audio === 'object') G.settings.audio = normalizeAudioSettings(s.audio);
     else {
       const legacySfx = Math.max(0, Math.min(1, Number(s.sfx ?? 0.6)));

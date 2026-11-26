@@ -582,8 +582,7 @@ function audioSettingsMarkup(settings) {
 }
 
 function audioDiagnosticsMarkup() {
-  return `<p class="dim">Optional event recording can add processing overhead. Sound channel limits discard excess sounds immediately and never build a playback queue.</p>
-    <div class="audio-diagnostic-controls"><button type="button" class="btn small" data-audio-record-start>Start Recording</button><button type="button" class="btn small" data-audio-record-stop disabled>Stop</button><button type="button" class="btn small" data-audio-record-clear>Clear</button><button type="button" class="btn small" data-audio-record-export>Export Report</button></div>
+  return `<div class="audio-diagnostic-controls"><button type="button" class="btn small" data-audio-record-start>Start Recording</button><button type="button" class="btn small" data-audio-record-stop disabled>Stop Recording</button><button type="button" class="btn small" data-audio-record-clear>Clear Recording</button><button type="button" class="btn small" data-audio-record-export>Export Audio Report</button></div>
     <div class="audio-diagnostic-controls"><input type="text" maxlength="120" data-audio-marker placeholder="Add a diagnostic marker"><button type="button" class="btn small" data-audio-record-marker>Add Marker</button><span class="dim" data-audio-diagnostic-status role="status">Recording is off.</span></div>
     <div class="audio-diagnostic-summary" data-audio-diagnostic-summary></div>`;
 }
@@ -648,22 +647,15 @@ export function settingsDialog() {
     <p class="dim" data-keybind-status aria-live="polite"></p>
   </div>
   <div class="settings-tab-pane" data-pane="developer">
-    <div class="developer-warning" role="note"><strong>WARNING — DEVELOPER SETTINGS</strong><p>These settings are intended for debugging, diagnostics and performance troubleshooting. Enabling certain options may reduce performance, display technical information or interfere with normal gameplay. Leave these options disabled during regular gameplay unless troubleshooting an issue.</p></div>
-    <details class="developer-settings-group" data-developer-section="performance" open><summary>Performance Diagnostics</summary><div class="settings-grid">
-      <label title="Records an opt-in rolling performance history of up to three minutes and shows the diagnostics overlay">Enable Performance Profiler</label><input type="checkbox" data-developer-profiler ${st.performanceProfiler ? 'checked' : ''}>
-      <div class="developer-settings-note">The opt-in profiler provides FPS and frame-time history, subsystem processing, and the supported rendering, entity, memory, AI, collision, and audio measurements below.</div>
-      <label>Export Performance Report</label><button type="button" class="btn small" data-export-performance>Export report</button>
-      <label>Reset Performance Statistics</label><button type="button" class="btn small" data-reset-performance>Reset statistics</button>
+    <div class="developer-mode-card">
+      <label class="developer-mode-toggle" for="developer-mode-toggle">Enable Developer Mode</label><input id="developer-mode-toggle" type="checkbox" data-developer-mode ${st.developerMode ? 'checked' : ''}>
+      <p class="developer-mode-warning" role="note">Developer monitoring can add processing overhead. Leave it off during normal play.</p>
+    </div>
+    <details class="developer-settings-group" data-developer-section="performance" open><summary>Performance Diagnostics</summary><div class="developer-action-row">
+      <button type="button" class="btn small" data-export-performance>Export Performance Report</button>
+      <button type="button" class="btn small" data-reset-performance>Reset Performance Statistics</button>
     </div></details>
     <details class="developer-settings-group" data-developer-section="audio"><summary>Audio Diagnostics</summary>${audioDiagnosticsMarkup()}</details>
-    <details class="developer-settings-group" data-developer-section="rendering"><summary>Rendering Diagnostics</summary><p class="developer-settings-note">The performance report includes available render-pass timings, render queue and view counts, visible sprite and environment counts, culling-related counters, and lighting time. Exact GPU draw-call totals are not exposed by the current browser rendering runtime.</p></details>
-    <details class="developer-settings-group" data-developer-section="entities"><summary>Entity Diagnostics</summary><p class="developer-settings-note">The performance report includes supported counts for enemies, NPCs and other creatures, projectiles, hazards, particles, effects, damage text, and dropped loot. Counts that are unavailable in a runtime are omitted rather than estimated.</p></details>
-    <details class="developer-settings-group" data-developer-section="memory"><summary>Memory Diagnostics</summary><p class="developer-settings-note">Heap usage is recorded when the browser exposes it. Allocation rates and cache byte totals are not available from the current runtime, so the report does not invent those values.</p></details>
-    <details class="developer-settings-group" data-developer-section="debugging"><summary>Debugging &amp; Error Logging</summary><div class="settings-grid">
-      <label title="Adds verbose enemy AI, pack spawn, affix and shrine events to the Adventurer's Log">Include debug events in the Adventurer's Log</label><input type="checkbox" data-developer-chat-debug ${GameChat.prefs.debug ? 'checked' : ''}>
-    </div><p class="developer-settings-note">JavaScript errors and stack traces go to the browser console; in-game error notices are throttled. No separate error collector runs in the background.</p></details>
-    <details class="developer-settings-group" data-developer-section="other"><summary>Other Developer Tools</summary><p class="developer-settings-note">Resetting here disables developer monitoring and debug event logging without changing ordinary gameplay settings.</p><button type="button" class="btn small developer-reset" data-reset-developer>Reset Developer Settings</button></details>
-    <p class="developer-settings-note" data-developer-status role="status" aria-live="polite"></p>
   </div>
   <div class="settings-tab-pane" data-pane="mouseCursor">
     <div class="cursor-live-preview" data-cursor-preview tabindex="0"><b>Live Cursor Preview</b><span>Move your mouse here to preview the cursor, trail, and locator effects.</span></div>
@@ -769,13 +761,22 @@ export function settingsDialog() {
     const duckOutput = d.box.querySelector('[data-audio-duck-output]'); if (duckOutput) duckOutput.textContent = `${audio.duckAmount}%`;
   };
   const refreshAudioDiagnostics = () => {
-    const stats = audioDiagnosticStats(), active = audioActiveByCategory();
+    const stats = audioDiagnosticStats(), developerEnabled = st.developerMode === true;
+    const active = developerEnabled ? audioActiveByCategory() : {};
     const status = d.box.querySelector('[data-audio-diagnostic-status]');
-    if (status) status.textContent = stats.enabled ? `Recording: on · ${Object.values(active).reduce((sum, n) => sum + n, 0)} active sounds` : 'Recording is off.';
+    if (status) status.textContent = !developerEnabled
+      ? (stats.hasRecording ? 'Developer Mode is off. The last recording remains available.' : 'Developer Mode is off.')
+      : stats.enabled ? `Recording: on — ${Object.values(active).reduce((sum, n) => sum + n, 0)} active sounds`
+        : stats.hasRecording ? 'Recording is off. The last recording remains available.' : 'Recording is off.';
     const summary = d.box.querySelector('[data-audio-diagnostic-summary]');
-    if (summary) summary.textContent = `Active by category: ${Object.entries(active).map(([name, count]) => `${name} ${count}`).join(' · ') || 'none'}${stats.enabled ? ` · Peak: ${Object.entries(stats.peakByCategory).map(([name, count]) => `${name} ${count}`).join(' · ') || 'none'}` : ''}`;
+    if (summary) summary.textContent = developerEnabled
+      ? `Active by category: ${Object.entries(active).map(([name, count]) => `${name} ${count}`).join(' · ') || 'none'}${stats.enabled ? ` · Peak: ${Object.entries(stats.peakByCategory).map(([name, count]) => `${name} ${count}`).join(' · ') || 'none'}` : ''}`
+      : '';
     const start = d.box.querySelector('[data-audio-record-start]'), stop = d.box.querySelector('[data-audio-record-stop]');
-    if (start) start.disabled = stats.enabled; if (stop) stop.disabled = !stats.enabled;
+    const marker = d.box.querySelector('[data-audio-record-marker]');
+    if (start) start.disabled = !developerEnabled || stats.enabled;
+    if (stop) stop.disabled = !stats.enabled;
+    if (marker) marker.disabled = !developerEnabled || !stats.enabled;
   };
   refreshAudioControls(); refreshAudioDiagnostics();
   d.box.querySelectorAll('[data-audio-volume]').forEach((control) => {
@@ -817,9 +818,7 @@ export function settingsDialog() {
       d.box.querySelector('[data-audio-setting="preset"]').value = 'Custom'; saveAudio();
     };
   });
-  d.box.querySelector('[data-audio-record-start]').onclick = () => UI.confirm('Start Audio Diagnostics?', 'Audio diagnostics record sound playback events and timing details. Recording can add processing overhead. Continue only while investigating an audio issue.', () => {
-    startAudioDiagnosticRecording(); refreshAudioDiagnostics();
-  }, 'Start Recording');
+  d.box.querySelector('[data-audio-record-start]').onclick = () => { if (st.developerMode) startAudioDiagnosticRecording(); refreshAudioDiagnostics(); };
   d.box.querySelector('[data-audio-record-stop]').onclick = () => { stopAudioDiagnosticRecording(); refreshAudioDiagnostics(); };
   d.box.querySelector('[data-audio-record-clear]').onclick = () => { clearAudioDiagnosticRecording(); refreshAudioDiagnostics(); };
   d.box.querySelector('[data-audio-record-export]').onclick = () => exportAudioDiagnosticReport();
@@ -831,7 +830,7 @@ export function settingsDialog() {
   audioDiagnosticsSection.addEventListener('toggle', refreshAudioDiagnostics);
   const audioStatsTimer = setInterval(() => {
     if (!d.box.isConnected) { clearInterval(audioStatsTimer); return; }
-    if (activeSettingsTab !== 'developer' || !audioDiagnosticsSection.open) return;
+    if (!st.developerMode || activeSettingsTab !== 'developer' || !audioDiagnosticsSection.open) return;
     refreshAudioDiagnostics();
   }, 1000);
   const performancePreset = d.box.querySelector('[data-performance-preset]');
@@ -872,49 +871,24 @@ export function settingsDialog() {
     refreshCursorControls(); refreshMouseCursor(); saveSettings();
   };
   refreshMouseCursor();
-  const developerProfiler = d.box.querySelector('[data-developer-profiler]');
+  const developerModeControl = d.box.querySelector('[data-developer-mode]');
   const resetPerformance = d.box.querySelector('[data-reset-performance]');
-  const refreshDeveloperControls = () => { resetPerformance.disabled = !st.performanceProfiler; };
-  const developerStatus = d.box.querySelector('[data-developer-status]');
+  const refreshDeveloperControls = () => {
+    resetPerformance.disabled = false;
+    refreshAudioDiagnostics();
+  };
+  developerModeControl.onchange = () => {
+    st.developerMode = developerModeControl.checked;
+    setPerformanceProfilerEnabled(st.developerMode);
+    GameChat.setDebugEnabled(st.developerMode);
+    if (!st.developerMode) stopAudioDiagnosticRecording();
+    refreshDeveloperControls(); saveSettings();
+  };
   refreshDeveloperControls();
-  developerProfiler.onchange = () => {
-    if (developerProfiler.checked) {
-      developerProfiler.checked = false;
-      UI.confirm('Enable Performance Profiler?', 'The profiler records a rolling performance history and displays technical information. It may reduce performance during troubleshooting.', () => {
-        st.performanceProfiler = true;
-        developerProfiler.checked = true;
-        setPerformanceProfilerEnabled(true);
-        refreshDeveloperControls(); saveSettings();
-      }, 'Enable');
-    } else {
-      st.performanceProfiler = false;
-      setPerformanceProfilerEnabled(false);
-      refreshDeveloperControls(); saveSettings();
-    }
-  };
-  const developerChatDebug = d.box.querySelector('[data-developer-chat-debug]');
-  developerChatDebug.onchange = () => {
-    if (developerChatDebug.checked) {
-      developerChatDebug.checked = false;
-      UI.confirm('Enable Debug Event Logging?', 'Verbose events will be added to the Adventurer\'s Log while enabled.', () => {
-        GameChat.setDebugEnabled(true); developerChatDebug.checked = true;
-      }, 'Enable');
-    } else GameChat.setDebugEnabled(false);
-  };
   resetPerformance.onclick = () => {
     if (!resetPerformanceStatistics()) return;
-    developerStatus.textContent = 'Performance statistics reset.';
+    refreshDeveloperControls();
   };
-  d.box.querySelector('[data-reset-developer]').onclick = () => UI.confirm('Reset Developer Settings?', 'This disables developer diagnostics and debug logging. Graphics, audio, accessibility, and gameplay settings are not changed.', () => {
-    st.performanceProfiler = false;
-    developerProfiler.checked = false;
-    setPerformanceProfilerEnabled(false);
-    GameChat.setDebugEnabled(false);
-    stopAudioDiagnosticRecording();
-    refreshAudioDiagnostics();
-    resetPerformanceStatistics();
-    refreshDeveloperControls(); developerStatus.textContent = 'Developer settings restored to defaults.'; saveSettings();
-  }, 'Reset');
   const keybindRows = d.box.querySelector("[data-keybind-rows]");
   keybindRows.outerHTML = KEY_BINDING_ACTIONS.map((action) => '<label>' + action.label + '</label><button type="button" class="btn small" data-keybind="' + action.id + '">' + keyBindingLabel(getKeyBinding(action.id)) + '</button>').join("");
   const keybindButtons = [...d.box.querySelectorAll("[data-keybind]")];

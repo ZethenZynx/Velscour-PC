@@ -296,7 +296,7 @@ function reportError(err) {
 async function boot() {
   loadSettings();
   G.performanceQualityTier = performanceTier(G.settings);
-  setPerformanceProfilerEnabled(G.settings.performanceProfiler);
+  setPerformanceProfilerEnabled(G.settings.developerMode);
   initMouseCursor();
   G.canvas = $('#game');
   G.ctx = G.canvas.getContext('2d', { alpha: false });
@@ -312,6 +312,7 @@ async function boot() {
   initSpectate(); // taps that catch critters / aim SMITE without moving the hero (game/spectate.js)
   UI.init();
   GameChat.init();
+  GameChat.setDebugEnabled(G.settings.developerMode);
   UI.vendor = Vendor;
   UI.stash = Stash;
   UI.jewelBox = JewelBox;

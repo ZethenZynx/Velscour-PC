@@ -4,7 +4,7 @@
 //   playMusic(kind)     'title' | 'town' | 'wilds' (dungeons + overworld biomes): songs with quiet breaks between them
 //   setAmbience(key)    a biome id or 'town': a looped ambient bed that drifts louder and softer (the title has none)
 // Songs and beds stream through <audio> elements routed into the Web Audio graph, so they're never fully decoded.
-import { G } from '../state.js';
+import { G, developerModeEnabled } from '../state.js';
 import { SHEER } from '../data/sheer.js';
 import { AUDIO_VOLUME_GROUPS, audioGroupForSound, isCombatAudioCategory, normalizeAudioSettings } from './audio-settings.js';
 import { AUDIO_DIAGNOSTIC_CALLSITE_SAMPLE_INTERVAL, AUDIO_DIAGNOSTIC_STACK_LIMIT, createAudioDiagnosticSession, summarizeAudioDiagnosticEvents } from './audio-diagnostics.mjs';
@@ -174,7 +174,7 @@ export function setAudioDiagnosticSink(sink) {
 }
 
 export function startAudioDiagnosticRecording() {
-  if (audioRecording?.active) return false;
+  if (!developerModeEnabled() || audioRecording?.active) return false;
   audioRecording = { active: true, startedUtc: new Date().toISOString(), startedPerfMs: performance.now(),
     session: createAudioDiagnosticSession(), stackTraces: {}, nextStackId: 0 };
   diagnosticStackIds = new Map(); diagnosticStackSamples = new Map(); lastDiagnosticStackIds = new Map();
@@ -323,7 +323,7 @@ export function exportAudioDiagnosticReport() {
 }
 export const audioDiagnosticsEnabled = () => !!audioDiagnosticSink;
 export function audioDiagnosticStats() {
-  return { enabled: !!audioDiagnosticSink, active: activeDiagnostics.size,
+  return { enabled: !!audioDiagnosticSink, hasRecording: !!audioRecording, active: activeDiagnostics.size,
     activeByCategory: audioActiveByCategory(), peakByCategory: { ...peakByCategory },
     sounds: [...activeDiagnostics.values()].map(({ id, sound, asset, source, sources, category }) => ({ id, sound, asset, source, category, activeSources: sources })) };
 }

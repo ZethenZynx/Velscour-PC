@@ -1085,7 +1085,7 @@ export function propReach(world) {
 }
 
 export function renderWorld(ctx, world) {
-  const profiling = G.settings?.performanceProfiler === true;
+  const profiling = G.settings?.developerMode === true;
   let profileMark = profiling ? performance.now() : 0;
   const markRenderPhase = profiling ? (key) => { const now = performance.now(); profileRecord(key, now - profileMark); profileMark = now; } : null;
   const W = G.W * G.dpr, H = G.H * G.dpr;

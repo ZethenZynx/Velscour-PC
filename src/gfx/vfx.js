@@ -120,9 +120,9 @@ export function spawn(p) {
   p.g = p.g ?? 0; p.drag = p.drag ?? 0; p.size = p.size ?? 2; p.size1 = p.size1 ?? p.size;
   p.rot = p.rot ?? 0; p.vr = p.vr ?? 0;
   const replaced = insertCappedParticle(particles, p, MAX_P(), particleCursor);
-  if (G.settings?.performanceProfiler === true) lifecycle.particlesCreated++;
+  if (G.settings?.developerMode === true) lifecycle.particlesCreated++;
   if (replaced) {
-    if (G.settings?.performanceProfiler === true) lifecycle.particlesRemoved++;
+    if (G.settings?.developerMode === true) lifecycle.particlesRemoved++;
     if (replaced.life <= 0) dead = Math.max(0, dead - 1);
     else if (replaced.spr) spriteGibs--;
   }
@@ -234,11 +234,11 @@ export function addDecal(x, y, color, size = 1, kind = 'splat', alpha = 0.9, opt
   if (gore) {
     const before = goreDecals.length;
     const added = addGoreDecal(goreDecals, d, goreLimit(G.settings));
-    if (added && G.settings?.performanceProfiler === true) { lifecycle.decalsCreated++; lifecycle.decalsRemoved += Math.max(0, before + 1 - goreDecals.length); }
+    if (added && G.settings?.developerMode === true) { lifecycle.decalsCreated++; lifecycle.decalsRemoved += Math.max(0, before + 1 - goreDecals.length); }
     return;
   }
-  if (decals.length >= max) { decals.shift(); if (G.settings?.performanceProfiler === true) lifecycle.decalsRemoved++; }
-  if (G.settings?.performanceProfiler === true) lifecycle.decalsCreated++;
+  if (decals.length >= max) { decals.shift(); if (G.settings?.developerMode === true) lifecycle.decalsRemoved++; }
+  if (G.settings?.developerMode === true) lifecycle.decalsCreated++;
   decals.push(d);
 }
 
@@ -690,7 +690,7 @@ export function addEffect(e, layer = 'top') {
   // persistent buff/owner effects and gameplay warning fields use other classes.
   if (ONE_SHOT_IMPACTS.has(e?.constructor?.name) && Number.isFinite(e.dur)) e.dur = Math.min(e.dur, OBJECT_LIFETIMES.impact.max);
   e.layer = layer; effects.push(e);
-  if (G.settings?.performanceProfiler === true) lifecycle.effectsCreated++;
+  if (G.settings?.developerMode === true) lifecycle.effectsCreated++;
   const bucket = effectsByLayer[layer]; if (bucket) bucket.push(e);
   return e;
 }
@@ -700,8 +700,8 @@ export function floatText(x, y, z, text, color = '#fff', size = 14, opts = {}) {
     const key = text.replace(/[\d.%]+/g, '#');
     for (const t of texts) if (!t.dmg && t.max - t.life < 0.5 && Math.abs(t.x - x) + Math.abs(t.y - y) < 1.5 && typeof t.text === 'string' && t.text.replace(/[\d.%]+/g, '#') === key) { t.text = text; return; }
   }
-  if (texts.length > 120) { texts.shift(); if (G.settings?.performanceProfiler === true) lifecycle.textsRemoved++; }
-  if (G.settings?.performanceProfiler === true) lifecycle.textsCreated++;
+  if (texts.length > 120) { texts.shift(); if (G.settings?.developerMode === true) lifecycle.textsRemoved++; }
+  if (G.settings?.developerMode === true) lifecycle.textsCreated++;
   const duration = opts.life || 0.9;
   const life = opts.dmg ? Math.min(OBJECT_LIFETIMES.damageNumber.max, duration) : duration;
   texts.push({ x, y, z, text, color, gradient: Array.isArray(opts.gradient) ? opts.gradient : null, size, life, max: life, vz: opts.vz ?? 45, dx: rand(-10, 10), crit: opts.crit, dmg: opts.dmg });
@@ -840,7 +840,7 @@ export function addLight(x, y, radius, intensity = 1, z = 20, color = null, prio
 }
 
 export function clearVfx() {
-  if (G.settings?.performanceProfiler === true) {
+  if (G.settings?.developerMode === true) {
     lifecycle.particlesRemoved += particles.length; lifecycle.decalsRemoved += decals.length + goreDecals.length;
     lifecycle.effectsRemoved += effects.length; lifecycle.textsRemoved += texts.length;
   }
@@ -851,7 +851,7 @@ export function clearVfx() {
 /** Counts used only by the optional performance panel/export. */
 export function vfxStats() {
   const stats = { particles: particles.length, decals: decals.length, gore: goreDecals.length, texts: texts.length, effects: effects.length, groundEffects: effectsByLayer.ground.length, topEffects: effectsByLayer.top.length, lifecycle: { ...lifecycle } };
-  if (G.settings?.performanceProfiler) {
+  if (G.settings?.developerMode) {
     for (const p of particles) { const key = `particle_${p.type || 'other'}`; stats[key] = (stats[key] || 0) + 1; }
     for (const e of effects) { const key = `effect_${e.constructor?.name || 'other'}`; stats[key] = (stats[key] || 0) + 1; }
   }
@@ -867,9 +867,9 @@ export function updateVfx(dt, world) {
   // of shifting the surviving array on every expired particle (quadratic work).
   let live = 0;
   for (const p of particles) {
-    if (p.life <= 0) { if (G.settings?.performanceProfiler === true) lifecycle.particlesRemoved++; continue; }
+    if (p.life <= 0) { if (G.settings?.developerMode === true) lifecycle.particlesRemoved++; continue; }
     p.life -= dt;
-    if (p.life <= 0) { if (G.settings?.performanceProfiler === true) lifecycle.particlesRemoved++; if (p.spr) spriteGibs--; }
+    if (p.life <= 0) { if (G.settings?.developerMode === true) lifecycle.particlesRemoved++; if (p.spr) spriteGibs--; }
     else particles[live++] = p;
   }
   particles.length = live; evict = 0; dead = 0;
@@ -915,7 +915,7 @@ export function updateVfx(dt, world) {
     const d = decals[i];
     if (d.grow < 1) d.grow = Math.min(1, d.grow + dt * 1.2);
     if (d.life < 9999) d.life -= dt;
-    if (d.life <= 0) { if (G.settings?.performanceProfiler === true) lifecycle.decalsRemoved++; continue; }
+    if (d.life <= 0) { if (G.settings?.developerMode === true) lifecycle.decalsRemoved++; continue; }
     decals[decalWrite++] = d;
   }
   decals.length = decalWrite;
@@ -930,12 +930,12 @@ export function updateVfx(dt, world) {
     // A defensive identity guard also repairs duplicate references left by an
     // older runtime or introduced by an external effect registrar.
     if (effect._vfxUpdateEpoch === updateEpoch) {
-      if (G.settings?.performanceProfiler === true) lifecycle.effectsRemoved++;
+      if (G.settings?.developerMode === true) lifecycle.effectsRemoved++;
       continue;
     }
     effect._vfxUpdateEpoch = updateEpoch;
     if (effect.update(dt)) effects[--effectWrite] = effect;
-    else if (G.settings?.performanceProfiler === true) lifecycle.effectsRemoved++;
+    else if (G.settings?.developerMode === true) lifecycle.effectsRemoved++;
   }
   // Reverse traversal packs surviving effects into the tail. Move that tail
   // back to the front before truncating; using only the live count here leaves
@@ -960,7 +960,7 @@ export function updateVfx(dt, world) {
       if (t.style === 'crit') t.vx *= Math.pow(0.003, dt); // short lateral impact bounce
     } else t.vz *= 0.94;
     if (t.life > 0) texts[textWrite++] = t;
-    else if (G.settings?.performanceProfiler === true) lifecycle.textsRemoved++;
+    else if (G.settings?.developerMode === true) lifecycle.textsRemoved++;
   }
   texts.length = textWrite;
 }

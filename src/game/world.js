@@ -117,17 +117,17 @@ export class World {
     if (this.map && !c.ghost && !c.isPlayer && !c.clutter) [c.x, c.y] = this.map.nudge(c.x, c.y, bodyR(c));
     this.creatures.push(c);
     c._worldRenderOrder = ++this._creatureSerial;
-    if (G.settings?.performanceProfiler === true) this.lifecycle.creaturesCreated++;
+    if (G.settings?.developerMode === true) this.lifecycle.creaturesCreated++;
     if (Array.isArray(this.dungeonAffixes)) for (const id of this.dungeonAffixes) applyDungeonAffix(c, id);
     return c;
   }
   remove(c) {
     const idx = this.creatures.indexOf(c);
-    if (idx !== -1) { this.creatures.splice(idx, 1); if (G.settings?.performanceProfiler === true) this.lifecycle.creaturesRemoved++; }
+    if (idx !== -1) { this.creatures.splice(idx, 1); if (G.settings?.developerMode === true) this.lifecycle.creaturesRemoved++; }
     if (c.world === this) c.world = null;
     return c;
   }
-  addHazard(h) { h.world = this; this.hazards.push(h); if (G.settings?.performanceProfiler === true) this.lifecycle.hazardsCreated++; return h; }
+  addHazard(h) { h.world = this; this.hazards.push(h); if (G.settings?.developerMode === true) this.lifecycle.hazardsCreated++; return h; }
   addLoot(l) {
     l._lootRemoved = false;
     l._lootBornAt = this.time;
@@ -136,7 +136,7 @@ export class World {
     l._lootFadeAt = lifetime.fadeAt;
     l._lootMaxLifetime = lifetime.duration;
     this.loot.push(l);
-    if (G.settings?.performanceProfiler === true) this.lifecycle.lootCreated++;
+    if (G.settings?.developerMode === true) this.lifecycle.lootCreated++;
     this._lootRegistered++;
     this._indexLoot(l);
     if (l.z > 0 || l.vz > 0) this.movingLoot.add(l);
@@ -188,7 +188,7 @@ export class World {
   removeLoot(l) {
     if (!l || l._lootRemoved) return false;
     l._lootRemoved = true;
-    if (G.settings?.performanceProfiler === true) this.lifecycle.lootRemoved++;
+    if (G.settings?.developerMode === true) this.lifecycle.lootRemoved++;
     l._lootTimerToken = (l._lootTimerToken || 0) + 1;
     if (l.fades) this._lootTimerStale++;
     if (Number.isFinite(l._lootExpiryAt)) this._lootTimerStale++;
@@ -405,7 +405,7 @@ export class World {
         this._audioDiagnosticCombat = inCombat;
       }
     } else this._audioDiagnosticCombat = null;
-    const profiling = this._perfProfiling = G.settings?.performanceProfiler === true;
+    const profiling = this._perfProfiling = G.settings?.developerMode === true;
     if (profiling) { this._perfSpatialCandidates = 0; this._perfCollisionPairs = 0; this._perfPathSearches = 0; }
     const worldStart = profiling ? profileStart() : 0;
     this.time += dt;
@@ -473,7 +473,7 @@ export class World {
     for (let i = this.hazards.length - 1; i >= 0; i--) {
       const h = this.hazards[i];
       if (h.update(dt) === false || h.dead) {
-        this.hazards.splice(i, 1); if (G.settings?.performanceProfiler === true) this.lifecycle.hazardsRemoved++;
+        this.hazards.splice(i, 1); if (G.settings?.developerMode === true) this.lifecycle.hazardsRemoved++;
         if (h.world === this) h.world = null;
       }
       else if (h.o && h.o.aug) augHazard(h, dt);
@@ -490,7 +490,7 @@ export class World {
     for (let i = this.creatures.length - 1; i >= 0; i--) {
       const c = this.creatures[i];
       if (c.dead && c !== p && (c.removeT = (c.removeT || 0) + dt) > 0.05) {
-        this.creatures.splice(i, 1); if (G.settings?.performanceProfiler === true) this.lifecycle.creaturesRemoved++;
+        this.creatures.splice(i, 1); if (G.settings?.developerMode === true) this.lifecycle.creaturesRemoved++;
         if (c.world === this) c.world = null;
       }
     }
