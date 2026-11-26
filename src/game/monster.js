@@ -12,7 +12,7 @@ import { Projectile, Delayed, NovaWave, Area, Fissure, explode, lineTargets, con
 import { ARCH, ARCH_MOVES, ELITE_AFFIXES, bossName, uniqueName } from '../data/enemies.js';
 import { SUMMONS } from '../data/summons.js';
 import { turretMuzzle } from '../gfx/gunner3d.js';
-import { bodyR } from '../world/map.js';
+import { bodyR, aloft } from '../world/map.js';
 import { profileRecord } from '../core/perfdiagnostics.js';
 import { toughness, danger, densityXp, riftHold, dmgScale, endgameScaling, endgameBaseLevel, FINAL_DEPTH } from '../data/depth.js';
 import { riftHpMul, riftDmgMul } from '../data/rifts.js';
@@ -477,6 +477,7 @@ export class Monster extends Creature {
     const w = this.world, map = w.map;
     const d = dist(this.x, this.y, gx, gy);
     if (this.ghost) { this.moveToward(gx, gy, dt, speed); return d; }
+    if (this.voidFly && map.sheer && aloft(this) && map.leapOk(this.x, this.y, gx, gy, bodyR(this) + 0.03)) { this.moveToward(gx, gy, dt, speed); return d; }
     const N = this.nav || (this.nav = { t: 0, path: null, part: false, gx, gy, cx: this.x, cy: this.y, ct: 0, last: 0, stuck: 0, side: 0, sa: 0, force: false });
     const r = bodyR(this) + 0.03;
     // progress check: no headway for half a second means stuck
@@ -1065,7 +1066,7 @@ export class Monster extends Creature {
     switch (k) {
       case 'lunge': {
         const L = Math.max(0, d - 0.7), tx = this.x + Math.cos(ang) * L, ty = this.y + Math.sin(ang) * L;
-        if (!map.losWide(this.x, this.y, tx, ty, bodyR(this) + 0.03)) return false;
+        if (!map.leapOk(this.x, this.y, tx, ty, bodyR(this) + 0.03)) return false;
         tele({ kind: 'circle', x: tx, y: ty, r: 1.1 * big, dur: 0.45 });
         this.startAction('mv_lunge', 0.45, { tx, ty, ang });
         break;
@@ -1263,9 +1264,13 @@ export class Monster extends Creature {
       case 'mv_lunge': {
         const k = Math.min(1, a.t / 0.35);
         const want = dist(this.x, this.y, a.tx, a.ty), step = Math.min(want, dist(a.sx, a.sy, a.tx, a.ty) / 0.35 * dt);
+        // The final update can span the remaining gap after a low frame rate; keep its movement airborne.
+        this.leaping = !!w.map.sheer;
         if (want > 0.01) w.map.move(this, (a.tx - this.x) / want * step, (a.ty - this.y) / want * step, this.ghost);
         this.z = 50 * 4 * k * (1 - k); this.moving = true;
         if (k >= 1) {
+          if (w.map.sheer && !w.map.circleFree(this.x, this.y, bodyR(this)) && w.map.circleFree(a.tx, a.ty, bodyR(this))) { this.x = a.tx; this.y = a.ty; }
+          this.leaping = false;
           explode(w, this, this.x, this.y, 1.1 * big, dmg * 1.3, el, { knock: 0.6, melee: true }, 'eruption');
           enemySound(this, 'thud', 0.6);
           done();

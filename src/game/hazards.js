@@ -127,10 +127,10 @@ export class Projectile {
     }
     const nx = this.x + this.vx * dt, ny = this.y + this.vy * dt;
     if (this.returning) { this.x = nx; this.y = ny; }
-    else if (!w.map.isFloor(nx, ny)) {
+    else if (w.map.solid(nx, ny)) {
       if (this.bounce > 0) {
-        if (!w.map.isFloor(nx, this.y)) this.vx = -this.vx;
-        if (!w.map.isFloor(this.x, ny)) this.vy = -this.vy;
+        if (w.map.solid(nx, this.y)) this.vx = -this.vx;
+        if (w.map.solid(this.x, ny)) this.vy = -this.vy;
         this.bounce--; this.hitSet.clear();
       } else if (this.ret) {
         this.turnBack();
@@ -759,25 +759,37 @@ export class Leap {
     this.E = elem(this.el);
     this.src.channel = this;
     this.sx = this.src.x; this.sy = this.src.y;
-    const d = dist(this.sx, this.sy, this.tx, this.ty), a = angleTo(this.sx, this.sy, this.tx, this.ty);
-    const trace = this.world.map.traceMovement(this.src, Math.cos(a) * d, Math.sin(a) * d);
-    this.tx = trace.x; this.ty = trace.y;
+    const map = this.world.map, d = dist(this.sx, this.sy, this.tx, this.ty), a = angleTo(this.sx, this.sy, this.tx, this.ty);
+    if (map.sheer) {
+      const steps = Math.ceil(d / 0.12);
+      let landing = [this.sx, this.sy];
+      for (let i = steps; i >= 0; i--) {
+        const s = d * i / Math.max(1, steps), x = this.sx + Math.cos(a) * s, y = this.sy + Math.sin(a) * s;
+        if (map.leapOk(this.sx, this.sy, x, y, 0.3)) { landing = [x, y]; break; }
+      }
+      [this.tx, this.ty] = landing;
+    } else {
+      const trace = map.traceMovement(this.src, Math.cos(a) * d, Math.sin(a) * d);
+      this.tx = trace.x; this.ty = trace.y;
+    }
     this.world.map.rememberPosition(this.src);
     this.src.face(a);
     this.src.invuln = this.dur;
   }
   update(dt) {
     const s = this.src;
-    if (s.dead || s.channel !== this) { if (!s.dead) s.z = 0; return false; }
+    if (s.dead || s.channel !== this) { if (!s.dead) { s.z = 0; s.leaping = false; } return false; }
     this.t += dt;
     const k = (this.k = Math.min(1, this.t / this.dur));
+    // Keep this final movement segment airborne too; a long frame may cross the brink in one update.
+    s.leaping = !!this.world.map.sheer;
     const nx = this.sx + (this.tx - this.sx) * k, ny = this.sy + (this.ty - this.sy) * k;
     const dx = nx - s.x, dy = ny - s.y, moved = this.world.map.moveStraight(s, dx, dy);
     if (k < 1 && Math.hypot(dx, dy) > 0.01 && !moved) this.t = this.dur;
     s.z = 4 * (this.fx === 'dragon' || this.fx === 'meteor' ? 120 : 70) * k * (1 - k);
     if (!this.lance && chance(dt * 30)) trail(this.fx === 'dragon' || this.fx === 'meteor' ? 'fireball' : 'bolt', s.x, s.y, s.z + 20, this.E, dt);
     if (k >= 1) {
-      s.z = 0; s.channel = null; this.done = true;
+      s.z = 0; s.leaping = false; s.channel = null; this.done = true;
       explode(this.world, s, s.x, s.y, this.r, this.dmg, this.el, { ...this.o, knock: this.o.knock || 0.6 }, this.fx === 'meteor' || this.fx === 'dragon' ? 'meteor' : this.fx === 'holy' ? 'holy' : 'eruption');
       sfx('thud');
       addDecal(s.x, s.y, 'rgba(10,6,4,0.6)', this.r * 0.5, 'scorch', 0.7);

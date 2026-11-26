@@ -5,6 +5,8 @@
  * (a 2-wide corridor, a gap beside a prop); its sprite and hit radius (`r`) stay as big as they are.
  */
 export const bodyR = (e) => Math.min(e.r * 0.8, 0.42);
+/** A flyer that is still airborne, or any creature mid-leap, may cross a Sheer Drop's void. */
+export const aloft = (e) => !!e.leaping || (!!e.voidFly && !(e.disabled && e.disabled()));
 
 export class TileMap {
   constructor(w, h) {
@@ -29,6 +31,7 @@ export class TileMap {
     // `drop`, so a taller step is a wall one way (or both). null on flat maps, where none of this costs anything.
     this.hgt = null;
     this.climb = 2; this.drop = 5;
+    this.sheer = null; // cliff dungeon metadata; ordinary maps retain their existing wall behavior
   }
   /** Can a walker step from tile index a onto tile index b (height map only)? */
   stepOk(a, b) { const d = this.hgt[b] - this.hgt[a]; return d <= this.climb && -d <= this.drop; }
@@ -284,6 +287,7 @@ export class TileMap {
 
   /** Move a circle with wall sliding. Returns true if moved at all. */
   move(e, dx, dy, ghost = false) {
+    if (this.sheer && aloft(e)) return this.flyMove(e, dx, dy);
     if (ghost) {
       const nx = e.x + dx, ny = e.y + dy;
       if (this.isFloor(nx, ny)) { e.x = nx; e.y = ny; return true; }
@@ -305,6 +309,64 @@ export class TileMap {
     const movedX = moveAxis(dx, 'x'), movedY = moveAxis(dy, 'y'), moved = movedX || movedY;
     if (moved) this.rememberPosition(e);
     return !!moved;
+  }
+
+  /** Airborne movement crosses floor gaps but still respects map bounds and solid props. */
+  flyMove(e, dx, dy) {
+    const d = Math.hypot(dx, dy), steps = Math.max(1, Math.ceil(d / 0.08)), sx = dx / steps, sy = dy / steps, r = bodyR(e);
+    let moved = false;
+    for (let k = 0; k < steps; k++) {
+      const x = e.x + sx, y = e.y + sy;
+      if (!this.bodyInsideMap(x, y, r) || this.bodyHitsBlock(x, y, r)) break;
+      e.x = x; e.y = y; moved = true;
+    }
+    if (moved) this.rememberPosition(e);
+    return moved;
+  }
+
+  /** Knockback may carry a body across a brink, but not through props or outside the map. */
+  shove(e, dx, dy) {
+    const d = Math.hypot(dx, dy), steps = Math.max(1, Math.ceil(d / 0.06)), sx = dx / steps, sy = dy / steps, r = bodyR(e);
+    let moved = false;
+    for (let k = 0; k < steps; k++) {
+      const x = e.x + sx, y = e.y + sy;
+      if (!this.bodyInsideMap(x, y, r) || this.bodyHitsBlock(x, y, r)) break;
+      e.x = x; e.y = y; moved = true;
+      // Preserve a brink crossing even when a low-FPS frame carries the body all the way onto the far side.
+      if (!e._sheerCrossedVoid && !this.isFloor(x, y)) e._sheerCrossedVoid = { x, y };
+    }
+    if (moved) this.rememberPosition(e);
+    return moved;
+  }
+
+  bodyInsideMap(x, y, r) { return x - r >= 0 && y - r >= 0 && x + r < this.w && y + r < this.h; }
+  bodyHitsBlock(x, y, r) {
+    const minX = Math.floor(x - r), maxX = Math.floor(x + r), minY = Math.floor(y - r), maxY = Math.floor(y + r), r2 = r * r;
+    for (let ty = minY; ty <= maxY; ty++) for (let tx = minX; tx <= maxX; tx++) {
+      if (!this.inb(tx, ty) || !this.block[ty * this.w + tx]) continue;
+      const nx = Math.max(tx, Math.min(x, tx + 1)), ny = Math.max(ty, Math.min(y, ty + 1));
+      if ((x - nx) ** 2 + (y - ny) ** 2 < r2 - 1e-9) return true;
+    }
+    return false;
+  }
+
+  /** A shot is stopped by props and map bounds, while the void itself is open. */
+  solid(x, y) {
+    if (!this.sheer) return !this.isFloor(x, y);
+    const tx = Math.floor(x), ty = Math.floor(y);
+    return !this.inb(tx, ty) || !!this.block[ty * this.w + tx];
+  }
+
+  /** A leap can span a void but must land with its full collision radius on reachable floor. */
+  leapOk(x0, y0, x1, y1, r = 0.3) {
+    if (!this.sheer) return this.losWide(x0, y0, x1, y1, r);
+    if (!this.circleFree(x1, y1, r)) return false;
+    const d = Math.hypot(x1 - x0, y1 - y0), n = Math.ceil(d * 4);
+    for (let i = 1; i < n; i++) {
+      const t = i / n;
+      if (this.bodyHitsBlock(x0 + (x1 - x0) * t, y0 + (y1 - y0) * t, r)) return false;
+    }
+    return true;
   }
 
   /**
@@ -371,6 +433,7 @@ export class TileMap {
   moveStraight(e, dx, dy, ghost = false) {
     const d = Math.hypot(dx, dy);
     if (!d) return false;
+    if (this.sheer && aloft(e)) return this.flyMove(e, dx, dy);
     if (ghost) {
       const nx = e.x + dx, ny = e.y + dy;
       if (!this.isFloor(nx, ny)) return false;
@@ -408,19 +471,37 @@ export class TileMap {
     for (let i = 1; i < steps; i++) {
       const t = i / steps;
       const tx = Math.floor(x0 + dx * t), ty = Math.floor(y0 + dy * t);
-      if ((!this.tile(tx,ty) && !this.losOverWater) || (this.losBlocks && this.block[ty*this.w+tx])) return false;   // losOverWater: the Pirate Seas (the sea hides nothing)
+      if ((!this.tile(tx,ty) && !this.losOverWater && !this.sheer) || (this.losBlocks && this.block[ty*this.w+tx])) return false;
       if (H && H[ty * this.w + tx] > top) return false;
     }
     return true;
   }
 
   /** Cast a ray, return the distance until a wall (max len). */
-  rayLength(x0, y0, ang, len) {
+  rayLength(x0, y0, ang, len, ground = false) {
     const c = Math.cos(ang), s = Math.sin(ang);
     for (let d = 0.2; d <= len; d += 0.2) {
-      if (!this.isFloor(x0 + c * d, y0 + s * d)) return Math.max(0, d - 0.2);
+      const x = x0 + c * d, y = y0 + s * d;
+      if (this.sheer && !ground ? this.solid(x, y) : !this.isFloor(x, y)) return Math.max(0, d - 0.2);
     }
     return len;
+  }
+
+  /** Nearest body-clear floor point around an origin (used by Sheer recovery and airborne navigation). */
+  nearestFloor(x, y, r = 0.3, maxR = 3) {
+    if (this.circleFree(x, y, r)) return [x, y];
+    for (let k = 1; k * 0.2 <= maxR; k++) {
+      const d = k * 0.2, n = 8 + k * 3;
+      let best = null, bestD = Infinity;
+      for (let i = 0; i < n; i++) {
+        const a = (i / n) * Math.PI * 2, nx = x + Math.cos(a) * d, ny = y + Math.sin(a) * d;
+        if (!this.circleFree(nx, ny, r)) continue;
+        const dd = Math.abs(nx - x) + Math.abs(ny - y);
+        if (dd < bestD) { bestD = dd; best = [nx, ny]; }
+      }
+      if (best) return best;
+    }
+    return null;
   }
 
   /** BFS distance field toward (tx,ty) used by every monster for pathing. */
@@ -674,10 +755,12 @@ export class TileMap {
 
   /** Random walkable tile centre near (x,y) within r. */
   randomNear(x, y, r, rng = Math.random) {
+    const body = this.sheer ? 0.42 : 0.3;
     for (let i = 0; i < 40; i++) {
       const nx = x + (rng() * 2 - 1) * r, ny = y + (rng() * 2 - 1) * r;
-      if (this.walkable(nx, ny) && this.circleFree(nx, ny, 0.3)) return [nx, ny];
+      if (this.walkable(nx, ny) && this.circleFree(nx, ny, body)) return [nx, ny];
     }
+    if (this.sheer) return this.nearestFloor(x, y, body, Math.max(0.6, r)) || [x, y];
     return [x, y];
   }
 

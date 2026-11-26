@@ -11,6 +11,7 @@ import { bodyR } from '../world/map.js';
 import { profileEnd, profileRecord, profileStart } from '../core/perfdiagnostics.js';
 import { groundLootLifetime, OBJECT_LIFETIMES } from '../core/objectlifetimes.mjs';
 import { reconcileBossDefeats } from './bosscompletion.js';
+import { sheerUpdate } from './sheer.js';
 
 const CELL = 2;
 const LOOT_CELL = 8;
@@ -453,6 +454,7 @@ export class World {
     if (profiling) profileRecord('hazard', profileEnd(hazardStart));
     collisionStart = profiling ? profileStart() : 0;
     this.separate();
+    if (this.map.sheer) sheerUpdate(this, dt);
     if (profiling) profileRecord('collision', profileEnd(collisionStart));
     // Completion must observe a defeated guardian before cleanup detaches dead
     // entities. This also catches scripted deaths that set `dead` directly

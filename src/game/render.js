@@ -27,6 +27,7 @@ import { drawKeepGate } from '../gfx/keepgate.js';
 import { drawLightShafts, drawSacredFlame } from '../gfx/keepart.js';
 import { isPlayerHostile, isPlayerTargetable, setCreatureTargetBounds } from './targeting.js';
 import { drawNebula } from '../gfx/breach.js';
+import { drawAbyss, drawSheerTiles, drawPlunge, FACE_H } from '../gfx/sheer.js';
 import { drawWyrm } from '../gfx/breachdragon.js';
 import { skyBack, skyWorld, skyFx, skyFront, drawSkyGate } from '../gfx/skyship.js';
 import { drawCine } from './cinema.js';
@@ -913,6 +914,7 @@ let chunkBudgetFrame = -1, chunkBudget = 0;
 function drawFloorTiles(ctx, world, x0, y0, x1, y1, force) {
   const map = world.map;
   if (map.hgt) return drawTerrain(ctx, world, x0, y0, x1, y1, floorEntry, map.castleMat ? (force ? castleDressBake : castleDress) : null); // height map: lifted columns and cliffs
+  if (map.sheer) return drawSheerFloor(ctx, world, x0, y0, x1, y1, force);
   const tl = [(x0 / HW + y0 / HH) / 2, (y0 / HH - x0 / HW) / 2], br = [(x1 / HW + y1 / HH) / 2, (y1 / HH - x1 / HW) / 2];
   const tr = [(x1 / HW + y0 / HH) / 2, (y0 / HH - x1 / HW) / 2], bl = [(x0 / HW + y1 / HH) / 2, (y1 / HH - x0 / HW) / 2];
   const tx0 = clamp(Math.floor(tl[0]) - 1, 0, map.w - 1), tx1 = clamp(Math.ceil(br[0]) + 1, 0, map.w - 1);
@@ -930,6 +932,19 @@ function drawFloorTiles(ctx, world, x0, y0, x1, y1, force) {
       if (map.castleMat) castleTileDressing(ctx, world, tx, ty, px, py, floorEntry);
     }
   }
+}
+/** Bake the exposed cliff faces into the existing floor chunks, expanding tile lookup above the chunk for face reach. */
+function drawSheerFloor(ctx, world, x0, y0, x1, y1) {
+  const map = world.map, ya = y0 - FACE_H - TH;
+  const tx0 = clamp(Math.floor((x0 / HW + ya / HH) / 2) - 1, 0, map.w - 1), tx1 = clamp(Math.ceil((x1 / HW + y1 / HH) / 2) + 1, 0, map.w - 1);
+  const ty0 = clamp(Math.floor((ya / HH - x1 / HW) / 2) - 1, 0, map.h - 1), ty1 = clamp(Math.ceil((y1 / HH - x0 / HW) / 2) + 1, 0, map.h - 1);
+  const inView = (px, py, cliff) => px >= x0 - TW && px <= x1 + TW && py <= y1 + TH && py >= (cliff ? ya - TH : y0 - TH);
+  drawSheerTiles(ctx, map, tx0, ty0, tx1, ty1, (g, tx, ty, px, py) => {
+    const i = ty * map.w + tx, f = floorEntry(world, map.v[i]);
+    g.drawImage(f.img, f.sx, f.sy, f.w, f.h, px - HW - 0.6, py - 0.6, TW + 1.2, TH + 1.2);
+    const gr = gritAt(world, f, map.v[i], tx, ty, true);
+    if (gr) g.drawImage(gr, px - HW, py);
+  }, inView);
 }
 const chunkKey = (cx, cy) => (cx + 32768) * 65536 + (cy + 32768);
 /** Is a baked decal (vfx.js) already in every on-screen floor chunk it touches? Then the chunks draw it and drawDecals
@@ -1076,11 +1091,12 @@ export function renderWorld(ctx, world) {
   const W = G.W * G.dpr, H = G.H * G.dpr;
   ctx.setTransform(1, 0, 0, 1, 0, 0);
   ctx.globalAlpha = 1; ctx.globalCompositeOperation = 'source-over';
-  if (!world.map.voidFace || world.sky) { ctx.fillStyle = '#000'; ctx.fillRect(0, 0, W, H); }   // (the Breach's void is opaque)
+  if ((!world.map.voidFace && !world.map.sheer) || world.sky) { ctx.fillStyle = '#000'; ctx.fillRect(0, 0, W, H); }
   if (world.tower) world.tower.draw(ctx); // the Serpentine Tower in three.js (gfx/tower3d.js), turning with the hero
   else if (world.cave) world.cave.draw(ctx); // the Depth's Edge Caverns in three.js (gfx/cave3d.js)
   else if (world.sky) skyBack(ctx, W, H, world); // the Sky Battle's sky and clouds (gfx/skyship.js)
   else if (world.map.voidFace) drawNebula(ctx, W, H, camera.x * camera.zoom * G.dpr, camera.y * camera.zoom * G.dpr); // the Breach's void
+  else if (world.map.sheer) drawAbyss(ctx, W, H, camera.x * camera.zoom * G.dpr, camera.y * camera.zoom * G.dpr, world.map.sheer, G.time || 0, Math.min(0.05, G.dt || 0.016));
   else if (world.map.hgt && !world.map.castleMat && !world.map.noSky) drawSky(ctx, W, H, camera.x * camera.zoom * G.dpr, camera.y * camera.zoom * G.dpr, world.night);
   camera.apply(ctx);
   const camT = ctx.getTransform();
@@ -1299,6 +1315,7 @@ export function renderWorld(ctx, world) {
     if (!closeEnough(n.x,n.y)) { n.sbox=null; continue; }
     enqueue(n.x + n.y, 7, n);
   }
+  if (world.plunges) for (const f of world.plunges) if (closeEnough(f.x, f.y, 90, 150)) enqueue(f.x + f.y, 15, f);
   const visibleLoot = world.queryLootRect && !world.tower && !world.cave
     ? world.queryLootRect(tx0 - 2, ty0 - 2, tx1 + 2, ty1 + 2, world._renderLootBuffer || (world._renderLootBuffer = []))
     : world.loot;
@@ -1417,6 +1434,7 @@ export function renderWorld(ctx, world) {
         if (c) ctx.restore();
         break;
       }
+      case 15: drawPlunge(ctx, o); break;
     }
   }
   xray.on = false;

@@ -3,6 +3,7 @@ import { BREACH_ARCHS } from './breach.js';
 // palette -> recolor() params applied to the biome's art (null = as drawn).
 // mon -> hue/sat/light shift applied to monster palettes.
 import { ACTS, FINAL_DEPTH } from './depth.js';
+import { SHEER } from './sheer.js';
 export const BIOMES = [
   {
     id: 'catacombs', name: 'Skull-Lined Catacombs', palette: null, dark: 0.82, light: 7.5,
@@ -456,6 +457,18 @@ for (const b of BIOMES) {
   b.painted = ['desert_temple', 'ice_temple', 'hell', 'astral_plane', 'heavenly'].includes(b.id);
   if (!b.pack) b.pack = CAT;
   b.wallPack = b.wallPack || null;
+}
+
+// Sheer Drops borrow each source biome's floor, props and monster identity, but replace its wall boundary with cliffs.
+// They remain out of campaign schedules and are eligible through the ordinary endgame and Rift dungeon pools.
+for (const v of SHEER) {
+  const base = BIOMES.find((b) => b.id === v.base);
+  if (!base) throw new Error(`Sheer Drop ${v.id} references missing base biome ${v.base}`);
+  BIOMES.splice(BIOMES.indexOf(base) + 1, 0, {
+    ...base, id: v.id, name: v.name, base: v.base, sheer: v, adj: v.adj,
+    dark: v.dark, light: v.light, fog: v.fog, wallPack: null,
+    ambient: v.motes.kind === 'gold' || v.motes.kind === 'glint' ? { type: 'glitter', color: v.motes.color } : base.ambient,
+  });
 }
 
 // Colour families: a level can mix its palette with another biome of the same family (mixPartner), e.g. a

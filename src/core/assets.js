@@ -12,6 +12,7 @@ import { loadEnemyArt } from './enemyart.js';
 import { preloadSong } from './audio.js';
 import { walkOverProp } from '../data/walkover.js';
 import { potionIconColor } from './potion-icon-color.mjs';
+import { preloadSheer } from '../gfx/sheer.js';
 
 export const CLASS_IDS = [
   'paladin', 'ranger', 'wizard', 'necromancer',
@@ -122,8 +123,9 @@ export function loadBiomeArt(biome) {
     ...(dungeon ? biomePacks(biome).map(loadPack) : []),
     dungeon ? preloadApprovedBiomeArt(biome.id) : Promise.resolve(null),
     biome?.id === 'heavenly' ? preloadApprovedHeavenlyArtwork() : Promise.resolve(null),
-    dungeon ? preloadWallTorchHolders(biome) : Promise.resolve(null),
-    preloadWallHangings(biome?.id),
+    dungeon && !biome.sheer ? preloadWallTorchHolders(biome) : Promise.resolve(null),
+    biome?.sheer ? Promise.resolve(null) : preloadWallHangings(biome?.id),
+    preloadSheer(biome),
   ]);
 }
 
