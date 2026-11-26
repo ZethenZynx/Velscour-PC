@@ -3361,35 +3361,42 @@ export const game = {
       cineTick(w, dt);
       // Previously seen scenes may play at 20x when the explicit skip preference is off.
       for (let i = 1; i < CINE_FAST && Cine.fast && G.cine && G.world === w; i++) { G.time += dt; Cine.update(dt); cineTick(w, dt); }
-    } else if (G.hitStop > 0) { G.hitStop -= dt; controls.update(0); }
-    else if (!G.paused) {
-      controls.update(dt);
-      // A click may have taken the hero through a portal: the world he left stops here, or its rules run on
-      // him in the new one (the Breach's wards put him back at his last Breach spot, off the edge of town: a black town)
-      if (G.world !== w) return;
-      w.update(dt);
-      if (G.world !== w) return;
-      const profiling = developerRecordingActive();
-      const eventsStart = profiling ? profileStart() : 0;
-      this.tickDungeonAffixWorld(w, dt);
-      worldObjectsTick(w, dt);
-      if (w.overworldScenario) w.overworldScenario.update(dt);
-      if (w.map.c3struct && !w.map.sky) castle3dTick(w, dt);
-      ambushTick(w, dt);
-      if (w.kind === 'town') townTick(w, dt);
-      else if (!w.sky && !w.seaRun) happeningsTick(w, dt);
-      else eventImpsTick(w, dt);
-      if (w.kind !== 'town') dungeonEventTick(w, dt);
-      if (w.rift) riftTick(w, dt); // the Abyssal Rift's clock (game/rifts.js)
-      if (w.heresy) heresyTick(w, dt); // the Heresies as monsters appear, the Legion's hellgates (game/heresies.js; the Breach has no happenings tick)
-      madnessTick(dt);
-      hearthTick(dt);
-      spectateTick(w, dt); // gilded critters, the SMITE reticle (game/spectate.js)
-      footsteps(p, w.kind === 'town' ? 'dirt' : STEP_SURFACE[w.biome && w.biome.id] || 'stone');
-      Meter.tick(dt);
-      if (profiling) profileRecord('events', profileEnd(eventsStart));
     } else {
-      input.endFrame();
+      // Hit-stop is legacy impact feedback. Do not suspend the whole simulation
+      // while it counts down: qualifying critical hits can recur every update in
+      // dense combat, turning a brief pause into sustained slow motion while RAF
+      // rendering continues normally. Keep the timer decaying for compatibility,
+      // but always advance gameplay by the real frame delta below.
+      if (G.hitStop > 0) G.hitStop = Math.max(0, G.hitStop - dt);
+      if (!G.paused) {
+        controls.update(dt);
+        // A click may have taken the hero through a portal: the world he left stops here, or its rules run on
+        // him in the new one (the Breach's wards put him back at his last Breach spot, off the edge of town: a black town)
+        if (G.world !== w) return;
+        w.update(dt);
+        if (G.world !== w) return;
+        const profiling = developerRecordingActive();
+        const eventsStart = profiling ? profileStart() : 0;
+        this.tickDungeonAffixWorld(w, dt);
+        worldObjectsTick(w, dt);
+        if (w.overworldScenario) w.overworldScenario.update(dt);
+        if (w.map.c3struct && !w.map.sky) castle3dTick(w, dt);
+        ambushTick(w, dt);
+        if (w.kind === 'town') townTick(w, dt);
+        else if (!w.sky && !w.seaRun) happeningsTick(w, dt);
+        else eventImpsTick(w, dt);
+        if (w.kind !== 'town') dungeonEventTick(w, dt);
+        if (w.rift) riftTick(w, dt); // the Abyssal Rift's clock (game/rifts.js)
+        if (w.heresy) heresyTick(w, dt); // the Heresies as monsters appear, the Legion's hellgates (game/heresies.js; the Breach has no happenings tick)
+        madnessTick(dt);
+        hearthTick(dt);
+        spectateTick(w, dt); // gilded critters, the SMITE reticle (game/spectate.js)
+        footsteps(p, w.kind === 'town' ? 'dirt' : STEP_SURFACE[w.biome && w.biome.id] || 'stone');
+        Meter.tick(dt);
+        if (profiling) profileRecord('events', profileEnd(eventsStart));
+      } else {
+        input.endFrame();
+      }
     }
     if (!G.cine) camera.follow(p.x, p.y, dt);
     camera.update(dt);
