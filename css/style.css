@@ -556,6 +556,13 @@ body.at-sea #levelup { top: 31%; } /* the Pirate Seas: the top band is the scena
 .stash-panel .stash-grid { grid-template-columns: repeat(10, 44px); max-height: min(60vh, 470px); overflow-y: auto; padding-right: 4px; }
 .reliquary-panel { max-width: min(640px, 96vw); }
 .reliquary-panel .rel-tabs { display: flex; flex-wrap: wrap; gap: 3px; margin-bottom: 8px; border-bottom: 1px solid var(--line); }
+.reliquary-panel .rel-gold-transfer { margin: 0 0 8px; padding: 7px 8px; border: 1px solid #604822; border-radius: 5px; background: linear-gradient(110deg, rgba(74,48,20,.34), rgba(20,14,9,.7)); }
+.reliquary-panel .rel-gold-balances { display: flex; justify-content: space-between; flex-wrap: wrap; gap: 4px 12px; margin-bottom: 6px; color: #c8b89d; font-size: 12px; }
+.reliquary-panel .rel-gold-balances b { color: #ffd860; font-variant-numeric: tabular-nums; }
+.reliquary-panel .rel-gold-controls { display: flex; flex-wrap: wrap; align-items: center; gap: 5px; }
+.reliquary-panel .rel-gold-amount { flex: 1 1 82px; width: 100px; min-width: 72px; box-sizing: border-box; padding: 5px 7px; border: 1px solid #80603a; border-radius: 4px; background: #1c140f; color: #f0dfbf; font: 13px var(--font-body); }
+.reliquary-panel .rel-gold-controls .btn { flex: 0 0 auto; }
+.reliquary-panel .rel-gold-controls .btn:disabled { opacity: .45; cursor: default; }
 .reliquary-panel .tab.locked { opacity: .55; }
 .reliquary-panel .rel-grid { grid-template-columns: repeat(12, 44px); max-height: min(58vh, 430px); overflow-y: auto; padding-right: 4px; }
 .reliquary-panel .rel-note { font-size: 12px; margin-bottom: 6px; }

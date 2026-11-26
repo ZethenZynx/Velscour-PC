@@ -7,7 +7,8 @@ import { UI, draggable, droppable } from './ui.js';
 import { itemCell, itemTooltip, itemGearTip, rarityClass } from './itemui.js';
 import { changed, renderInventory } from './inventory.js';
 import { addToBag } from '../game/player.js';
-import { reliquary, saveReliquary, openTabs, codexProgress, codexEntries, MILESTONES, VAULT_TABS, codexTitle, noteFind } from '../game/reliquary.js';
+import { reliquary, saveReliquary, openTabs, codexProgress, codexEntries, MILESTONES, VAULT_TABS, codexTitle, noteFind, MAX_RELIQUARY_GOLD, transferReliquaryGold } from '../game/reliquary.js';
+import { writeSave } from '../game/save.js';
 import { RELIC_COLORS, SIGILS, SLOT_NAMES, makeGem, itemName, sigilMinDepth } from '../data/items.js';
 import { COVENANT_BY_ID, makeHeirloom, makeCovenant, heirloomPreview, GLYPHWORDS } from '../data/relics.js';
 import { itemIconURL } from './icons.js';
@@ -209,6 +210,7 @@ export const Reliquary = {
       tabs.appendChild(b);
     }
     body.appendChild(tabs);
+    this.renderGoldTransfer(body, c, r);
     if (this.tab === VAULT_TABS) {
       this.renderCodex(body, prog);
       if (prevBodyScroll > 0) {
@@ -325,6 +327,63 @@ export const Reliquary = {
       body.scrollTop = prevBodyScroll;
       requestAnimationFrame(() => { if (body && prevBodyScroll > 0) body.scrollTop = prevBodyScroll; });
     }
+  },
+  renderGoldTransfer(body, character, vault) {
+    const section = el('section', 'rel-gold-transfer');
+    const balances = el('div', 'rel-gold-balances');
+    balances.appendChild(el('span', '', `Your gold <b>${fmtInt(character?.gold || 0)}</b>`));
+    balances.appendChild(el('span', '', `Shared gold <b>${fmtInt(vault.gold || 0)}</b>`));
+    section.appendChild(balances);
+
+    const controls = el('div', 'rel-gold-controls');
+    const amount = el('input', 'rel-gold-amount');
+    amount.type = 'number'; amount.min = '1'; amount.step = '1'; amount.inputMode = 'numeric';
+    amount.placeholder = 'Amount'; amount.setAttribute('aria-label', 'Gold transfer amount');
+    amount.max = String(MAX_RELIQUARY_GOLD);
+    controls.appendChild(amount);
+
+    const runTransfer = (direction, value) => {
+      if (!character) return;
+      const result = transferReliquaryGold(character, direction, value, writeSave);
+      if (!result.ok) {
+        const messages = {
+          invalid: 'Enter a valid positive whole-gold amount.',
+          'insufficient-character': 'You do not have enough gold to deposit that amount.',
+          'insufficient-reliquary': 'The Reliquary does not hold enough gold for that withdrawal.',
+          overflow: 'That transfer would exceed the safe gold limit.',
+          pending: 'A previous gold transfer is being recovered. Try again after saving or reloading.',
+          storage: 'The transfer could not be started because storage is unavailable.',
+        };
+        UI.log(messages[result.reason] || 'The gold transfer could not be completed.', '#ff8080');
+        sfx('error');
+        return;
+      }
+      sfx('pickup');
+      changed();
+      this.render(body);
+      if (!result.persisted) UI.log('Gold moved. Storage could not confirm both saves; the recorded transfer will be recovered on load.', '#ffb85c');
+    };
+    const button = (label, direction, all = false) => {
+      const value = all
+        ? direction === 'deposit' ? character?.gold : vault.gold
+        : null;
+      const b = el('button', 'btn small', label);
+      b.disabled = !character || (all && (!Number.isSafeInteger(value) || value <= 0)) ||
+        (all && direction === 'deposit' && vault.gold + value > MAX_RELIQUARY_GOLD) ||
+        (all && direction === 'withdraw' && character.gold + value > MAX_RELIQUARY_GOLD);
+      b.onclick = () => {
+        const n = all ? value : Number(amount.value);
+        runTransfer(direction, n);
+      };
+      controls.appendChild(b);
+      return b;
+    };
+    button('Deposit', 'deposit');
+    button('Withdraw', 'withdraw');
+    button('Deposit All', 'deposit', true);
+    button('Withdraw All', 'withdraw', true);
+    section.appendChild(controls);
+    body.appendChild(section);
   },
   renderCodex(body, prog) {
     const r = reliquary();

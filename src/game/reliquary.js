@@ -7,6 +7,8 @@ import { GEMS, SIGILS, itemName, itemColor } from '../data/items.js';
 import { codexKey, CODEX_TOTAL, HEIRLOOMS, GLYPHWORDS, PIECE_BY_ID, makeHeirloom, maybeRelic } from '../data/relics.js';
 
 const KEY = 'velscour_reliquary_v1';
+const GOLD_TRANSFER_KEY = 'velscour_reliquary_gold_tx_v1';
+export const MAX_RELIQUARY_GOLD = Number.MAX_SAFE_INTEGER;
 export const VAULT_TABS = 6, VAULT_SIZE = 96;
 export const MILESTONES = [
   { pct: 25, text: 'Vault III opens' },
@@ -17,7 +19,18 @@ export const MILESTONES = [
 ];
 let R = null;
 
-function blank() { return { tabs: Array.from({ length: VAULT_TABS }, () => Array(VAULT_SIZE).fill(null)), codex: {}, lines: 0 }; }
+function blank() { return { tabs: Array.from({ length: VAULT_TABS }, () => Array(VAULT_SIZE).fill(null)), codex: {}, lines: 0, gold: 0 }; }
+function safeGold(value) { return Number.isSafeInteger(value) && value >= 0 ? value : null; }
+function readGoldTransfer() {
+  try { return JSON.parse(localStorage.getItem(GOLD_TRANSFER_KEY) || 'null'); } catch { return null; }
+}
+function writeGoldTransfer(tx) {
+  try { localStorage.setItem(GOLD_TRANSFER_KEY, JSON.stringify(tx)); return true; } catch { return false; }
+}
+function finishGoldTransfer(tx) {
+  if (!writeGoldTransfer({ ...tx, state: 'committed' })) return false;
+  try { localStorage.removeItem(GOLD_TRANSFER_KEY); return true; } catch { return false; }
+}
 function unsealLegacyGear(value, depth = 0) {
   if (!value || typeof value !== 'object' || depth > 8) return false;
   let changed = false;
@@ -63,18 +76,89 @@ export function reliquary() {
   if (!R || !Array.isArray(R.tabs)) R = blank();
   while (R.tabs.length < VAULT_TABS) R.tabs.push([]);
   for (const t of R.tabs) while (t.length < VAULT_SIZE || t.length % 12 !== 0) t.push(null);
+  const goldChanged = safeGold(R.gold) === null;
+  if (goldChanged) R.gold = 0;
   let legacyGearChanged = false;
   for (const tab of R.tabs) if (unsealLegacyGear(tab)) legacyGearChanged = true;
   R.codex = R.codex || {};
   R.lines = R.lines || 0;
   migrateLegacyHeirloomDiscoveries(R);
-  if (legacyGearChanged) saveReliquary();
+  if (legacyGearChanged || goldChanged) saveReliquary();
   return R;
 }
-export function saveReliquary() { try { localStorage.setItem(KEY, JSON.stringify(reliquary())); } catch (e) { /* storage full or blocked: the vault lives on for this visit */ } }
+export function saveReliquary() { try { localStorage.setItem(KEY, JSON.stringify(reliquary())); return true; } catch (e) { /* storage full or blocked: the vault lives on for this visit */ return false; } }
 /** Tests: forget the cached copy (the next call reads localStorage again). */
 export function resetReliquaryCache() { R = null; }
 if (typeof addEventListener === 'function') addEventListener('velscour-overhaul-reset-complete', resetReliquaryCache);
+
+/** A completed hero save can finish a previously interrupted two-key gold transaction. */
+export function acknowledgeReliquaryGoldTransfer(character) {
+  const tx = readGoldTransfer();
+  if (!tx || tx.version !== 1 || tx.state !== 'prepared' || tx.heroId !== character?.id) return false;
+  let storedGold = null;
+  try { storedGold = JSON.parse(localStorage.getItem(KEY) || 'null')?.gold; } catch { /* retry on next save */ }
+  if (storedGold !== tx.reliquaryAfter || safeGold(character.gold) === null) return false;
+  return finishGoldTransfer(tx);
+}
+
+/** Move gold between a character and the account vault using a recoverable write-ahead transaction. */
+export function transferReliquaryGold(character, direction, amount, persistCharacter) {
+  const r = reliquary();
+  const txBefore = readGoldTransfer();
+  if (txBefore?.state === 'committed') {
+    try { localStorage.removeItem(GOLD_TRANSFER_KEY); } catch { /* the next action will retry cleanup */ }
+  } else if (txBefore) {
+    return { ok: false, reason: 'pending' };
+  }
+  if (!character?.id || !['deposit', 'withdraw'].includes(direction)) return { ok: false, reason: 'invalid' };
+  if (!Number.isSafeInteger(amount) || amount <= 0) return { ok: false, reason: 'invalid' };
+  const characterGold = safeGold(character.gold), sharedGold = safeGold(r.gold);
+  if (characterGold === null || sharedGold === null) return { ok: false, reason: 'invalid' };
+  let characterAfter, reliquaryAfter;
+  if (direction === 'deposit') {
+    if (amount > characterGold) return { ok: false, reason: 'insufficient-character' };
+    characterAfter = characterGold - amount;
+    reliquaryAfter = sharedGold + amount;
+  } else {
+    if (amount > sharedGold) return { ok: false, reason: 'insufficient-reliquary' };
+    characterAfter = characterGold + amount;
+    reliquaryAfter = sharedGold - amount;
+  }
+  if (!Number.isSafeInteger(characterAfter) || characterAfter < 0 || !Number.isSafeInteger(reliquaryAfter) || reliquaryAfter < 0) return { ok: false, reason: 'overflow' };
+  const tx = {
+    version: 1, state: 'prepared', heroId: character.id, direction, amount,
+    characterBefore: characterGold, characterAfter, reliquaryBefore: sharedGold, reliquaryAfter,
+  };
+  if (!writeGoldTransfer(tx)) return { ok: false, reason: 'storage' };
+
+  // The prepared record makes these writes recoverable if the page closes between either save.
+  character.gold = characterAfter;
+  r.gold = reliquaryAfter;
+  const sharedSaved = saveReliquary();
+  let characterSaved = false;
+  try { characterSaved = !!persistCharacter?.(character); } catch { characterSaved = false; }
+  if (sharedSaved && characterSaved) finishGoldTransfer(tx);
+  return { ok: true, persisted: sharedSaved && characterSaved, amount, direction };
+}
+
+/** Replay a prepared transfer idempotently when its character save is loaded after interruption. */
+export function recoverReliquaryGoldTransfer(character, persistCharacter) {
+  const tx = readGoldTransfer();
+  if (!tx || tx.version !== 1) return false;
+  if (tx.state === 'committed') {
+    try { localStorage.removeItem(GOLD_TRANSFER_KEY); } catch { /* harmless stale commit marker */ }
+    return false;
+  }
+  if (tx.state !== 'prepared' || tx.heroId !== character?.id || safeGold(tx.characterAfter) === null || safeGold(tx.reliquaryAfter) === null) return false;
+  character.gold = tx.characterAfter;
+  const r = reliquary();
+  r.gold = tx.reliquaryAfter;
+  const sharedSaved = saveReliquary();
+  let characterSaved = false;
+  try { characterSaved = !!persistCharacter?.(character); } catch { characterSaved = false; }
+  if (sharedSaved && characterSaved) finishGoldTransfer(tx);
+  return true;
+}
 
 /** Codex progress: {by: {h, c, g, s}, have, total, pct}. */
 export function codexProgress() {

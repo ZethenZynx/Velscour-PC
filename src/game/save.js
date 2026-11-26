@@ -10,7 +10,7 @@ import { drawBiome } from '../data/biomes.js';
 import { migrateBar, BAR_SIZE } from '../data/bar.js';
 import { TAB_SLOTS } from '../data/tabs.js';
 import { newMacros, migrateMacros } from '../data/macros.js';
-import { reliquary } from './reliquary.js';
+import { reliquary, acknowledgeReliquaryGoldTransfer, recoverReliquaryGoldTransfer } from './reliquary.js';
 import { refundStorageMarks } from './endgame.js';
 import { stashRaw, listRaw } from './herobackup.js';
 import { jewelBoxMigrationComplete } from './jewelboxstorage.mjs';
@@ -155,6 +155,7 @@ export function writeSave(char) {
     ok = writeAll(list);
     memo = ok && !unreadable ? remember(list) : null;
   }
+  if (ok) acknowledgeReliquaryGoldTransfer(char);
   return ok;
 }
 function remember(list) {
@@ -694,5 +695,6 @@ export function migrate(c) {
   refundStorageMarks({ heroId: c.id, heroMarks, reliquaryMarks });
   c.storageMarkRefundV1 = true;
   if (jewelBoxMigrationComplete()) c.jewelBox = [];
+  recoverReliquaryGoldTransfer(c, writeSave);
   return c;
 }
