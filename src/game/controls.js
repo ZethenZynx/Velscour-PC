@@ -51,7 +51,8 @@ function lootAt(sx, sy) {
 
 export const controls = {
   holdLeft: 0,
-  leftShiftActive: false,
+  leftCombatPress: false,
+  rightShiftPress: false,
 
   /** Use the skill on bar slot i. */
   useSlot(i, at) {
@@ -86,7 +87,7 @@ export const controls = {
     const useMouse = input.lastPointerType === 'mouse';
     G.hover = useMouse && mouse.inside ? creatureAt(mouse.x, mouse.y) : null;
     if (G.hover && G.hover.team === 'player') G.hover = null;
-    if (p.dead || blocked) { this.leftShiftActive = false; p.moveVec = [0, 0]; p.moveTarget = null; p.path = null; p.attackTarget = null; p.interact = null; p.moving = false; input.endFrame(); return; }
+    if (p.dead || blocked) { this.leftCombatPress = false; this.rightShiftPress = false; p.moveVec = [0, 0]; p.moveTarget = null; p.path = null; p.attackTarget = null; p.interact = null; p.moving = false; input.endFrame(); return; }
 
     // ---- direct movement (WASD / joystick)
     let mx = 0, my = 0;
@@ -108,13 +109,16 @@ export const controls = {
     if (mouse.inside) p.aim = camera.screenToTile(mouse.x, mouse.y);
 
     // ---- mouse
-    if (!mouse.left) this.leftShiftActive = false;
+    if (!mouse.left) this.leftCombatPress = false;
+    if (!mouse.right) this.rightShiftPress = false;
     if (useMouse) {
       const [tx, ty] = camera.screenToTile(mouse.x, mouse.y);
       const shift = input.down('ShiftLeft') || input.down('ShiftRight');
       if (mouse.leftPressed) {
         this.holdLeft = 0;
-        this.leftShiftActive = shift;
+        // Lock the press's intent at mouse-down. Modifier changes and loot labels
+        // under the cursor must not turn an ongoing combat press into pickup.
+        this.leftCombatPress = shift;
         if (shift) {
           // Shift-click is an explicit combat command: cancel any prior loot walk
           // before choosing the primary target or firing at the cursor.
@@ -132,30 +136,20 @@ export const controls = {
           else if (loot) { p.lootTarget = loot; p.interact = null; p.attackTarget = null; p.setMoveTarget(loot.x, loot.y); this.mode = 'loot'; }
           // A visible hostile body owns its click even when a chest, portal, trap,
           // or decoration overlaps it. Interactables remain clickable elsewhere.
-          else if (isPlayerTargetable(G.hover)) { this.mode = 'attack'; this.attack(G.hover, tx, ty); }
+          else if (isPlayerTargetable(G.hover)) { this.mode = 'attack'; this.leftCombatPress = true; this.attack(G.hover, tx, ty); }
           else if (it) { this.mode = 'interact'; p.attackTarget = null; p.interact = it; }
           else { this.mode = 'move'; p.attackTarget = null; p.interact = null; p.setMoveTarget(tx, ty); }
         }
       } else if (mouse.left) {
         this.holdLeft += dt;
-        if (shift) {
-          if (!this.leftShiftActive || this.mode === 'loot' || p.lootTarget) {
-            p.lootTarget = null; p.interact = null; p.moveTarget = null; p.path = null; p.attackTarget = null;
-            this.mode = 'attack'; this.leftShiftActive = true;
-            if (isPlayerTargetable(G.hover)) this.attack(G.hover, tx, ty);
-            else this.useSlot(0, [tx, ty]);
-          } else if (this.mode === 'attack' && p.castLock <= 0 && !p.attackTarget && !isMovementSkill(SKILLS[G.char.bar[0]])) {
+        if (this.leftCombatPress) {
+          if (this.mode === 'attack' && p.castLock <= 0 && !p.attackTarget && !isMovementSkill(SKILLS[G.char.bar[0]])) {
             if (isPlayerHostile(G.hover)) this.attack(G.hover, tx, ty);
             else this.useSlot(0, [tx, ty]);
           }
         } else {
-          if (this.leftShiftActive) {
-            this.leftShiftActive = false;
-            const loot = lootAt(mouse.x, mouse.y);
-            if (loot) { p.lootTarget = loot; p.interact = null; p.attackTarget = null; p.setMoveTarget(loot.x, loot.y); this.mode = 'loot'; }
-          }
           if (this.mode === 'move' && this.holdLeft > 0.12) {
-            if (isPlayerHostile(G.hover) && this.holdLeft > 0.4) { this.mode = 'attack'; }
+            if (isPlayerHostile(G.hover) && this.holdLeft > 0.4) { this.mode = 'attack'; this.leftCombatPress = true; }
             else if (!p.moveTarget || dist(p.moveTarget[0], p.moveTarget[1], tx, ty) > 0.6) p.setMoveTarget(tx, ty);
           } else if (this.mode === 'attack' && p.castLock <= 0 && !p.attackTarget && !isMovementSkill(SKILLS[G.char.bar[0]])) {
             if (isPlayerHostile(G.hover)) this.attack(G.hover, tx, ty);
@@ -166,8 +160,9 @@ export const controls = {
       const id = G.char.bar[RMB];
       const sk = id && SKILLS[id];
       if (mouse.rightPressed || (mouse.right && p.castLock <= 0 && !isMovementSkill(sk))) {
+        if (mouse.rightPressed) this.rightShiftPress = shift;
         if (id) {
-          if (shift) { p.lootTarget = null; p.interact = null; p.moveTarget = null; p.path = null; p.attackTarget = null; this.mode = 'attack'; }
+          if (this.rightShiftPress) { p.lootTarget = null; p.interact = null; p.moveTarget = null; p.path = null; p.attackTarget = null; this.mode = 'attack'; }
           p.moveTarget = null; this.useSlotAt(RMB, tx, ty);
         }
       }
