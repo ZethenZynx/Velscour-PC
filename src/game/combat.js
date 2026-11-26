@@ -1,6 +1,6 @@
 // Damage resolution, status effects, deaths, gore.
 import { G } from '../state.js';
-import { DUNGEON_AFFIX_CONFIG } from '../data/dungeonaffixes.js';
+import { DUNGEON_AFFIX_CONFIG, triggerSoulHarvest } from '../data/dungeonaffixes.js';
 import { rand, chance, clamp, angleTo, TAU, mixHex, pick } from '../core/util.js';
 import { camera } from '../core/view.js';
 import { sfx, markAudioCombatActivity, recordAudioDiagnosticOriginSuppression } from '../core/audio.js';
@@ -133,7 +133,7 @@ export function hit(src, tgt, amount, el = 'phys', o = {}) {
   if (sourceAffixes.includes('doom_clock')) dmg *= world.affixDoomMul || 1;
   if (worldAffixes.has('coordinated_assault') && (world.affixCoordinatedUntil || 0) > world.time) dmg *= 1.25;
   if (src && (src.affixBloodPactT || 0) > 0) dmg *= 1.1;
-  if (src && (src.affixSoulHarvestT || 0) > 0) dmg *= 1.15;
+  if (src && (src.affixSoulHarvestT || 0) > 0) dmg *= DUNGEON_AFFIX_CONFIG.soul_harvest.damageMultiplier;
   if (src && (src.affixSummonerPactT || 0) > 0) dmg *= 1.2;
   if (src && src.rank === 'boss' && src.affixVengefulStacks) dmg *= 1 + Math.min(0.5, src.affixVengefulStacks * 0.05);
   if (src && src.rank === 'boss' && sourceAffixes.includes('final_stand') && src.hp < src.maxHp * 0.1) dmg *= 1.5;
@@ -614,9 +614,9 @@ export function kill(tgt, src, info = {}) {
     if (worldAffixes.has('cursed_remains') && world.player) world.player.affixRemainsT = Math.max(world.player.affixRemainsT || 0, 6);
     if (worldAffixes.has('death_nova')) pushField('death_nova', 'shadow', 3.2, tgt.maxHp * 0.12, 0.9, 0.35, {});
     if (worldAffixes.has('blood_pact')) for (const ally of world.query(tgt.x, tgt.y, 5, (c) => c.team === 'enemy' && !c.dead)) ally.affixBloodPactT = Math.max(ally.affixBloodPactT || 0, 8);
-    if (worldAffixes.has('soul_harvest')) for (const ally of world.query(tgt.x, tgt.y, 6, (c) => c.team === 'enemy' && !c.dead)) {
-      ally.heal(ally.maxHp * 0.08);
-      ally.affixSoulHarvestT = Math.max(ally.affixSoulHarvestT || 0, 8);
+    if (worldAffixes.has('soul_harvest')) {
+      const cfg = DUNGEON_AFFIX_CONFIG.soul_harvest;
+      triggerSoulHarvest(world.query(tgt.x, tgt.y, cfg.radius, (c) => c.team === 'enemy' && !c.dead));
     }
     if (worldAffixes.has('summoner_s_pact')) {
       const summoner = world.query(tgt.x, tgt.y, 8, (c) => c.team === 'enemy' && !c.dead && c !== tgt)[0];

@@ -986,7 +986,7 @@ export const DUNGEON_AFFIXES = Object.freeze(
     "id": "soul_harvest",
     "name": "Soul Harvest",
     "category": "Chaotic & Special Mechanics",
-    "description": "Enemy deaths release souls that empower surviving monsters if collected.",
+    "description": "Enemy deaths heal nearby surviving monsters for 4% of maximum health. Each monster can be healed once every 1.5 seconds and gains 7.5% damage for 8 seconds.",
     "implemented": true
   },
   {
@@ -1978,6 +1978,7 @@ export const DUNGEON_AFFIX_CONFIG = Object.freeze(
     "maxReflectedHealthFraction": 0.05
   },
   "bloodmoon": { "damageMultiplier": 1.2, "healthMultiplier": 1.25, "experienceMultiplier": 1.6, "lootMultiplier": 1.6, "darkness": 0.3 },
+  "soul_harvest": { "healFraction": 0.04, "healCooldown": 1.5, "damageMultiplier": 1.075, "buffDuration": 8, "radius": 6 },
   "golden": { "goldMultiplier": 3 },
   "horde": { "experienceMultiplier": 1.25, "packLocations": 8, "packSize": [3, 5] },
   "champions": { "spawnChance": 0.12 },
@@ -2000,6 +2001,22 @@ export const DUNGEON_AFFIX_CONFIG = Object.freeze(
 }
 );
 const IMPLEMENTED = DUNGEON_AFFIXES;
+
+/** Apply Soul Harvest's death-triggered effect once per nearby surviving monster's heal cooldown. */
+export function triggerSoulHarvest(allies) {
+  const cfg = DUNGEON_AFFIX_CONFIG.soul_harvest;
+  let healed = 0;
+  for (const ally of allies || []) {
+    if (!ally || ally.dead) continue;
+    if ((ally.affixSoulHarvestHealCd || 0) <= 0) {
+      ally.heal(ally.maxHp * cfg.healFraction);
+      ally.affixSoulHarvestHealCd = cfg.healCooldown;
+      healed++;
+    }
+    ally.affixSoulHarvestT = Math.max(ally.affixSoulHarvestT || 0, cfg.buffDuration);
+  }
+  return healed;
+}
 
 export function normalizeDungeonAffixIds(value) {
   const ids = Array.isArray(value) ? value : [];

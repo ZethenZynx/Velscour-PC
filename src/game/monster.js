@@ -223,7 +223,7 @@ export class Monster extends Creature {
     if (this.team === 'enemy' && dungeonAffixes.length) {
       this.dungeonSpeedMul = 1;
       if ((this.affixTemporalT || 0) > 0) { this.affixTemporalT -= dt; this.dungeonSpeedMul *= 1.2; }
-      for (const timer of ['affixBloodPactT', 'affixSoulHarvestT', 'affixSummonerPactT']) if (this[timer] > 0) this[timer] -= dt;
+      for (const timer of ['affixBloodPactT', 'affixSoulHarvestT', 'affixSoulHarvestHealCd', 'affixSummonerPactT']) if (this[timer] > 0) this[timer] -= dt;
       if (dungeonAffixes.includes('pack_hunters')) {
         const allies = w.query(this.x, this.y, 5, (c) => c !== this && c.team === 'enemy' && !c.dead).length;
         this.dungeonSpeedMul *= 1 + Math.min(0.4, allies * 0.06);
