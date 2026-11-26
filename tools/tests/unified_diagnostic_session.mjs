@@ -39,6 +39,7 @@ addEffect(new DiagnosticProbeEffect());
 spawn({ type: 'diagnostic_probe', owner: { name: 'Probe Owner' }, x: 1, y: 1, life: 1, size: 2 });
 let vfxReport = vfxDiagnosticReport();
 assert.equal(vfxReport.effects.DiagnosticProbeEffect.created, 1, 'effect lifecycle is attributed by type at the centralized registration point');
+assert.equal(vfxReport.effects.DiagnosticProbeEffect.baselineActive, 0, 'session-created effects are separated from preexisting effects');
 assert.equal(vfxReport.particles.diagnostic_probe.created, 1, 'particle lifecycle is attributed by type at the centralized spawn point');
 assert.equal(profileBeginFrame(100), true);
 profileFinishFrame(G.world);

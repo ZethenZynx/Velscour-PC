@@ -122,7 +122,17 @@ function trackVfxRemove(object, reason) {
 }
 
 export function resetVfxDiagnostics() {
-  vfxDiagnostics = { particles: { byType: Object.create(null), sourceLifetimes: Object.create(null) }, effects: { byType: Object.create(null), sourceLifetimes: Object.create(null) }, startedAt: new Date().toISOString(), sourceSampleEvery: VFX_SOURCE_SAMPLE_EVERY };
+  const baselineByType = (objects) => {
+    const counts = Object.create(null);
+    for (const object of objects) {
+      const type = diagnosticType('vfx', object), key = (counts[type] || Object.keys(counts).length < VFX_DIAGNOSTIC_TYPE_LIMIT) ? type : 'other (type limit)';
+      counts[key] = (counts[key] || 0) + 1;
+    }
+    return counts;
+  };
+  vfxDiagnostics = { particles: { byType: Object.create(null), sourceLifetimes: Object.create(null), baselineActiveByType: baselineByType(particles) },
+    effects: { byType: Object.create(null), sourceLifetimes: Object.create(null), baselineActiveByType: baselineByType(effects) },
+    startedAt: new Date().toISOString(), sourceSampleEvery: VFX_SOURCE_SAMPLE_EVERY };
   vfxSourceSampleCounter = 0;
 }
 
@@ -139,17 +149,23 @@ export function vfxDiagnosticReport() {
         const age = Math.max(0, now - meta.createdAt); ages.count++; ages.totalMs += age; ages.oldestMs = Math.max(ages.oldestMs, age);
       }
     }
-    return Object.fromEntries(Object.entries(vfxDiagnostics[group].byType).map(([type, row]) => [type, {
+    const rows = vfxDiagnostics[group].byType, baseline = vfxDiagnostics[group].baselineActiveByType;
+    const types = new Set([...Object.keys(rows), ...Object.keys(baseline), ...Object.keys(activeByType)]);
+    return Object.fromEntries([...types].map((type) => {
+      const row = rows[type] || { created: 0, removed: 0, activeFromSession: 0, expired: 0, replaced: 0, qualityChanged: 0, qualityRejected: 0, cleared: 0, duplicateReference: 0, lifetimeMsTotal: 0, lifetimeSamples: 0, sourceSamples: Object.create(null) };
+      return [type, {
       ...row, activeNow: activeByType[type] || 0,
+      baselineActive: baseline[type] || 0,
       trackedActiveAgeMs: trackedAge[type] ? { samples: trackedAge[type].count, mean: Number((trackedAge[type].totalMs / trackedAge[type].count).toFixed(2)), oldest: Number(trackedAge[type].oldestMs.toFixed(2)) } : null,
       meanLifetimeMs: row.lifetimeSamples ? Number((row.lifetimeMsTotal / row.lifetimeSamples).toFixed(2)) : null,
       lifetimeMsTotal: Number(row.lifetimeMsTotal.toFixed(2)),
       sourceSamples: Object.fromEntries(Object.entries(row.sourceSamples).sort((a, b) => b[1] - a[1]).slice(0, 16)),
-    }]));
+    }];
+    }));
   };
   const sourceLifetimes = (group) => Object.fromEntries(Object.entries(vfxDiagnostics[group].sourceLifetimes).map(([source, row]) => [source, { removed: row.removed, meanLifetimeMs: row.removed ? Number((row.lifetimeMsTotal / row.removed).toFixed(2)) : null }]));
   return { active: developerRecordingActive(), startedAt: vfxDiagnostics.startedAt, exactTypeTotals: true,
-    sourceAttribution: `owner metadata when available; otherwise one stack sample per ${VFX_SOURCE_SAMPLE_EVERY} creations`,
+    sourceAttribution: `baseline active counts include type only; new objects use owner metadata when available, otherwise one stack sample per ${VFX_SOURCE_SAMPLE_EVERY} creations`,
     particles: summarize('particles', particles), effects: summarize('effects', effects),
     particleSourceLifetimes: sourceLifetimes('particles'), effectSourceLifetimes: sourceLifetimes('effects') };
 }
