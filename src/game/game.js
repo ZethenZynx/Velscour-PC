@@ -1721,7 +1721,7 @@ export const game = {
           if (this.chestType === 'mimic') {
             const arch = pickMonsterArchetype(world);
             const mimic = arch && makeMonster(world, arch, biome, depthLevel(depth), 'champion', this.x, this.y, 0,
-              { art: 'chest_mimic', swap: null });
+              { art: 'chest_mimic', swap: null, chestEncounter: true });
             const spawn = mimic && findMimicSpawn(world.map, mimic, world.creatures, this.x, this.y);
             if (mimic && spawn) {
               const rewardChest = this;

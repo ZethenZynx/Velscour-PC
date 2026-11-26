@@ -4,8 +4,10 @@ import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 import { TileMap } from '../../src/world/map.js';
 import { findMimicSpawn } from '../../src/game/mimic.mjs';
-import { ART_BY_ID, BESTIARY } from '../../src/data/bestiary.js';
+import { ART_BY_ID, BESTIARY, artPool } from '../../src/data/bestiary.js';
+import { BREACH_ART, BREACH_MONSTERS } from '../../src/data/breach.js';
 import { makeMonster } from '../../src/game/monster.js';
+import { rollTreasureChest } from '../../src/data/treasurechests.js';
 
 const [game, artSource, artMeta, sprite] = await Promise.all([
   readFile(new URL('../../src/game/game.js', import.meta.url), 'utf8'),
@@ -17,9 +19,20 @@ const [game, artSource, artMeta, sprite] = await Promise.all([
 assert.match(artSource, /MIMIC_ART\s*=\s*\{\s*id:\s*'chest_mimic'/);
 assert.match(artSource, /\.\.\.REPLACEMENT_ART, MIMIC_ART/);
 assert.ok(ART_BY_ID.chest_mimic, 'the dedicated look is available to the shared enemy renderer');
+assert.equal(ART_BY_ID.chest_mimic.chestOnly, true, 'dedicated Mimic art is marked chest-only');
 assert.ok(!BESTIARY.some((entry) => entry.id === 'chest_mimic'), 'the Mimic does not enter ordinary random enemy rolls');
 assert.doesNotMatch(artSource.slice(artSource.indexOf('export const BESTIARY'), artSource.indexOf('import { REPLACEMENT_ART')), /chest_mimic/,
   'the dedicated encounter look is not added to ordinary random enemy pools');
+const bestiaryMimics = BESTIARY.filter((entry) => /\bmimic\b/i.test(entry.name));
+assert.ok(bestiaryMimics.length >= 2 && bestiaryMimics.every((entry) => entry.chestOnly), 'Mimic-themed bestiary art remains defined but marked chest-only');
+for (const entry of bestiaryMimics) assert.ok(!artPool(entry.arch).includes(entry), `${entry.name} is excluded from regular pack art`);
+const breachMimics = BREACH_ART.filter((entry) => /\bmimic\b/i.test(entry.name));
+assert.ok(breachMimics.length > 0 && breachMimics.every((entry) => entry.chestOnly), 'Breach Mimics remain defined but marked chest-only');
+for (const entry of breachMimics) assert.ok(!BREACH_MONSTERS.includes(entry), `${entry.name} is excluded from randomized Breach spawns`);
+const mimicChest = rollTreasureChest({ next: () => 0.99, pick: (options) => options[1] });
+assert.equal(mimicChest.chestType, 'mimic');
+assert.match(mimicChest.label, /Chest$/);
+assert.doesNotMatch(mimicChest.label, /mimic/i, 'the chest label does not reveal the disguise');
 assert.deepEqual(artMeta['special/mimic'].file, 'mimic.webp');
 assert.equal(artMeta['special/mimic'].cells.length, 1);
 assert.equal(sprite.toString('ascii', 0, 4), 'RIFF');
@@ -32,10 +45,12 @@ try {
   for (const depth of [1, 25, 100, 250, 500, 1000]) {
     const biome = { id: 'catacombs', el: 'phys' };
     const world = { depth, biome, dungeonAffixes: [] };
-    const mimicLook = makeMonster(world, 'beetle', biome, depth, 'champion', 10, 10, 0, { art: 'chest_mimic', swap: null });
+    const mimicLook = makeMonster(world, 'beetle', biome, depth, 'champion', 10, 10, 0, { art: 'chest_mimic', swap: null, chestEncounter: true });
+    const blockedLook = makeMonster(world, 'beetle', biome, depth, 'champion', 10, 10, 0, { art: 'chest_mimic', swap: null });
     const ordinaryLook = makeMonster(world, 'beetle', biome, depth, 'champion', 10, 10, 0, { art: 'powder_keg', swap: null });
     assert.equal(mimicLook.rank, 'champion');
     assert.equal(mimicLook.art, 'chest_mimic');
+    assert.notEqual(blockedLook.art, 'chest_mimic', 'ordinary spawns cannot force the chest-only art');
     assert.equal(mimicLook.maxHp, ordinaryLook.maxHp, `champion health scaling remains unchanged at depth ${depth}`);
     assert.equal(mimicLook.dmg, ordinaryLook.dmg, `champion damage scaling remains unchanged at depth ${depth}`);
     assert.equal(mimicLook.xp, ordinaryLook.xp, `champion reward scaling remains unchanged at depth ${depth}`);
@@ -77,9 +92,10 @@ assert.equal(findMimicSpawn(cramped, { r: 0.42 }, [crowdedPlayer], 0.5, 0.5), nu
 const useStart = game.indexOf("if (this.chestType === 'mimic') {");
 const useEnd = game.indexOf("if (this.chestType === 'explosive')", useStart);
 const mimicUse = game.slice(useStart, useEnd);
-assert.match(mimicUse, /depthLevel\(depth\), 'champion', this\.x, this\.y, 0,\s*\{ art: 'chest_mimic', swap: null \}\)/,
+assert.match(mimicUse, /depthLevel\(depth\), 'champion', this\.x, this\.y, 0,\s*\{ art: 'chest_mimic', swap: null, chestEncounter: true \}\)/,
   'the existing champion rank/stat path is retained while only its art changes');
-assert.match(game, /use\(\) \{\n\s+if \(this\.opened\) return/,
+const chestUseStart = game.indexOf('use() {', game.indexOf('world.chests = gen.chests.map'));
+assert.ok(game.slice(chestUseStart, chestUseStart + 120).includes('if (this.opened) return;'),
   'opened chests reject repeat interactions');
 assert.match(mimicUse, /world\.chests\.splice\(chestIndex, 1\)/,
   'the opened chest object is removed only when the mimic can spawn');
@@ -89,5 +105,11 @@ assert.match(mimicUse, /dropChest\(world, rewardChest, depth\)/,
   'the existing reward chest is preserved for the mimic death reward');
 assert.match(mimicUse, /new Ring\(/, 'the reveal has a brief transformation pulse');
 assert.match(mimicUse, /sfx\('boss'\)/, 'existing reveal audio is retained');
+const scenarios = await readFile(new URL('../../src/game/scenarios.js', import.meta.url), 'utf8');
+assert.match(scenarios, /chestType: bad\.has\(i\) \? 'mimic' : 'standard'/, 'scenario Mimics originate from disguised chest objects');
+assert.match(scenarios, /findMimicSpawn\(map, mimic, world\.creatures, cx, cy\)/, 'scenario Mimics use the same safe reveal placement');
+assert.doesNotMatch(scenarios, /foe\(pick\(roster\), \[cx, cy\], 'champion', 1, \{ name: 'Mimic'/, 'scenario setup does not spawn a free-roaming Mimic');
+const critters = await readFile(new URL('../../src/game/critters.js', import.meta.url), 'utf8');
+assert.match(critters, /Object\.keys\(CRITTERS\)\.filter\(\(key\) => key !== 'treasure_mimic'\)/, 'the independent Treasure Mimic critter is not randomly spawned');
 
 console.log('Mimic art registration, collision-safe placement, reachability, one-time transformation, and rewards passed.');

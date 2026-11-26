@@ -9,6 +9,7 @@ import { sfx } from '../core/audio.js';
 import { camera } from '../core/view.js';
 import { addEffect, Ring, Column, burst, sparkle, spawn, floatText, addLight, glowSprite } from '../gfx/vfx.js';
 import { makeMonster } from './monster.js';
+import { findMimicSpawn } from './mimic.mjs';
 import { ambush } from './mayhem.js';
 import { GroundItem, dropChest, rollGroundItem } from './loot.js';
 import { rollItem, rarityAt, goldScale } from '../data/items.js';
@@ -367,11 +368,29 @@ function makeScenario(world, start, info, need) {
       S.goal = n;
       for (let i = 0; i < n; i++) {
         const [cx, cy] = places[i];
-        world.chests.push({ x: cx, y: cy, opened: false, reach: 1.3, rare: i === 0, scen: S, use() {
+        world.chests.push({ x: cx, y: cy, opened: false, reach: 1.3, rare: i === 0, chestType: bad.has(i) ? 'mimic' : 'standard', scen: S, use() {
           if (this.opened) return;
           this.opened = true; S.got++; S.active = true;
-          if (bad.has(i)) { camera.shake(5); sfx('roar', 0.7); foe(pick(roster), [cx, cy], 'champion', 1, { name: 'Mimic', awake: true }); floatText(cx, cy, 70, 'A mimic!', '#ff5050', 14); }
-          else { sfx('chest'); dropChest(world, this, depth); }
+          if (bad.has(i)) {
+            // The dangerous chest reveals the same chest-only creature as ordinary Mimic
+            // chests; it never creates a free-roaming Mimic enemy.
+            const mimic = makeMonster(world, pick(roster), biome, lvl + 1, 'champion', cx, cy, 0,
+              { art: 'chest_mimic', swap: null, chestEncounter: true });
+            const spawn = mimic && findMimicSpawn(map, mimic, world.creatures, cx, cy);
+            camera.shake(5); sfx('roar', 0.7);
+            if (mimic && spawn) {
+              mimic.x = spawn.x; mimic.y = spawn.y; mimic.name = 'Mimic'; mimic.chestMimic = true;
+              mimic.awake = true; mimic.targetable = true; mimic.aura = '#b84c2f';
+              mimic.onDeath = () => { sfx('gold'); dropChest(world, this, depth); sparkle(mimic.x, mimic.y, 20, '#ffd060', 24, 0.6); };
+              world.add(mimic); S.foes.push(mimic);
+              addEffect(new Ring(spawn.x, spawn.y, 0.18, 1.15, 0.42, '#c84b32', 3, { z: 3 }));
+              sparkle(spawn.x, spawn.y, 22, '#d98c48', 12, 0.45);
+              floatText(spawn.x, spawn.y, 48, 'MIMIC!', '#ffd060', 12);
+            } else {
+              // If there is no safe adjacent tile, keep the encounter completable and pay the chest.
+              dropChest(world, this, depth);
+            }
+          } else { sfx('chest'); dropChest(world, this, depth); }
           if (S.got >= n) S.finale = true;
         } });
       }

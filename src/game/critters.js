@@ -47,7 +47,9 @@ export const CRITTERS = Object.freeze({
   floating_skull: { name: 'Floating Skull', artIndex: 18, sprite: 'skeleton', arch: 'skeleton', fly: true, w: 1, life: 11, speed: 1.65, motion: 'drift', accent: 'ghost' },
   treasure_fairy: { name: 'Treasure Fairy', artIndex: 13, facesRight: true, sprite: 'cultist', arch: 'cultist', fly: true, w: 1, life: 10, speed: 2.1, motion: 'flutter', accent: 'wings' },
 });
-const KEYS = Object.keys(CRITTERS);
+// Keep the legacy definition and art, but never spawn the Mimic as an independent
+// collectible encounter outside a disguised treasure chest.
+const KEYS = Object.keys(CRITTERS).filter((key) => key !== 'treasure_mimic');
 
 export const CRITTER_REWARDS = Object.freeze([
   { id: 'xp', weight: 65, label: 'bonus experience', color: '#a8c8ff' },

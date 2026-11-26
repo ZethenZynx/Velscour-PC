@@ -1575,8 +1575,13 @@ export function makeMonster(world, archId, biome, level, rank = 'normal', x = 0,
     B.dmg *= riftDmgMul(riftTier);
   }
   if (world.riftHold) B.hp *= riftHold(level);
-  if (A.seaOfSand && biome.id === 'sea_of_sand') look = { art:'ss_'+archId, swap:null };
+  if (A.seaOfSand && biome.id === 'sea_of_sand' && look?.chestEncounter !== true) look = { art:'ss_'+archId, swap:null };
+  // Chest-only enemy art cannot be injected through ordinary scripts or randomized looks.
+  // The chest interaction passes an explicit capability when it reveals the Mimic.
+  if (look?.art && ART_BY_ID[look.art]?.chestOnly && look.chestEncounter !== true) look = undefined;
   if (look === undefined) look = lookFor(world, archId);
+  // Also guard legacy or stale per-world look lists created before chest-only metadata existed.
+  if (look?.art && ART_BY_ID[look.art]?.chestOnly && look.chestEncounter !== true) look = undefined;
   const art = look && ART_BY_ID[look.art];
   const biomeEl = biome.el && biome.el !== 'phys' ? biome.el : null;
   let el = A.el || 'phys';
