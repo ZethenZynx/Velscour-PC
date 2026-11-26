@@ -16,6 +16,7 @@ import { depthLevel } from '../data/depth.js';
 import { biomeScenario, TAGS } from '../data/biomerooms.js';
 import { TOWNSFOLK } from '../data/townsfolk.js';
 import { UI } from '../ui/ui.js';
+import { showShrineActivationMessage } from './shrineeffects.js';
 
 export const SCENARIO_CHANCE = 0.55;
 const COLOR = '#ffb347';
@@ -121,7 +122,18 @@ function makeScenario(world, start, info, need) {
           if (this.light) addLight(this.x, this.y, 2.6, 0.8, 30, glow);
         }
       },
-      use() { if (this.opened || this.hidden || S.done || S.failed) return; use(this); } };
+      use() {
+        if (this.opened || this.hidden || S.done || S.failed) return;
+        const wasActive = S.active, wasDone = S.done;
+        use(this);
+        const altarMarker = /altar|shrine|obelisk/i.test(String(label)) || /altar|shrine|obelisk/i.test(String(spr?.name || ''));
+        const succeeded = this.opened || (!wasActive && S.active) || (!wasDone && S.done);
+        if (altarMarker && succeeded && !this.activationMessageShown) {
+          this.activationMessageShown = true;
+          const message = !wasDone && S.done ? 'Altar trial complete; reward granted' : `Trial begun: ${S.title}`;
+          showShrineActivationMessage(this.x, this.y, message, glow);
+        }
+      } };
     mk.spr = spr;
     world.chests.push(mk);
     return mk;

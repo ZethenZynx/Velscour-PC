@@ -22,6 +22,7 @@ import { addEffect, Ring, Column, Telegraph, sparkle, smoke, burst, spawn, float
 import { drawWard, drawCarrier } from '../gfx/breach.js';
 import { enemyImage } from '../core/enemyart.js';
 import { createWyrm } from './breachdragon.js';
+import { showShrineActivationMessage } from './shrineeffects.js';
 
 /** A monster of the Breach: no regenerating elites (the floors are thick with pools to dodge, and a champion healing
  * to full while the hero side-steps them made fights endless). */
@@ -401,6 +402,7 @@ export function createBreachRun(world, gen, biome, floor, onWin) {
       sfx('portal');
       flash(C, '#ff70e0', 3);
       T.start(x);
+      if (S.active) showShrineActivationMessage(C[0], C[1], type === 'heart' ? 'Breach Heart Awakened' : 'Shrine Trial Begun', S.shrine?.color || VIOLET);
       void forced;
     };
     S.start = start;

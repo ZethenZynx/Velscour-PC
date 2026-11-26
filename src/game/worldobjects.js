@@ -12,7 +12,7 @@ import { GroundItem, dropChest, rollGroundItem, rollGroundGem } from './loot.js'
 import { GEMS, goldPile, goldScale, itemName, rarityAt } from '../data/items.js';
 import { depthLevel } from '../data/depth.js';
 import { UI } from '../ui/ui.js';
-import { shrineBuffDescription, shrineFloatingMessage } from './shrineeffects.js';
+import { shrineBuffDescription, shrineFloatingMessage, showShrineActivationMessage } from './shrineeffects.js';
 
 const RARITIES = [
   { name: 'Common', chance: 45, scale: 1, color: '#b8b8b8' },
@@ -128,15 +128,42 @@ function vfx(world,o,good=true) {
   sparkle(o.x,o.y,24,col,12,.55);
   sfx(good?'levelup':'roar',.45,1,{category:'shrine',source:o.name||'Shrine interaction',sourceActive:false,x:o.x,y:o.y,worldId:world?.id});
 }
-function used(world,o) {
+function activationMessage(o, result) {
+  if (typeof result === 'string' && result) return result;
+  if (result?.stats) return shrineFloatingMessage(o.id, result);
+  const messages = {
+    blood: '-20% Health; +42% Damage, treasure cache, 25s', greed: 'Nearby enemies empowered; 2 treasure caches',
+    torment: '-18% Movement, -12% Damage; cache, 30s', shadows: '+8% Shadow hit damage; +12% damage taken, 30s',
+    chaos: 'Randomized boon and curse granted', damned: 'Champion summoned; 2 caches on victory',
+    decay: '-1.5% Health/s; +38% Damage, 25s', corruption: 'Enemies empowered; 2 treasure caches',
+    life: 'Health restored (+55% maximum Health)', mana: 'Mana restored (+65% maximum Mana)', rejuvenation: 'Health and mana restored',
+    purification: 'Curses and status effects cleansed', renewal: 'Health and mana restored; cooldowns reduced by 8s',
+    bloodspring: 'Gold offered; +70% Health restored', unstable_fountain: 'Fountain effect granted',
+    fortune_statue: 'Wager resolved', dice: 'Wager resolved', wheel: 'Wager resolved',
+    gambler: 'Wager resolved', trickster: 'Wager resolved', oracle: 'Choose a revealed reward', coin: 'Wager resolved',
+    sacrifice: '-25% Health; treasure cache', soul_obelisk: 'Guardians summoned; 2 caches on victory',
+    offering: 'Gold offered; +20% Damage and +14% Attack Speed, 25s', fallen_ritual: 'Enemy waves summoned',
+    transmutation: 'Equipment transmuted; replacement granted', power_monolith: '+48% Damage; -18% Damage Reduction, 25s',
+    reliquary: 'Gem offered; equipment or gold reward granted', mysterious_monolith: 'Mystery resolved', skull: 'Mystery resolved',
+    mirror: 'Hostile reflection summoned; 2 caches on victory', sarcophagus: 'Mystery resolved', urn: 'Mystery resolved',
+    tome: 'Forbidden Insight or guardians summoned', shifting_portal: 'Portal shifted; mystery resolved',
+    living_statue: 'Mystery resolved', pylon: '+16% Resistances; +8% Damage Reduction, 20s',
+    lantern: 'Nearby chambers and hidden finds revealed', war_horn: 'Enemy waves summoned',
+  };
+  return messages[o.id] || `${o.name} Activated`;
+}
+function used(world,o,message=null) {
+  if (o.opened) return false;
   o.opened=true; o.used=true; o.dot='#68606a';
   const claims=G.char && (G.char.worldObjectClaims ||= {});
   if(claims) claims[o.claimKey]=true;
   G.game?.autosave?.();
   vfx(world,o,true);
+  showShrineActivationMessage(o.x,o.y,activationMessage(o,message),o.color);
+  return true;
 }
 function ask(world,o,title,body,accept) {
-  return UI.confirm(title,body,()=>{ if(G.world!==world||o.opened)return; if(accept()===false)return; used(world,o); },'Accept','Leave');
+  return UI.confirm(title,body,()=>{ if(G.world!==world||o.opened)return; const result=accept(); if(result===false)return; used(world,o,result); },'Accept','Leave');
 }
 function randomEnemy(world,x,y,rank='normal',hp=1) {
   const arch=pickMonsterArchetype(world);
@@ -150,7 +177,7 @@ function beginWaves(world,o,count,rewardCount=1) {
   UI.centerMsg(o.name.toUpperCase(),`Survive ${count} wave${count===1?'':'s'} to claim the reward`,2.6);
 }
 function choose(world,o,title,body,choices) {
-  UI.dialog({title,html:`<p>${body}</p>`,buttons:[...choices.map(c=>({label:c.label,cls:c.cls||'',fn:()=>{if(G.world===world&&!o.opened){used(world,o);c.run();}}})),{label:'Leave'}]});
+  UI.dialog({title,html:`<p>${body}</p>`,buttons:[...choices.map(c=>({label:c.label,cls:c.cls||'',fn:()=>{if(G.world===world&&!o.opened){const result=c.run();if(result===false)return;used(world,o,typeof c.message==='function'?c.message():c.message||result);}}})),{label:'Leave'}]});
 }
 function safeCost(p,cost) { if(p.char.gold<cost){UI.log('You do not have enough gold for the offering.','#ff8080');return false;} p.char.gold-=cost;return true; }
 
@@ -170,8 +197,8 @@ function applyBlessing(world,o) {
   if(o.id==='elements'){
     const element=pick(['fire','cold','light','poison','arcane']); stats={elemental:{[element]:28}}; title=`the Elements (${element})`;
   }
-  used(world,o); const buff=addBuff(p,o,`Shrine of ${title}`,o.color,stats,duration,extra);
-  floatText(o.x,o.y,112,shrineFloatingMessage(o.id,buff),o.color,12,{life:2.5,vz:18});
+  const buff=addBuff(p,o,`Shrine of ${title}`,o.color,stats,duration,extra);
+  used(world,o,shrineFloatingMessage(o.id,buff));
   if(o.id==='fortitude')p.heal(p.maxHp*.12);
   UI.log(`<b style="color:${o.color}">${esc(o.name)}</b><br><b>Effect Granted:</b> ${esc(title)}<br>${esc(buff.description)}<br><b>Duration:</b> ${Math.ceil(buff.t)} seconds, or until you leave the floor.`,o.color,{category:'dungeon.shrine',important:true});
   UI.event({ category: 'debug.shrine', text: `${o.name}: applied ${title} for ${Math.ceil(buff.t)} seconds.` });
@@ -181,50 +208,51 @@ function useObject(world,o) {
   const p=G.player,d=level(world),s=rewardScale(o), cost=Math.max(1,Math.round(goldPile(d)*s*1.5));
   if(o.category==='blessing'){applyBlessing(world,o);return;}
   switch(o.id){
-    case 'blood': return ask(world,o,o.name,'Sacrifice 20% of your current health for a strong damage blessing and a depth-scaled treasure cache?',()=>{p.hp=Math.max(1,p.hp-p.hp*.2);addBuff(p,o,'Blood Price','#e85060',{dmg:42},25);rewardChest(world,o,1);});
-    case 'greed': return ask(world,o,o.name,'Strengthen nearby enemies for better treasure? The choice cannot be undone this floor.',()=>{for(const m of world.creatures)if(m.team==='enemy'&&!m.dead&&dist(m.x,m.y,o.x,o.y)<9){m.maxHp*=1.35;m.hp=m.maxHp;m.dmg*=1.18;}rewardChest(world,o,2);});
-    case 'torment': return ask(world,o,o.name,'Accept a 30-second weakening curse for a depth-appropriate equipment reward?',()=>{addBuff(p,o,'Torment','#a72848',{speed:-18,dmg:-12},30,{curse:true});rewardChest(world,o,1);});
+    case 'blood': return ask(world,o,o.name,'Sacrifice 20% of your current health for a strong damage blessing and a depth-scaled treasure cache?',()=>{p.hp=Math.max(1,p.hp-p.hp*.2);addBuff(p,o,'Blood Price','#e85060',{dmg:42},25);rewardChest(world,o,1);return '-20% Health; +42% Damage and cache, 25s';});
+    case 'greed': return ask(world,o,o.name,'Strengthen nearby enemies for better treasure? The choice cannot be undone this floor.',()=>{let count=0;for(const m of world.creatures)if(m.team==='enemy'&&!m.dead&&dist(m.x,m.y,o.x,o.y)<9){m.maxHp*=1.35;m.hp=m.maxHp;m.dmg*=1.18;count++;}rewardChest(world,o,2);return `${count} nearby enemies empowered (+35% Health, +18% Damage); 2 caches`;});
+    case 'torment': return ask(world,o,o.name,'Accept a 30-second weakening curse for a depth-appropriate equipment reward?',()=>{addBuff(p,o,'Torment','#a72848',{speed:-18,dmg:-12},30,{curse:true});rewardChest(world,o,1);return '-18% Movement, -12% Damage; cache, 30s';});
     case 'shadows': return ask(world,o,o.name,'Trade defense for added Shadow damage for 30 seconds? Each direct attack hit gains Shadow damage even if it normally deals no Shadow damage.',()=>{
       const buff=addBuff(p,o,'Shadow Pact','#8d61c9',{addedDamage:{shadow:8},damageTakenPct:12},30);
       UI.log(`<b style="color:${o.color}">${esc(o.name)}</b><br>${esc(buff.description)}<br><b>Duration:</b> ${Math.ceil(buff.t)} seconds, or until you leave the floor.`,o.color,{category:'dungeon.altar',important:true});
+      return '+8% Shadow hit damage; +12% damage taken, 30s';
     });
-    case 'chaos': return ask(world,o,o.name,'Accept a randomized blessing and curse?',()=>{const a=pick([{good:{dmg:28},bad:{reduce:-10}},{good:{as:26},bad:{speed:-14}},{good:{mf:55},bad:{armor:-18}}]);addBuff(p,o,'Chaotic Boon',o.color,a.good,a.good.mf?60:25);addBuff(p,{...o,id:'chaos_curse'},'Chaotic Price','#b44adc',a.bad,30,{curse:true});});
-    case 'damned': return ask(world,o,o.name,'Summon a dangerous champion. Defeat it for a bonus hoard?',()=>{const m=randomEnemy(world,o.x,o.y,'champion',2.5);if(m){m.name='Warden of the Damned';m.onDeath=()=>rewardChest(world,o,2);}else rewardChest(world,o,1);});
-    case 'decay': return ask(world,o,o.name,'Lose a small amount of health over time for increased attack power?',()=>{addBuff(p,o,'Decaying Might','#92a343',{dmg:38},25,{curse:true,selfDrain:.015});});
-    case 'corruption': return ask(world,o,o.name,'Make this floor’s enemies stronger in exchange for a major reward?',()=>{for(const m of world.creatures)if(m.team==='enemy'&&!m.dead){m.maxHp*=1.16;m.hp=m.maxHp;m.dmg*=1.12;}rewardChest(world,o,2);});
-    case 'life': used(world,o);healing(p,p.maxHp*.55,0);break;
-    case 'mana': used(world,o);healing(p,0,p.maxMana*.65);break;
-    case 'rejuvenation': used(world,o);p.applyRejuvenation();break;
-    case 'purification': used(world,o);p.status={};p.curses={};for(let i=p.buffs.length-1;i>=0;i--)if(p.buffs[i].curse)p.buffs.splice(i,1);p.recompute();break;
-    case 'renewal': used(world,o);healing(p,p.maxHp*.4,p.maxMana*.4);for(const k in p.cooldowns)p.cooldowns[k]=Math.max(0,p.cooldowns[k]-8);break;
-    case 'bloodspring': return ask(world,o,o.name,`Pay ${cost.toLocaleString()} gold to restore 70% health?`,()=>{if(!safeCost(p,cost))return false;healing(p,p.maxHp*.7,0);});
+    case 'chaos': return ask(world,o,o.name,'Accept a randomized blessing and curse?',()=>{const a=pick([{good:{dmg:28},bad:{reduce:-10},message:'+28% Damage; -10% Damage Reduction, 25s'},{good:{as:26},bad:{speed:-14},message:'+26% Attack/Cast Speed; -14% Movement, 25s'},{good:{mf:55},bad:{armor:-18},message:'+55% Magic Find; -18% Armor, 60s'}]);addBuff(p,o,'Chaotic Boon',o.color,a.good,a.good.mf?60:25);addBuff(p,{...o,id:'chaos_curse'},'Chaotic Price','#b44adc',a.bad,30,{curse:true});return a.message;});
+    case 'damned': return ask(world,o,o.name,'Summon a dangerous champion. Defeat it for a bonus hoard?',()=>{const m=randomEnemy(world,o.x,o.y,'champion',2.5);if(m){m.name='Warden of the Damned';m.onDeath=()=>rewardChest(world,o,2);return 'Warden of the Damned summoned; 2 caches on victory';}rewardChest(world,o,1);return 'Champion unavailable; cache granted';});
+    case 'decay': return ask(world,o,o.name,'Lose a small amount of health over time for increased attack power?',()=>{addBuff(p,o,'Decaying Might','#92a343',{dmg:38},25,{curse:true,selfDrain:.015});return '-1.5% Health/s; +38% Damage, 25s';});
+    case 'corruption': return ask(world,o,o.name,'Make this floor’s enemies stronger in exchange for a major reward?',()=>{let count=0;for(const m of world.creatures)if(m.team==='enemy'&&!m.dead){m.maxHp*=1.16;m.hp=m.maxHp;m.dmg*=1.12;count++;}rewardChest(world,o,2);return `${count} enemies empowered (+16% Health, +12% Damage); 2 caches`;});
+    case 'life': {const before=p.hp;healing(p,p.maxHp*.55,0);used(world,o,`+${Math.round(p.hp-before).toLocaleString()} Health restored (up to 55%)`);break;}
+    case 'mana': {const before=p.mana;healing(p,0,p.maxMana*.65);used(world,o,`+${Math.round(p.mana-before).toLocaleString()} Mana restored (up to 65%)`);break;}
+    case 'rejuvenation': p.applyRejuvenation();used(world,o,'Health and mana restored');break;
+    case 'purification': {const curses=p.buffs.filter(b=>b.curse).length,statuses=Object.keys(p.status||{}).filter(k=>p.status[k]).length;p.status={};p.curses={};for(let i=p.buffs.length-1;i>=0;i--)if(p.buffs[i].curse)p.buffs.splice(i,1);p.recompute();used(world,o,`Cleansed ${curses} curse${curses===1?'':'s'} and ${statuses} status effect${statuses===1?'':'s'}`);break;}
+    case 'renewal': healing(p,p.maxHp*.4,p.maxMana*.4);for(const k in p.cooldowns)p.cooldowns[k]=Math.max(0,p.cooldowns[k]-8);used(world,o,'Health and mana restored (+40%); cooldowns reduced by 8s');break;
+    case 'bloodspring': return ask(world,o,o.name,`Pay ${cost.toLocaleString()} gold to restore 70% health?`,()=>{if(!safeCost(p,cost))return false;healing(p,p.maxHp*.7,0);return `-${cost.toLocaleString()} Gold; +70% Health restored`;});
     case 'unstable_fountain': return choose(world,o,o.name,'The water shifts between three unstable currents. Choose one.',[
-      {label:'Restore',run:()=>healing(p,p.maxHp*.45,p.maxMana*.45)},{label:'Blessing',run:()=>addBuff(p,o,'Unstable Boon',o.color,{dmg:18,speed:14},25)},{label:'Drink Deep',run:()=>{healing(p,p.maxHp*.75,p.maxMana*.75);if(chance(.25)){p.hp=Math.max(1,p.hp-p.maxHp*.18);}}},
+      {label:'Restore',run:()=>{healing(p,p.maxHp*.45,p.maxMana*.45);return '+45% Health and Mana restored';}},{label:'Blessing',run:()=>{addBuff(p,o,'Unstable Boon',o.color,{dmg:18,speed:14},25);return '+18% Damage, +14% Movement, 25s';}},{label:'Drink Deep',run:()=>{healing(p,p.maxHp*.75,p.maxMana*.75);if(chance(.25)){p.hp=Math.max(1,p.hp-p.maxHp*.18);return '+75% Health/Mana; 25% chance of -18% Health';}return '+75% Health and Mana; no backlash';}},
     ]);
     case 'fortune_statue': case 'dice': case 'wheel': case 'gambler': case 'trickster': case 'oracle': case 'coin': return useGamble(world,o,cost);
-    case 'sacrifice': return ask(world,o,o.name,'Give up one quarter of your current health for a depth-scaled reward?',()=>{p.hp=Math.max(1,p.hp-p.hp*.25);rewardChest(world,o,1);});
-    case 'soul_obelisk': return ask(world,o,o.name,'Awaken the obelisk’s guardians. Their defeat will charge it and release a reward.',()=>{beginWaves(world,o,1,2);});
-    case 'offering': return ask(world,o,o.name,`Offer ${cost.toLocaleString()} gold for a temporary blessing?`,()=>{if(!safeCost(p,cost))return false;addBuff(p,o,'Offering’s Favor',o.color,{dmg:20,as:14},25);});
-    case 'fallen_ritual': return choose(world,o,o.name,'Choose how many waves to call. Later waves pay more.',[1,2,3].map(n=>({label:`${n} wave${n===1?'':'s'}`,run:()=>beginWaves(world,o,n,n)})));
+    case 'sacrifice': return ask(world,o,o.name,'Give up one quarter of your current health for a depth-scaled reward?',()=>{p.hp=Math.max(1,p.hp-p.hp*.25);rewardChest(world,o,1);return '-25% Health; treasure cache';});
+    case 'soul_obelisk': return ask(world,o,o.name,'Awaken the obelisk’s guardians. Their defeat will charge it and release a reward.',()=>{beginWaves(world,o,1,2);return 'Guardians summoned; 2 caches on victory';});
+    case 'offering': return ask(world,o,o.name,`Offer ${cost.toLocaleString()} gold for a temporary blessing?`,()=>{if(!safeCost(p,cost))return false;addBuff(p,o,'Offering’s Favor',o.color,{dmg:20,as:14},25);return `-${cost.toLocaleString()} Gold; +20% Damage, +14% Attack Speed, 25s`;});
+    case 'fallen_ritual': return choose(world,o,o.name,'Choose how many waves to call. Later waves pay more.',[1,2,3].map(n=>({label:`${n} wave${n===1?'':'s'}`,run:()=>{beginWaves(world,o,n,n);return `${n} enemy wave${n===1?'':'s'} summoned; reward on victory`;}})));
     case 'transmutation': return sacrificeEquipment(world,o);
-    case 'power_monolith': return ask(world,o,o.name,'Gain tremendous power, but suffer reduced defenses for 25 seconds?',()=>{addBuff(p,o,'Monolith’s Might',o.color,{dmg:48,reduce:-18},25);});
+    case 'power_monolith': return ask(world,o,o.name,'Gain tremendous power, but suffer reduced defenses for 25 seconds?',()=>{addBuff(p,o,'Monolith’s Might',o.color,{dmg:48,reduce:-18},25);return '+48% Damage; -18% Damage Reduction, 25s';});
     case 'reliquary': return sacrificeGem(world,o,cost);
     case 'mysterious_monolith': return ask(world,o,o.name,'Wake the monolith and accept one of its uncertain effects?',()=>resolveMystery(world,o));
     case 'skull': return choose(world,o,o.name,'The skull offers a reward, but its promise is uncertain.',[
-      {label:'Hear the boon',run:()=>resolveMystery(world,o)},{label:'Silence it',run:()=>rewardChest(world,o,1)},
+      {label:'Hear the boon',run:()=>resolveMystery(world,o)},{label:'Silence it',run:()=>{rewardChest(world,o,1);return 'Treasure cache granted';}},
     ]);
-    case 'mirror': return ask(world,o,o.name,'Let the mirror shape a hostile reflection of you?',()=>{const m=randomEnemy(world,o.x,o.y,'champion',2.1);if(m){m.name=`${p.char.name || 'Hero'}’s Reflection`;m.aura='#8adfff';m.dmg=Math.max(m.dmg,Math.round((p.st.weapon?.[1]||10)*.8));m.onDeath=()=>rewardChest(world,o,2);}});
+    case 'mirror': return ask(world,o,o.name,'Let the mirror shape a hostile reflection of you?',()=>{const m=randomEnemy(world,o.x,o.y,'champion',2.1);if(!m)return false;m.name=`${p.char.name || 'Hero'}’s Reflection`;m.aura='#8adfff';m.dmg=Math.max(m.dmg,Math.round((p.st.weapon?.[1]||10)*.8));m.onDeath=()=>rewardChest(world,o,2);return 'Hostile reflection summoned; 2 caches on victory';});
     case 'sarcophagus': return ask(world,o,o.name,'Open the sarcophagus? It may hold treasure, guardians, or a curse.',()=>resolveMystery(world,o));
     case 'urn': return ask(world,o,o.name,'Break the seal? The urn may release treasure, spirits, or a harmful cloud.',()=>resolveMystery(world,o));
     case 'tome': return choose(world,o,o.name,'Read the forbidden text for a temporary skill boon, or leave it sealed.',[
-      {label:'Read',run:()=>{if(chance(.25))beginWaves(world,o,1,1);else addBuff(p,o,'Forbidden Insight',o.color,{dmg:20,cdr:18},25);}},
+      {label:'Read',run:()=>{if(chance(.25)){beginWaves(world,o,1,1);return 'Guardians summoned; cache on victory';}addBuff(p,o,'Forbidden Insight',o.color,{dmg:20,cdr:18},25);return '+20% Damage, +18% Cooldown Reduction, 25s';}},
     ]);
     case 'shifting_portal': return ask(world,o,o.name,'Step through? It leads to a nearby reachable place and may carry a surprise.',()=>{resolvePortal(world,o);});
     case 'living_statue': return ask(world,o,o.name,'Approach the statue and risk awakening it?',()=>resolveMystery(world,o));
-    case 'pylon': return ask(world,o,o.name,'Activate its field? The runes will burn nearby enemies and bolster you for a short time.',()=>{o.fieldT=20;o.fieldTick=.1;(world.worldObjectsActive ||= []).push(o);addBuff(p,o,'Runic Field',o.color,{res:16,reduce:8},20);});
-    case 'lantern': used(world,o);revealNearby(world,o);break;
-    case 'war_horn': return choose(world,o,o.name,'Choose how many enemy waves to summon. More waves bring a larger hoard.',[1,2,3].map(n=>({label:`${n} wave${n===1?'':'s'}`,cls:'red',run:()=>beginWaves(world,o,n,n)})));
-    default: used(world,o);rewardChest(world,o,1);
+    case 'pylon': return ask(world,o,o.name,'Activate its field? The runes will burn nearby enemies and bolster you for a short time.',()=>{o.fieldT=20;o.fieldTick=.1;(world.worldObjectsActive ||= []).push(o);addBuff(p,o,'Runic Field',o.color,{res:16,reduce:8},20);return '+16% Resistances, +8% Damage Reduction; field burns nearby enemies, 20s';});
+    case 'lantern': revealNearby(world,o);used(world,o,'Nearby chambers and hidden finds revealed');break;
+    case 'war_horn': return choose(world,o,o.name,'Choose how many enemy waves to summon. More waves bring a larger hoard.',[1,2,3].map(n=>({label:`${n} wave${n===1?'':'s'}`,cls:'red',run:()=>{beginWaves(world,o,n,n);return `${n} enemy wave${n===1?'':'s'} summoned; hoard on victory`;}})));
+    default: rewardChest(world,o,1);used(world,o,'Treasure cache granted');
   }
   if(o.opened)UI.log(`<b style="color:${o.color}">${esc(o.name)}</b> is spent.`,o.color,{category:o.name?.startsWith('Altar')?'dungeon.altar':'dungeon.shrine'});
 }
@@ -235,11 +263,14 @@ function useGamble(world,o,cost) {
   const titles={fortune_statue:'Spend gold for a randomized depth-scaled reward?',dice:'Roll for treasure or a dangerous result?',wheel:'Spin for a possible jackpot?',gambler:'Wager gold to multiply it?',trickster:'Risk a trickster’s wager?',oracle:'Pay to choose one of three revealed rewards?',coin:'Flip for doubled treasure or nothing?'};
   const button= o.id==='oracle'?'Reveal choices':o.id==='coin'?'Flip':o.id==='gambler'?'Wager':o.id==='wheel'?'Spin':o.id==='dice'?'Roll':o.id==='trickster'?'Accept the wager':'Play';
   return UI.confirm(o.name,`${titles[o.id]} Wager: ${wager.toLocaleString()} gold.`,()=>{
-    if(G.world!==world||o.opened||!safeCost(p,wager))return;used(world,o);
-    if(o.id==='oracle'){const opts=[()=>rewardChest(world,o,1),()=>goldReward(world,o,5),()=>world.addLoot(new GroundItem(o.x,o.y+.3,'item',{item:rollGroundGem(level(world)+4,world)}))];UI.dialog({title:'Choose your fate',html:'<p>Only one reward can be claimed.</p>',buttons:opts.map((fn,i)=>({label:['Cache','Gold','Gem'][i],fn}))});return;}
+    if(G.world!==world||o.opened||!safeCost(p,wager))return;
+    if(o.id==='oracle'){used(world,o,`-${wager.toLocaleString()} Gold; choose a cache, gold, or gem reward`);const opts=[()=>rewardChest(world,o,1),()=>goldReward(world,o,5),()=>world.addLoot(new GroundItem(o.x,o.y+.3,'item',{item:rollGroundGem(level(world)+4,world)}))];UI.dialog({title:'Choose your fate',html:'<p>Only one reward can be claimed.</p>',buttons:opts.map((fn,i)=>({label:['Cache','Gold','Gem'][i],fn}))});return;}
     const win=chance(o.id==='gambler'?.45:o.id==='trickster'?.5:.55);
-    if(win){if(o.id==='gambler'||o.id==='coin')goldReward(world,o,6);else if(o.id==='wheel')rewardChest(world,o,2);else rewardChest(world,o,1);}
-    else if(o.id==='trickster'||o.id==='dice')beginWaves(world,o,1,1);else UI.log('The wager is lost.','#ff9090');
+    let message;
+    if(win){if(o.id==='gambler'||o.id==='coin'){goldReward(world,o,6);message=`-${wager.toLocaleString()} Gold; jackpot awarded`;}else if(o.id==='wheel'){rewardChest(world,o,2);message=`-${wager.toLocaleString()} Gold; 2 caches awarded`;}else{rewardChest(world,o,1);message=`-${wager.toLocaleString()} Gold; cache awarded`;}}
+    else if(o.id==='trickster'||o.id==='dice'){beginWaves(world,o,1,1);message=`-${wager.toLocaleString()} Gold; guardian trial for a cache`;}
+    else{UI.log('The wager is lost.','#ff9090');message=`-${wager.toLocaleString()} Gold; wager lost`;}
+    used(world,o,message);
   },button,'Leave');
 }
 
@@ -249,9 +280,9 @@ function sacrificeEquipment(world,o) {
   UI.dialog({title:o.name,html:'<p>Select one backpack item to sacrifice for a depth-appropriate replacement. Equipped gear is protected.</p>',buttons:[...gear.slice(0,18).map(({item,index})=>({label:itemName(item),fn:()=>{
     if(o.opened||!c.bag[index])return;
     UI.confirm('Confirm sacrifice',`Destroy ${itemName(item)} and receive a randomized replacement?`,()=>{
-      if(G.world!==world||o.opened||!c.bag[index])return;c.bag[index]=null;used(world,o);
+      if(G.world!==world||o.opened||!c.bag[index])return;c.bag[index]=null;
       const replacement=rollGroundItem(level(world)+2,{world,rarity:rarityAt(level(world)+2,rar(o.rarity).name==='Mythic'?5:rar(o.rarity).name==='Legendary'?4:3),mf:G.player.st.magicFind});
-      world.addLoot(new GroundItem(o.x,o.y+.3,'item',{item:replacement}));UI.log(`The stone consumes the offering and shapes ${itemName(replacement)}.`,o.color);
+      world.addLoot(new GroundItem(o.x,o.y+.3,'item',{item:replacement}));used(world,o,`Equipment transmuted; ${itemName(replacement)} granted`);UI.log(`The stone consumes the offering and shapes ${itemName(replacement)}.`,o.color);
     },'Sacrifice','Keep item');
   }})),{label:'Leave'}]});
 }
@@ -281,21 +312,23 @@ function sacrificeGem(world,o,cost) {
       if(G.world!==world||o.opened||c.gemBag[index]!==item||item.locked)return;
       if((item.count||1)>1)item.count--;
       else c.gemBag[index]=null;
-      used(world,o);
+      let result;
       if(o.rarity>=4||chance(equipmentChance)){
         const equipment=rollReliquaryEquipment(world);
         world.addLoot(new GroundItem(o.x,o.y+.3,'item',{item:equipment}));
-      }else goldReward(world,o,2);
+        result='Gem offered; equipment granted';
+      }else {goldReward(world,o,2);result='Gem offered; gold granted';}
+      used(world,o,result);
     },'Offer one gem','Keep gem');
   }));
 }
 function resolveMystery(world,o) {
   const p=G.player, out=randi(0,4);
-  if(out===0){rewardChest(world,o,chance(.3)?2:1);}
-  else if(out===1){goldReward(world,o,3);}
-  else if(out===2){addBuff(p,o,'Whispered Boon',o.color,{dmg:20,as:14},25);}
-  else if(out===3){beginWaves(world,o,1,1);}
-  else {p.hp=Math.max(1,p.hp-p.maxHp*.12);addBuff(p,{...o,id:o.id+'_hex'},'Whispered Hex','#aa5065',{speed:-12},30,{curse:true});}
+  if(out===0){const count=chance(.3)?2:1;rewardChest(world,o,count);return `${count} treasure cache${count===1?'':'s'} granted`;}
+  if(out===1){goldReward(world,o,3);return 'Depth-scaled gold granted';}
+  if(out===2){addBuff(p,o,'Whispered Boon',o.color,{dmg:20,as:14},25);return '+20% Damage, +14% Attack Speed, 25s';}
+  if(out===3){beginWaves(world,o,1,1);return 'Guardians summoned; cache on victory';}
+  p.hp=Math.max(1,p.hp-p.maxHp*.12);addBuff(p,{...o,id:o.id+'_hex'},'Whispered Hex','#aa5065',{speed:-12},30,{curse:true});return '12% Health loss; -12% Movement curse, 30s';
 }
 function resolvePortal(world,o) {
   const p=G.player,map=world.map, rooms=(world.rooms||[]).filter(r=>r.w&&r.h);
@@ -306,7 +339,8 @@ function resolvePortal(world,o) {
   }
   if(!dest){const x=map.randomNear(p.x,p.y,6);if(map.walkable(x[0],x[1]))dest=x;}
   if(dest){p.x=dest[0];p.y=dest[1];p.path=null;p.moveTarget=null;p.interact=null;map.reveal(p.x,p.y,6);}
-  resolveMystery(world,o);
+  const result=resolveMystery(world,o);
+  return dest ? `Portal shifted; ${result}` : result;
 }
 function revealNearby(world,o) {
   world.map.reveal(o.x,o.y,14);
@@ -314,6 +348,7 @@ function revealNearby(world,o) {
     const x=Math.floor(chest.x),y=Math.floor(chest.y);world.map.reveal(x,y,2);chest.revealedUntil=(world.time||0)+12;
   }
   UI.log('The lantern’s spirit light reveals nearby chambers and hidden finds.','#ffe8a0');
+  return 'Nearby chambers and hidden finds revealed';
 }
 
 function findSprite(world,o) {

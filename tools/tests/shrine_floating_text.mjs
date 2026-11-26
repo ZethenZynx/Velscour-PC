@@ -1,7 +1,8 @@
 // Verifies concise copy for every effect-granting shrine family without browser APIs.
 // Run with: node tools/tests/shrine_floating_text.mjs
 import assert from 'node:assert/strict';
-import { shrineFloatingMessage } from '../../src/game/shrineeffects.js';
+import { shrineFloatingMessage, showShrineActivationMessage } from '../../src/game/shrineeffects.js';
+import { texts } from '../../src/gfx/vfx.js';
 import { SHRINES } from '../../src/game/happenings.js';
 
 const legacyExpected = {
@@ -42,4 +43,18 @@ for (const [key, message] of Object.entries(worldObjectExpected)) {
   assert.equal(shrineFloatingMessage(key, { stats, worldObjectId: key }), message, `${key} message reports actual applied values`);
 }
 
-console.log('PASS: concise shrine text covers 7 dungeon shrine variants and all 10 world-object blessings.');
+texts.length = 0;
+assert.equal(showShrineActivationMessage(4, 7, 'Trial begun', '#b070ff'), true);
+assert.deepEqual(texts.at(-1), {
+  x: 4, y: 7, z: 112, text: 'Trial begun', color: '#b070ff', gradient: null,
+  size: 12, life: 2.5, max: 2.5, vz: 18,
+  dx: texts.at(-1).dx, crit: undefined, dmg: undefined,
+}, 'altar messages use the existing shrine position, typography, float and fade timing');
+const messageCount = texts.length;
+assert.equal(showShrineActivationMessage(4, 7, 'Trial begun', '#b070ff'), true);
+assert.equal(texts.length, messageCount, 'rapid repeat activation merges with the existing floating message');
+assert.equal(showShrineActivationMessage(Number.NaN, 7, 'Invalid'), false);
+assert.equal(showShrineActivationMessage(4, 7, ''), false);
+assert.equal(texts.length, messageCount, 'invalid or empty activation text does not create a floating message');
+
+console.log('PASS: shared shrine/altar float presentation and concise shrine effect text.');

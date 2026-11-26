@@ -1,8 +1,17 @@
 // Player-facing explanations for shrine and altar buffs. Keep these next to
 // the mechanics so the Adventurer's Log and active-buff tooltip stay aligned.
+import { floatText } from '../gfx/vfx.js';
+
 const pct = (n) => `${Number(n || 0).toLocaleString(undefined, { maximumFractionDigits: 1 })}%`;
 const titleCase = (s) => String(s || '').replace(/(^|[-_ ])\w/g, (m) => m.toUpperCase()).replaceAll('_', ' ');
 const elementName = (s) => s === 'light' ? 'Lightning' : titleCase(s);
+
+/** The one shared shrine/altar float style: anchored over the object, 2.5s, drifting up and fading. */
+export function showShrineActivationMessage(x, y, text, color = '#ffe6a0') {
+  if (!text || !Number.isFinite(x) || !Number.isFinite(y)) return false;
+  floatText(x, y, 112, String(text), color, 12, { life: 2.5, vz: 18 });
+  return true;
+}
 
 /** Short, accurate floating copy for shrine activations; world shrines use the actual applied (rarity-scaled) values. */
 export function shrineFloatingMessage(id, buff = {}) {
