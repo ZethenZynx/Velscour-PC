@@ -1,6 +1,6 @@
 import { G, saveSettings } from '../state.js';
 import { UI } from './ui.js';
-import { drawHealthBarCanvas, HEALTH_BAR_CLASSES, normalizeHealthBarSettings, preloadHealthBarArt } from './healthbars.mjs';
+import { drawHealthBarCanvas, HEALTH_BAR_CLASSES, healthBarSummaryText, healthBarValueText, normalizeHealthBarSettings, preloadHealthBarArt } from './healthbars.mjs';
 
 const VISIBILITY = [
   ['always', 'Always Visible'], ['damaged', 'Only When Damaged'], ['combat', 'Only During Combat'],
@@ -73,13 +73,15 @@ export function openHealthBarSettings() {
     ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.shadowColor = '#000'; ctx.shadowBlur = 4;
     ctx.fillStyle = entry.id === 'boss' ? '#ffd29a' : entry.color;
     ctx.font = `700 ${selectedSystem === 'target' ? 30 : 24}px Cinzel, Georgia, serif`;
-    const name = selectedSystem === 'target' || info.showEnemyName ? entity.name : '';
-    if (name) ctx.fillText(name, w * 0.56, y + barH * 0.28, barW * 0.64);
-    ctx.fillStyle = '#ead9ba'; ctx.font = `${selectedSystem === 'target' ? 18 : 13}px Georgia, serif`;
-    if (selectedSystem === 'target' || info.showEnemyLevel || info.showHealthPercentage || info.showNumericalHealth) {
-      const sub = [selectedSystem === 'target' || info.showEnemyLevel ? `Lv. ${entity.level}  ·  ${entry.label}` : '', info.showHealthPercentage ? `${Math.round(previewFraction * 100)}%` : '', info.showNumericalHealth ? `${Math.round(entity.hp)} / ${entity.maxHp}` : ''].filter(Boolean).join('  ·  ');
-      if (sub) ctx.fillText(sub, w * 0.56, y + barH * 0.76, barW * 0.7);
+    const name = info.showEnemyName ? entity.name : '';
+    if (name) ctx.fillText(name, w * 0.56, y + (selectedSystem === 'target' ? barH * 0.28 : -10), barW * 0.64);
+    if (selectedSystem === 'target') {
+      const values = healthBarValueText(entity, s);
+      if (values) { ctx.fillStyle = '#fff0d4'; ctx.font = '700 15px Georgia, serif'; ctx.fillText(values, x + barW * 0.56, y + barH * 0.545, barW * 0.62); }
     }
+    ctx.fillStyle = '#ead9ba'; ctx.font = `${selectedSystem === 'target' ? 18 : 13}px Georgia, serif`;
+    const sub = selectedSystem === 'target' ? healthBarSummaryText(entity, s) : (info.showEnemyLevel ? `Lv. ${entity.level}` : '');
+    if (sub) ctx.fillText(sub, w * 0.56, y + barH * 0.76, barW * 0.7);
     ctx.shadowBlur = 0;
     if (s.info.showAffixIcons && entity.affixes.length) { ctx.fillStyle = '#dbc5f2'; ctx.font = '13px Georgia, serif'; ctx.fillText('✦ Strong  ·  ✦ Vampiric', w * 0.56, h - 9); }
   };

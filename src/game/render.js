@@ -1821,7 +1821,7 @@ function drawOverheadNames(ctx, world, visibleCreatures = world.creatures) {
   for (const c of visibleCreatures) {
     if (c.dead || !c.sbox || (c.goblin && !c.impDiscovered)) continue;
     if (c.depthQuestNameplate || (!c.isPlayer && c.barTop != null && showNames)) {
-      const x = (c.sbox[0] + c.sbox[2]) / 2, y = c.barTop != null ? camera.toScreen(0, c.barTop + c.barHeight * 0.28)[1] : c.sbox[1] - 8;
+      const x = (c.sbox[0] + c.sbox[2]) / 2, y = c.barTop != null ? camera.toScreen(0, c.barTop - 5)[1] : c.sbox[1] - 8;
       const classification = healthBarClass(c);
       drawLabel(ctx, c.name, x * d, y * d, nameFont, c.nameColor || (c.depthQuestNameplate ? '#ffe080' : classification.color), 3 * d);
     }
@@ -1853,7 +1853,7 @@ function drawOverheadNames(ctx, world, visibleCreatures = world.creatures) {
     occupied.push({ x: x - sprite.width / 2, y: y - sprite.height, w: sprite.width, h: sprite.height });
   };
   for (const c of visibleCreatures) if (!c.dead && c.sbox && (c.depthQuestNameplate || (!c.isPlayer && c.barTop != null && showNames))) {
-    const x = (c.sbox[0] + c.sbox[2]) / 2, y = c.barTop != null ? camera.toScreen(0, c.barTop + c.barHeight * 0.28)[1] : c.sbox[1] - 8;
+    const x = (c.sbox[0] + c.sbox[2]) / 2, y = c.barTop != null ? camera.toScreen(0, c.barTop - 5)[1] : c.sbox[1] - 8;
     reserveLabel(c.name, x * d, y * d, nameFont, c.depthQuestNameplate ? '#ffe080' : healthBarClass(c).color, 3 * d);
   }
   if (barInfo.showEnemyLevel) for (const c of visibleCreatures) if (!c.dead && !c.isPlayer && c.sbox && c.barTop != null && Number.isFinite(c.level)) {

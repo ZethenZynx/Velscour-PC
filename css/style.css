@@ -372,10 +372,10 @@ body.touch.portrait #hud-btncol { display: contents; }
 #boss-frame { position: absolute; inset: 0; width:100%;height:100%;pointer-events:none;filter: drop-shadow(0 3px 5px #000); }
 #boss-bar.healthbar-boss { --hb-target-base-height:160px; }
 #boss-bar.healthbar-boss #boss-emblem { left:9.8%;width:12.5%;height:62%; }
-#boss-bar.healthbar-boss #boss-name { left:26%;right:12%;top:19%; }
-#boss-bar.healthbar-boss #boss-track { left:23%;right:12%;top:41%;height:22%; }
-#boss-bar.healthbar-boss #boss-sub { left:26%;right:12%;top:67%; }
-#boss-bar.healthbar-boss #boss-extra { left:27%;right:12%;top:82%; }
+#boss-bar.healthbar-boss #boss-name { left:24%;right:12%;top:13%;height:27%;display:flex;align-items:center;justify-content:center;white-space:normal;overflow:visible;text-overflow:clip;overflow-wrap:anywhere; }
+#boss-bar.healthbar-boss #boss-track { left:24%;right:12%;top:43%;height:23%; }
+#boss-bar.healthbar-boss #boss-sub { left:24%;right:12%;top:70%; }
+#boss-bar.healthbar-boss #boss-extra { left:24%;right:12%;top:83%; }
 #boss-bar.healthbar-normal #boss-name { color:#f0c5b9; }
 #boss-bar.healthbar-champion #boss-name { color:#a9cbff; }
 #boss-bar.healthbar-unique #boss-name { color:#ffe08c; }
@@ -385,8 +385,9 @@ body.touch.portrait #hud-btncol { display: contents; }
 #boss-bar.healthbar-companion #boss-name { color:#9bf3e7; }
 #boss-bar.healthbar-nemesis #boss-frame { filter:drop-shadow(0 0 6px rgba(160,74,230,.8)); }
 #boss-emblem { position: absolute; z-index: 1; left: 1.4%; top: 50%; width: 12.7%; height: 66%; object-fit: contain; transform: translateY(-50%); }
-#boss-name { position: absolute; z-index: 2; top: 20%; left: 17%; right: 7%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font: 800 clamp(12px, 1.55vw, 20px)/1.05 var(--font-head); color: #f1d99e; letter-spacing: .8px; text-shadow: 0 1px 2px #000, 0 0 6px #000, 0 0 10px #000; }
-#boss-track { position: absolute; z-index: 1; left: 12%; right: 8.6%; top: 42%; height: 26%; overflow: hidden; border: 1px solid rgba(12,7,5,.92); background: linear-gradient(#100907,#21120b); box-shadow: inset 0 1px 4px #000, 0 1px 1px rgba(255,220,150,.4); }
+#boss-name { position: absolute; z-index: 2; top: 18%; left: 24%; right: 12%; overflow: visible; text-overflow: clip; white-space: normal; overflow-wrap:anywhere; font: 800 clamp(12px, 1.45vw, 20px)/1.05 var(--font-head); color: #f1d99e; letter-spacing: .8px; text-shadow: 0 1px 2px #000, 0 0 6px #000, 0 0 10px #000; }
+#boss-track { position: absolute; z-index: 1; left: 24%; right: 12%; top: 43%; height: 23%; overflow: hidden; border: 1px solid rgba(12,7,5,.92); background: linear-gradient(#100907,#21120b); box-shadow: inset 0 1px 4px #000, 0 1px 1px rgba(255,220,150,.4); }
+#boss-health-text { position:absolute;z-index:3;inset:0;display:flex;align-items:center;justify-content:center;padding:0 5px;box-sizing:border-box;color:#fff0d4;font:700 clamp(9px,1vw,13px)/1 var(--font-body,sans-serif);font-variant-numeric:tabular-nums;text-align:center;white-space:nowrap;text-shadow:0 1px 2px #000,0 0 4px #000,0 0 6px #000;pointer-events:none; }
 #boss-fill { height: 100%; width: 100%; background-color: #b50f0a; background-image: linear-gradient(180deg,rgba(255,255,255,.32),rgba(255,255,255,.05) 35%,rgba(0,0,0,.18)),url('../assets/ui/healthbars/fill-crimson.webp'); background-size: 100% 100%,auto 100%; background-repeat: no-repeat,repeat-x; box-shadow: inset 0 1px rgba(255,255,255,.28),0 0 5px #f43; }
 #boss-bar.healthbar-normal #boss-fill { background-color:#b91d17; background-image:linear-gradient(180deg,rgba(255,255,255,.32),rgba(255,255,255,.04) 38%,rgba(0,0,0,.18)),url('../assets/ui/healthbars/fill-red.webp'); }
 #boss-bar.healthbar-champion #boss-fill { background-color:#1553ad; background-image:linear-gradient(180deg,rgba(255,255,255,.32),rgba(255,255,255,.04) 38%,rgba(0,0,0,.18)),url('../assets/ui/healthbars/fill-blue.webp'); }
@@ -410,8 +411,8 @@ body.touch.portrait #hud-btncol { display: contents; }
 #boss-bar.no-frame:not(.classic) #boss-frame { display:none; }
 #boss-track { position: absolute; }
 .boss-mark { position: absolute; top: -2px; bottom: -2px; width: 2px; margin-left: -1px; background: #ffd890; box-shadow: 0 0 4px #000; }
-#boss-sub { position:absolute;z-index:2;top:69%;left:18%;right:7%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font:600 clamp(9px,1vw,13px)/1.1 var(--font-body,sans-serif);color:#f0d5a2;text-shadow:0 1px 2px #000,0 0 5px #000; }
-#boss-extra { position:absolute;z-index:2;top:84%;left:20%;right:8%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font:600 clamp(8px,.8vw,11px)/1 var(--font-body,sans-serif);color:#ddc9ac;text-shadow:0 1px 2px #000,0 0 5px #000; }
+#boss-sub { position:absolute;z-index:2;top:69%;left:24%;right:12%;overflow:hidden;text-overflow:clip;white-space:nowrap;font:600 clamp(9px,1vw,13px)/1.1 var(--font-body,sans-serif);color:#f0d5a2;text-shadow:0 1px 2px #000,0 0 5px #000; }
+#boss-extra { position:absolute;z-index:2;top:82%;left:24%;right:12%;overflow:hidden;text-overflow:clip;white-space:nowrap;font:600 clamp(8px,.8vw,11px)/1 var(--font-body,sans-serif);color:#ddc9ac;text-shadow:0 1px 2px #000,0 0 5px #000; }
 #boss-bar.warded #boss-frame { filter:drop-shadow(0 0 6px rgba(95,190,255,.8)); }
 #boss-bar.warded #boss-sub { color:#b8e5ff; }
 #sand-objective { position:absolute; z-index:4; top:54px; left:50%; transform:translateX(-50%); width:min(520px,72vw); padding:7px 12px; display:flex; justify-content:center; align-items:center; gap:12px; flex-wrap:wrap; border:1px solid rgba(226,178,105,.58); border-radius:5px; background:rgba(25,15,8,.82); color:#f3dfbd; font:600 13px/1.2 var(--font-body); text-align:center; text-shadow:0 1px 2px #000; pointer-events:none; }

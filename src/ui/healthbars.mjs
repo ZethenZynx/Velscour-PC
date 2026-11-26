@@ -18,8 +18,8 @@ export const DEFAULT_HEALTH_BAR_SETTINGS = Object.freeze({
   theme: 'velscour',
   overhead: Object.freeze({ width: 100, height: 100, opacity: 100, verticalOffset: 0, decorativeBorders: true, smoothHealthDepletion: true, visibility: 'always' }),
   target: Object.freeze({ width: 100, height: 100, opacity: 100, verticalOffset: 0, decorativeBorders: true, smoothHealthDepletion: true, visibility: 'always' }),
-  classes: Object.freeze({ normal: true, champion: true, unique: true, boss: true, nemesis: true, imp: true, companion: true, player: true }),
-  info: Object.freeze({ showEnemyName: true, showEnemyLevel: true, showHealthPercentage: false, showNumericalHealth: false, showAffixIcons: true, showStatusEffectIcons: true }),
+  classes: Object.freeze({ normal: true, champion: true, unique: true, boss: true, nemesis: true, imp: true, companion: true, player: false }),
+  info: Object.freeze({ showEnemyName: false, showEnemyLevel: false, showHealthPercentage: false, showNumericalHealth: false, showAffixIcons: true, showStatusEffectIcons: true }),
 });
 
 const VISIBILITY = new Set(['always', 'damaged', 'combat', 'targeted', 'hidden']);
@@ -142,6 +142,24 @@ export function healthBarText(entity, s = healthBarSettings()) {
   return bits.join('  ·  ');
 }
 
+/** Concise information placed below the boss banner; health values live inside its track. */
+export function healthBarSummaryText(entity, s = healthBarSettings()) {
+  const bits = [];
+  if (s.info.showEnemyLevel && entity?.level) bits.push(`Lv. ${entity.level}`);
+  bits.push(healthBarClass(entity).label);
+  if (entity?.ward > 0 && entity.ward < 1) bits.push('Ward');
+  return bits.join('  ·  ');
+}
+
+/** Health values for the boss track, independently controlled by the existing display options. */
+export function healthBarValueText(entity, s = healthBarSettings()) {
+  const hp = Math.max(0, Number(entity?.hp) || 0), max = Math.max(0, Number(entity?.maxHp) || 0);
+  const bits = [];
+  if (s.info.showHealthPercentage) bits.push(`${max ? Math.round(hp / max * 100) : 0}%`);
+  if (s.info.showNumericalHealth) bits.push(`${Math.ceil(hp).toLocaleString()} / ${Math.ceil(max).toLocaleString()}`);
+  return bits.join('  ·  ');
+}
+
 export function healthBarAffixText(entity) {
   if (!healthBarSettings().info.showAffixIcons) return '';
   const names = entity?.affixes || []; let text = '';
@@ -160,6 +178,44 @@ function drawFallback(ctx, x, y, w, h, fraction, color) {
   ctx.fillStyle = color; ctx.fillRect(x, y, w * fraction, h);
   ctx.fillStyle = 'rgba(255,230,160,.5)'; ctx.fillRect(x, y, w * fraction, Math.max(1, h * 0.22));
   ctx.strokeStyle = '#9a7340'; ctx.lineWidth = Math.max(1, h * 0.08); ctx.strokeRect(x, y, w, h);
+}
+
+/** Small, emblem-free overhead bar. Its pointed, metal-edged shape is independent of the large target frame. */
+function drawCompactOverhead(ctx, x, y, w, h, fraction, color, theme, decorativeBorders) {
+  ctx.save();
+  try {
+    const mid = y + h / 2, tip = Math.min(h * 0.55, w * 0.06), inset = Math.max(1, h * 0.16);
+    ctx.beginPath();
+    ctx.moveTo(x, mid); ctx.lineTo(x + tip, y); ctx.lineTo(x + w - tip, y);
+    ctx.lineTo(x + w, mid); ctx.lineTo(x + w - tip, y + h); ctx.lineTo(x + tip, y + h); ctx.closePath();
+    ctx.fillStyle = '#100b08'; ctx.fill();
+    ctx.save();
+    try {
+      ctx.clip();
+      const innerX = x + tip + inset, innerW = Math.max(0, w - 2 * (tip + inset));
+      const innerY = y + inset, innerH = Math.max(1, h - inset * 2);
+      if (fraction > 0) {
+        ctx.fillStyle = color;
+        ctx.fillRect(innerX, innerY, innerW * fraction, innerH);
+        if (theme === 'classic') {
+          ctx.fillStyle = 'rgba(255,255,255,.22)';
+        } else {
+          const sheen = ctx.createLinearGradient(0, innerY, 0, innerY + innerH);
+          sheen.addColorStop(0, 'rgba(255,245,215,.62)'); sheen.addColorStop(.38, 'rgba(255,255,255,.12)'); sheen.addColorStop(1, 'rgba(0,0,0,.35)');
+          ctx.fillStyle = sheen;
+        }
+        ctx.fillRect(innerX, innerY, innerW * fraction, innerH);
+      }
+    } finally { ctx.restore(); }
+    if (decorativeBorders && theme !== 'classic') {
+      ctx.beginPath(); ctx.moveTo(x + tip, y + .5); ctx.lineTo(x + w - tip, y + .5); ctx.lineTo(x + w - .5, mid); ctx.lineTo(x + w - tip, y + h - .5); ctx.lineTo(x + tip, y + h - .5); ctx.lineTo(x + .5, mid); ctx.closePath();
+      ctx.strokeStyle = 'rgba(224,190,123,.96)'; ctx.lineWidth = Math.max(.8, h * .12); ctx.stroke();
+      ctx.beginPath(); ctx.moveTo(x + tip + 1, y + 1.5); ctx.lineTo(x + w - tip - 1, y + 1.5);
+      ctx.strokeStyle = 'rgba(255,239,192,.7)'; ctx.lineWidth = Math.max(.45, h * .07); ctx.stroke();
+    } else if (decorativeBorders) {
+      ctx.strokeStyle = '#6a5942'; ctx.lineWidth = Math.max(.8, h * .12); ctx.stroke();
+    }
+  } finally { ctx.restore(); }
 }
 
 /** Paint a horizontally nine-sliced frame so width adjustments do not squash its emblems or end caps. */
@@ -194,6 +250,10 @@ export function drawHealthBarCanvas(ctx, entity, x, y, w, h, { system = 'overhea
   ctx.save();
   try {
     ctx.globalAlpha *= opacity;
+    if (system === 'overhead') {
+      drawCompactOverhead(ctx, x, y, w, h, fraction, classification.color, s.theme, appearance.decorativeBorders);
+      return;
+    }
     if (s.theme === 'classic') {
       drawFallback(ctx, x, y, w, h, fraction, classification.color);
       return;

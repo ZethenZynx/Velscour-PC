@@ -709,9 +709,9 @@ export class Creature {
         : (isPlayerTargetable(this) || isSummon) && healthBarVisible(this, 'overhead');
       if (!showHealth) return;
       const appearance = healthBarSettings().overhead;
-      const big = this.rank === 'boss' || this.rank === 'raid' || this.isRaid || this.world?.boss === this;
-      bw = (big ? Math.max(48, Math.min(104, w * 0.95)) : Math.max(54, Math.min(92, w * 0.9))) * appearance.width / 100;
-      bh = (big ? 34 : 25) * appearance.height / 100;
+      // Overhead bars are intentionally compact; boss-scale ornament belongs to the top encounter banner.
+      bw = Math.max(40, Math.min(76, w * 0.78)) * appearance.width / 100;
+      bh = 7 * appearance.height / 100;
       const kb = G.barK || 1;
       bw *= kb; bh *= kb;
       const x = px - bw / 2, y = py - 4 * kb - bh + appearance.verticalOffset;

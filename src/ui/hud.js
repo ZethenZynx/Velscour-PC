@@ -22,7 +22,7 @@ import { DUNGEON_AFFIX_BY_ID } from '../data/dungeonaffixes.js';
 import { dungeonAffixIconURL } from './dungeonaffixicons.js';
 import { appendEnemyHistory, createEnemyHistorySaveQueue, loadEnemyHistory } from './enemyhistory.js';
 import { profileEnd, profileRecord, profileStart } from '../core/perfdiagnostics.js';
-import { HEALTH_BAR_CLASSES, drawHealthBarFrame, healthBarClass, healthBarSettings, healthBarText, healthBarVisible, healthBarAffixText, healthBarStatusText, preloadHealthBarArt } from './healthbars.mjs';
+import { HEALTH_BAR_CLASSES, drawHealthBarFrame, healthBarClass, healthBarSettings, healthBarSummaryText, healthBarValueText, healthBarVisible, healthBarAffixText, healthBarStatusText, preloadHealthBarArt } from './healthbars.mjs';
 
 preloadHealthBarArt();
 function redrawTargetHealthBarFrame() {
@@ -700,9 +700,10 @@ export const HUD = {
     else if (isPlayerTargetable(attackTarget)) ordinaryTarget = attackTarget;
     else if (isPlayerTargetable(G.lastHit)) ordinaryTarget = G.lastHit;
     const barSettings = healthBarSettings();
+    const targetedBoss = ordinaryTarget && healthBarClass(ordinaryTarget).id === 'boss' ? ordinaryTarget : null;
     const barTarget = activeBoss && healthBarVisible(activeBoss, 'target') ? activeBoss
-      : ordinaryTarget && healthBarVisible(ordinaryTarget, 'target') ? ordinaryTarget : null;
-    const barClass = healthBarClass(barTarget);
+      : targetedBoss && healthBarVisible(targetedBoss, 'target') ? targetedBoss : null;
+    const barClass = barTarget === activeBoss ? HEALTH_BAR_CLASSES.find((entry) => entry.id === 'boss') : healthBarClass(barTarget);
     set('boss', barTarget ? `${barTarget.id}|${barClass.id}|${barSettings.theme}|${barSettings.target.width}|${barSettings.target.height}|${barSettings.target.opacity}|${barSettings.target.verticalOffset}|${barSettings.target.decorativeBorders}|${barSettings.target.smoothHealthDepletion}|${barSettings.info.showEnemyName}|${G.W}|${G.H}|${G.dpr}` : '', () => {
       const bar = $('#boss-bar'), visible = !!barTarget;
       bar.classList.toggle('hidden', !visible);
@@ -720,7 +721,7 @@ export const HUD = {
       redrawTargetHealthBarFrame();
       $('#boss-emblem').src = `assets/ui/healthbars/${barClass.icon}.webp`;
       $('#boss-emblem').alt = barClass.label;
-      $('#boss-name').textContent = barSettings.info.showEnemyName ? (barTarget.name || barClass.label) : barClass.label;
+      $('#boss-name').textContent = barSettings.info.showEnemyName ? (barTarget.name || '') : '';
       const tr = $('#boss-track');
       tr.querySelectorAll('.boss-mark').forEach((e) => e.remove());
       if (barTarget === activeBoss && activeBoss.raid) for (const k of activeBoss.raid.marks) { const d = el('div', 'boss-mark'); d.style.left = k * 100 + '%'; tr.appendChild(d); }
@@ -730,11 +731,14 @@ export const HUD = {
     if (barTarget) {
       const actualHp = Math.max(0, Math.min(1, Number(barTarget.hp) / Math.max(1, Number(barTarget.maxHp))));
       set('bossHp', Math.round(actualHp * 1000) / 10, (v) => { $('#boss-fill').style.width = v + '%'; });
+      set('bossValueText', healthBarValueText(barTarget, barSettings), (v) => { $('#boss-health-text').textContent = v; });
       const encounterState = barTarget === activeBoss ? (activeBoss.raid ? activeBoss.raid.label() : activeBoss.vel ? activeBoss.vel.label() : '') : '';
-      set('bossSub', [healthBarText(barTarget), encounterState].filter(Boolean).join('  ·  '), (v) => { $('#boss-sub').textContent = v; });
+      set('bossSub', [healthBarSummaryText(barTarget, barSettings), encounterState].filter(Boolean).join('  ·  '), (v) => { $('#boss-sub').textContent = v; });
       set('bossExtra', [healthBarAffixText(barTarget), healthBarStatusText(barTarget)].filter(Boolean).join('   ·   '), (v) => { $('#boss-extra').textContent = v; });
       set('bossWard', !!(barTarget.ward && barTarget.ward < 1), (v) => { $('#boss-bar').classList.toggle('warded', v); });
     } else {
+      set('bossValueText', '', (v) => { $('#boss-health-text').textContent = v; });
+      set('bossSub', '', (v) => { $('#boss-sub').textContent = v; });
       set('bossExtra', '', (v) => { $('#boss-extra').textContent = v; });
       set('bossWard', false, (v) => { $('#boss-bar').classList.toggle('warded', v); });
     }

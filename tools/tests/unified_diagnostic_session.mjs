@@ -22,7 +22,7 @@ assert.ok(sessionId);
 let fetchCount = 0;
 const fakeFetch = async (url) => {
   fetchCount++;
-  if (String(url).includes('src/data/build-version.js')) return { ok: true, text: async () => "export const GAME_BUILD_ID = 'fork-main-rendering-hotfix-2026-11-26';" };
+  if (String(url).includes('src/data/build-version.js')) return { ok: true, text: async () => "export const GAME_BUILD_ID = 'fork-main-healthbar-visual-corrections-2026-11-26';" };
   if (String(url).includes('/deployments?')) return { ok: true, json: async () => [{ sha: 'test-deployed-sha', statuses_url: 'https://mock/statuses' }] };
   return { ok: true, json: async () => [{ state: 'success' }] };
 };

@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { G } from '../../src/state.js';
-import { DEFAULT_HEALTH_BAR_SETTINGS, HEALTH_BAR_CLASSES, drawHealthBarCanvas, healthBarClass, healthBarSettings, healthBarText, healthBarVisible, normalizeHealthBarSettings } from '../../src/ui/healthbars.mjs';
+import { DEFAULT_HEALTH_BAR_SETTINGS, HEALTH_BAR_CLASSES, drawHealthBarCanvas, healthBarClass, healthBarSettings, healthBarText, healthBarSummaryText, healthBarValueText, healthBarVisible, normalizeHealthBarSettings } from '../../src/ui/healthbars.mjs';
 
 globalThis.localStorage ||= { getItem: () => null, setItem: () => {} };
 
@@ -10,6 +10,9 @@ assert.equal(defaults.theme, 'velscour', 'Velscour theme is the default');
 assert.deepEqual(defaults.overhead, { ...DEFAULT_HEALTH_BAR_SETTINGS.overhead }, 'overhead settings have independent default dimensions and visibility');
 assert.deepEqual(defaults.target, { ...DEFAULT_HEALTH_BAR_SETTINGS.target }, 'target settings have independent default dimensions and visibility');
 assert.equal(Object.keys(defaults.classes).length, 8, 'all seven creature groups and the player have visibility controls');
+assert.equal(defaults.classes.player, false, 'player overhead bar defaults off');
+assert.equal(defaults.info.showEnemyName, false, 'overhead creature names default off');
+assert.equal(defaults.info.showEnemyLevel, false, 'overhead creature levels default off');
 assert.equal(Object.keys(defaults.info).length, 6, 'all requested optional information switches are present');
 assert.equal(normalizeHealthBarSettings({ theme: 'classic' }).theme, 'classic');
 assert.equal(normalizeHealthBarSettings({ overhead: { width: 900, visibility: 'bad' } }).overhead.width, 160, 'saved values are bounded');
@@ -54,8 +57,12 @@ player.hp = 99;
 assert.equal(healthBarVisible(player, 'overhead'), true, 'player overhead appears after damage in damaged-only mode');
 assert.equal(healthBarVisible(player, 'target'), false, 'player does not appear in the target creature bar');
 
-G.settings.healthBars = normalizeHealthBarSettings({ info: { showHealthPercentage: true, showNumericalHealth: true } });
+const detailSettings = normalizeHealthBarSettings({ info: { showEnemyLevel: true, showHealthPercentage: true, showNumericalHealth: true } });
+G.settings.healthBars = detailSettings;
 assert.match(healthBarText({ rank: 'boss', level: 85, hp: 25, maxHp: 100 }), /Lv\. 85.*Boss.*25%.*25 \/ 100/);
+assert.match(healthBarSummaryText({ rank: 'boss', level: 85 }, detailSettings), /Lv\. 85.*Boss/);
+assert.equal(healthBarValueText({ hp: 89446, maxHp: 223747 }, detailSettings), '40%  ·  89,446 / 223,747');
+assert.equal(healthBarValueText({ hp: 5, maxHp: 10 }, normalizeHealthBarSettings()), '', 'boss health values respect their independent visibility options');
 
 const html = readFileSync(new URL('../../index.html', import.meta.url), 'utf8');
 const hud = readFileSync(new URL('../../src/ui/hud.js', import.meta.url), 'utf8');
@@ -63,10 +70,13 @@ const settings = readFileSync(new URL('../../src/ui/healthbar-settings.mjs', imp
 const css = readFileSync(new URL('../../css/style.css', import.meta.url), 'utf8');
 const creatureDraw = readFileSync(new URL('../../src/game/creature.js', import.meta.url), 'utf8');
 assert.match(html, /id="boss-emblem"/);
+assert.match(html, /id="boss-health-text"/);
 assert.match(html, /<canvas id="boss-frame"/);
 assert.match(hud, /healthBarVisible\(.*'target'\)/);
 assert.match(hud, /redrawTargetHealthBarFrame/);
 assert.match(hud, /activeBoss \? 1 : 0/);
+assert.match(hud, /healthBarClass\(ordinaryTarget\)\.id === 'boss'/, 'only boss-class targets can use the top banner');
+assert.match(hud, /healthBarValueText\(barTarget, barSettings\)/, 'boss health values are placed in the bar track');
 assert.match(settings, /data-hb-class-next/);
 assert.match(settings, /Reset to Defaults/);
 assert.match(css, /healthbar-dialog/);
@@ -77,11 +87,15 @@ assert.match(creatureDraw, /\[health-bar\] overhead bar failed; continuing world
 let restoreCount = 0;
 const throwingContext = {
   globalAlpha: 1,
-  save() {},
-  restore() { restoreCount++; },
+  saves: 0,
+  save() { this.saves++; },
+  restore() { restoreCount++; this.saves--; },
+  beginPath() {}, moveTo() {}, lineTo() {}, closePath() {}, fill() {}, clip() {}, stroke() {},
   fillRect() { throw new Error('intentional canvas failure'); },
+  set fillStyle(value) {}, set strokeStyle(value) {}, set lineWidth(value) {},
 };
 G.settings.healthBars = normalizeHealthBarSettings({ theme: 'classic' });
 assert.throws(() => drawHealthBarCanvas(throwingContext, { hp: 1, maxHp: 1 }, 0, 0, 20, 10), /intentional canvas failure/);
-assert.equal(restoreCount, 1, 'canvas state is restored even if health-bar drawing fails');
+assert.equal(throwingContext.saves, 0, 'nested canvas state is restored even if overhead bar drawing fails');
+assert.equal(restoreCount, 3, 'clipping, compact-bar and renderer canvas states are restored');
 console.log('health bar models, visibility rules, settings and hook wiring passed');
