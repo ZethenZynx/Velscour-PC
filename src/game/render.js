@@ -10,6 +10,7 @@ import { replacementImage } from '../core/replacementart.js';
 import { A, classSprite } from '../core/assets.js';
 import { pixelSprite } from '../gfx/pixelart.js';
 import { gritAt } from '../gfx/grit.js';
+import { developerRecordingActive } from '../core/developer-session.js';
 import { townFrame, townFrameOf, townMotion, isLying, TOWN_FRAME_W, TOWN_FRAME_H, TOWN_BASELINE } from './townsfolkvisuals.js';
 import { drawEmote } from '../gfx/emotes.js';
 import { drawTownProp, TOWN_PROP_KINDS } from '../gfx/townprops.js';
@@ -1085,7 +1086,7 @@ export function propReach(world) {
 }
 
 export function renderWorld(ctx, world) {
-  const profiling = G.settings?.developerMode === true;
+  const profiling = developerRecordingActive();
   let profileMark = profiling ? performance.now() : 0;
   const markRenderPhase = profiling ? (key) => { const now = performance.now(); profileRecord(key, now - profileMark); profileMark = now; } : null;
   const W = G.W * G.dpr, H = G.H * G.dpr;

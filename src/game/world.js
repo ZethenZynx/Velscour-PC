@@ -12,6 +12,7 @@ import { profileEnd, profileRecord, profileRecordAIUpdate, profileStart } from '
 import { groundLootLifetime, OBJECT_LIFETIMES } from '../core/objectlifetimes.mjs';
 import { reconcileBossDefeats } from './bosscompletion.js';
 import { sheerUpdate } from './sheer.js';
+import { developerRecordingActive } from '../core/developer-session.js';
 
 const CELL = 2;
 const LOOT_CELL = 8;
@@ -117,17 +118,17 @@ export class World {
     if (this.map && !c.ghost && !c.isPlayer && !c.clutter) [c.x, c.y] = this.map.nudge(c.x, c.y, bodyR(c));
     this.creatures.push(c);
     c._worldRenderOrder = ++this._creatureSerial;
-    if (G.settings?.developerMode === true) this.lifecycle.creaturesCreated++;
+    if (developerRecordingActive()) this.lifecycle.creaturesCreated++;
     if (Array.isArray(this.dungeonAffixes)) for (const id of this.dungeonAffixes) applyDungeonAffix(c, id);
     return c;
   }
   remove(c) {
     const idx = this.creatures.indexOf(c);
-    if (idx !== -1) { this.creatures.splice(idx, 1); if (G.settings?.developerMode === true) this.lifecycle.creaturesRemoved++; }
+    if (idx !== -1) { this.creatures.splice(idx, 1); if (developerRecordingActive()) this.lifecycle.creaturesRemoved++; }
     if (c.world === this) c.world = null;
     return c;
   }
-  addHazard(h) { h.world = this; this.hazards.push(h); if (G.settings?.developerMode === true) this.lifecycle.hazardsCreated++; return h; }
+  addHazard(h) { h.world = this; this.hazards.push(h); if (developerRecordingActive()) this.lifecycle.hazardsCreated++; return h; }
   addLoot(l) {
     l._lootRemoved = false;
     l._lootBornAt = this.time;
@@ -136,7 +137,7 @@ export class World {
     l._lootFadeAt = lifetime.fadeAt;
     l._lootMaxLifetime = lifetime.duration;
     this.loot.push(l);
-    if (G.settings?.developerMode === true) this.lifecycle.lootCreated++;
+    if (developerRecordingActive()) this.lifecycle.lootCreated++;
     this._lootRegistered++;
     this._indexLoot(l);
     if (l.z > 0 || l.vz > 0) this.movingLoot.add(l);
@@ -188,7 +189,7 @@ export class World {
   removeLoot(l) {
     if (!l || l._lootRemoved) return false;
     l._lootRemoved = true;
-    if (G.settings?.developerMode === true) this.lifecycle.lootRemoved++;
+    if (developerRecordingActive()) this.lifecycle.lootRemoved++;
     l._lootTimerToken = (l._lootTimerToken || 0) + 1;
     if (l.fades) this._lootTimerStale++;
     if (Number.isFinite(l._lootExpiryAt)) this._lootTimerStale++;
@@ -405,7 +406,7 @@ export class World {
         this._audioDiagnosticCombat = inCombat;
       }
     } else this._audioDiagnosticCombat = null;
-    const profiling = this._perfProfiling = G.settings?.developerMode === true;
+    const profiling = this._perfProfiling = developerRecordingActive();
     if (profiling) { this._perfSpatialCandidates = 0; this._perfCollisionPairs = 0; this._perfPathSearches = 0; }
     const worldStart = profiling ? profileStart() : 0;
     this.time += dt;
@@ -473,7 +474,7 @@ export class World {
     for (let i = this.hazards.length - 1; i >= 0; i--) {
       const h = this.hazards[i];
       if (h.update(dt) === false || h.dead) {
-        this.hazards.splice(i, 1); if (G.settings?.developerMode === true) this.lifecycle.hazardsRemoved++;
+        this.hazards.splice(i, 1); if (developerRecordingActive()) this.lifecycle.hazardsRemoved++;
         if (h.world === this) h.world = null;
       }
       else if (h.o && h.o.aug) augHazard(h, dt);
@@ -490,7 +491,7 @@ export class World {
     for (let i = this.creatures.length - 1; i >= 0; i--) {
       const c = this.creatures[i];
       if (c.dead && c !== p && (c.removeT = (c.removeT || 0) + dt) > 0.05) {
-        this.creatures.splice(i, 1); if (G.settings?.developerMode === true) this.lifecycle.creaturesRemoved++;
+        this.creatures.splice(i, 1); if (developerRecordingActive()) this.lifecycle.creaturesRemoved++;
         if (c.world === this) c.world = null;
       }
     }

@@ -17,7 +17,8 @@ const performanceAnalysis = await readFile(new URL('../../src/core/performance-a
 assert.match(state, /developerMode:\s*false/, 'Developer Mode is disabled for existing and new players by default');
 assert.match(profiler, /if \(!performanceProfilerEnabled\(\)\) return false/, 'disabled collection exits before creating frame history');
 assert.match(profiler, /const CAP = 27000/, 'the bounded history can retain three minutes through 150 Hz');
-assert.match(profiler, /HISTORY_MS = 180000/, 'the rolling window is time-based and retains several minutes');
+assert.match(profiler, /completeSessionStatistics/, 'streaming statistics cover the complete manual recording');
+assert.match(profiler, /detailedFramesTruncated/, 'bounded frame detail reports truncation explicitly');
 assert.match(profiler, /Float64Array\(CAP\)/, 'timestamps and supported heap samples retain useful precision');
 assert.match(profiler, /'frameMs', 'gapMs', 'updateMs', 'renderMs'/, 'the report distinguishes processing duration from frame pacing');
 assert.match(profiler, /p50: q\(0\.5\), p95: q\(0\.95\), p99: q\(0\.99\), worst/, 'reports summarize median, tail and worst timings');
@@ -30,7 +31,7 @@ assert.match(profiler, /skyFrontMs.*seeThroughMs.*screenFeedbackMs.*hudLabelsMs.
 assert.match(profiler, /visibleParticles:\s*world\?\._perfVisibleParticles/, 'visible particle workload is counted separately from retained particles');
 assert.match(profiler, /resolutionScale.*devicePixelRatio.*canvasWidth.*canvasHeight/s, 'per-frame reports capture backing-store resolution');
 assert.match(profiler, /frameSummariesByEnvironmentAndResolution:\s*summarizeFrameGroups\(frames\)/, 'exported diagnostics separate statistics by environment and render scale');
-assert.match(buildVersion, /GAME_BUILD_ID = 'fork-main-shift-combat-loot-priority-2026-11-25'/, 'reports identify this deployed source build instead of using generic development');
+assert.match(buildVersion, /GAME_BUILD_ID = 'fork-main-unified-developer-diagnostics-2026-11-25'/, 'reports identify this deployed source build instead of using generic development');
 assert.match(main, /renderResolutionScale\(G\.settings\)/, 'backing-store resolution follows the selected graphics preset');
 assert.doesNotMatch(main, /adaptRes|ar\.upAt/, 'performance variation no longer silently changes render resolution');
 assert.match(resolution, /graphicsPreset === 'extreme' \? 0\.7 : 1/, 'standard rendering retains native resolution and only the explicit preset reduces backing-store scale');
@@ -64,10 +65,10 @@ assert.match(render, /world\.creaturesInBounds\(/, 'world rendering and minimap 
 assert.match(render, /drawParticles\(ctx, vr, profiling\)/, 'visible particle counting only runs during profiling');
 assert.match(render, /profileRecord\('effectDraw', performance\.now\(\) - effectDrawStarted\)/, 'the aggregate effect time includes its split sub-stages');
 assert.match(render, /profileRecord\('screenOverlay', performance\.now\(\) - screenOverlayStarted\)/, 'the aggregate screen-space time includes its split sub-stages');
-assert.match(screens, /data-export-performance/, 'the settings screen exposes report export');
+assert.match(screens, /data-unified-record-export/, 'the settings screen exposes the unified report export');
 assert.match(screens, /value="extreme">Extreme Performance/, 'the standard graphics settings expose the emergency preset');
 assert.match(screens, /data-adaptive-performance/, 'adaptive cosmetic performance is optional and user controlled');
-assert.match(profiler, /HISTORY_MS = 180000/, 'the profiler history remains bounded to its documented duration');
+assert.match(profiler, /retainedFrameLimit: CAP/, 'the profiler bounds detailed frame history');
 assert.doesNotMatch(render, /const corners = \[\[vr\.x0/, 'isometric viewport bounds no longer build per-frame corner arrays');
 assert.doesNotMatch(render, /v\.at = at|standKey\(\.\.\.v\.at\)/, 'wall cutaway records no longer allocate a coordinate pair per actor');
 

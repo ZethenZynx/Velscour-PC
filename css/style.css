@@ -905,6 +905,11 @@ body.touch .reliquary-panel .codex-cell { width: 34px; height: 34px; }
 .developer-settings-group[open] > summary::before { content: '▾'; }
 .developer-action-row { display: flex; flex-wrap: wrap; gap: 7px; }
 .developer-action-row button { flex: 1 1 190px; }
+.developer-recording-card { display: grid; gap: 8px; padding: 10px 11px; border: 1px solid rgba(141,103,48,.55); border-radius: 4px; background: rgba(0,0,0,.17); }
+.developer-marker-row { display: flex; align-items: center; flex-wrap: wrap; gap: 7px; }
+.developer-marker-row input { flex: 1 1 220px; min-width: 150px; }
+.developer-recording-status { color: #d8c49a; font-size: 12px; overflow-wrap: anywhere; }
+.developer-recording-card button:disabled { opacity: .48; cursor: not-allowed; }
 .developer-settings-note { grid-column: 1 / -1; margin: 0; color: var(--text-dim); font-size: 11px; line-height: 1.4; }
 .developer-reset { margin-top: 2px; border-color: #9b6426; color: #ffd080; }
 .developer-settings-group button:disabled { opacity: .48; cursor: not-allowed; }

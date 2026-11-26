@@ -14,6 +14,7 @@ import { loadArtFor, loadEnemySheets, enemyImage, markArtCaches, trimArtCaches }
 import { loadClassArt } from '../core/classart.js';
 import { preloadSkillSheets } from '../ui/icons.js';
 import { dungeonAffixIconHTML } from '../ui/dungeonaffixicons.js';
+import { developerRecordingActive } from '../core/developer-session.js';
 import { applyUILayoutSettings } from '../ui/layoutcustomizer.js';
 import { loadGearArt } from '../core/gearart.js';
 import { loadHeld } from '../gfx/heldart.js';
@@ -392,7 +393,7 @@ export const game = {
 
   autosave() {
     if (!G.char) return false;
-    const saveStart = G.settings?.developerMode ? profileStart() : 0;
+    const saveStart = developerRecordingActive() ? profileStart() : 0;
     this.snapshotRiftCompletion(G.char);
     const characterSaved = writeSave(G.char);
     const marksSaved = saveMarkXp();   // post-level-cap per-hero XP progress (game/marks.js)
@@ -450,7 +451,7 @@ export const game = {
   },
 
   setWorld(world, start, oldWorld) {
-    const transitionStarted = G.settings?.developerMode === true ? profileStart() : 0;
+    const transitionStarted = developerRecordingActive() ? profileStart() : 0;
     const p = G.player;
     if (oldWorld && oldWorld !== world && audioDiagnosticsEnabled()) {
       const from = { worldId: oldWorld.id, kind: oldWorld.kind, environment: oldWorld.biome?.name || oldWorld.kind, depth: oldWorld.depth ?? null };
@@ -3335,7 +3336,7 @@ export const game = {
       if (G.world !== w) return;
       w.update(dt);
       if (G.world !== w) return;
-      const profiling = G.settings?.developerMode === true;
+      const profiling = developerRecordingActive();
       const eventsStart = profiling ? profileStart() : 0;
       this.tickDungeonAffixWorld(w, dt);
       worldObjectsTick(w, dt);
@@ -3362,7 +3363,7 @@ export const game = {
     if (!!G.cine !== hudCine) { hudCine = !!G.cine; HUD.show(!hudCine); }
     if (G.hurtFlash > 0) G.hurtFlash = Math.max(0, G.hurtFlash - dt * 2.5);
     if (G.flash > 0) G.flash = Math.max(0, G.flash - dt * 3.5);
-    const hudStart = G.settings?.developerMode ? profileStart() : 0;
+    const hudStart = developerRecordingActive() ? profileStart() : 0;
     HUD.update(dt);
     if (hudStart) profileRecord('ui', profileEnd(hudStart));
     saveT += dt;
@@ -3374,7 +3375,7 @@ export const game = {
     if (!w) return;
     renderWorld(G.ctx, w);
     if (G.showAutomap) {
-      const automapStart = G.settings?.developerMode ? profileStart() : 0;
+      const automapStart = developerRecordingActive() ? profileStart() : 0;
       const W = G.W * G.dpr, H = G.H * G.dpr;
       if (!automapCanvas || automapCanvas.width !== W || automapCanvas.height !== H) automapCanvas = makeCanvas(W, H);
       drawMinimap(w, 0, automapCanvas, true);

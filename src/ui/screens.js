@@ -4,7 +4,7 @@ import { KEY_BINDING_ACTIONS, getKeyBinding, keyBindingLabel, setKeyBinding, res
 import { setMacroKey, MACRO_KEYS } from '../game/macros.js';
 import { camera } from '../core/view.js';
 import { el, escapeHtml, fmtInt } from '../core/util.js';
-import { sfx, applyVolumes, initAudio, audioActiveByCategory, audioDiagnosticStats, startAudioDiagnosticRecording, stopAudioDiagnosticRecording, clearAudioDiagnosticRecording, recordAudioDiagnosticMarker, exportAudioDiagnosticReport } from '../core/audio.js';
+import { sfx, applyVolumes, initAudio } from '../core/audio.js';
 import { DEFAULT_AUDIO_SETTINGS, AUDIO_VOLUME_GROUPS, AUDIO_SECTIONS, AUDIO_PRESETS, applyAudioPreset, normalizeAudioSettings } from '../core/audio-settings.js';
 import { CLASS_IDS, A } from '../core/assets.js';
 import { CLASSES, ATTRS } from '../data/classes.js';
@@ -25,11 +25,10 @@ import { initTitleForkUpdater } from '../game/forkreleaseupdater.js';
 import { MOUSE_CURSOR_DEFAULTS, refreshMouseCursor } from './mousecursor.js';
 import { CharacterPortrait } from './characterportrait.js';
 import { openCustomizeUI } from './layoutcustomizer.js';
-import { GameChat } from './chat.js';
 import { GORE_PERFORMANCE_WARNING_LIMIT, GORE_PRESET_VERSION, GORE_PRESETS, MAX_CUSTOM_GORE_LIMIT, normalizeGorePreset, goreLimit } from '../gfx/goresettings.mjs';
 import { applyGoreSettings } from '../gfx/vfx.js';
 import { setSkipSeizureWarning } from './seizurewarning.mjs';
-import { exportPerformanceReport, resetPerformanceStatistics, setPerformanceProfilerEnabled } from '../core/perfdiagnostics.js';
+import { addUnifiedDiagnosticMarker, clearUnifiedDiagnosticRecording, exportUnifiedDiagnosticReport, startUnifiedDiagnosticRecording, stopUnifiedDiagnosticRecording, unifiedDiagnosticStatus } from '../core/developer-diagnostics.js';
 
 let current = null;
 let currentCleanup = null;
@@ -581,10 +580,10 @@ function audioSettingsMarkup(settings) {
   </div>`;
 }
 
-function audioDiagnosticsMarkup() {
-  return `<div class="audio-diagnostic-controls"><button type="button" class="btn small" data-audio-record-start>Start Recording</button><button type="button" class="btn small" data-audio-record-stop disabled>Stop Recording</button><button type="button" class="btn small" data-audio-record-clear>Clear Recording</button><button type="button" class="btn small" data-audio-record-export>Export Audio Report</button></div>
-    <div class="audio-diagnostic-controls"><input type="text" maxlength="120" data-audio-marker placeholder="Add a diagnostic marker"><button type="button" class="btn small" data-audio-record-marker>Add Marker</button><span class="dim" data-audio-diagnostic-status role="status">Recording is off.</span></div>
-    <div class="audio-diagnostic-summary" data-audio-diagnostic-summary></div>`;
+function unifiedDiagnosticsMarkup() {
+  return `<div class="developer-action-row"><button type="button" class="btn small" data-unified-record-start>Start Recording</button><button type="button" class="btn small" data-unified-record-stop disabled>Stop Recording</button><button type="button" class="btn small" data-unified-record-clear>Clear Recording</button><button type="button" class="btn small" data-unified-record-export>Export Report</button></div>
+    <div class="developer-marker-row"><input type="text" maxlength="120" data-unified-marker placeholder="Diagnostic marker"><button type="button" class="btn small" data-unified-marker-add>Add Marker</button></div>
+    <div class="developer-recording-status" data-unified-status role="status" aria-live="polite">Recording is off.</div>`;
 }
 
 export function settingsDialog() {
@@ -651,11 +650,7 @@ export function settingsDialog() {
       <label class="developer-mode-toggle" for="developer-mode-toggle">Enable Developer Mode</label><input id="developer-mode-toggle" type="checkbox" data-developer-mode ${st.developerMode ? 'checked' : ''}>
       <p class="developer-mode-warning" role="note">Developer monitoring can add processing overhead. Leave it off during normal play.</p>
     </div>
-    <details class="developer-settings-group" data-developer-section="performance" open><summary>Performance Diagnostics</summary><div class="developer-action-row">
-      <button type="button" class="btn small" data-export-performance>Export Performance Report</button>
-      <button type="button" class="btn small" data-reset-performance>Reset Performance Statistics</button>
-    </div></details>
-    <details class="developer-settings-group" data-developer-section="audio"><summary>Audio Diagnostics</summary>${audioDiagnosticsMarkup()}</details>
+    <section class="developer-recording-card" aria-label="Unified diagnostic recording">${unifiedDiagnosticsMarkup()}</section>
   </div>
   <div class="settings-tab-pane" data-pane="mouseCursor">
     <div class="cursor-live-preview" data-cursor-preview tabindex="0"><b>Live Cursor Preview</b><span>Move your mouse here to preview the cursor, trail, and locator effects.</span></div>
@@ -760,25 +755,29 @@ export function settingsDialog() {
     const fadeOutput = d.box.querySelector('[data-audio-fade-output]'); if (fadeOutput) fadeOutput.textContent = `${audio.musicFadeSeconds.toFixed(1)} s`;
     const duckOutput = d.box.querySelector('[data-audio-duck-output]'); if (duckOutput) duckOutput.textContent = `${audio.duckAmount}%`;
   };
-  const refreshAudioDiagnostics = () => {
-    const stats = audioDiagnosticStats(), developerEnabled = st.developerMode === true;
-    const active = developerEnabled ? audioActiveByCategory() : {};
-    const status = d.box.querySelector('[data-audio-diagnostic-status]');
-    if (status) status.textContent = !developerEnabled
-      ? (stats.hasRecording ? 'Developer Mode is off. The last recording remains available.' : 'Developer Mode is off.')
-      : stats.enabled ? `Recording: on — ${Object.values(active).reduce((sum, n) => sum + n, 0)} active sounds`
-        : stats.hasRecording ? 'Recording is off. The last recording remains available.' : 'Recording is off.';
-    const summary = d.box.querySelector('[data-audio-diagnostic-summary]');
-    if (summary) summary.textContent = developerEnabled
-      ? `Active by category: ${Object.entries(active).map(([name, count]) => `${name} ${count}`).join(' · ') || 'none'}${stats.enabled ? ` · Peak: ${Object.entries(stats.peakByCategory).map(([name, count]) => `${name} ${count}`).join(' · ') || 'none'}` : ''}`
-      : '';
-    const start = d.box.querySelector('[data-audio-record-start]'), stop = d.box.querySelector('[data-audio-record-stop]');
-    const marker = d.box.querySelector('[data-audio-record-marker]');
-    if (start) start.disabled = !developerEnabled || stats.enabled;
-    if (stop) stop.disabled = !stats.enabled;
-    if (marker) marker.disabled = !developerEnabled || !stats.enabled;
+  let diagnosticsStatusTimer = null;
+  const refreshUnifiedDiagnostics = () => {
+    const status = unifiedDiagnosticStatus(), enabled = st.developerMode === true;
+    const statusEl = d.box.querySelector('[data-unified-status]');
+    const start = d.box.querySelector('[data-unified-record-start]'), stop = d.box.querySelector('[data-unified-record-stop]');
+    const marker = d.box.querySelector('[data-unified-marker]'), addMarker = d.box.querySelector('[data-unified-marker-add]');
+    const elapsed = status.hasRecording ? `${Math.floor(status.elapsedMs / 60000)}:${String(Math.floor(status.elapsedMs / 1000) % 60).padStart(2, '0')} elapsed` : '';
+    if (statusEl) statusEl.textContent = status.active ? `Recording diagnostics · ${elapsed} · Session ${status.sessionId}`
+      : !enabled ? (status.hasRecording ? `Developer Mode is off · Recording stopped · ${elapsed}` : 'Developer Mode is off.')
+        : status.hasRecording ? `Recording stopped · ${elapsed} · Report ready to export` : 'Recording is off.';
+    if (start) start.disabled = !enabled || status.active;
+    if (stop) stop.disabled = !status.active;
+    if (marker) marker.disabled = !enabled || !status.active;
+    if (addMarker) addMarker.disabled = !enabled || !status.active;
+    const clear = d.box.querySelector('[data-unified-record-clear]'); if (clear) clear.disabled = !status.hasRecording && !status.active;
+    const exportButton = d.box.querySelector('[data-unified-record-export]'); if (exportButton) exportButton.disabled = !status.hasRecording;
+    if (status.active && !diagnosticsStatusTimer) diagnosticsStatusTimer = setInterval(() => {
+      if (!d.box.isConnected) { clearInterval(diagnosticsStatusTimer); diagnosticsStatusTimer = null; return; }
+      if (activeSettingsTab === 'developer') refreshUnifiedDiagnostics();
+    }, 1000);
+    if (!status.active && diagnosticsStatusTimer) { clearInterval(diagnosticsStatusTimer); diagnosticsStatusTimer = null; }
   };
-  refreshAudioControls(); refreshAudioDiagnostics();
+  refreshAudioControls(); refreshUnifiedDiagnostics();
   d.box.querySelectorAll('[data-audio-volume]').forEach((control) => {
     control.oninput = () => {
       const audio = audioState(), id = control.dataset.audioVolume;
@@ -818,21 +817,15 @@ export function settingsDialog() {
       d.box.querySelector('[data-audio-setting="preset"]').value = 'Custom'; saveAudio();
     };
   });
-  d.box.querySelector('[data-audio-record-start]').onclick = () => { if (st.developerMode) startAudioDiagnosticRecording(); refreshAudioDiagnostics(); };
-  d.box.querySelector('[data-audio-record-stop]').onclick = () => { stopAudioDiagnosticRecording(); refreshAudioDiagnostics(); };
-  d.box.querySelector('[data-audio-record-clear]').onclick = () => { clearAudioDiagnosticRecording(); refreshAudioDiagnostics(); };
-  d.box.querySelector('[data-audio-record-export]').onclick = () => exportAudioDiagnosticReport();
-  d.box.querySelector('[data-audio-record-marker]').onclick = () => {
-    const input = d.box.querySelector('[data-audio-marker]'), marker = input.value.trim();
-    if (marker) { recordAudioDiagnosticMarker('user-marker', { marker }); input.value = ''; }
+  d.box.querySelector('[data-unified-record-start]').onclick = () => { startUnifiedDiagnosticRecording(); refreshUnifiedDiagnostics(); };
+  d.box.querySelector('[data-unified-record-stop]').onclick = () => { stopUnifiedDiagnosticRecording(); refreshUnifiedDiagnostics(); };
+  d.box.querySelector('[data-unified-record-clear]').onclick = () => { clearUnifiedDiagnosticRecording(); refreshUnifiedDiagnostics(); };
+  d.box.querySelector('[data-unified-record-export]').onclick = () => exportUnifiedDiagnosticReport();
+  d.box.querySelector('[data-unified-marker-add]').onclick = () => {
+    const input = d.box.querySelector('[data-unified-marker]');
+    if (addUnifiedDiagnosticMarker(input.value)) input.value = '';
+    refreshUnifiedDiagnostics();
   };
-  const audioDiagnosticsSection = d.box.querySelector('[data-developer-section="audio"]');
-  audioDiagnosticsSection.addEventListener('toggle', refreshAudioDiagnostics);
-  const audioStatsTimer = setInterval(() => {
-    if (!d.box.isConnected) { clearInterval(audioStatsTimer); return; }
-    if (!st.developerMode || activeSettingsTab !== 'developer' || !audioDiagnosticsSection.open) return;
-    refreshAudioDiagnostics();
-  }, 1000);
   const performancePreset = d.box.querySelector('[data-performance-preset]');
   const adaptivePerformance = d.box.querySelector('[data-adaptive-performance]');
   performancePreset.value = st.graphicsPreset === 'extreme' ? 'extreme' : 'standard';
@@ -872,23 +865,13 @@ export function settingsDialog() {
   };
   refreshMouseCursor();
   const developerModeControl = d.box.querySelector('[data-developer-mode]');
-  const resetPerformance = d.box.querySelector('[data-reset-performance]');
-  const refreshDeveloperControls = () => {
-    resetPerformance.disabled = false;
-    refreshAudioDiagnostics();
-  };
+  const refreshDeveloperControls = () => refreshUnifiedDiagnostics();
   developerModeControl.onchange = () => {
     st.developerMode = developerModeControl.checked;
-    setPerformanceProfilerEnabled(st.developerMode);
-    GameChat.setDebugEnabled(st.developerMode);
-    if (!st.developerMode) stopAudioDiagnosticRecording();
+    if (!st.developerMode) stopUnifiedDiagnosticRecording('developer-mode-disabled');
     refreshDeveloperControls(); saveSettings();
   };
   refreshDeveloperControls();
-  resetPerformance.onclick = () => {
-    if (!resetPerformanceStatistics()) return;
-    refreshDeveloperControls();
-  };
   const keybindRows = d.box.querySelector("[data-keybind-rows]");
   keybindRows.outerHTML = KEY_BINDING_ACTIONS.map((action) => '<label>' + action.label + '</label><button type="button" class="btn small" data-keybind="' + action.id + '">' + keyBindingLabel(getKeyBinding(action.id)) + '</button>').join("");
   const keybindButtons = [...d.box.querySelectorAll("[data-keybind]")];
@@ -1026,7 +1009,6 @@ export function settingsDialog() {
       saveSettings();
     };
   });
-  d.box.querySelector('[data-export-performance]').onclick = () => exportPerformanceReport();
   d.box.querySelectorAll('[data-portrait]').forEach((inp) => {
     inp.oninput = inp.onchange = () => {
       const c = (st.characterPortrait ||= { visible: true, locked: false, size: 100, position: null });

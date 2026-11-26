@@ -8,6 +8,7 @@ import { G, developerModeEnabled } from '../state.js';
 import { SHEER } from '../data/sheer.js';
 import { AUDIO_VOLUME_GROUPS, audioGroupForSound, isCombatAudioCategory, normalizeAudioSettings } from './audio-settings.js';
 import { AUDIO_DIAGNOSTIC_CALLSITE_SAMPLE_INTERVAL, AUDIO_DIAGNOSTIC_STACK_LIMIT, createAudioDiagnosticSession, summarizeAudioDiagnosticEvents } from './audio-diagnostics.mjs';
+import { developerRecordingActive, recordDeveloperEvent, developerSessionStatus } from './developer-session.js';
 
 let ac = null, master, sfxBus, musicBus, ambBus, noiseBuf, pulseWave, activeOutputBus = null;
 const categoryBuses = {};
@@ -173,10 +174,10 @@ export function setAudioDiagnosticSink(sink) {
   return () => { if (audioDiagnosticSink === sink) setAudioDiagnosticSink(null); };
 }
 
-export function startAudioDiagnosticRecording() {
-  if (!developerModeEnabled() || audioRecording?.active) return false;
+export function startAudioDiagnosticRecording({ sessionId = null } = {}) {
+  if (!developerModeEnabled() || !developerRecordingActive() || audioRecording?.active) return false;
   audioRecording = { active: true, startedUtc: new Date().toISOString(), startedPerfMs: performance.now(),
-    session: createAudioDiagnosticSession(), stackTraces: {}, nextStackId: 0 };
+    sessionId: sessionId || developerSessionStatus().sessionId, session: createAudioDiagnosticSession(), stackTraces: {}, nextStackId: 0 };
   diagnosticStackIds = new Map(); diagnosticStackSamples = new Map(); lastDiagnosticStackIds = new Map();
   for (const key of Object.keys(audioMetrics)) audioMetrics[key] = 0;
   for (const key of Object.keys(peakByCategory)) delete peakByCategory[key];
@@ -201,18 +202,18 @@ export function stopAudioDiagnosticRecording() {
 }
 
 export function clearAudioDiagnosticRecording() {
-  const wasActive = !!audioRecording?.active;
   setAudioDiagnosticSink(null);
   audioRecording = null;
-  if (wasActive) startAudioDiagnosticRecording();
 }
 
 export function recordAudioDiagnosticMarker(type, detail = {}) {
-  if (!audioRecording?.active) return false;
   const world = G.world;
-  captureAudioDiagnosticEvent({ type, timeUtc: new Date().toISOString(), perfMs: performance.now(),
+  const marker = { type, timeUtc: new Date().toISOString(), perfMs: performance.now(),
     worldId: detail.worldId ?? world?.id ?? null, environment: detail.environment ?? world?.biome?.name ?? world?.kind ?? null,
-    inCombat: detail.inCombat ?? isAudioCombatActive(world), ...detail });
+    inCombat: detail.inCombat ?? isAudioCombatActive(world), ...detail };
+  const unified = recordDeveloperEvent(type, marker, 'game-event');
+  if (!audioRecording?.active) return unified;
+  captureAudioDiagnosticEvent({ ...marker, sessionId: audioRecording.sessionId });
   return true;
 }
 
@@ -234,7 +235,7 @@ function captureAudioDiagnosticEvent(event) {
   if (!audioRecording?.active || !event) return;
   const { stack, ...rest } = event;
   const stackId = stack ? storeDiagnosticStack(`event:${event.type}:${event.name || ''}:${event.message || ''}`, stack) : event.stackId;
-  audioRecording.session.record(stackId == null ? rest : { ...rest, stackId });
+  audioRecording.session.record({ ...(stackId == null ? rest : { ...rest, stackId }), sessionId: audioRecording.sessionId });
 }
 
 function storeDiagnosticStack(key, stack) {
@@ -274,7 +275,7 @@ export function audioDiagnosticReport() {
   const sourcesAtStop = audioRecording.sourceSnapshotAtStop || audioRecording.session.snapshotSources();
   const settings = normalizeAudioSettings(G.settings.audio);
   return {
-    title: 'Velscour Audio Diagnostics', startedUtc: audioRecording.startedUtc, stoppedUtc: audioRecording.stoppedUtc || null,
+    title: 'Velscour Audio Diagnostics', sessionId: audioRecording.sessionId, startedUtc: audioRecording.startedUtc, stoppedUtc: audioRecording.stoppedUtc || null,
     durationMs,
     statisticsScope: { sessionStatistics: 'complete-session', eventStatistics: 'retained-detailed-events-only',
       totalEventsObserved: eventCount, detailedEventsStored: events.length, detailedEventLimit: detailLimit,

@@ -1,5 +1,6 @@
 // Optional, rolling performance diagnostics. No collection, timer reads, DOM, or entity scans while disabled.
-import { G, developerModeEnabled } from '../state.js';
+import { G } from '../state.js';
+import { developerRecordingActive, developerSessionStatus } from './developer-session.js';
 import { vfxStats } from '../gfx/vfx.js';
 import { audioActiveCount } from './audio.js';
 import { GAME_BUILD_ID, GAME_VERSION } from '../data/build-version.js';
@@ -7,7 +8,6 @@ import { FRAME_BUDGET_MS, summarizeFrameGroups, summarizeFrameSpikes } from './p
 import { shouldSampleCounts } from './perf-count-sampling.mjs';
 
 const CAP = 27000; // 3 minutes at 150 Hz; longer on typical 60-120 Hz displays
-const HISTORY_MS = 180000;
 const MAX_LONG_TASKS = 128;
 const KEYS = ['frameMs', 'gapMs', 'updateMs', 'renderMs', 'renderSetupMs', 'floorDrawMs', 'groundDrawMs', 'renderSortMs', 'depthDrawMs', 'effectDrawMs', 'ambientTopDrawMs', 'particleDrawMs', 'topHazardDrawMs', 'topEffectDrawMs', 'lightingMs', 'screenOverlayMs', 'skyFrontMs', 'seeThroughMs', 'screenFeedbackMs', 'hudLabelsMs', 'combatTextMs', 'cinematicOverlayMs', 'automapMs', 'worldMs', 'aiMs', 'playerUpdateMs', 'creatureUpdateMs', 'townLifeUpdateMs', 'keepDirectorUpdateMs', 'keepCompanionUpdateMs', 'keepFolkUpdateMs', 'keepLightingUpdateMs', 'townAgentUpdateMs', 'otherNpcUpdateMs', 'doorUpdateMs', 'aiSlowestCallbackMs', 'pathMs', 'collisionMs', 'hazardMs', 'lootMs', 'vfxMs', 'uiMs', 'enemyHistoryMs', 'minimapMs', 'eventsMs', 'environmentMs', 'saveMs'];
 const AI_TIMING_KEYS = ['playerUpdateMs', 'creatureUpdateMs', 'townLifeUpdateMs', 'keepDirectorUpdateMs', 'keepCompanionUpdateMs', 'keepFolkUpdateMs', 'keepLightingUpdateMs', 'townAgentUpdateMs', 'otherNpcUpdateMs', 'doorUpdateMs', 'aiSlowestCallbackMs'];
@@ -15,9 +15,18 @@ const COUNT_KEYS = ['creatures', 'enemies', 'inactiveEnemies', 'offscreenCreatur
 let history = null, cursor = 0, count = 0, frameSerial = 0, prevRaf = 0, nextPaint = 0, latestCounts = null, latestCountsWorld = null;
 let frameStarted = 0, rafGap = 16.667, updateMs = 0, renderMs = 0, phases = null;
 let panel = null, graph = null;
-let longTaskObserver = null, longTasks = [], externalTimings = [];
+let longTaskObserver = null, longTasks = [], longTaskCount = 0, externalTimings = [];
+let frameTotals = null;
 
-export const performanceProfilerEnabled = developerModeEnabled;
+export const performanceProfilerEnabled = developerRecordingActive;
+
+function resetFrameTotals() {
+  frameTotals = { frames: 0, sums: Object.fromEntries(KEYS.map((key) => [key, 0])), minima: Object.fromEntries(KEYS.map((key) => [key, Infinity])), maxima: Object.fromEntries(KEYS.map((key) => [key, 0])),
+    overBudgetFrames: 0, over50msFrames: 0, over100msFrames: 0, significantSpikes: [], environments: Object.create(null),
+    entityCountSamples: 0, entityCountsLatest: Object.create(null), entityCountsMaximum: Object.create(null), lifecycleDeltaObserved: { world: Object.create(null), vfx: Object.create(null) },
+    lastLifecycleWorldId: null, lastWorldLifecycle: null, lastVfxLifecycle: null,
+    heap: { samples: 0, firstBytes: null, latestBytes: null, peakBytes: null } };
+}
 
 function allocateHistory() {
   if (history) return;
@@ -41,6 +50,7 @@ function allocateHistory() {
 }
 
 function addStyle() {
+  if (typeof document === 'undefined') return;
   if (document.getElementById('perf-diagnostics-style')) return;
   const style = document.createElement('style');
   style.id = 'perf-diagnostics-style';
@@ -49,6 +59,7 @@ function addStyle() {
 }
 
 function mountPanel() {
+  if (typeof document === 'undefined') return;
   if (panel?.isConnected) return;
   addStyle();
   panel = document.createElement('section');
@@ -59,12 +70,19 @@ function mountPanel() {
 }
 
 function dropPanel() {
+  if (typeof document === 'undefined') { panel = graph = null; return; }
   panel?.remove(); panel = graph = null;
   document.getElementById('perf-diagnostics-style')?.remove();
 }
 
 export function setPerformanceProfilerEnabled(enabled) {
-  if (enabled) { allocateHistory(); mountPanel(); startLongTaskObserver(); }
+  if (enabled) {
+    allocateHistory(); if (!frameTotals) resetFrameTotals();
+    frameTotals.lastLifecycleWorldId = G.world?.id ?? null;
+    frameTotals.lastWorldLifecycle = G.world?.lifecycle ? { ...G.world.lifecycle } : null;
+    frameTotals.lastVfxLifecycle = { ...(vfxStats().lifecycle || {}) };
+    mountPanel(); startLongTaskObserver();
+  }
   else {
     stopLongTaskObserver();
     // Stop monitoring without discarding the report; players can still export it while disabled.
@@ -76,8 +94,8 @@ export function setPerformanceProfilerEnabled(enabled) {
 
 export function resetPerformanceStatistics() {
   stopLongTaskObserver();
-  history = null; latestCounts = null; latestCountsWorld = null; count = cursor = frameSerial = 0;
-  longTasks = []; externalTimings = [];
+  history = null; latestCounts = null; latestCountsWorld = null; count = cursor = frameSerial = 0; resetFrameTotals();
+  longTasks = []; longTaskCount = 0; externalTimings = [];
   prevRaf = nextPaint = 0; phases = null;
   if (performanceProfilerEnabled()) { allocateHistory(); mountPanel(); startLongTaskObserver(); }
   return true;
@@ -89,7 +107,7 @@ function startLongTaskObserver() {
     if (!PerformanceObserver.supportedEntryTypes?.includes('longtask')) return;
     longTaskObserver = new PerformanceObserver((list) => {
       for (const entry of list.getEntries()) {
-        longTasks.push({
+        const task = {
           startTimeMs: Number(entry.startTime.toFixed(2)),
           durationMs: Number(entry.duration.toFixed(2)),
           name: String(entry.name || 'unknown'),
@@ -97,8 +115,14 @@ function startLongTaskObserver() {
             name: String(item.name || ''), containerName: String(item.containerName || ''),
             containerId: String(item.containerId || ''), containerSrc: String(item.containerSrc || ''),
           })),
-        });
-        if (longTasks.length > MAX_LONG_TASKS) longTasks.splice(0, longTasks.length - MAX_LONG_TASKS);
+        };
+        longTaskCount++;
+        if (longTasks.length < MAX_LONG_TASKS) longTasks.push(task);
+        else {
+          let shortest = 0;
+          for (let i = 1; i < longTasks.length; i++) if (longTasks[i].durationMs < longTasks[shortest].durationMs) shortest = i;
+          if (task.durationMs > longTasks[shortest].durationMs) longTasks[shortest] = task;
+        }
       }
     });
     longTaskObserver.observe({ type: 'longtask', buffered: false });
@@ -246,21 +270,77 @@ export function profileFinishFrame(world) {
   history.combatTextMs[at] = phases.combatTextMs; history.cinematicOverlayMs[at] = phases.cinematicOverlayMs;
   history.lightingMs[at] = phases.lightingMs; history.screenOverlayMs[at] = phases.screenOverlayMs;
   history.automapMs[at] = phases.automapMs;
+  if (!frameTotals) resetFrameTotals();
+  frameTotals.frames++;
+  for (const key of KEYS) {
+    const value = key === 'frameMs' ? frameMs : key === 'gapMs' ? rafGap : key === 'updateMs' ? updateMs : key === 'renderMs' ? renderMs : phases[key] || 0;
+    frameTotals.sums[key] += value;
+    frameTotals.minima[key] = Math.min(frameTotals.minima[key], value);
+    frameTotals.maxima[key] = Math.max(frameTotals.maxima[key], value);
+  }
+  if (rafGap > FRAME_BUDGET_MS) frameTotals.overBudgetFrames++;
+  if (frameMs > 50) frameTotals.over50msFrames++;
+  if (frameMs > 100) frameTotals.over100msFrames++;
+  const environment = world?.biome?.name || world?.biome?.id || world?.kind || 'unknown';
+  const env = frameTotals.environments[environment] || (frameTotals.environments[environment] = { frames: 0, totalFrameMs: 0, worstFrameMs: 0, overBudgetFrames: 0 });
+  env.frames++; env.totalFrameMs += frameMs; env.worstFrameMs = Math.max(env.worstFrameMs, frameMs); if (rafGap > FRAME_BUDGET_MS) env.overBudgetFrames++;
+  if (frameMs > FRAME_BUDGET_MS || rafGap > FRAME_BUDGET_MS) {
+    const spike = { severityMs: Number(Math.max(frameMs, rafGap).toFixed(3)), frameMs: Number(frameMs.toFixed(3)), gapMs: Number(rafGap.toFixed(3)), performanceNowMs: Number(now.toFixed(3)),
+      timestampUtc: new Date((performance.timeOrigin || Date.now() - performance.now()) + now).toISOString(), environment,
+      depth: Number.isFinite(Number(world?.depth)) ? Number(world.depth) : null,
+      timingsMs: Object.fromEntries(KEYS.map((key) => [key, Number((key === 'frameMs' ? frameMs : key === 'gapMs' ? rafGap : key === 'updateMs' ? updateMs : key === 'renderMs' ? renderMs : phases[key] || 0).toFixed(3))])) };
+    const retained = frameTotals.significantSpikes;
+    if (retained.length < 100) retained.push(spike);
+    else {
+      let smallest = 0;
+      for (let i = 1; i < retained.length; i++) if (retained[i].frameMs < retained[smallest].frameMs) smallest = i;
+      if (spike.severityMs > retained[smallest].severityMs) retained[smallest] = spike;
+    }
+  }
   if (shouldSampleCounts(frameSerial, latestCountsWorld, world)) {
     latestCounts = readCounts(world);
     latestCountsWorld = world;
     history.heapBytes[at] = performance.memory?.usedJSHeapSize || 0;
     history.telemetry[at] = JSON.stringify(latestCounts.telemetry);
+    frameTotals.entityCountSamples++;
+    const envCounts = env.entityCountsMaximum || (env.entityCountsMaximum = Object.create(null));
+    for (const key of COUNT_KEYS) {
+      const value = Number(latestCounts[key]) || 0;
+      frameTotals.entityCountsLatest[key] = value;
+      frameTotals.entityCountsMaximum[key] = Math.max(frameTotals.entityCountsMaximum[key] || 0, value);
+      envCounts[key] = Math.max(envCounts[key] || 0, value);
+    }
+    const worldLifecycle = world?.lifecycle || null;
+    if (worldLifecycle) {
+      if (frameTotals.lastLifecycleWorldId === world.id && frameTotals.lastWorldLifecycle) {
+        for (const [key, value] of Object.entries(worldLifecycle)) {
+          const delta = Number(value) - Number(frameTotals.lastWorldLifecycle[key] || 0);
+          if (delta > 0) frameTotals.lifecycleDeltaObserved.world[key] = (frameTotals.lifecycleDeltaObserved.world[key] || 0) + delta;
+        }
+      }
+      frameTotals.lastLifecycleWorldId = world.id ?? null;
+      frameTotals.lastWorldLifecycle = { ...worldLifecycle };
+    }
+    const vfxLifecycle = latestCounts.telemetry?.vfxLifecycle || null;
+    if (vfxLifecycle) {
+      for (const [key, value] of Object.entries(vfxLifecycle)) {
+        const delta = Number(value) - Number(frameTotals.lastVfxLifecycle?.[key] || 0);
+        if (delta > 0) frameTotals.lifecycleDeltaObserved.vfx[key] = (frameTotals.lifecycleDeltaObserved.vfx[key] || 0) + delta;
+      }
+      frameTotals.lastVfxLifecycle = { ...vfxLifecycle };
+    }
+    const heapBytes = history.heapBytes[at];
+    if (heapBytes > 0) {
+      frameTotals.heap.samples++;
+      frameTotals.heap.firstBytes ??= heapBytes;
+      frameTotals.heap.latestBytes = heapBytes;
+      frameTotals.heap.peakBytes = Math.max(frameTotals.heap.peakBytes || 0, heapBytes);
+    }
   } else { history.heapBytes[at] = history.heapBytes[(at - 1 + CAP) % CAP]; history.telemetry[at] = ''; }
   frameSerial++;
   history.samples[at] = latestCounts ? 1 : 0;
   for (const key of COUNT_KEYS) history.counts[key][at] = latestCounts?.[key] || 0;
   cursor = (cursor + 1) % CAP; count = Math.min(CAP, count + 1);
-  while (count > 1) {
-    const oldest = (cursor - count + CAP) % CAP;
-    if (now - history.timestamps[oldest] <= HISTORY_MS) break;
-    count--;
-  }
   if (now >= nextPaint) { nextPaint = now + 1000; paintPanel(frameMs); }
 }
 
@@ -329,6 +409,7 @@ function paintGraph() {
 
 export function performanceReport() {
   if (!history || !count) return { error: 'No performance data has been collected yet.' };
+  const sessionStatus = developerSessionStatus();
   const first = (cursor - count + CAP) % CAP, frames = [];
   let peakHeapBytes = 0;
   for (let i = 0; i < count; i++) {
@@ -342,6 +423,7 @@ export function performanceReport() {
     row.canvasWidth = history.canvasWidth[at];
     row.canvasHeight = history.canvasHeight[at];
     row.elapsedSeconds = Number(((history.timestamps[at] - history.timestamps[first]) / 1000).toFixed(3));
+    row.performanceNowMs = Number(history.timestamps[at].toFixed(3));
     row.timestampUtc = new Date((performance.timeOrigin || Date.now() - performance.now()) + history.timestamps[at]).toISOString();
     row.pageVisible = history.visible[at] === 1;
     row.pageFocused = history.focused[at] === 1;
@@ -385,7 +467,17 @@ export function performanceReport() {
   const nav = globalThis.navigator;
   const firstHeap = frames.find((frame) => frame.heapBytes > 0)?.heapBytes || null;
   return {
-    title: 'Velscour Performance Diagnostics', generatedAt: new Date().toISOString(), durationSeconds: count > 1 ? Number(((history.timestamps[cursor - 1 < 0 ? CAP - 1 : cursor - 1] - history.timestamps[first]) / 1000).toFixed(3)) : 0,
+    title: 'Velscour Performance Diagnostics', sessionId: sessionStatus.sessionId, generatedAt: new Date().toISOString(), durationSeconds: Number((sessionStatus.elapsedMs / 1000).toFixed(3)),
+    statisticsScope: { sessionStatistics: 'complete-recording', detailedFrames: 'bounded-retained-ring-buffer', totalFramesObserved: frameTotals?.frames || count, retainedFrames: count, retainedFrameLimit: CAP, detailedFramesTruncated: (frameTotals?.frames || count) > count },
+    completeSessionStatistics: frameTotals ? {
+      framesObserved: frameTotals.frames,
+      sampledEntityCounts: { sampleCount: frameTotals.entityCountSamples, latest: { ...frameTotals.entityCountsLatest }, maximum: { ...frameTotals.entityCountsMaximum } },
+      lifecycleChangeDeltasBetweenSamples: { world: { ...frameTotals.lifecycleDeltaObserved.world }, vfx: { ...frameTotals.lifecycleDeltaObserved.vfx }, note: 'Deltas begin at the recording baseline and are accumulated at supported entity-count sample points.' },
+      timingMs: Object.fromEntries(KEYS.map((key) => [key, { mean: frameTotals.frames ? Number((frameTotals.sums[key] / frameTotals.frames).toFixed(3)) : 0, minimum: Number((frameTotals.minima[key] === Infinity ? 0 : frameTotals.minima[key]).toFixed(3)), maximum: Number(frameTotals.maxima[key].toFixed(3)) }])),
+      framesOver16Point67msBudget: frameTotals.overBudgetFrames, framesOver50ms: frameTotals.over50msFrames, framesOver100ms: frameTotals.over100msFrames,
+      significantSpikes: frameTotals.significantSpikes.slice().sort((a, b) => b.severityMs - a.severityMs),
+      environments: Object.fromEntries(Object.entries(frameTotals.environments).map(([name, value]) => [name, { ...value, averageFrameMs: value.frames ? Number((value.totalFrameMs / value.frames).toFixed(3)) : 0 }]))
+    } : null,
     build: { version: GAME_VERSION, id: GAME_BUILD_ID },
     character: G.char?.name || null, depth: G.world?.depth ?? null, environment: G.world?.biome?.name || G.world?.kind || null,
     gameplayContext: {
@@ -423,8 +515,8 @@ export function performanceReport() {
     },
     longTasks: {
       supported: typeof PerformanceObserver !== 'undefined' && !!PerformanceObserver.supportedEntryTypes?.includes('longtask'),
-      observedCount: longTasks.length,
-      entries: longTasks.map((task) => ({ ...task, timestampUtc: new Date((performance.timeOrigin || Date.now() - performance.now()) + task.startTimeMs).toISOString() })),
+      observedCount: longTaskCount, retainedEntryCount: longTasks.length, retainedEntryLimit: MAX_LONG_TASKS, importantEntriesTruncated: longTaskCount > longTasks.length,
+      entries: longTasks.slice().sort((a, b) => b.durationMs - a.durationMs).map((task) => ({ ...task, timestampUtc: new Date((performance.timeOrigin || Date.now() - performance.now()) + task.startTimeMs).toISOString() })),
     },
     externalTimings: externalTimings.map((timing) => ({ ...timing,
       timestampUtc: new Date((performance.timeOrigin || Date.now() - performance.now()) + timing.timestampMs).toISOString() })),
@@ -433,10 +525,11 @@ export function performanceReport() {
     memory: {
       supported: !!performance.memory, latestHeapBytes: performance.memory?.usedJSHeapSize || 0, peakSampledHeapBytes: peakHeapBytes,
       firstSampledHeapBytes: firstHeap, growthBytes: firstHeap && peakHeapBytes ? peakHeapBytes - firstHeap : null,
+      completeSessionSamples: frameTotals?.heap || null,
     },
     availability: { jsHeap: !!performance.memory, gcEvents: false, gpuFrameTime: false, listenerCounts: false, timerCounts: false, offscreenCachesBytes: false },
     frames,
-    note: 'History is bounded to 180 seconds, retains at most 100 worst 60 Hz-budget frame/gap samples, and stores object lifecycle/type breakdowns every 15 frames and immediately when the world changes. AI updates are split by player, creatures, Keep companions/director/folk/lighting, town agents, other NPCs, and doors; spike frames include the slowest individual callback when it takes at least 1 ms. Instrumented Keep entry and world setup phases are recorded separately because they can run outside RAF. Synchronous save time is included as saveMs in frame data. Long-task observation is active only while the profiler is enabled and retains at most 128 entries. Long Task attribution does not expose JavaScript call stacks in this runtime. This measures main-thread processing and animation-frame cadence, not true display presentation. Browser/GPU frame time, GPU memory, GC events, timer/listener totals, and audio hardware latency are unavailable here and are not fabricated. A missing runtime field means that runtime does not expose it.',
+    note: 'Detailed frame samples use a bounded ring buffer. Complete-session frame totals, timing minima/means/maxima, frame-budget counts, and environment aggregates continue accumulating for the full recording. The report marks when detailed frame samples have been overwritten. It retains at most 100 worst 60 Hz-budget frame/gap samples and stores object lifecycle/type breakdowns every 15 frames and immediately when the world changes. AI updates are split by player, creatures, Keep companions/director/folk/lighting, town agents, other NPCs, and doors; spike frames include the slowest individual callback when it takes at least 1 ms. Instrumented world setup phases are recorded outside RAF. Long-task observation is active only during a manual diagnostic recording and retains at most 128 entries. Long Task attribution does not expose JavaScript call stacks in this runtime. Browser/GPU frame time, GPU memory, GC events, timer/listener totals, and audio hardware latency are unavailable here and are not fabricated.',
   };
 }
 

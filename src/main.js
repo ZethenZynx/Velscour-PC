@@ -6,12 +6,12 @@ import { loadAssets } from './core/assets.js';
 import { loadEnemyArt, loadPetArt } from './core/enemyart.js';
 import { rand, TAU } from './core/util.js';
 import { UI, $ } from './ui/ui.js';
-import { GameChat } from './ui/chat.js';
 import { initMouseCursor } from './ui/mousecursor.js';
 import { HUD } from './ui/hud.js';
 import { applyUILayoutSettings } from './ui/layoutcustomizer.js';
 import { LoadingScreen } from './ui/loading.js';
 import { titleScreen } from './ui/screens.js';
+import { GameChat } from './ui/chat.js';
 import { Vendor } from './ui/vendor.js';
 import { Stash } from './ui/stash.js';
 import { JewelBox } from './ui/jewelbox.js';
@@ -296,7 +296,8 @@ function reportError(err) {
 async function boot() {
   loadSettings();
   G.performanceQualityTier = performanceTier(G.settings);
-  setPerformanceProfilerEnabled(G.settings.developerMode);
+  // Developer Mode only unlocks the manual recorder; booting the game never starts monitoring.
+  setPerformanceProfilerEnabled(false);
   initMouseCursor();
   G.canvas = $('#game');
   G.ctx = G.canvas.getContext('2d', { alpha: false });
@@ -312,7 +313,6 @@ async function boot() {
   initSpectate(); // taps that catch critters / aim SMITE without moving the hero (game/spectate.js)
   UI.init();
   GameChat.init();
-  GameChat.setDebugEnabled(G.settings.developerMode);
   UI.vendor = Vendor;
   UI.stash = Stash;
   UI.jewelBox = JewelBox;
