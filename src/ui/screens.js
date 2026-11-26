@@ -20,8 +20,7 @@ import { RECENT_CHANGES } from '../data/recent-changes.js';
 import { FILTER_ROWS, lootFilter, lootLabelFilter, saveLootFilterSettings } from '../game/lootfilter.js';
 import { validateCharName } from '../core/profanity.js';
 import { loadRecentChanges, getCachedRecentChanges, getRecentChangesState, RECENT_CHANGES_REFRESH_MS } from '../game/recentchanges.js';
-import { changesAfterBundledBuild, showUpdateDialog, checkForGameUpdates } from '../game/updater.js';
-import { initTitleForkUpdater } from '../game/forkreleaseupdater.js';
+import { changesAfterBundledBuild, showUpdateDialog } from '../game/updater.js';
 import { MOUSE_CURSOR_DEFAULTS, refreshMouseCursor } from './mousecursor.js';
 import { CharacterPortrait } from './characterportrait.js';
 import { openHealthBarSettings } from './healthbar-settings.mjs';
@@ -60,9 +59,6 @@ export function titleScreen() {
   s.innerHTML = `<img class="title-logo intro" src="assets/ui/logo.webp" alt="VELSCOUR PC"><div class="title-tag">A world built upon something that should have stayed dead. <b>PC EDITION</b></div>`;
   const updateNotices = el('div', 'title-update-notices');
   updateNotices.setAttribute('aria-label', 'Game updates');
-  const forkUpdateButton = el('button', 'btn fork-update-btn hidden', 'Fork Release Available');
-  forkUpdateButton.type = 'button';
-  forkUpdateButton.setAttribute('aria-label', 'Download a new release from the Velscour PC fork');
   const bundledUpdateButton = el('button', 'btn bundled-update-btn hidden', 'Update Available');
   bundledUpdateButton.type = 'button';
   bundledUpdateButton.setAttribute('aria-label', 'Reload to apply the latest game update');
@@ -70,9 +66,8 @@ export function titleScreen() {
     if (!s.classList.contains('title-ready')) return;
     initAudio(); sfx('ui'); showUpdateDialog(updatesAvailable);
   };
-  updateNotices.append(forkUpdateButton, bundledUpdateButton);
+  updateNotices.appendChild(bundledUpdateButton);
   s.appendChild(updateNotices);
-  initTitleForkUpdater(forkUpdateButton);
   const menu = el('div', 'title-menu');
   const add = (label, fn, cls = 'btn big') => { const b = el('button', cls, label); b.onclick = () => { if (!s.classList.contains('title-ready')) return; initAudio(); sfx('ui'); goFullscreen(); fn(); }; menu.appendChild(b); return b; };
   // Rebuild from local browser saves whenever the title is shown.
@@ -87,7 +82,6 @@ export function titleScreen() {
     add(`Heroes <span style="font-size:13px;color:#a8977c">· ${used}/${CLASS_IDS.length}</span>`, () => classSelect(last ? last.classId : 'paladin'));
     add('Settings', settingsDialog, 'btn');
     bundledUpdateButton.classList.toggle('hidden', !updatesAvailable.length);
-    add('Check for Updates', checkForGameUpdates, 'btn');
     add('Credits', () => creditsScreen(titleScreen), 'btn');
     add('How to Play', helpDialog, 'btn');
   };
@@ -600,7 +594,6 @@ export function settingsDialog() {
   </div>
   <div class="settings-tab-pane" data-pane="general">
     <div class="settings-grid">
-      <label>Game updates</label><button type="button" class="btn small" data-check-game-updates>Check now</button>
       <label>Hero backups</label><button class="btn small" data-backups>View</button>
       <label>Pause while menus open</label><input type="checkbox" data-k="pauseMenus" ${st.pauseMenus !== false ? 'checked' : ''}>
       <label title="Keep previously seen cutscenes at normal speed">Don't fast-forward seen cutscenes</label><input type="checkbox" data-k="noSkipCine" ${st.noSkipCine ? 'checked' : ''}>
@@ -715,18 +708,6 @@ export function settingsDialog() {
   const d = UI.dialog({ title: 'Settings', html, cls: 'settings-dialog', buttons: [{ label: 'Done', fn: () => { stopKeyCaptureListener(); camera.computeZoom(); if (UI.hud && UI.hud.applyVisibilitySettings) UI.hud.applyVisibilitySettings(); saveSettings(); } }] });
   const tabBtns = d.box.querySelectorAll('.settings-tab-btn');
   const tabPanes = d.box.querySelectorAll('.settings-tab-pane');
-  const updateCheckButton = d.box.querySelector('[data-check-game-updates]');
-  if (updateCheckButton) updateCheckButton.onclick = async () => {
-    updateCheckButton.disabled = true;
-    updateCheckButton.textContent = 'Checking…';
-    try { await checkForGameUpdates(); }
-    finally {
-      if (updateCheckButton.isConnected) {
-        updateCheckButton.disabled = false;
-        updateCheckButton.textContent = 'Check now';
-      }
-    }
-  };
   const setTab = (name) => {
     activeSettingsTab = name;
     tabBtns.forEach((btn) => btn.classList.toggle('active', btn.dataset.tab === name));

@@ -1,5 +1,4 @@
 import { RECENT_CHANGES } from '../data/recent-changes.js';
-import { loadRecentChanges, getRecentChangesState } from './recentchanges.js';
 import { UI } from '../ui/ui.js';
 import { escapeHtml } from '../core/util.js';
 
@@ -26,10 +25,9 @@ export function showUpdateDialog(items) {
   const list = updates.slice(0, 8).map(({ title, summary, date }) =>
     `<li><strong>${escapeHtml(title)}</strong>${summary ? `<span>${escapeHtml(summary)}</span>` : ''}${date ? `<time>${escapeHtml(date)}</time>` : ''}</li>`
   ).join('');
-
   UI.dialog({
-    title: 'Velscour Update Available',
-    html: `<p>A newer game update is available. Reload to download the latest published game files.</p><ul class="update-change-list">${list}</ul>`,
+    title: 'GitHub Pages Update Available',
+    html: `<p>A newer game build is available on GitHub Pages. Reload this page to apply it.</p><ul class="update-change-list">${list}</ul>`,
     buttons: [
       { label: 'Later' },
       { label: 'Reload to Update', cls: 'red', fn: () => reloadGameForUpdate(updates) },
@@ -37,32 +35,7 @@ export function showUpdateDialog(items) {
   });
 }
 
-/** Check the live merged-change feed and show the update result from Settings. */
-export async function checkForGameUpdates() {
-  const changes = await loadRecentChanges({ forceRefresh: true });
-  const feedState = getRecentChangesState();
-  if (feedState.kind === 'stale' || feedState.kind === 'unavailable') {
-    UI.dialog({
-      title: 'Update Check Failed',
-      html: `<p>Could not verify the latest changes from your Velscour PC repository (${escapeHtml(feedState.message || 'GitHub is unavailable')}). The game and saved characters are unchanged. Try again when you are online.</p>`,
-      buttons: [{ label: 'Done' }],
-    });
-    return [];
-  }
-  const updates = changesAfterBundledBuild(changes);
-  if (updates.length) showUpdateDialog(updates);
-  else UI.dialog({
-    title: 'No New Game Update Found',
-    html: '<p>No changes newer than this game’s bundled update history were found. Connect to GitHub and check again if you may be offline.</p>',
-    buttons: [{ label: 'Done' }],
-  });
-  return updates;
-}
-
-/**
- * The PC edition is a static browser game, so it cannot overwrite its hosted files in place.
- * Revalidating the page and navigating to a cache-busted URL loads the published web build.
- */
+/** Refreshes the hosted Pages response and cache-busts the page; browser saves are not touched. */
 export async function reloadGameForUpdate(updates = []) {
   if (typeof window === 'undefined') return;
   const url = new URL(window.location.href);

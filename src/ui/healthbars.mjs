@@ -191,57 +191,61 @@ export function drawHealthBarCanvas(ctx, entity, x, y, w, h, { system = 'overhea
     fraction = Math.min(1, Math.max(0, entity._healthBarDisplayHp));
   } else if (forceFraction == null && entity) entity._healthBarDisplayHp = fraction;
   const opacity = appearance.opacity / 100;
-  ctx.save(); ctx.globalAlpha *= opacity;
-  if (s.theme === 'classic') {
-    drawFallback(ctx, x, y, w, h, fraction, classification.color);
-    ctx.restore(); return;
-  }
-  const bossFrame = classification.id === 'boss';
-  const frame = image(bossFrame ? 'frame-boss' : system === 'target' ? 'frame-target' : 'frame'), fill = image(classification.fillAsset), emblem = classification.icon ? image(classification.icon) : null;
-  if (!frame) { drawFallback(ctx, x, y, w, h, fraction, classification.color); ctx.restore(); return; }
-  const target = system === 'target';
-  const leftFraction = bossFrame ? (target ? 0.23 : 0.24) : target ? 0.12 : 0.201;
-  const rightFraction = bossFrame ? 0.12 : target ? 0.09 : 0.12;
-  const left = x + h * frame.naturalWidth * leftFraction / frame.naturalHeight;
-  const right = x + w - h * frame.naturalWidth * rightFraction / frame.naturalHeight;
-  const top = y + h * (bossFrame ? 0.37 : 0.365);
-  const innerW = Math.max(0, right - left);
-  const innerH = h * (bossFrame ? 0.21 : target ? 0.27 : 0.305);
-  if (appearance.decorativeBorders) drawHealthBarFrame(ctx, classification, x, y, w, h, system);
-  ctx.fillStyle = '#110b08'; ctx.fillRect(left, top, innerW, innerH);
-  if (fill && fraction > 0) ctx.drawImage(fill, 0, 0, Math.max(1, fill.naturalWidth * fraction), fill.naturalHeight, left, top, innerW * fraction, innerH);
-  else if (fraction > 0) { ctx.fillStyle = classification.color; ctx.fillRect(left, top, innerW * fraction, innerH); }
-  ctx.fillStyle = 'rgba(255,236,190,.38)'; ctx.fillRect(left, top, innerW * fraction, Math.max(1, innerH * 0.2));
-  if (emblem) {
-    const size = h * 0.62;
-    const centerX = x + h * frame.naturalWidth * (bossFrame ? 0.156 : target ? 0.066 : 0.118) / frame.naturalHeight;
-    ctx.drawImage(emblem, centerX - size / 2, y + h * 0.5 - size / 2, size, size);
-  }
-  let iconAt = 0;
-  if (entity && s.info.showAffixIcons && Array.isArray(entity.affixes)) {
-    const count = Math.min(4, entity.affixes.length), r = Math.max(1, h * 0.045);
-    for (let i = 0; i < count && iconAt < 4; i++, iconAt++) {
-      const cx = x + w * (0.895 + iconAt * 0.019), cy = y + h * 0.5;
-      ctx.beginPath(); ctx.fillStyle = '#ffd678'; ctx.strokeStyle = '#3b1a0a'; ctx.lineWidth = Math.max(0.6, r * 0.45);
-      ctx.arc(cx, cy, r * 1.65, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
-      ctx.fillStyle = '#281307'; ctx.font = `bold ${Math.max(6, r * 2.1)}px Georgia,serif`; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-      ctx.fillText(AFFIX_GLYPHS[entity.affixes[i]] || '?', cx, cy);
+  ctx.save();
+  try {
+    ctx.globalAlpha *= opacity;
+    if (s.theme === 'classic') {
+      drawFallback(ctx, x, y, w, h, fraction, classification.color);
+      return;
     }
-  }
-  if (entity && s.info.showStatusEffectIcons) {
-    for (const [id, color] of STATUS_COLORS) if (entity.status?.[id]?.t > 0 && iconAt < 4) {
-      const r = Math.max(1, h * 0.045), cx = x + w * (0.895 + iconAt++ * 0.019), cy = y + h * 0.5;
-      ctx.beginPath(); ctx.fillStyle = color; ctx.strokeStyle = '#1a0d0a'; ctx.lineWidth = Math.max(0.6, r * 0.45);
-      ctx.arc(cx, cy, r * 1.4, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
-      ctx.fillStyle = '#170b07'; ctx.font = `bold ${Math.max(6, r * 1.8)}px Georgia,serif`; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-      ctx.fillText(id.slice(0, 1).toUpperCase(), cx, cy);
+    const bossFrame = classification.id === 'boss';
+    const frame = image(bossFrame ? 'frame-boss' : system === 'target' ? 'frame-target' : 'frame'), fill = image(classification.fillAsset), emblem = classification.icon ? image(classification.icon) : null;
+    if (!frame) { drawFallback(ctx, x, y, w, h, fraction, classification.color); return; }
+    const target = system === 'target';
+    const leftFraction = bossFrame ? (target ? 0.23 : 0.24) : target ? 0.12 : 0.201;
+    const rightFraction = bossFrame ? 0.12 : target ? 0.09 : 0.12;
+    const left = x + h * frame.naturalWidth * leftFraction / frame.naturalHeight;
+    const right = x + w - h * frame.naturalWidth * rightFraction / frame.naturalHeight;
+    const top = y + h * (bossFrame ? 0.37 : 0.365);
+    const innerW = Math.max(0, right - left);
+    const innerH = h * (bossFrame ? 0.21 : target ? 0.27 : 0.305);
+    if (appearance.decorativeBorders) drawHealthBarFrame(ctx, classification, x, y, w, h, system);
+    ctx.fillStyle = '#110b08'; ctx.fillRect(left, top, innerW, innerH);
+    if (fill && fraction > 0) ctx.drawImage(fill, 0, 0, Math.max(1, fill.naturalWidth * fraction), fill.naturalHeight, left, top, innerW * fraction, innerH);
+    else if (fraction > 0) { ctx.fillStyle = classification.color; ctx.fillRect(left, top, innerW * fraction, innerH); }
+    ctx.fillStyle = 'rgba(255,236,190,.38)'; ctx.fillRect(left, top, innerW * fraction, Math.max(1, innerH * 0.2));
+    if (emblem) {
+      const size = h * 0.62;
+      const centerX = x + h * frame.naturalWidth * (bossFrame ? 0.156 : target ? 0.066 : 0.118) / frame.naturalHeight;
+      ctx.drawImage(emblem, centerX - size / 2, y + h * 0.5 - size / 2, size, size);
     }
+    let iconAt = 0;
+    if (entity && s.info.showAffixIcons && Array.isArray(entity.affixes)) {
+      const count = Math.min(4, entity.affixes.length), r = Math.max(1, h * 0.045);
+      for (let i = 0; i < count && iconAt < 4; i++, iconAt++) {
+        const cx = x + w * (0.895 + iconAt * 0.019), cy = y + h * 0.5;
+        ctx.beginPath(); ctx.fillStyle = '#ffd678'; ctx.strokeStyle = '#3b1a0a'; ctx.lineWidth = Math.max(0.6, r * 0.45);
+        ctx.arc(cx, cy, r * 1.65, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
+        ctx.fillStyle = '#281307'; ctx.font = `bold ${Math.max(6, r * 2.1)}px Georgia,serif`; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+        ctx.fillText(AFFIX_GLYPHS[entity.affixes[i]] || '?', cx, cy);
+      }
+    }
+    if (entity && s.info.showStatusEffectIcons) {
+      for (const [id, color] of STATUS_COLORS) if (entity.status?.[id]?.t > 0 && iconAt < 4) {
+        const r = Math.max(1, h * 0.045), cx = x + w * (0.895 + iconAt++ * 0.019), cy = y + h * 0.5;
+        ctx.beginPath(); ctx.fillStyle = color; ctx.strokeStyle = '#1a0d0a'; ctx.lineWidth = Math.max(0.6, r * 0.45);
+        ctx.arc(cx, cy, r * 1.4, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
+        ctx.fillStyle = '#170b07'; ctx.font = `bold ${Math.max(6, r * 1.8)}px Georgia,serif`; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+        ctx.fillText(id.slice(0, 1).toUpperCase(), cx, cy);
+      }
+    }
+    if (system === 'overhead' && healthBarSettings().info.showHealthPercentage) {
+      ctx.fillStyle = '#f2dfbf'; ctx.font = `bold ${Math.max(8, h * 0.25)}px Georgia, serif`;
+      ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.fillText(`${Math.round(fraction * 100)}%`, left + innerW * 0.5, top + innerH * 0.55);
+    }
+  } finally {
+    ctx.restore();
   }
-  if (system === 'overhead' && healthBarSettings().info.showHealthPercentage) {
-    ctx.fillStyle = '#f2dfbf'; ctx.font = `bold ${Math.max(8, h * 0.25)}px Georgia, serif`;
-    ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.fillText(`${Math.round(fraction * 100)}%`, left + innerW * 0.5, top + innerH * 0.55);
-  }
-  ctx.restore();
 }
 
 export function drawOverheadHealthBar(ctx, entity, x, y, w, h) {

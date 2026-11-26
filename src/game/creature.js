@@ -40,6 +40,7 @@ function transformedSpriteBounds(x, y, dx, dy, w, h, { flip = false, rot = 0, sx
 }
 
 let UID = 0;
+let healthBarRenderErrorReported = false;
 
 // frozen / charmed tints: the CSS filter runs once into a cached copy of the image, not on every draw (a per-draw
 // ctx.filter is a slow software path, in Safari above all); without ctx.filter support it is put through by hand
@@ -209,8 +210,15 @@ export function drawXray(oc, camT, rings, box, under) {
       oc.setTransform(camT);
       oc.globalCompositeOperation = 'source-over';
       oc.globalAlpha = Math.max(0.5, e.a);
-      drawOverheadHealthBar(oc, e.barCreature, e.bx, e.by, e.bw, e.bh);
-      lay(camT, e.bx - 1, e.by, e.bw + 2, e.bh);
+      try {
+        drawOverheadHealthBar(oc, e.barCreature, e.bx, e.by, e.bw, e.bh);
+        lay(camT, e.bx - 1, e.by, e.bw + 2, e.bh);
+      } catch (error) {
+        if (!healthBarRenderErrorReported) {
+          healthBarRenderErrorReported = true;
+          console.error('[health-bar] overhead bar failed; continuing world rendering', error);
+        }
+      }
     }
     e.who = e.img = e.t = e.barCreature = null; e.bar = false; // nothing held past the frame
   }
@@ -692,27 +700,32 @@ export class Creature {
     }
     // life bars: over every enemy, bosses too (Settings › life bars; off, one only flashes up over a monster that was
     // hit, bosses aside) and over hurt summons. In the world's frame they go on the see-through layer, over the spells.
-    let bw = 24, bh = 4;
-    const isSummon = this.team === 'player' && !this.isPlayer && this.summon;
-    const showHealth = this.isPlayer
-      ? healthBarVisible(this, 'overhead')
-      : (isPlayerTargetable(this) || isSummon) && healthBarVisible(this, 'overhead');
-    if (showHealth) {
+    this.barTop = null; this.barHeight = 0;
+    try {
+      let bw = 24, bh = 4;
+      const isSummon = this.team === 'player' && !this.isPlayer && this.summon;
+      const showHealth = this.isPlayer
+        ? healthBarVisible(this, 'overhead')
+        : (isPlayerTargetable(this) || isSummon) && healthBarVisible(this, 'overhead');
+      if (!showHealth) return;
       const appearance = healthBarSettings().overhead;
       const big = this.rank === 'boss' || this.rank === 'raid' || this.isRaid || this.world?.boss === this;
       bw = (big ? Math.max(48, Math.min(104, w * 0.95)) : Math.max(54, Math.min(92, w * 0.9))) * appearance.width / 100;
       bh = (big ? 34 : 25) * appearance.height / 100;
+      const kb = G.barK || 1;
+      bw *= kb; bh *= kb;
+      const x = px - bw / 2, y = py - 4 * kb - bh + appearance.verticalOffset;
+      this.barTop = y; this.barHeight = bh;
+      const e = xray.on && xray.n && xray.list[xray.n - 1];
+      if (e && e.who === this) { e.bar = true; e.barCreature = this; e.bx = x; e.by = y; e.bw = bw; e.bh = bh; }
+      else drawOverheadHealthBar(ctx, this, x, y, bw, bh);
+    } catch (error) {
+      this.barTop = null; this.barHeight = 0;
+      if (!healthBarRenderErrorReported) {
+        healthBarRenderErrorReported = true;
+        console.error('[health-bar] overhead setup failed; continuing creature rendering', error);
+      }
     }
-    this.barTop = null; this.barHeight = 0;
-    if (!showHealth) return;
-    const kb = G.barK || 1; // first person scales a creature by its depth; its bar keeps near a fixed size
-    bw *= kb; bh *= kb;
-    const appearance = healthBarSettings().overhead;
-    const x = px - bw / 2, y = py - 4 * kb - bh + appearance.verticalOffset, f = clamp(this.hp / this.maxHp, 0, 1);
-    this.barTop = y; this.barHeight = bh; // name and level labels are anchored to this bar (render.js drawOverheadNames)
-    const e = xray.on && xray.n && xray.list[xray.n - 1];
-    if (e && e.who === this) { e.bar = true; e.barCreature = this; e.bx = x; e.by = y; e.bw = bw; e.bh = bh; e.bf = f; e.bc = col; }
-    else drawOverheadHealthBar(ctx, this, x, y, bw, bh);
   }
 }
 

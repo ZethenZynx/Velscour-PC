@@ -1,4 +1,3 @@
-// Baseline version for this browser build. Tagged release packages replace this
-// value with their exact release tag while packaging the archive.
-export const GAME_VERSION = '0.0.0-dev';
-export const GAME_BUILD_ID = 'fork-main-dynamic-potion-labels-2026-11-26';
+// GitHub Pages serves the main branch directly; no package installation is required.
+export const GAME_VERSION = '0.1.2';
+export const GAME_BUILD_ID = 'fork-main-rendering-hotfix-2026-11-26';
