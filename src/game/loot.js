@@ -23,6 +23,7 @@ import { CHEST_RARITIES } from '../data/treasurechests.js';
 import { riftQualityRange, riftRewardProgressionDepth } from '../data/rifts.js';
 import { greedQuantity } from './greed.js';
 import { lifetimeAlpha } from '../core/objectlifetimes.mjs';
+import { canDropNaturalSigil, naturalSigilDropChance, recordNaturalSigilDrop } from './sigildrops.mjs';
 
 /** Highest quality unlocked for ground drops at this campaign depth. */
 export function groundDropRarityCap(depth) { return qualityAtDepth(Math.max(1, depth || 1)); }
@@ -413,10 +414,14 @@ export function dropLoot(world, m) {
     const item = maybeAccountRelic(rollGroundItem(ilvl, { world, mf: st.magicFind + (world.mfAdd || 0), bonus }), boost, world);
     add('item', { item, fades: fadeOf(item) });
   }
-  // Sigil Stones: rare from the rank and file, common from guardians (Heresies: world.sigilMul)
-  const sig = { normal: 0.004, champion: 0.03, unique: 0.08, boss: 0.45 }[rank] * (world.lootMul || 1) * (world.sigilMul || 1) * (1 + (st.markSigilChance || 0) / 100) * breachScale;
-  const sigils = greedMore(world.depth && chance(sig) ? 1 : 0);
-  for (let i = 0; i < sigils; i++) add('item', { item: rollGroundSigil(world, world.depth, rank === 'boss' ? 1 : 0) });
+  // Natural Sigils use the tuned 95% reduction and share a persisted one-per-generated-level
+  // cap across ordinary drops, bosses, chests, and random encounters.
+  const sigilBase = { normal: 0.004, champion: 0.03, unique: 0.08, boss: 0.45 }[rank];
+  if (sigilBase && world.depth && canDropNaturalSigil(world, G.char)
+      && chance(naturalSigilDropChance(sigilBase, world, st, { includeBreachReward: true }))) {
+    const dropped = add('item', { item: rollGroundSigil(world, world.depth, rank === 'boss' ? 1 : 0) });
+    if (dropped && recordNaturalSigilDrop(world, G.char)) G.game?.autosave?.();
+  }
   // an Abyssal Key (docs/ENDGAME.md): BOSS ROOM bosses past depth 600 under Heresy rank 10, rift guardians from tier 10
   if (m.isRaid && chance(keyChance(world, m))) add('key', {}); // (keyChance rolls once a boss: a raid boss pays out three dropLoots)
   // rings: a guardian usually drops one
@@ -454,8 +459,11 @@ export function dropChest(world, chest, depth) {
     add('item', { item: maybeAccountRelic(item, (1 + (st.markCollector || 0) / 100) * (world.relicMul || 1), world) });
   }
   const sigilChance = rarity ? rarity.sigilChance : chest.rare ? 0.25 : 0.06;
-  const sigils = !goldOnly && !gemsOnly && chance(Math.min(1, sigilChance * (world.lootMul || 1) * (world.sigilMul || 1) * (1 + (st.markSigilChance || 0) / 100))) ? greedCount(1) : 0;
-  for (let i = 0; i < sigils; i++) add('item', { item: rollGroundSigil(world, depth) });
+  if (!goldOnly && !gemsOnly && canDropNaturalSigil(world, G.char)
+      && chance(naturalSigilDropChance(sigilChance, world, st))) {
+    const dropped = add('item', { item: rollGroundSigil(world, depth) });
+    if (dropped && recordNaturalSigilDrop(world, G.char)) G.game?.autosave?.();
+  }
   if (chest.heresyPool === 'hunt' || chest.heresyPool === 'retribution') {
     const count = chest.heresyPool === 'retribution' ? 2 : 1;
     for (let i = 0; i < count; i++) add('item', { item: rollGroundSigil(world, depth, 1) });

@@ -34,6 +34,7 @@ import { IMP_BY_ID, IMP_SPRITE_PATH, TREASURE_IMP_SPAWN_DELAY_MAX, TREASURE_IMP_
 import { endgameUnlocked, canEarnInfernalMarks } from './endgame.js';
 import { makeCovenant } from '../data/relics.js';
 import { grantMarks } from './marks.js';
+import { canDropNaturalSigil, naturalSigilDropChance, recordNaturalSigilDrop } from './sigildrops.mjs';
 
 const IMP_ESCAPE_SECONDS = 38;
 const IMP_WARNING_SECONDS = 6;
@@ -397,6 +398,13 @@ function impDrop(world, m, kind, data = {}, trail = false) {
   world.addLoot(new GroundItem(x, y, kind, trail ? { ...data, fades: data.fades ?? 120 } : data));
   return true;
 }
+function impDropSigil(world, m) {
+  const stats = G.player?.st || {};
+  if (!canDropNaturalSigil(world, G.char) || !chance(naturalSigilDropChance(1, world, stats))) return false;
+  const dropped = impDrop(world, m, 'item', { item: rollGroundSigil(world, world.depth || 1, 0) });
+  if (dropped && recordNaturalSigilDrop(world, G.char)) G.game?.autosave?.();
+  return !!dropped;
+}
 function impDropGold(world, m, lvl, base, count, multiplier = 1) {
   for (let i = 0; i < impQuantity(count, multiplier); i++) impDrop(world, m, 'gold', { amount: impGold(world, lvl, base) });
 }
@@ -452,9 +460,7 @@ function grantImpReward(world, m, variant, options = {}) {
     case 'prosperity':
       impDropGold(world, m, lvl, 18 + lvl * 3, 8, qty);
       impBlessing('prosperity', 'Prosperity', variant.color, { gf: 55, mf: 35 }, 60); break;
-    case 'sigil':
-      for (let i = 0; i < impQuantity(randi(1, 2), qty); i++) impDrop(world, m, 'item', { item: rollGroundSigil(world, world.depth || 1, 0) });
-      break;
+    case 'sigil': impDropSigil(world, m); break;
     case 'arcane':
       for (let i = 0; i < impQuantity(8, qty); i++) impDrop(world, m, 'orb_mp');
       impBlessing('arcane', 'Arcane Reserve', variant.color, { manaRegenPct: 75 }, 45); break;
@@ -482,7 +488,7 @@ function grantImpReward(world, m, variant, options = {}) {
       break;
     }
     case 'artisan':
-      for (let i = 0; i < impQuantity(3, qty); i++) impDrop(world, m, 'item', { item: rollGroundSigil(world, world.depth || 1, 0) });
+      impDropSigil(world, m);
       impDropGems(world, m, lvl, 1, qty);
       break;
     case 'abyssal':
