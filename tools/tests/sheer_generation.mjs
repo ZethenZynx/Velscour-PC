@@ -45,6 +45,7 @@ test('all Sheer Drops are registered in endgame, excluded from campaign, and inc
   const rift = BIOMES.filter((b) => !b.overworld && !b.beta && !b.challenge && !b.tower && !b.cave && b.id !== 'throne');
   for (const v of SHEER) {
     assert.ok(BIOME_BY_ID[v.id], `${v.id}: biome registry entry exists`);
+    assert.equal(BIOME_BY_ID[v.id].act, v.act, `${v.id}: intended act identity is retained`);
     assert.ok(endgame.includes(v.id), `${v.id}: Infinite Endgame pool`);
     assert.ok(rift.some((b) => b.id === v.id), `${v.id}: Abyssal Rift candidate pool`);
     assert.notEqual(campaignBiomeForDepth(v.act * 25), v.id, `${v.id}: not added to act rotation`);

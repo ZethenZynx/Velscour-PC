@@ -465,7 +465,7 @@ for (const v of SHEER) {
   const base = BIOMES.find((b) => b.id === v.base);
   if (!base) throw new Error(`Sheer Drop ${v.id} references missing base biome ${v.base}`);
   BIOMES.splice(BIOMES.indexOf(base) + 1, 0, {
-    ...base, id: v.id, name: v.name, base: v.base, sheer: v, adj: v.adj,
+    ...base, id: v.id, name: v.name, base: v.base, act: v.act, sheer: v, adj: v.adj,
     dark: v.dark, light: v.light, fog: v.fog, wallPack: null,
     ambient: v.motes.kind === 'gold' || v.motes.kind === 'glint' ? { type: 'glitter', color: v.motes.color } : base.ambient,
   });
