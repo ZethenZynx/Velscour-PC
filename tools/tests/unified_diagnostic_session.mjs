@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { G } from '../../src/state.js';
 import { recordAudioDiagnosticMarker } from '../../src/core/audio.js';
 import { profileBeginFrame, profileFinishFrame } from '../../src/core/perfdiagnostics.js';
-import { addUnifiedDiagnosticMarker, clearUnifiedDiagnosticRecording, recordDeveloperDiagnosticEvent, startUnifiedDiagnosticRecording, stopUnifiedDiagnosticRecording, unifiedDiagnosticReport, unifiedDiagnosticStatus } from '../../src/core/developer-diagnostics.js';
+import { addUnifiedDiagnosticMarker, clearUnifiedDiagnosticRecording, recordDeveloperDiagnosticEvent, resolveDeployedGitCommitId, startUnifiedDiagnosticRecording, stopUnifiedDiagnosticRecording, unifiedDiagnosticReport, unifiedDiagnosticStatus } from '../../src/core/developer-diagnostics.js';
 
 G.settings.developerMode = false;
 assert.equal(startUnifiedDiagnosticRecording(), false, 'recording stays off until Developer Mode is enabled');
@@ -14,6 +14,15 @@ G.world = { id: 'synthetic-dungeon', kind: 'dungeon', depth: 12, biome: { name: 
 assert.equal(startUnifiedDiagnosticRecording(), true, 'one action starts the unified session');
 const sessionId = unifiedDiagnosticStatus().sessionId;
 assert.ok(sessionId);
+let fetchCount = 0;
+const fakeFetch = async (url) => {
+  fetchCount++;
+  if (String(url).includes('src/data/build-version.js')) return { ok: true, text: async () => "export const GAME_BUILD_ID = 'fork-main-unified-developer-diagnostics-2026-11-25';" };
+  if (String(url).includes('/deployments?')) return { ok: true, json: async () => [{ sha: 'test-deployed-sha', statuses_url: 'https://mock/statuses' }] };
+  return { ok: true, json: async () => [{ state: 'success' }] };
+};
+assert.equal(await resolveDeployedGitCommitId({ fetchImpl: fakeFetch, pageUrl: 'https://example.test/Velscour-PC/' }), 'test-deployed-sha');
+assert.equal(fetchCount, 3, 'commit metadata is checked only when preparing an exported report');
 assert.equal(recordAudioDiagnosticMarker('area-enter', { environment: 'Diagnostics Cave' }), true);
 assert.equal(addUnifiedDiagnosticMarker('synthetic test marker'), true);
 assert.equal(profileBeginFrame(16.67), true);

@@ -111,8 +111,45 @@ export function unifiedDiagnosticReport() {
   };
 }
 
-export function exportUnifiedDiagnosticReport() {
+export async function resolveDeployedGitCommitId({ fetchImpl = globalThis.fetch, pageUrl = globalThis.location?.href } = {}) {
+  if (globalThis.__VELSCOUR_GIT_COMMIT__) return String(globalThis.__VELSCOUR_GIT_COMMIT__);
+  if (typeof fetchImpl !== 'function' || !pageUrl) return null;
+  const controller = typeof AbortController === 'undefined' ? null : new AbortController();
+  const timeout = controller ? setTimeout(() => controller.abort(), 2500) : null;
+  const options = { cache: 'no-store', headers: { Accept: 'application/vnd.github+json' }, ...(controller ? { signal: controller.signal } : {}) };
+  try {
+    const buildUrl = new URL('src/data/build-version.js', pageUrl);
+    buildUrl.searchParams.set('diagnostic-build', GAME_BUILD_ID);
+    const buildResponse = await fetchImpl(buildUrl.href, { cache: 'no-store', ...(controller ? { signal: controller.signal } : {}) });
+    if (!buildResponse.ok) return null;
+    const liveBuild = await buildResponse.text();
+    if (!liveBuild.includes(`GAME_BUILD_ID = '${GAME_BUILD_ID}'`)) return null;
+    const deploymentsResponse = await fetchImpl('https://api.github.com/repos/ZethenZynx/Velscour-PC/deployments?environment=github-pages&per_page=1', options);
+    if (!deploymentsResponse.ok) return null;
+    const deployments = await deploymentsResponse.json();
+    const deployment = Array.isArray(deployments) ? deployments[0] : null;
+    if (!deployment?.sha || !deployment.statuses_url) return null;
+    const statusResponse = await fetchImpl(deployment.statuses_url, options);
+    if (!statusResponse.ok) return null;
+    const statuses = await statusResponse.json();
+    return Array.isArray(statuses) && statuses[0]?.state === 'success' ? String(deployment.sha) : null;
+  } catch { return null; }
+  finally { if (timeout) clearTimeout(timeout); }
+}
+
+export async function exportUnifiedDiagnosticReport() {
   const report = unifiedDiagnosticReport();
+  if (report.sessionId && !report.gitCommitId) {
+    const commitId = await resolveDeployedGitCommitId();
+    if (commitId) {
+      report.gitCommitId = commitId;
+      report.game.gitCommitId = commitId;
+      if (report.contextAtRecordingStart?.game) report.contextAtRecordingStart.game.gitCommitId = commitId;
+      if (report.recording.metadata?.game) report.recording.metadata.game.gitCommitId = commitId;
+      if (report.contextAtExport?.game) report.contextAtExport.game.gitCommitId = commitId;
+      report.completeness.gitCommitIdAvailable = true;
+    }
+  }
   const blob = new Blob([JSON.stringify(report, null, 2)], { type: 'application/json' });
   const url = URL.createObjectURL(blob), link = document.createElement('a');
   link.href = url; link.download = `velscour-diagnostics-${new Date().toISOString().replace(/[:.]/g, '-')}.json`;
