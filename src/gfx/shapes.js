@@ -85,7 +85,7 @@ export function drawShape(ctx, fx, x, y, a, s, E, t, extra = {}) {
       fx = 'blade';
     }
     // falls through to the drawn blade while the model loads
-    case 'blade': case 'axe': case 'chakram': case 'rang': case 'disc': {
+    case 'blade': case 'kunai': case 'axe': case 'chakram': case 'rang': case 'disc': {
       glow(ctx, 0, 0, 14 * s, E.glow, E.name === 'Physical' ? 0.35 : 0.75);
       ctx.rotate(spin);
       ctx.fillStyle = E.name === 'Physical' ? '#d8e0e8' : E.core; ctx.strokeStyle = '#1a1010'; ctx.lineWidth = 1;
@@ -98,10 +98,22 @@ export function drawShape(ctx, fx, x, y, a, s, E, t, extra = {}) {
       } else if (fx === 'axe') {
         ctx.fillStyle = '#6a4a2a'; ctx.fillRect(-1, -8 * s, 2, 16 * s);
         ctx.fillStyle = '#c8d0d8'; ctx.beginPath(); ctx.moveTo(0, -8 * s); ctx.quadraticCurveTo(9 * s, -6 * s, 8 * s, 2 * s); ctx.lineTo(0, -2 * s); ctx.fill(); ctx.stroke();
+      } else if (fx === 'kunai') {
+        ctx.beginPath(); ctx.moveTo(12 * s, 0); ctx.lineTo(1 * s, -4 * s); ctx.lineTo(-7 * s, 0); ctx.lineTo(1 * s, 4 * s); ctx.closePath(); ctx.fill(); ctx.stroke();
+        ctx.fillStyle = '#6a4a2a'; ctx.fillRect(-10 * s, -1.4 * s, 5 * s, 2.8 * s);
       } else {
         ctx.beginPath(); ctx.moveTo(-10 * s, 0); ctx.lineTo(0, -2 * s); ctx.lineTo(11 * s, 0); ctx.lineTo(0, 2 * s); ctx.closePath(); ctx.fill(); ctx.stroke();
         ctx.fillStyle = '#c0a040'; ctx.fillRect(-11 * s, -3 * s, 2 * s, 6 * s);
       }
+      break;
+    }
+    case 'caltrop': {
+      glow(ctx, 0, 0, 10 * s, E.glow, 0.45);
+      ctx.rotate(spin * 0.35);
+      ctx.fillStyle = E.name === 'Physical' ? '#b8c0c8' : E.core; ctx.strokeStyle = '#201820'; ctx.lineWidth = 1;
+      ctx.beginPath(); ctx.moveTo(0, -10 * s); ctx.lineTo(2.5 * s, -2.5 * s); ctx.lineTo(10 * s, 0);
+      ctx.lineTo(2.5 * s, 2.5 * s); ctx.lineTo(0, 10 * s); ctx.lineTo(-2.5 * s, 2.5 * s);
+      ctx.lineTo(-10 * s, 0); ctx.lineTo(-2.5 * s, -2.5 * s); ctx.closePath(); ctx.fill(); ctx.stroke();
       break;
     }
     case 'dkskull': { // Death Coil: the contact skull in frost, rocking as it flies, a cold glow behind

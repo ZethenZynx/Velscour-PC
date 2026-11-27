@@ -1448,6 +1448,7 @@ export function renderWorld(ctx, world) {
         } else setCreatureTargetBounds(o, o.sbox, [sx, sy]);
         o.viewH = h + (o.fly ? 16 : 0); // next frame's see-through hole
         if (o === G.player && o.talkT > 0 && world.kind === 'town') drawTownSpeech(ctx, o, isoX(o.x, o.y), isoY(o.x, o.y) - Math.min(70, h)); // chatting at the forge
+        else if (o.sandArt && o.talkT > 0 && !o.dead) drawTownSpeech(ctx, o, isoX(o.x, o.y), isoY(o.x, o.y) - Math.min(170, h) - (o.fly ? 16 : 0));
         break;
       }
       case 7: drawNpc(ctx, o); break;

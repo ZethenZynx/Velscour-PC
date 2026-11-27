@@ -584,7 +584,8 @@ export function makeRaidBoss(world, arena, depth, level, opts = {}) {
   if (fifth) { const more = Object.keys(RAID_MODS).filter((k) => !mods.includes(k) && k !== tpl.innate); if (more.length) mods.push(pick(more)); }
   if (tpl.innate && !mods.includes(tpl.innate)) mods.unshift(tpl.innate);
   const has = (k) => mods.includes(k);
-  const m = makeMonster(world, art.arch, world.biome, level, 'boss', arena.cx + 4, arena.cy, 0, { art: artId, swap: null });
+  const m = makeMonster(world, art.arch, world.biome, level, 'boss', arena.cx + 4, arena.cy, 0, { art: artId, swap: null }, true); // raid mechanics own the boss kit
+  if (art.sandKin) { m.sandArt = art; m.ks = {}; }
   const B = monsterBase(level);
   if (world.riftHold) B.hp *= riftHold(level);
   const endgame = depth > FINAL_DEPTH ? endgameScaling(depth) : { health: 1, damage: 1 };

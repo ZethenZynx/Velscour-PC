@@ -1,5 +1,6 @@
 import { HEAVENLY_MONSTERS } from './heavenly.js';
 import { SAND_CREATURES, SAND_BOSSES } from './seaofsand.js';
+import { SAND_KIN, isDesert, sandCreatures, sandMythics } from './sandkin.js';
 import { SET3 } from './bestiary3.js';
 import { BREACH_ART } from './breach.js';
 import { AIR_ART } from './airpirates.js';
@@ -62,6 +63,7 @@ const bone = { gore: 'bone', undead: true };
 
 export const BESTIARY = [
   ...HEAVENLY_MONSTERS,
+  ...SAND_KIN,
   ...SAND_CREATURES.map(([arch, name], i) => ({ id:`ss_${arch}`, sheet:'sea_of_sand', i, arch, name, h:52+(i%5)*3, homeBiome:'sea_of_sand', seaOfSand:true, nativeVariant:i })),
   ...SAND_BOSSES.map(([arch, name], i) => ({ id:`ss_${arch}`, sheet:'sea_of_sand', i:SAND_CREATURES.length+i, arch, name, h:82+(i%3)*4, homeBiome:'sea_of_sand', seaOfSand:true, nativeVariant:60+i, boss:true, lone:true })),
   // ---- set 1: skeleton warband
@@ -543,21 +545,57 @@ const compat = (a, arch) => a.arch === arch || (a.also && a.also.includes(arch))
  * keep their own creatures). Giants (`lone`) only play guardians and raid bosses. */
 export function artPool(arch) {
   if (BESTIARY.some((a) => a.seaOfSand && a.arch === arch)) return BESTIARY.filter((a) => !a.chestOnly && a.seaOfSand && a.arch === arch);
-  return BESTIARY.filter((a) => !a.chestOnly && !a.lone && !a.seaOfSand && !a.breach && !a.air && !a.depthsEdge && compat(a, arch));
+  return BESTIARY.filter((a) => !a.chestOnly && !a.lone && !a.seaOfSand && !a.sandKin && !a.breach && !a.air && !a.depthsEdge && compat(a, arch));
 }
 /** Guardian art for an archetype (giants included). */
-const bossPool = (arch) => BESTIARY.filter((a) => !a.chestOnly && a.boss && !a.seaOfSand && !a.breach && !a.air && !a.depthsEdge && (!arch || compat(a, arch)));
+const bossPool = (arch) => BESTIARY.filter((a) => !a.chestOnly && a.boss && !a.seaOfSand && !a.sandKin && !a.breach && !a.air && !a.depthsEdge && (!arch || compat(a, arch)));
 
 // A level draws its looks from at most this many lazily loaded sheets (set 1 is always in), so a random bestiary
 // still only downloads and decodes a few atlases per level.
 const LEVEL_SHEETS = 6;
 const EAGER_SHEET = /^set1\//;
 const SWAP_KEYS = Object.keys(SWAPS);
+const SAND_SWAPS = ['sand', 'gilded', 'bronze', 'rust', 'bone', 'ember', 'pale', 'obsidian'];
+const SAND_ROLE_BASE = {
+  charger: 'hound', pack_flanker: 'hound', elite_hunter: 'knight', burrower: 'scorpion', ranged: 'archer', ambusher: 'ghoul',
+  brute: 'golem', tank: 'knight', swarm: 'bat', caster: 'cultist', flyer: 'gargoyle', melee: 'skeleton', skirmisher: 'ghoul',
+  illusionist: 'wraith', teleporter: 'imp', summoner: 'cultist', support: 'elemental', hunter: 'hound',
+};
+const LEGACY_SAND_BASE = Object.fromEntries([
+  ...SAND_CREATURES.map(([id, , role]) => [id, SAND_ROLE_BASE[role] || 'skeleton']),
+  ...SAND_BOSSES.map(([id, , arch]) => [id, arch]),
+]);
 const titleCase = (k) => k[0].toUpperCase() + k.slice(1);
+const SAND_WILDLIFE = new Set(['small', 'large', 'mythic', 'boss']);
+
+function sandWeighted(pool, biome, rnd, excluded = []) {
+  pool = pool.filter((a) => !excluded.includes(a.id));
+  if (!pool.length) return null;
+  const pyramid = biome?.id === 'scorpion_king_pyramid';
+  let total = 0;
+  const weighted = pool.map((a) => {
+    let weight = 1;
+    if (pyramid) {
+      if (['mummy', 'zombie', 'living_pharaoh', 'undead_pharaoh', 'mummified_pharaoh', 'knight'].includes(a.kind)) weight = 3;
+      else if (['djinn', 'djinn_boss'].includes(a.kind)) weight = 1.35;
+      else if (SAND_WILDLIFE.has(a.kind || a.tier)) weight = 0.65;
+    } else {
+      if (['living_pharaoh', 'undead_pharaoh', 'mummified_pharaoh'].includes(a.kind)) weight = 0.15;
+      else if (['mummy', 'zombie'].includes(a.kind)) weight = 0.35;
+      else if (['nomad', 'knight', 'djinn'].includes(a.kind)) weight = 1.25;
+      else if (SAND_WILDLIFE.has(a.kind || a.tier)) weight = 1.1;
+    }
+    total += weight;
+    return [a, weight];
+  });
+  let n = rnd() * total;
+  for (const [a, weight] of weighted) { n -= weight; if (n <= 0) return a; }
+  return weighted[weighted.length - 1][0];
+}
 
 /**
- * A level's bestiary: up to 4 random looks per archetype from the whole catalogue (no biome themes), each with a
- * random palette swap two times in three. A swapped look is named after its swap ("Ember Ashen Maw").
+ * A level's bestiary: up to 4 random looks per archetype. Desert levels use weighted local pools; other levels keep
+ * the existing catalogue. Looks may receive a palette swap and are named after it ("Ember Ashen Maw").
  */
 export function rollLooks(biome, rnd = Math.random) {
   const sheets = new Set();
@@ -573,17 +611,45 @@ export function rollLooks(biome, rnd = Math.random) {
     if (lazy(a)) sheets.add(a.sheet);
     return a;
   };
+  const pickSandArt = (pool, excluded = []) => {
+    let p = pool.filter((a) => !excluded.includes(a.id));
+    if (sheets.size >= LEVEL_SHEETS) {
+      const near = p.filter((a) => sheets.has(a.sheet));
+      if (near.length) p = near;
+    }
+    const a = sandWeighted(p, biome, rnd);
+    if (a && lazy(a)) sheets.add(a.sheet);
+    return a;
+  };
   const lookOf = (a) => {
     if (a.seaOfSand || rnd() < 1 / 3) return { art: a.id, swap: null };
+    if (a.sandKin) {
+      if (rnd() < 0.55) return { art: a.id, swap: null };
+      const k = SAND_SWAPS[Math.floor(rnd() * SAND_SWAPS.length)];
+      return { art: a.id, swap: SWAPS[k], tint: titleCase(k) };
+    }
     const k = SWAP_KEYS[Math.floor(rnd() * SWAP_KEYS.length)];
     return { art: a.id, swap: SWAPS[k], tint: titleCase(k) };
   };
-  const chosen = new Map(), bosses = [];
+  const chosen = new Map(), bosses = [], desert = isDesert(biome);
   const looksFor = (arch) => {
     if (chosen.has(arch)) return chosen.get(arch);
     const pool = artPool(arch), ids = [], looks = [];
+    const baseArch = LEGACY_SAND_BASE[arch] || arch;
+    const sand = desert ? sandCreatures(baseArch) : [];
+    const myth = desert ? sandMythics(baseArch) : [];
     for (let i = 0; i < 4; i++) {
-      const a = pickArt(pool, ids);
+      // Four looks per archetype are rolled once per level: 56% regular sandkin, up to 4% compatible mythics,
+      // and 40% existing art. If a category has no compatible art, fall back to another eligible pool.
+      const roll = rnd();
+      // Choose the 60/40 lane before choosing art. Desert legacy rosters often
+      // have just one original look per archetype; reusing that look is better
+      // than silently biasing the level toward imported art after it is picked.
+      let a;
+      if (roll < 0.04) a = pickSandArt(myth, ids) || pickSandArt(sand, ids);
+      else if (roll < 0.60) a = pickSandArt(sand, ids);
+      else a = pickArt(pool, ids) || (pool.length && pickArt(pool));
+      a ||= pickArt(pool, ids) || (sand.length && pickSandArt(sand, ids)) || (myth.length && pickSandArt(myth, ids));
       if (!a) break;
       ids.push(a.id); looks.push(lookOf(a));
     }
@@ -597,7 +663,25 @@ export function rollLooks(biome, rnd = Math.random) {
     boss(roster, r = rnd) {
       const possible = (roster || biome.roster || []).filter((a) => a);
       const arch = possible.length ? possible[Math.floor(r() * possible.length)] : null;
-      const a = pickArt(arch && bossPool(arch).length ? bossPool(arch) : bossPool());
+      let desertPool = null;
+      if (desert) {
+        const primary = biome.id === 'scorpion_king_pyramid'
+          ? SAND_KIN.filter((a) => a.boss && a.kind === 'humanoid_boss')
+          : SAND_KIN.filter((a) => a.boss && !a.kind);
+        const secondary = biome.id === 'scorpion_king_pyramid'
+          ? SAND_KIN.filter((a) => a.boss && a.kind === 'djinn_boss')
+          : [];
+        const roll = rnd();
+        desertPool = roll < (biome.id === 'scorpion_king_pyramid' ? 0.50 : 0.65)
+          ? primary
+          : roll < 0.65 && biome.id === 'scorpion_king_pyramid' ? secondary
+            : roll < 0.80 ? sandMythics() : null;
+      }
+      const baseArch = LEGACY_SAND_BASE[arch] || arch;
+      const compatibleSandBosses = desertPool && (desertPool.length ? desertPool.filter((a) => !baseArch || compat(a, baseArch)) : []);
+      const a = (compatibleSandBosses?.length && pickArt(compatibleSandBosses))
+        || (desertPool?.length && pickArt(desertPool))
+        || pickArt(arch && bossPool(arch).length ? bossPool(arch) : bossPool());
       if (a) bosses.push(a.id);
       return a ? { arch: a.arch, look: lookOf(a) } : null;
     },
