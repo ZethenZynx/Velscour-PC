@@ -17,10 +17,13 @@ export const HEALTH_BAR_CLASSES = Object.freeze([
 // same fractions for the live HUD; the settings canvas uses them directly.
 export const BOSS_HEALTH_LAYOUT = Object.freeze({
   frameTop: 18 / 178, frameHeight: 160 / 178,
-  trackLeft: 0.23, trackRight: 0.09, trackTop: 18 / 178 + 0.33 * (160 / 178), trackHeight: 0.13 * (160 / 178),
+  // These are the visible inner boundaries in the boss frame. Keep the CSS HUD
+  // and canvas preview on the same slightly widened interior so full health has
+  // no sliver of unfilled track at either edge.
+  trackLeft: 0.224, trackRight: 0.084, trackTop: 18 / 178 + 0.33 * (160 / 178), trackHeight: 0.13 * (160 / 178),
   // Keep the skull over the left frame cap. Its right edge clears the health track.
   emblemCenterX: 0.14, emblemCenterY: 18 / 178 + 0.395 * (160 / 178), emblemWidth: 0.134, emblemHeight: 0.62 * (160 / 178),
-  nameLeft: 0.23, nameRight: 0.09, nameTop: 0.005, nameHeight: 0.09,
+  nameLeft: 0.224, nameRight: 0.084, nameTop: 0.005, nameHeight: 0.09,
   summaryTop: 18 / 178 + 0.70 * (160 / 178), extraTop: 18 / 178 + 0.83 * (160 / 178),
 });
 const PLAYER_BAR_CLASS = Object.freeze({ id: 'player', label: 'Player', color: '#c52b20', fill: 'red', fillAsset: 'fill-red', icon: null });
@@ -30,7 +33,7 @@ export const DEFAULT_HEALTH_BAR_SETTINGS = Object.freeze({
   overhead: Object.freeze({ width: 60, height: 100, opacity: 100, verticalOffset: 0, decorativeBorders: true, smoothHealthDepletion: true, visibility: 'always' }),
   target: Object.freeze({ width: 100, height: 100, opacity: 100, verticalOffset: 0, decorativeBorders: true, smoothHealthDepletion: true, visibility: 'always' }),
   classes: Object.freeze({ normal: true, champion: true, unique: true, boss: true, nemesis: true, imp: true, companion: true, player: false }),
-  info: Object.freeze({ showEnemyName: false, showEnemyLevel: false, showHealthPercentage: false, showNumericalHealth: false, showAffixIcons: true, showStatusEffectIcons: true }),
+  info: Object.freeze({ showEnemyName: false, showEnemyLevel: false, showHealthPercentage: false, showNumericalHealth: false, showAffixIcons: true, showStatusEffectIcons: true, showClassificationIconsOverhead: false }),
 });
 
 const VISIBILITY = new Set(['always', 'damaged', 'combat', 'targeted', 'hidden']);
@@ -99,6 +102,9 @@ export function normalizeHealthBarSettings(value, legacyLifeBars = true) {
   }
   for (const key of Object.keys(DEFAULT_HEALTH_BAR_SETTINGS.classes)) out.classes[key] = out.classes[key] !== false;
   for (const key of Object.keys(DEFAULT_HEALTH_BAR_SETTINGS.info)) out.info[key] = out.info[key] !== false;
+  // This is a newly added optional display feature; existing saves without the
+  // field must inherit OFF, while an explicit player choice remains intact.
+  out.info.showClassificationIconsOverhead = src.info?.showClassificationIconsOverhead === true;
   return out;
 }
 export function healthBarSettings() {
@@ -119,6 +125,11 @@ export function healthBarClass(entity) {
   if (entity.goblin || entity.treasureImp || entity.impVariant || entity.rank === 'imp') return HEALTH_BAR_CLASSES[5];
   if (entity.isRaid || entity.rank === 'raid' || entity.rank === 'boss' || entity === entity.world?.boss) return HEALTH_BAR_CLASSES[3];
   return HEALTH_BAR_CLASSES.find((entry) => entry.id === entity.rank) || HEALTH_BAR_CLASSES[0];
+}
+
+/** All variant IDs share the same imp classification, even when their rank or targeting state differs. */
+export function isTreasureImpEntity(entity) {
+  return !!(entity && (entity.goblin === true || entity.treasureImp === true || entity.impVariant || entity.rank === 'imp'));
 }
 
 function combatIsActive(entity) {
@@ -149,8 +160,10 @@ export function overheadHealthBarEligible(entity) {
   if (!entity) return false;
   if (entity.isPlayer) return true;
   if (entity.team === 'player' && entity.summon) return true;
-  const treasureImp = !!(entity.goblin || entity.treasureImp || entity.impVariant || entity.rank === 'imp');
-  return isPlayerTargetable(entity) || (treasureImp && (entity.team === 'enemy' || entity.eventFoe === true));
+  // Imp variants can temporarily become untargetable while fleeing. Their
+  // dedicated family marker is authoritative for overhead health display.
+  if (isTreasureImpEntity(entity)) return entity.team !== 'player' && !entity.dungeonEventImpEscaped;
+  return isPlayerTargetable(entity);
 }
 
 export function healthBarText(entity, s = healthBarSettings()) {
@@ -339,7 +352,15 @@ export function drawHealthBarCanvas(ctx, entity, x, y, w, h, { system = 'overhea
   try {
     ctx.globalAlpha *= opacity;
     if (system === 'overhead') {
-      drawCompactOverhead(ctx, x, y, w, h, fraction, classification, s.theme, appearance.decorativeBorders);
+      const icon = s.info.showClassificationIconsOverhead && classification.icon ? image(classification.icon) : null;
+      if (icon) {
+        // Center the combined icon + bar group over the creature. With the
+        // option off the original bar geometry is untouched and leaves no gap.
+        const gap = Math.max(1, h * 0.06), size = Math.min(h * 0.9, w * 0.16);
+        const offset = (size + gap) / 2;
+        ctx.drawImage(icon, x - offset, y + (h - size) / 2, size, size);
+        drawCompactOverhead(ctx, x + offset, y, w, h, fraction, classification, s.theme, appearance.decorativeBorders);
+      } else drawCompactOverhead(ctx, x, y, w, h, fraction, classification, s.theme, appearance.decorativeBorders);
       return;
     }
     if (s.theme === 'classic') {

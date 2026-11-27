@@ -17,6 +17,7 @@ const CLASS_TOGGLES = [
 const INFO_TOGGLES = [
   ['showEnemyName', 'Show Enemy Name'], ['showEnemyLevel', 'Show Enemy Level'], ['showHealthPercentage', 'Show Health Percentage'],
   ['showNumericalHealth', 'Show Numerical Health'], ['showAffixIcons', 'Show Affix Icons'], ['showStatusEffectIcons', 'Show Status Effect Icons'],
+  ['showClassificationIconsOverhead', 'Show Classification Icons (Overhead)'],
 ];
 
 const previewEntity = (entry, fraction) => ({
