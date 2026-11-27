@@ -6,6 +6,7 @@ on:
   workflow_dispatch:
 
 permissions:
+  actions: read
   contents: read
   pages: write
   id-token: write
@@ -31,6 +32,28 @@ jobs:
         uses: actions/upload-pages-artifact@v3
         with:
           path: /tmp/velscour-pages
+          name: github-pages-${{ github.run_id }}-${{ github.run_attempt }}
+      - name: Wait for Pages artifact registration
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PAGES_ARTIFACT_NAME: github-pages-${{ github.run_id }}-${{ github.run_attempt }}
+        run: |
+          for attempt in $(seq 1 30); do
+            artifact_count=$(curl --fail --silent --show-error \
+              -H "Accept: application/vnd.github+json" \
+              -H "Authorization: Bearer ${GH_TOKEN}" \
+              "https://api.github.com/repos/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}/artifacts?per_page=100" \
+              | jq --arg name "${PAGES_ARTIFACT_NAME}" '[.artifacts[] | select(.name == $name and .expired == false)] | length')
+            if [ "${artifact_count}" = "1" ]; then
+              echo "Pages artifact ${PAGES_ARTIFACT_NAME} is available."
+              exit 0
+            fi
+            sleep 2
+          done
+          echo "Pages artifact ${PAGES_ARTIFACT_NAME} did not become available."
+          exit 1
       - name: Deploy Pages
         id: deployment
         uses: actions/deploy-pages@v4
+        with:
+          artifact_name: github-pages-${{ github.run_id }}-${{ github.run_attempt }}
