@@ -11,6 +11,7 @@ import { bodyR } from '../world/map.js';
 import { profileEnd, profileRecord, profileRecordAIUpdate, profileStart } from '../core/perfdiagnostics.js';
 import { groundLootLifetime, OBJECT_LIFETIMES } from '../core/objectlifetimes.mjs';
 import { reconcileBossDefeats } from './bosscompletion.js';
+import { resolveLootLanding } from './lootplacement.mjs';
 import { sheerUpdate } from './sheer.js';
 import { developerRecordingActive } from '../core/developer-session.js';
 
@@ -130,6 +131,28 @@ export class World {
   }
   addHazard(h) { h.world = this; this.hazards.push(h); if (developerRecordingActive()) this.lifecycle.hazardsCreated++; return h; }
   addLoot(l) {
+    // A newly generated world can receive transferred rewards before setWorld
+    // attaches the hero. Use its intended entry point instead of coordinates
+    // left over from the previous map.
+    const player = this.player || (this.startPos
+      ? { x: this.startPos[0], y: this.startPos[1], r: G.player?.r }
+      : G.world === this ? G.player : null);
+    const landing = resolveLootLanding(this.map, l.x, l.y, player, {
+      radius: Number.isFinite(player?.r) ? bodyR(player) : 0.24,
+    });
+    if (landing) {
+      const fromX = landing.fromX, fromY = landing.fromY;
+      const displaced = Number.isFinite(fromX) && Number.isFinite(fromY) && Math.hypot(fromX - landing.x, fromY - landing.y) > 0.08;
+      l.x = landing.x; l.y = landing.y;
+      if (displaced) {
+        // Keep one reward object and animate its correction visually. Its
+        // collision, pickup and spatial-index position are safe from frame 1.
+        l.vx = l.vy = l.vz = 0;
+        l.z = 0.01;
+        l._lootLandingArc = { fromX, fromY, elapsed: 0, duration: 0.25 + Math.random() * 0.2,
+          height: 20 + Math.random() * 12 };
+      }
+    }
     l._lootRemoved = false;
     l._lootBornAt = this.time;
     const lifetime = groundLootLifetime(l, this.time);
@@ -140,7 +163,7 @@ export class World {
     if (developerRecordingActive()) this.lifecycle.lootCreated++;
     this._lootRegistered++;
     this._indexLoot(l);
-    if (l.z > 0 || l.vz > 0) this.movingLoot.add(l);
+    if (l.z > 0 || l.vz > 0 || l._lootLandingArc) this.movingLoot.add(l);
     l._lootTimerToken = (l._lootTimerToken || 0) + 1;
     if (l.fades) { this.fadingLoot.add(l); heapPush(this.fadingLootOrder, { at: l.fades, ref: new WeakRef(l), token: l._lootTimerToken }); }
     if (!Number.isFinite(l.x) || !Number.isFinite(l.y)) this.unindexedLoot.add(l);
@@ -221,7 +244,7 @@ export class World {
       l._lootTimerToken = (l._lootTimerToken || 0) + 1;
       this._indexLoot(l);
       if (!Number.isFinite(l.x) || !Number.isFinite(l.y)) this.unindexedLoot.add(l);
-      if (l.z > 0 || l.vz > 0) this.movingLoot.add(l);
+      if (l.z > 0 || l.vz > 0 || l._lootLandingArc) this.movingLoot.add(l);
       if (l.fades) { this.fadingLoot.add(l); heapPush(this.fadingLootOrder, { at: l.fades, ref: new WeakRef(l), token: l._lootTimerToken }); }
       if (Number.isFinite(l._lootExpiryAt)) heapPush(this.lootExpiry, { at: l._lootExpiryAt, ref: new WeakRef(l), token: l._lootTimerToken });
     }

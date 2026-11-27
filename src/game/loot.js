@@ -201,7 +201,17 @@ export class GroundItem {
     // Derive their age from world time when they wake so expiry stays exact.
     if (Number.isFinite(this._lootBornAt) && Number.isFinite(world.time)) this.t = Math.max(this.t || 0, world.time - this._lootBornAt);
     else this.t += dt;
-    if (this.z > 0 || this.vz > 0) {
+    if (this._lootLandingArc) {
+      const arc = this._lootLandingArc;
+      arc.elapsed = Math.min(arc.duration, arc.elapsed + dt);
+      const progress = arc.duration > 0 ? arc.elapsed / arc.duration : 1;
+      this.z = Math.sin(Math.PI * progress) * arc.height;
+      if (progress >= 1) {
+        this.z = 0;
+        this._lootLandingArc = null;
+        if (this.kind === 'item' && this.item?.type === 'gear' && this.item.rarity >= RARITY_EPIC) sfx('pickup');
+      }
+    } else if (this.z > 0 || this.vz > 0) {
       this.vz -= 420 * dt; this.z += this.vz * dt;
       const nx = this.x + this.vx * dt, ny = this.y + this.vy * dt;
       if (world.map.walkable(nx, ny)) { this.x = nx; this.y = ny; }
@@ -211,13 +221,13 @@ export class GroundItem {
     if (!p || p.dead) return true;
     const dx = p.x - this.x, dy = p.y - this.y, d2 = dx * dx + dy * dy;
     const magnet = Math.max(this.kind === 'gold' ? 2.2 : this.kind.startsWith('orb') || this.kind === 'key' ? 3.2 : 0, p.st?.markPickupRadius || 0);
-    if (magnet && d2 < magnet * magnet && this.t > 0.4) {
+    if (!this._lootLandingArc && magnet && d2 < magnet * magnet && this.t > 0.4) {
       const k = Math.min(1, dt * 9);
       this.x += dx * k; this.y += dy * k;
     }
     const auto = !this.dropped && (this.kind !== 'item' || ((G.touch || G.settings.autoLoot) && filterPasses(this.item))); // the loot filter (game/lootfilter.js); never what the hero dropped
     const pickupRadius = 0.55 + (p.st?.markPickupRadius || 0), targetPickupRadius = 1.2 + (p.st?.markPickupRadius || 0);
-    if (this.t > 0.35 && (d2 < pickupRadius * pickupRadius || (p.lootTarget === this && d2 < targetPickupRadius * targetPickupRadius)) && (auto || p.lootTarget === this)) {
+    if (!this._lootLandingArc && this.t > 0.35 && (d2 < pickupRadius * pickupRadius || (p.lootTarget === this && d2 < targetPickupRadius * targetPickupRadius)) && (auto || p.lootTarget === this)) {
       if (p.pickup(this)) {
         if (p.lootTarget === this) p.lootTarget = null;
         return false;
@@ -235,7 +245,11 @@ export class GroundItem {
     return null;
   }
   draw(ctx) {
-    const px = isoX(this.x, this.y), py = isoY(this.x, this.y) - this.z;
+    const arc = this._lootLandingArc;
+    const progress = arc ? Math.min(1, arc.elapsed / arc.duration) : 1;
+    const visualX = arc ? arc.fromX + (this.x - arc.fromX) * progress : this.x;
+    const visualY = arc ? arc.fromY + (this.y - arc.fromY) * progress : this.y;
+    const px = isoX(visualX, visualY), py = isoY(visualX, visualY) - this.z;
     const alpha = lifetimeAlpha(G.world?.time ?? this._lootBornAt ?? 0, this._lootExpiryAt, this._lootFadeAt);
     if (alpha <= 0) return;
     const priorAlpha = ctx.globalAlpha;
@@ -258,7 +272,7 @@ export class GroundItem {
     const art = this.kind === 'item' && ((this.item.art && artIcon(this.item)) || gearIcon(this.item) || heldIcon(this.item));
     const s = this.kind === 'gold' ? 20 : art ? 30 : this.kind === 'key' ? 26 : 22;
     ctx.fillStyle = 'rgba(0,0,0,0.35)';
-    ctx.beginPath(); ctx.ellipse(px, py + 1, 9, 4, 0, 0, TAU); ctx.fill();
+    ctx.beginPath(); ctx.ellipse(px, isoY(visualX, visualY) + 1, 9, 4, 0, 0, TAU); ctx.fill();
     ctx.save();
     ctx.translate(px, py - s * 0.45);
     if (this.kind === 'item' && this.item.type === 'gear' && !art) ctx.rotate(-0.6); // catalog and gear art are drawn upright / diagonal already
