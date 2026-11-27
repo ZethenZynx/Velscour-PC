@@ -2,6 +2,7 @@
 // Static frame, emblem and fill artwork is loaded once and reused by overhead bars,
 // the target banner and the settings preview.
 import { G } from '../state.js';
+import { isPlayerTargetable } from '../game/targeting.js';
 
 export const HEALTH_BAR_CLASSES = Object.freeze([
   { id: 'normal', label: 'Normal Monster', color: '#c52b20', fill: 'red', fillAsset: 'fill-red', icon: 'normal' },
@@ -26,7 +27,7 @@ const PLAYER_BAR_CLASS = Object.freeze({ id: 'player', label: 'Player', color: '
 
 export const DEFAULT_HEALTH_BAR_SETTINGS = Object.freeze({
   theme: 'velscour',
-  overhead: Object.freeze({ width: 100, height: 100, opacity: 100, verticalOffset: 0, decorativeBorders: true, smoothHealthDepletion: true, visibility: 'always' }),
+  overhead: Object.freeze({ width: 60, height: 100, opacity: 100, verticalOffset: 0, decorativeBorders: true, smoothHealthDepletion: true, visibility: 'always' }),
   target: Object.freeze({ width: 100, height: 100, opacity: 100, verticalOffset: 0, decorativeBorders: true, smoothHealthDepletion: true, visibility: 'always' }),
   classes: Object.freeze({ normal: true, champion: true, unique: true, boss: true, nemesis: true, imp: true, companion: true, player: false }),
   info: Object.freeze({ showEnemyName: false, showEnemyLevel: false, showHealthPercentage: false, showNumericalHealth: false, showAffixIcons: true, showStatusEffectIcons: true }),
@@ -141,6 +142,15 @@ export function healthBarVisible(entity, system = 'overhead') {
   if (mode === 'combat' && !combatIsActive(entity)) return false;
   if (mode === 'targeted' && !currentlyTargeted(entity)) return false;
   return true;
+}
+
+/** Health UI follows visible hostile state; Treasure Imps remain eligible even if a variant disables targeting while fleeing. */
+export function overheadHealthBarEligible(entity) {
+  if (!entity) return false;
+  if (entity.isPlayer) return true;
+  if (entity.team === 'player' && entity.summon) return true;
+  const treasureImp = !!(entity.goblin || entity.treasureImp || entity.impVariant || entity.rank === 'imp');
+  return isPlayerTargetable(entity) || (treasureImp && (entity.team === 'enemy' || entity.eventFoe === true));
 }
 
 export function healthBarText(entity, s = healthBarSettings()) {

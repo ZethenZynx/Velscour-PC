@@ -10,11 +10,11 @@ import { petAnimation, petTintImage } from '../core/petart.js';
 import { drawRuneWeapon } from '../gfx/runeweapon.js';
 import { drawSlime } from '../gfx/slimeart.js';
 import { TURRET3D, drawTurret3D } from '../gfx/gunner3d.js';
-import { isPlayerHostile, isPlayerTargetable } from './targeting.js';
+import { isPlayerHostile } from './targeting.js';
 import { MAX_TEMPORARY_BUFF_SECONDS, normalizeTemporaryBuff } from './buffduration.mjs';
 import { RectGrid } from './rectgrid.mjs';
 import { goesOver, sheerCount } from '../gfx/sheer.js';
-import { drawOverheadHealthBar, healthBarSettings, healthBarVisible } from '../ui/healthbars.mjs';
+import { drawOverheadHealthBar, healthBarSettings, healthBarVisible, overheadHealthBarEligible } from '../ui/healthbars.mjs';
 
 // Bounds for the visible sprite after its local flip/rotation/scale transforms.
 // Kept in world-pixel coordinates and projected by render.js with the current camera.
@@ -703,10 +703,7 @@ export class Creature {
     this.barTop = null; this.barHeight = 0;
     try {
       let bw = 24, bh = 4;
-      const isSummon = this.team === 'player' && !this.isPlayer && this.summon;
-      const showHealth = this.isPlayer
-        ? healthBarVisible(this, 'overhead')
-        : (isPlayerTargetable(this) || isSummon) && healthBarVisible(this, 'overhead');
+      const showHealth = healthBarVisible(this, 'overhead') && overheadHealthBarEligible(this);
       if (!showHealth) return;
       const appearance = healthBarSettings().overhead;
       // Match the reference's long, thin creature bar; the boss-only overhead frame

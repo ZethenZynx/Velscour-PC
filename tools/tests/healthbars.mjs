@@ -1,7 +1,8 @@
 import assert from 'node:assert/strict';
 import { existsSync, readFileSync } from 'node:fs';
 import { G } from '../../src/state.js';
-import { BOSS_HEALTH_LAYOUT, DEFAULT_HEALTH_BAR_SETTINGS, HEALTH_BAR_CLASSES, drawHealthBarCanvas, healthBarCanvasLayout, healthBarClass, healthBarSettings, healthBarText, healthBarSummaryText, healthBarValueText, healthBarVisible, normalizeHealthBarSettings, preloadHealthBarArt } from '../../src/ui/healthbars.mjs';
+import { BOSS_HEALTH_LAYOUT, DEFAULT_HEALTH_BAR_SETTINGS, HEALTH_BAR_CLASSES, drawHealthBarCanvas, healthBarCanvasLayout, healthBarClass, healthBarSettings, healthBarText, healthBarSummaryText, healthBarValueText, healthBarVisible, normalizeHealthBarSettings, overheadHealthBarEligible, preloadHealthBarArt } from '../../src/ui/healthbars.mjs';
+import { TREASURE_IMPS } from '../../src/data/treasureimps.js';
 
 globalThis.localStorage ||= { getItem: () => null, setItem: () => {} };
 
@@ -9,6 +10,12 @@ const defaults = normalizeHealthBarSettings();
 assert.equal(defaults.theme, 'velscour', 'Velscour theme is the default');
 assert.deepEqual(defaults.overhead, { ...DEFAULT_HEALTH_BAR_SETTINGS.overhead }, 'overhead settings have independent default dimensions and visibility');
 assert.deepEqual(defaults.target, { ...DEFAULT_HEALTH_BAR_SETTINGS.target }, 'target settings have independent default dimensions and visibility');
+assert.equal(defaults.overhead.width, 60, 'new and reset overhead bars default to 60% width');
+assert.equal(defaults.overhead.height, 100, 'overhead bar height remains at 100% by default');
+assert.equal(defaults.target.width, 100, 'boss health bar width remains at 100% by default');
+assert.equal(defaults.target.height, 100, 'boss health bar height remains at 100% by default');
+assert.equal(normalizeHealthBarSettings({ overhead: { width: 112 } }).overhead.width, 112, 'existing customized overhead width is preserved');
+assert.equal(normalizeHealthBarSettings({}).overhead.width, 60, 'reset normalization restores the new default width');
 assert.equal(Object.keys(defaults.classes).length, 8, 'all seven creature groups and the player have visibility controls');
 assert.equal(defaults.classes.player, false, 'player overhead bar defaults off');
 assert.equal(defaults.info.showEnemyName, false, 'overhead creature names default off');
@@ -85,6 +92,10 @@ assert.match(hud, /activeBoss \? 1 : 0/);
 assert.match(hud, /healthBarClass\(ordinaryTarget\)\.id === 'boss'/, 'only boss-class targets can use the top banner');
 assert.match(hud, /healthBarValueText\(barTarget, barSettings\)/, 'boss health values are placed in the bar track');
 assert.match(settings, /data-hb-class-next/);
+assert.match(settings, /option value="target">Boss Health Bar/);
+assert.match(settings, /selectedClass = next === 'target' \? bossClassIndex : lastOverheadClass/);
+assert.match(settings, /previewFraction = 1/);
+assert.match(settings, /box\.querySelector\('\[data-hb-class-nav\]'\)\.hidden = selectedSystem === 'target'/);
 assert.match(settings, /Reset to Defaults/);
 assert.match(css, /healthbar-dialog/);
 assert.match(css, /--hb-boss-frame-top:10\.1124%/);
@@ -92,6 +103,7 @@ assert.match(css, /--hb-boss-track-top:39\.7753%/);
 assert.match(css, /--hb-boss-track-height:11\.6854%/);
 assert.match(css, /--hb-boss-emblem-center-x:14%/);
 assert.match(css, /healthbar-preview-wrap \{ overflow:visible/);
+assert.match(css, /healthbar-preview-heading > div\[hidden\] \{ display:none; \}/);
 assert.match(settings, /<canvas data-hb-preview width="980" height="300"/);
 assert.match(hud, /\$\('#boss-name'\)\.textContent = barTarget\.name \|\| ''/, 'boss names remain visible independently of overhead name labels');
 assert.match(readFileSync(new URL('../../src/ui/healthbars.mjs', import.meta.url), 'utf8'), /drawHealthBarFrame/);
@@ -146,6 +158,22 @@ for (const entry of HEALTH_BAR_CLASSES) {
   assert.ok(ctx.calls.some((src) => src.endsWith(leftCap)), `${entry.id} uses its appropriate cached left cap`);
   assert.ok(ctx.calls.some((src) => src.endsWith(rightCap)), `${entry.id} uses its appropriate cached right cap`);
 }
+for (const variant of TREASURE_IMPS) {
+  const imp = { team: 'enemy', goblin: true, impVariant: variant.id, rank: 'unique', hp: 100, maxHp: 100, targetable: false };
+  assert.equal(healthBarClass(imp).id, 'imp', `${variant.id} Treasure Imp keeps its emerald classification despite its unique rank`);
+  assert.equal(overheadHealthBarEligible(imp), true, `${variant.id} remains eligible for an overhead bar while fleeing/untargetable`);
+  assert.equal(healthBarVisible(imp, 'overhead'), true, `${variant.id} follows the imp visibility setting`);
+  for (const fraction of [1, 0.5, 0.08]) {
+    imp.hp = imp.maxHp * fraction;
+    const ctx = recordingContext();
+    drawHealthBarCanvas(ctx, imp, 0, 0, 90, 12, { system: 'overhead', forceFraction: fraction });
+    assert.ok(ctx.calls.includes('assets/ui/healthbars/fill-emerald.webp'), `${variant.id} renders emerald fill at ${Math.round(fraction * 100)}% health`);
+    assert.ok(!ctx.calls.includes('assets/ui/healthbars/imp.webp'), `${variant.id} overhead bar has no classification emblem`);
+  }
+}
+G.settings.healthBars.classes.imp = false;
+assert.equal(healthBarVisible({ team: 'enemy', goblin: true, impVariant: 'treasure', hp: 50, maxHp: 100 }, 'overhead'), false, 'the Treasure Imp visibility setting is honored');
+G.settings.healthBars.classes.imp = true;
 const normalTargetLayout = healthBarCanvasLayout({ id: 'normal' }, 0, 0, 760, 155, 'target');
 assert.ok(normalTargetLayout.emblem.centerX + normalTargetLayout.emblem.size / 2 < normalTargetLayout.track.x, 'normal target emblem clears the start of the health track');
 assert.ok(normalTargetLayout.badge.centerX + normalTargetLayout.badge.radius * 2.45 < normalTargetLayout.track.x + normalTargetLayout.track.width, 'target badges remain inside the track end caps');

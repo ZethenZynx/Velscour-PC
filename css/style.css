@@ -932,6 +932,7 @@ body.touch .reliquary-panel .codex-cell { width: 34px; height: 34px; }
 .healthbar-preview-card { padding:9px 12px 10px; margin-bottom:10px; }
 .healthbar-preview-heading { display:flex; justify-content:space-between; align-items:center; gap:8px; margin-bottom:5px; color:#f4d58c; font:700 13px var(--font-head); }
 .healthbar-preview-heading > div { display:flex; align-items:center; gap:8px; }
+.healthbar-preview-heading > div[hidden] { display:none; }
 .healthbar-preview-heading .btn { min-width:30px; padding:3px 8px; }
 .healthbar-preview-wrap { overflow:visible; padding:9px 16px; border:1px solid rgba(175,130,67,.28); border-radius:4px; background:#100b08; }
 .healthbar-preview-wrap canvas { display:block; width:100%; height:auto; max-height:none; object-fit:contain; }

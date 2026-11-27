@@ -20,7 +20,7 @@ const INFO_TOGGLES = [
 ];
 
 const previewEntity = (entry, fraction) => ({
-  name: entry.label === 'Normal Monster' ? 'Sandstalker' : entry.label === 'Unique Monster' ? "Zahir's Sandstalker" : `${entry.label} Sandstalker`,
+  name: entry.id === 'imp' ? 'Treasure Imp' : entry.label === 'Normal Monster' ? 'Sandstalker' : entry.label === 'Unique Monster' ? "Zahir's Sandstalker" : `${entry.label} Sandstalker`,
   rank: ['normal', 'champion', 'unique', 'boss'].includes(entry.id) ? entry.id : 'normal',
   nemesis: entry.id === 'nemesis', goblin: entry.id === 'imp', summon: entry.id === 'companion',
   team: entry.id === 'companion' ? 'player' : 'enemy', isPlayer: false, hp: 68 * fraction, maxHp: 68, level: 84,
@@ -31,25 +31,26 @@ export function openHealthBarSettings() {
   preloadHealthBarArt();
   const current = normalizeHealthBarSettings(G.settings.healthBars, G.settings.lifeBars !== false);
   G.settings.healthBars = current;
-  let selectedSystem = 'overhead', selectedClass = 0, previewFraction = 0.72;
+  const bossClassIndex = HEALTH_BAR_CLASSES.findIndex((entry) => entry.id === 'boss');
+  let selectedSystem = 'overhead', selectedClass = 0, lastOverheadClass = 0, previewFraction = 1;
   const html = `<div class="healthbar-settings">
     <div class="healthbar-preview-card">
-      <div class="healthbar-preview-heading"><b>Preview</b><div><button type="button" class="btn small" data-hb-class-prev aria-label="Previous creature type">‹</button><span data-hb-class-name>Normal Monster</span><button type="button" class="btn small" data-hb-class-next aria-label="Next creature type">›</button></div></div>
+      <div class="healthbar-preview-heading"><b>Preview</b><div data-hb-class-nav><button type="button" class="btn small" data-hb-class-prev aria-label="Previous creature type">‹</button><span data-hb-class-name>Normal Monster</span><button type="button" class="btn small" data-hb-class-next aria-label="Next creature type">›</button></div></div>
       <div class="healthbar-preview-wrap"><canvas data-hb-preview width="980" height="300" aria-label="Health bar preview"></canvas></div>
-      <div class="healthbar-preview-controls"><label>Preview bar<select data-hb-system><option value="overhead">Overhead Creature Bar</option><option value="target">Top Target Bar</option></select></label><label>Preview health<select data-hb-fraction><option value="1">Full</option><option value="0.5">Partial</option><option value="0.08">Nearly Depleted</option></select></label></div>
+      <div class="healthbar-preview-controls"><label>Preview bar<select data-hb-system><option value="overhead">Overhead Creature Bar</option><option value="target">Boss Health Bar</option></select></label><label>Preview health<select data-hb-fraction><option value="1">Full</option><option value="0.5">Partial</option><option value="0.08">Nearly Depleted</option></select></label></div>
     </div>
     <div class="healthbar-settings-columns">
       <section class="healthbar-settings-section"><h3>Theme</h3><label class="healthbar-control-row">Health bar theme<select data-hb-theme><option value="velscour">Velscour (Default)</option><option value="classic">Classic</option></select></label>
-        <label class="healthbar-control-row">Configure appearance for<select data-hb-system-select><option value="overhead">Overhead Bars</option><option value="target">Top Target Bar</option></select></label>
+        <label class="healthbar-control-row">Configure appearance for<select data-hb-system-select><option value="overhead">Overhead Bars</option><option value="target">Boss Health Bar</option></select></label>
         <div class="healthbar-slider-list">${APPEARANCE.map(([key, label, min, max, step]) => `<label class="healthbar-control-row">${label}<span class="healthbar-range"><input type="range" min="${min}" max="${max}" step="${step}" data-hb-appearance="${key}"><output data-hb-output="${key}"></output></span></label>`).join('')}</div>
         <label class="healthbar-check-row"><input type="checkbox" data-hb-appearance="decorativeBorders"> Decorative Borders</label>
         <label class="healthbar-check-row"><input type="checkbox" data-hb-appearance="smoothHealthDepletion"> Smooth Health Depletion</label>
         <label class="healthbar-control-row">Overhead visibility<select data-hb-visibility="overhead">${VISIBILITY.map(([v, n]) => `<option value="${v}">${n}</option>`).join('')}</select></label>
-        <label class="healthbar-control-row">Top target visibility<select data-hb-visibility="target">${VISIBILITY.map(([v, n]) => `<option value="${v}">${n}</option>`).join('')}</select></label>
+        <label class="healthbar-control-row">Boss health bar visibility<select data-hb-visibility="target">${VISIBILITY.map(([v, n]) => `<option value="${v}">${n}</option>`).join('')}</select></label>
       </section>
       <section class="healthbar-settings-section"><h3>Creature Visibility</h3><div class="healthbar-toggle-grid">${CLASS_TOGGLES.map(([key, label]) => `<label><input type="checkbox" data-hb-class="${key}"> ${label}</label>`).join('')}</div>
         <h3>Additional Information</h3><div class="healthbar-toggle-grid">${INFO_TOGGLES.map(([key, label]) => `<label><input type="checkbox" data-hb-info="${key}"> ${label}</label>`).join('')}</div>
-        <p class="dim healthbar-settings-help">Overhead and target sizes are independent. Visibility changes affect presentation only; enemy health and targeting are unchanged.</p>
+        <p class="dim healthbar-settings-help">Overhead and boss health bar sizes are independent. Visibility changes affect presentation only; enemy health and targeting are unchanged.</p>
       </section>
     </div>
     <div class="healthbar-settings-actions"><button type="button" class="btn small" data-hb-reset>Reset to Defaults</button></div>
@@ -118,14 +119,24 @@ export function openHealthBarSettings() {
     box.querySelectorAll('[data-hb-class]').forEach((control) => control.checked = !!s.classes[control.dataset.hbClass]);
     box.querySelectorAll('[data-hb-info]').forEach((control) => control.checked = !!s.info[control.dataset.hbInfo]);
     box.querySelector('[data-hb-class-name]').textContent = HEALTH_BAR_CLASSES[selectedClass].label;
+    box.querySelector('[data-hb-class-nav]').hidden = selectedSystem === 'target';
     renderPreview();
   };
+  const setPreviewSystem = (next) => {
+    if (next === selectedSystem) return;
+    if (selectedSystem === 'overhead') lastOverheadClass = selectedClass;
+    selectedSystem = next;
+    selectedClass = next === 'target' ? bossClassIndex : lastOverheadClass;
+    box.querySelector('[data-hb-system]').value = selectedSystem;
+    box.querySelector('[data-hb-system-select]').value = selectedSystem;
+    refreshControls();
+  };
   box.querySelector('[data-hb-theme]').onchange = (e) => { set(G.settings.healthBars, 'theme', e.target.value); renderPreview(); };
-  box.querySelector('[data-hb-system-select]').onchange = (e) => { selectedSystem = e.target.value; box.querySelector('[data-hb-system]').value = selectedSystem; refreshControls(); };
-  box.querySelector('[data-hb-system]').onchange = (e) => { selectedSystem = e.target.value; box.querySelector('[data-hb-system-select]').value = selectedSystem; refreshControls(); };
+  box.querySelector('[data-hb-system-select]').onchange = (e) => setPreviewSystem(e.target.value);
+  box.querySelector('[data-hb-system]').onchange = (e) => setPreviewSystem(e.target.value);
   box.querySelector('[data-hb-fraction]').onchange = (e) => { previewFraction = Number(e.target.value); renderPreview(); };
-  box.querySelector('[data-hb-class-prev]').onclick = () => { selectedClass = (selectedClass + HEALTH_BAR_CLASSES.length - 1) % HEALTH_BAR_CLASSES.length; refreshControls(); };
-  box.querySelector('[data-hb-class-next]').onclick = () => { selectedClass = (selectedClass + 1) % HEALTH_BAR_CLASSES.length; refreshControls(); };
+  box.querySelector('[data-hb-class-prev]').onclick = () => { selectedClass = (selectedClass + HEALTH_BAR_CLASSES.length - 1) % HEALTH_BAR_CLASSES.length; lastOverheadClass = selectedClass; refreshControls(); };
+  box.querySelector('[data-hb-class-next]').onclick = () => { selectedClass = (selectedClass + 1) % HEALTH_BAR_CLASSES.length; lastOverheadClass = selectedClass; refreshControls(); };
   box.querySelectorAll('[data-hb-appearance]').forEach((control) => {
     const update = () => {
       const key = control.dataset.hbAppearance, value = control.type === 'checkbox' ? control.checked : Number(control.value);
