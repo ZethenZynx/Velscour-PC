@@ -1,5 +1,5 @@
 import { RECENT_CHANGES } from '../data/recent-changes.js';
-import { GAME_BUILD_ID, GAME_VERSION } from '../data/build-version.js';
+import { GAME_BUILD_ID, GAME_GIT_COMMIT, GAME_VERSION } from '../data/build-version.js';
 import { UI } from '../ui/ui.js';
 import { escapeHtml } from '../core/util.js';
 
@@ -7,7 +7,7 @@ const ACKNOWLEDGED_UPDATES_KEY = 'velscour_update_acknowledged_v1';
 export const UPDATE_CHECK_INTERVAL_MS = 5 * 60 * 1000;
 const changeKey = ({ date, title }) => `${date || ''}\u0000${String(title || '').trim().toLocaleLowerCase()}`;
 const bundledChanges = new Set(RECENT_CHANGES.map(changeKey));
-let updateState = { status: 'unknown', available: false, runningBuildId: GAME_BUILD_ID, runningVersion: GAME_VERSION, deployedBuildId: null, deployedVersion: null, deployedCommit: null, checkedAt: 0 };
+let updateState = { status: 'unknown', available: false, runningBuildId: GAME_BUILD_ID, runningCommit: GAME_GIT_COMMIT, runningVersion: GAME_VERSION, deployedBuildId: null, deployedVersion: null, deployedCommit: null, checkedAt: 0, lastSuccessfulCheckAt: 0 };
 let checkInFlight = null;
 let monitorTimer = null;
 
@@ -28,26 +28,26 @@ export function changesAfterBundledBuild(items) {
 export function getGameUpdateStatus() { return { ...updateState }; }
 
 function publishUpdateState(next) {
-  updateState = { ...updateState, ...next, checkedAt: Date.now() };
-  if (typeof document !== 'undefined' && typeof CustomEvent === 'function') {
+  const checkedAt = Date.now();
+  const succeeded = next.status === 'available' || next.status === 'latest';
+  updateState = { ...updateState, ...next, checkedAt, lastSuccessfulCheckAt: succeeded ? checkedAt : updateState.lastSuccessfulCheckAt };
+  if (typeof document !== 'undefined' && typeof document.dispatchEvent === 'function' && typeof CustomEvent === 'function') {
     document.dispatchEvent(new CustomEvent('velscour-update-status', { detail: getGameUpdateStatus() }));
   }
   return getGameUpdateStatus();
 }
 
-function compareVersions(a, b) {
-  const parse = (v) => String(v || '').split('.').map((part) => Number.parseInt(part, 10));
-  const left = parse(a), right = parse(b);
-  if (!left.length || !right.length || left.some((part) => !Number.isFinite(part)) || right.some((part) => !Number.isFinite(part))) return null;
-  for (let i = 0; i < Math.max(left.length, right.length); i++) {
-    const delta = (left[i] || 0) - (right[i] || 0);
-    if (delta) return Math.sign(delta);
-  }
-  return 0;
+const isPagesBuildId = (value) => /^pages-[0-9a-f]{40}$/i.test(String(value || ''));
+
+/** Published version numbers are display labels; commit-stamped IDs decide update state. */
+export function compareBuildIdentity(runningBuildId, deployedBuildId) {
+  if (!isPagesBuildId(deployedBuildId)) return { valid: false, available: false, status: 'unavailable' };
+  const available = String(runningBuildId || '') !== deployedBuildId;
+  return { valid: true, available, status: available ? 'available' : 'latest' };
 }
 
 /** Compare this running build with the identity embedded in the live Pages artifact. */
-export async function checkForGameUpdates() {
+export async function checkForGameUpdates({ runningBuildId = GAME_BUILD_ID, runningVersion = GAME_VERSION, runningCommit = GAME_GIT_COMMIT } = {}) {
   if (checkInFlight) return checkInFlight;
   checkInFlight = (async () => {
     try {
@@ -66,19 +66,20 @@ export async function checkForGameUpdates() {
       const match = source.match(/export\s+const\s+GAME_BUILD_ID\s*=\s*(['"])(.*?)\1/);
       const versionMatch = source.match(/export\s+const\s+GAME_VERSION\s*=\s*(['"])(.*?)\1/);
       const commitMatch = source.match(/export\s+const\s+GAME_GIT_COMMIT\s*=\s*(['"])(.*?)\1/);
-      if (!match || !match[2]) throw new Error('The deployed build identity is missing or invalid');
+      if (!match || !isPagesBuildId(match[2])) throw new Error('The deployed Pages build identity is missing or invalid');
       const deployedBuildId = match[2];
       const deployedVersion = versionMatch?.[2] || null;
       const deployedCommit = commitMatch?.[2] || (deployedBuildId.startsWith('pages-') ? deployedBuildId.slice(6) : null);
-      if (deployedBuildId.startsWith('pages-') && !/^[0-9a-f]{40}$/i.test(deployedCommit || '')) {
+      if (!/^[0-9a-f]{40}$/i.test(deployedCommit || '') || deployedCommit.toLowerCase() !== deployedBuildId.slice(6).toLowerCase()) {
         throw new Error('The deployed build commit identifier is invalid');
       }
-      const versionOrder = compareVersions(deployedVersion, GAME_VERSION);
-      const available = versionOrder == null ? deployedBuildId !== GAME_BUILD_ID
-        : versionOrder > 0 || (versionOrder === 0 && deployedBuildId !== GAME_BUILD_ID);
+      const identity = compareBuildIdentity(runningBuildId, deployedBuildId);
       return publishUpdateState({
-        status: available ? 'available' : versionOrder < 0 ? 'ahead' : 'latest',
-        available,
+        status: identity.status,
+        available: identity.available,
+        runningBuildId,
+        runningCommit,
+        runningVersion,
         deployedBuildId,
         deployedVersion,
         deployedCommit,

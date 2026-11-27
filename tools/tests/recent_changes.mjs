@@ -35,7 +35,7 @@ let calls = 0;
 let commits = [commit(newestSha, '2026-11-19T12:00:00Z', 'Fix the Rift pylon damage')];
 globalThis.fetch = async (url, options) => {
   calls++;
-  assert.equal(url, 'https://api.github.com/repos/ZethenZynx/Velscour-PC/commits?sha=main&per_page=100');
+  assert.match(url, /^https:\/\/api\.github\.com\/repos\/ZethenZynx\/Velscour-PC\/commits\?sha=main&per_page=100/);
   assert.equal(options.headers.Accept, 'application/vnd.github+json');
   return { ok: true, json: async () => commits };
 };
@@ -51,12 +51,16 @@ assert.equal(calls, 1, 'fresh cache avoids another GitHub request');
 const newerSha = 'c'.repeat(40);
 commits = [commit(newerSha, '2026-11-20T12:00:00Z', 'Improve title history')];
 let release;
-globalThis.fetch = async () => { calls++; return await new Promise((resolve) => { release = () => resolve({ ok: true, json: async () => commits }); }); };
-const pendingA = loadRecentChanges({ forceRefresh: true });
+globalThis.fetch = async (url) => { calls++; if (calls > 2) assert.match(url, /_refresh=/, 'forced refresh bypasses an intermediary API cache'); return await new Promise((resolve) => { release = () => resolve({ ok: true, json: async () => commits }); }); };
+storage.set('velscour_recent_commits_v1', JSON.stringify({ savedAt: 0, items: [normalized[0]] }));
+const pendingA = loadRecentChanges();
 const pendingB = loadRecentChanges({ forceRefresh: true });
-assert.equal(calls, 2, 'only one API request runs for concurrent refreshes');
+assert.equal(calls, 2, 'a requested fresh history waits behind an ordinary in-flight fetch');
 release();
 assert.equal((await pendingA)[0].sha, newerSha);
+await new Promise((resolve) => setImmediate(resolve));
+assert.equal(calls, 3, 'a forced refresh requested during another request runs once afterward');
+release();
 assert.equal((await pendingB)[0].sha, newerSha);
 
 // Rate limits/network failures retain the last successful commit list.

@@ -21,6 +21,7 @@ import { FILTER_ROWS, lootFilter, lootLabelFilter, saveLootFilterSettings } from
 import { validateCharName } from '../core/profanity.js';
 import { loadRecentChanges, getCachedRecentChanges, getRecentChangesState, RECENT_CHANGES_REFRESH_MS } from '../game/recentchanges.js';
 import { changesAfterBundledBuild, checkForGameUpdates, getGameUpdateStatus, showUpdateDialog, startGameUpdateMonitor } from '../game/updater.js';
+import { GAME_BUILD_ID } from '../data/build-version.js';
 import { MOUSE_CURSOR_DEFAULTS, refreshMouseCursor } from './mousecursor.js';
 import { CharacterPortrait } from './characterportrait.js';
 import { openHealthBarSettings } from './healthbar-settings.mjs';
@@ -86,6 +87,7 @@ export function titleScreen() {
       button.disabled = true; button.textContent = 'Checking for updates...';
       const result = await checkForGameUpdates();
       if (button.isConnected) { button.disabled = false; button.textContent = 'Check for Updates'; }
+      if (result.status === 'available' || result.status === 'latest') await refreshChanges(true);
       if (result.status === 'available') showUpdateDialog(getCachedRecentChanges());
       else if (result.status === 'latest') UI.dialog({ title: 'Game Up to Date', html: '<p>You are running the latest version available on GitHub Pages.</p>', buttons: [{ label: 'Done' }] });
       else if (result.status === 'ahead') UI.dialog({ title: 'Game Up to Date', html: '<p>This running build is newer than the version currently deployed on GitHub Pages.</p>', buttons: [{ label: 'Done' }] });
@@ -186,16 +188,16 @@ export function titleScreen() {
       }
     }
     const updated = source.savedAt ? formatDate(new Date(source.savedAt).toISOString().slice(0, 10)) : '';
-    if (source.kind === 'live') changesStatus.textContent = `Latest commits from ZethenZynx/Velscour-PC · refreshed ${updated}`;
-    else if (source.kind === 'loading') changesStatus.textContent = items.length ? 'Checking GitHub; showing saved commits…' : 'Loading commits from Velscour PC…';
-    else if (source.kind === 'stale') changesStatus.textContent = `GitHub unavailable (${source.message || 'request failed'}); showing saved commits${updated ? ` from ${updated}` : ''}.`;
+    if (source.kind === 'live') changesStatus.textContent = `Fresh commit history from ZethenZynx/Velscour-PC · refreshed ${updated}`;
+    else if (source.kind === 'loading') changesStatus.textContent = items.length ? 'Checking GitHub; showing cached commit history…' : 'Loading commits from Velscour PC…';
+    else if (source.kind === 'stale') changesStatus.textContent = `GitHub unavailable (${source.message || 'request failed'}); showing cached commit history${updated ? ` from ${updated}` : ''}.`;
     else if (source.kind === 'unavailable') changesStatus.textContent = `Could not load commits from GitHub (${source.message || 'offline'}). Reopen this window when online.`;
-    else if (source.kind === 'cached') changesStatus.textContent = `Saved commits from ZethenZynx/Velscour-PC · refreshed ${updated}`;
-    else changesStatus.textContent = 'Commit history is loaded from the public Velscour PC repository.';
+    else if (source.kind === 'cached') changesStatus.textContent = `Cached commit history from ZethenZynx/Velscour-PC · refreshed ${updated}`;
+    else changesStatus.textContent = 'Bundled commit history (offline fallback; not a live deployment check).';
     if (source.bundledFallback) {
-      if (source.kind === 'loading') changesStatus.textContent = 'Checking GitHub; showing the included change history.';
-      else if (source.kind === 'stale' || source.kind === 'unavailable') changesStatus.textContent = `GitHub unavailable (${source.message || 'offline'}); showing the included change history.`;
-      else changesStatus.textContent = 'Showing the included change history while GitHub has no cached commits.';
+      if (source.kind === 'loading') changesStatus.textContent = 'Checking GitHub; showing bundled offline commit history.';
+      else if (source.kind === 'stale' || source.kind === 'unavailable') changesStatus.textContent = `GitHub unavailable (${source.message || 'offline'}); showing bundled offline commit history.`;
+      else changesStatus.textContent = 'Bundled offline commit history; no live or cached commits available.';
     }
   };
   const initialChanges = getCachedRecentChanges();
@@ -208,8 +210,8 @@ export function titleScreen() {
   const gate = el('div', 'title-gate', G.touch ? 'Tap to awaken' : 'Click to awaken');
   s.appendChild(gate);
   show(s);
-  const refreshChanges = () => {
-    const pending = loadRecentChanges();
+  const refreshChanges = (forceRefresh = false) => {
+    const pending = loadRecentChanges({ forceRefresh });
     const cached = getCachedRecentChanges();
     renderChanges(cached.length ? cached : RECENT_CHANGES,
       { ...getRecentChangesState(), bundledFallback: !cached.length });
@@ -224,9 +226,27 @@ export function titleScreen() {
     if (before !== after) fill();
     });
   };
+  const recentChangesListener = () => {
+    if (current !== s) return;
+    const items = getCachedRecentChanges();
+    renderChanges(items.length ? items : RECENT_CHANGES,
+      { ...getRecentChangesState(), bundledFallback: !items.length });
+    const nextUpdates = changesAfterBundledBuild(items);
+    const before = updatesAvailable.map((item) => `${item.date || ''}\u0000${item.title || ''}`).join('\n');
+    const after = nextUpdates.map((item) => `${item.date || ''}\u0000${item.title || ''}`).join('\n');
+    updatesAvailable = nextUpdates;
+    if (before !== after) fill();
+  };
+  document.addEventListener('velscour-recent-changes-updated', recentChangesListener);
   refreshChanges();
+  let lastObservedDeployment = getGameUpdateStatus().deployedBuildId;
   const updateStateListener = (event) => {
-    if (current === s) bundledUpdateButton.classList.toggle('hidden', !event.detail?.available);
+    const detail = event.detail;
+    if (current === s) bundledUpdateButton.classList.toggle('hidden', !detail?.available);
+    if ((detail?.status === 'available' || detail?.status === 'latest') && detail.deployedBuildId !== lastObservedDeployment) {
+      lastObservedDeployment = detail.deployedBuildId;
+      if (current === s) void refreshChanges(true);
+    }
   };
   document.addEventListener('velscour-update-status', updateStateListener);
   startGameUpdateMonitor();
@@ -234,6 +254,7 @@ export function titleScreen() {
   currentCleanup = () => {
     clearInterval(refreshTimer);
     document.removeEventListener('velscour-update-status', updateStateListener);
+    document.removeEventListener('velscour-recent-changes-updated', recentChangesListener);
   };
   attachTitleFx(s, s.querySelector('.title-logo'), {
     tag: s.querySelector('.title-tag'),
@@ -610,6 +631,13 @@ export function settingsDialog() {
     <button type="button" class="settings-tab-btn" data-tab="developer">⚒ Developer</button>
   </div>
   <div class="settings-tab-pane" data-pane="general">
+    <section class="update-build-info" aria-label="Build and update status">
+      <h3>Build Information</h3>
+      <div><span>Running build ID</span><code data-running-build-id></code></div>
+      <div><span>Deployed Pages build ID</span><code data-deployed-build-id></code></div>
+      <div><span>Last successful update check</span><span data-update-last-success></span></div>
+      <div><span>Update check result</span><span data-update-result role="status" aria-live="polite"></span></div>
+    </section>
     <div class="settings-grid">
       <label>GitHub Pages updates</label><div class="update-check-controls"><button type="button" class="btn small" data-check-game-updates>Check for Updates</button><span class="update-check-status dim" data-update-check-status role="status" aria-live="polite"></span></div>
       <label>Hero backups</label><button class="btn small" data-backups>View</button>
@@ -724,6 +752,28 @@ export function settingsDialog() {
 `;
   let stopKeyCaptureListener = () => {};
   const d = UI.dialog({ title: 'Settings', html, cls: 'settings-dialog', buttons: [{ label: 'Done', fn: () => { stopKeyCaptureListener(); camera.computeZoom(); if (UI.hud && UI.hud.applyVisibilitySettings) UI.hud.applyVisibilitySettings(); saveSettings(); } }] });
+  const buildInfo = {
+    running: d.box.querySelector('[data-running-build-id]'),
+    deployed: d.box.querySelector('[data-deployed-build-id]'),
+    lastSuccess: d.box.querySelector('[data-update-last-success]'),
+    result: d.box.querySelector('[data-update-result]'),
+  };
+  const renderBuildInfo = (status = getGameUpdateStatus()) => {
+    if (buildInfo.running) buildInfo.running.textContent = status.runningBuildId || GAME_BUILD_ID || 'Unknown';
+    if (buildInfo.deployed) buildInfo.deployed.textContent = status.deployedBuildId || 'Not retrieved yet';
+    if (buildInfo.lastSuccess) buildInfo.lastSuccess.textContent = status.lastSuccessfulCheckAt
+      ? new Date(status.lastSuccessfulCheckAt).toLocaleString() : 'No successful check yet';
+    if (buildInfo.result) buildInfo.result.textContent = status.status === 'available' ? 'Update available'
+      : status.status === 'latest' ? 'Game is up to date'
+        : status.status === 'unavailable' ? `Unable to check: ${status.error || 'network or build identity error'}`
+          : status.status === 'ahead' ? 'Running build differs from the deployed build'
+            : 'Not checked yet';
+  };
+  renderBuildInfo();
+  void checkForGameUpdates().then((result) => {
+    renderBuildInfo(result);
+    if (result.status === 'available' || result.status === 'latest') void loadRecentChanges({ forceRefresh: true });
+  });
   const updateCheckButton = d.box.querySelector('[data-check-game-updates]');
   const updateCheckStatus = d.box.querySelector('[data-update-check-status]');
   if (updateCheckButton) updateCheckButton.onclick = async () => {
@@ -731,6 +781,8 @@ export function settingsDialog() {
     updateCheckButton.textContent = 'Checking for updates...';
     if (updateCheckStatus) updateCheckStatus.textContent = 'Checking for updates...';
     const result = await checkForGameUpdates();
+    renderBuildInfo(result);
+    if (result.status === 'available' || result.status === 'latest') await loadRecentChanges({ forceRefresh: true });
     updateCheckButton.disabled = false;
     updateCheckButton.textContent = 'Check for Updates';
     if (updateCheckStatus) updateCheckStatus.textContent = result.status === 'available' ? 'Update available.'

@@ -8,6 +8,8 @@ const FAILURE_RETRY_MS = 5 * 60 * 1000;
 const REQUEST_TIMEOUT_MS = 8000;
 
 let requestInFlight = null;
+let requestIsForceRefresh = false;
+let forceRefreshAfterCurrent = null;
 let state = { kind: 'idle', savedAt: 0, message: '' };
 
 function readCache() {
@@ -25,6 +27,12 @@ function writeCache(items) {
   const savedAt = Date.now();
   try { localStorage.setItem(CACHE_KEY, JSON.stringify({ savedAt, items })); } catch (_) { /* storage is optional */ }
   return savedAt;
+}
+
+function notifyRecentChanges(items) {
+  if (typeof document !== 'undefined' && typeof document.dispatchEvent === 'function' && typeof CustomEvent === 'function') {
+    document.dispatchEvent(new CustomEvent('velscour-recent-changes-updated', { detail: { items, state: { ...state } } }));
+  }
 }
 
 function getRetryAt() {
@@ -91,12 +99,15 @@ export function getCachedRecentChanges() {
 
 export function getRecentChangesState() { return { ...state }; }
 
-async function fetchRecentCommits() {
+async function fetchRecentCommits(forceFresh = false) {
   if (typeof fetch !== 'function') throw new Error('Network requests are unavailable');
   const controller = typeof AbortController === 'function' ? new AbortController() : null;
   const timeout = controller ? setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS) : null;
   try {
-    const response = await fetch(GITHUB_COMMITS_URL, {
+    const url = new URL(GITHUB_COMMITS_URL);
+    // A force refresh also bypasses intermediary API caches, not just Cache Storage.
+    if (forceFresh) url.searchParams.set('_refresh', String(Date.now()));
+    const response = await fetch(url.href, {
       headers: { Accept: 'application/vnd.github+json' },
       cache: 'no-store',
       ...(controller ? { signal: controller.signal } : {}),
@@ -133,14 +144,26 @@ export function loadRecentChanges({ forceRefresh = false } = {}) {
     };
     return Promise.resolve(cached?.items || []);
   }
-  if (requestInFlight) return requestInFlight;
+  if (requestInFlight) {
+    if (!forceRefresh || requestIsForceRefresh) return requestInFlight;
+    if (!forceRefreshAfterCurrent) {
+      const currentRequest = requestInFlight;
+      forceRefreshAfterCurrent = currentRequest.then(() => {
+        forceRefreshAfterCurrent = null;
+        return loadRecentChanges({ forceRefresh: true });
+      }).finally(() => { forceRefreshAfterCurrent = null; });
+    }
+    return forceRefreshAfterCurrent;
+  }
 
   state = { kind: 'loading', savedAt: cached?.savedAt || 0, message: '' };
-  requestInFlight = fetchRecentCommits()
+  requestIsForceRefresh = forceRefresh;
+  requestInFlight = fetchRecentCommits(forceRefresh)
     .then((items) => {
       setRetryAt(0);
       const savedAt = writeCache(items);
       state = { kind: 'live', savedAt, message: '' };
+      notifyRecentChanges(items);
       return items;
     })
     .catch((error) => {
@@ -150,8 +173,9 @@ export function loadRecentChanges({ forceRefresh = false } = {}) {
         savedAt: cached?.savedAt || 0,
         message: String(error?.message || 'Could not reach GitHub'),
       };
+      notifyRecentChanges(cached?.items || []);
       return cached?.items || [];
     })
-    .finally(() => { requestInFlight = null; });
+    .finally(() => { requestInFlight = null; requestIsForceRefresh = false; });
   return requestInFlight;
 }
