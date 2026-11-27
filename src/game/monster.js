@@ -6,6 +6,7 @@ import { sfx } from '../core/audio.js';
 import { camera, isoX, isoY } from '../core/view.js';
 import { addEffect, Telegraph, Slash, Ring, Bolt, Column, burst, spawn, sparkle, elem, floatText, smoke, addLight } from '../gfx/vfx.js';
 import { shiftPalette } from '../gfx/pixelart.js';
+import { canReceiveMovementAffix } from './targeted-guards.js';
 import { Creature } from './creature.js';
 import { hit, aoe, chainHit, leechHeal } from './combat.js';
 import { Projectile, Delayed, NovaWave, Area, Fissure, explode, lineTargets, coneTargets } from './hazards.js';
@@ -241,6 +242,9 @@ export class Monster extends Creature {
     const canAct = this.tickStatus(dt, (k, amount, src) => hit(src, this, amount, k === 'burn' ? 'fire' : k === 'poison' ? 'poison' : k === 'bleed' ? 'blood' : 'shadow', { dot: true, crit: false }));
     if (this.dead) return;
     if (this.entering) { this.entering(dt); return; } // ambush arrivals (game/mayhem.js)
+    // Velscour's encounter controller owns his sleeping, seated, hidden, and
+    // bound states. Do not let general affixes run before his encounter begins.
+    if (this.vel && this.vel.holdBoss()) { this.moving = false; return; }
     if (this.life && this.lifeT > this.life) { this.dead = true; burst(this.x, this.y, 20, this.el || 'arcane', 10, 2); return; }
     // charm wears off
     const ch = this.curses.charm;
@@ -275,7 +279,8 @@ export class Monster extends Creature {
           if (this.affixElementT <= 0) { this.affixElement = pick(['fire', 'cold', 'light', 'poison', 'shadow']); this.affixElementT = 18; }
         }
       }
-      const disappear = dungeonAffixes.includes('phasing') || dungeonAffixes.includes('burrowing');
+      const disappear = (dungeonAffixes.includes('phasing') || dungeonAffixes.includes('burrowing')) &&
+        canReceiveMovementAffix(this);
       if (disappear) {
         this.affixPhaseT = (this.affixPhaseT ?? rand(4, 8)) - dt;
         if (this.affixPhaseT <= 0) {
@@ -287,7 +292,7 @@ export class Monster extends Creature {
           } else {
             this.targetable = this._affixWasTargetable;
             this.affixPhaseT = rand(5, 8);
-            if (dungeonAffixes.includes('burrowing') && w.player) {
+            if (dungeonAffixes.includes('burrowing') && w.player && !w.player.dead && dist(this.x, this.y, w.player.x, w.player.y) <= 18) {
               const [x, y] = w.map.randomNear(w.player.x, w.player.y, 3);
               [this.x, this.y] = w.map.nudge(x, y, this.r || 0.3);
             }

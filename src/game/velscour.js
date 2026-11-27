@@ -53,7 +53,7 @@ export function setupVelscour(world, m, gen) {
   m.maxHp *= HP_MUL; m.hp = m.maxHp; m.dmg *= DMG_MUL;
   m.onDeath = () => V.onDeath();
   // seated on his throne until the hero comes
-  m.x = SEAT[0]; m.y = SEAT[1]; m.z = SEAT_Z; V.seated = true;
+  m.x = SEAT[0]; m.y = SEAT[1]; m.z = SEAT_Z; m.targetable = false; V.seated = true;
   world.addHazard(V);
   if (world.unbound) setupUnbound(V); // the rematch's court and chains (game/unbound.js, docs/ENDGAME.md)
   return V;
@@ -124,7 +124,9 @@ class VelscourFight {
   /** A hit on him: what of it lands, after the life gate (no carrying past a phase) and the damage cap. */
   absorb(dmg) {
     const m = this.m;
-    if (!this.phase) return dmg;
+    // Before the throne-room trigger, Velscour is a seated encounter prop rather
+    // than an active target. Ignore damage until begin() legitimately starts it.
+    if (!this.phase) return 0;
     const room = Math.max(0, m.hp - m.maxHp * this.gate - (this.gate > 0 ? 1 : 0));
     const take = Math.min(dmg, this.bank, room);
     this.bank -= take;

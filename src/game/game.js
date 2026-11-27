@@ -185,6 +185,7 @@ import { toggleTree, toggleBook, showFirstSkillTutorial } from '../ui/skills.js'
 import { toggleTalents } from '../ui/talents.js';
 import { toggleQuest } from '../ui/quest.js';
 import { setupVelscour } from './velscour.js';
+import { canReceiveMovementAffix, shouldSpawnTwinGuardian } from './targeted-guards.js';
 import { loadVelscourThrone } from '../gfx/velscourthrone.js';
 import { offerCommissions, setupCommissions, commissionClear, wantedBiomes, LINE_BY_ID, commState } from './commissions.js';
 import { titleScreen, hide as hideScreen, deathScreen, victoryScreen, pauseMenu, helpDialog } from '../ui/screens.js';
@@ -1849,7 +1850,7 @@ export const game = {
     // later event spawns.
     for (const m of world.creatures) heresyMonster(m, heresies);
     world.roster = [...new Set(gen.spawns.filter((s) => s.arch && !['raid', 'boss'].includes(s.rank)).map((s) => s.arch))];
-    if (world.dungeonAffixes.includes('twin_guardians') && world.boss && !world.boss.raid) {
+    if (shouldSpawnTwinGuardian(world)) {
       const arch = pick(world.roster) || world.boss.arch;
       const [gx, gy] = world.map.randomNear(world.boss.x, world.boss.y, 3.5);
       const twin = makeMonster(world, arch, biome, lvl + 2, 'boss', gx, gy);
@@ -3275,7 +3276,7 @@ export const game = {
     if (active.has('teleporting') || active.has('blink_strike') || active.has('boss_teleportation')) {
       const movement = DUNGEON_AFFIX_CONFIG.enemyMovement;
       for (const m of w.creatures) {
-        if (m.team !== 'enemy' || m.dead) continue;
+        if (!canReceiveMovementAffix(m)) continue;
         m.dungeonTeleportT = (m.dungeonTeleportT ?? rand(...movement.teleportInitial)) - dt;
         const d2 = dist2(m.x, m.y, p.x, p.y);
         if (m.dungeonTeleportT > 0 || d2 <= movement.minDistance ** 2 || d2 >= movement.maxDistance ** 2) continue;

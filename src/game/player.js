@@ -20,6 +20,7 @@ import { hit, aoe } from './combat.js';
 import { heroLook, heroFrame, gearFxOf, finishOf } from '../core/gearart.js';
 import { castArtFx } from '../gfx/artfx.js';
 import { drawGearFx, updateGearFx } from '../gfx/gearfx.js';
+import { isUsableInteraction } from './targeted-guards.js';
 import { heldHero, drawHeldLayer } from '../gfx/heldart.js';
 import { fxColor } from '../data/gear.js';
 import { freeSlot } from '../data/bar.js';
@@ -966,6 +967,9 @@ export class Player extends Creature {
     }
     if (this.interact) {
       const t = this.interact;
+      // Interactions can be invalidated after selection (for example, an opened
+      // chest or removed portal). Revalidate immediately before invoking them.
+      if (!isUsableInteraction(t)) { this.interact = null; return; }
       if (dist(this.x, this.y, t.x, t.y) <= (t.reach || 1.4)) { this.interact = null; this.moveTarget = null; this.path = null; t.use(); return; }
       this.walkTo(t.x, t.y, dt);
       return;

@@ -4,7 +4,7 @@
 // Rugs go into the floor itself (map.dressTile, gfx/terrain.js drawColumn).
 import { TileMap } from './map.js';
 import { tkeepLayout, TK, KK } from './tkeep.js';
-import { bannerSprite, glassSprite, rugCanvas, drawRugTile, trophySprite, keepProp, windowShaft, chandelierSprite, ghostSprite, drawFire, drawCandle } from '../gfx/keepart.js';
+import { bannerSprite, glassSprite, rugCanvas, drawRugTile, trophySprite, keepProp, windowShaft, chandelierSprite, ghostSprite, drawFire, drawCandles } from '../gfx/keepart.js';
 import { TROPHY_BY_ID } from '../data/keep.js';
 
 /** The keep's map: heights, blocking, which tiles are masonry (baked pieces that may hide whoever stands behind). */
@@ -66,12 +66,13 @@ export function keepProps(world, decor, have) {
   }
   // the chandeliers over the hall, their candles lit
   const ch = chandelierSprite();
-  if (ch) for (const [x, y, z] of A.chandeliers) add(x, y, ch, { z: z * 4, noHide: true, fx: (ctx, px, py, t) => { ch.candles.forEach(([cx, cy], i) => drawCandle(ctx, px + cx, py + cy, t, i + x)); } });
+  if (ch) for (const [x, y, z] of A.chandeliers) add(x, y, ch, { z: z * 4, noHide: true, fx: (ctx, px, py, t) => drawCandles(ctx, ch.candles, px, py, t, x) });
   // furniture (the Castle Keep pack's painted props): armour and candelabra by the dais, lions by the portal,
   // benches under the colonnades, the war table, the Chronicle's lectern, the Vault's chest
   const F = (name, x, y, o = {}) => add(x, y, keepProp(name), o);
   F('empty_suit_of_armor', TK.F0 + 5.6, TK.F0 + 3.6); F('empty_suit_of_armor', TK.F1 - 4.6, TK.F0 + 3.6, { flip: true });   // clear of the braziers at the dais' corners
-  const glow = (ctx, px, py, t) => { for (const [dx, dy] of [[0, -50], [-7, -43], [7, -43], [-11, -38], [11, -38]]) drawCandle(ctx, px + dx, py + dy, t, dx + px); };
+  const CANDLE_POINTS = [[0, -50], [-7, -43, -7], [7, -43, 7], [-11, -38, -11], [11, -38, 11]];
+  const glow = (ctx, px, py, t) => drawCandles(ctx, CANDLE_POINTS, px, py, t, px);
   F('keep_candelabrum', TK.F0 + 8.5, TK.F0 + 2.5, { fx: glow }); F('keep_candelabrum', TK.F1 - 7.5, TK.F0 + 2.5, { fx: glow });
   F('carved_lion_statue', A.townPortal[0] - 2.4, TK.F1 + 0.35); F('carved_lion_statue', A.townPortal[0] + 2.4, TK.F1 + 0.35, { flip: true });
   for (const [cx, cy] of A.columns) F('stone_bench', cx + (cx < 20 ? -1.5 : 1.5), cy + 0.4, { flip: cx > 20 });   // in the aisles (the Elders' plinths stand inside the colonnades)

@@ -1306,7 +1306,9 @@ export function renderWorld(ctx, world) {
       if (px < vr.x0 - 100 || px > vr.x1 + 100 || y1 < vr.y0 || y1 - 340 > vr.y1) continue;
     } else if (px < vr.x0 - 100 || px > vr.x1 + 100 || py < vr.y0 - 40 || py > vr.y1 + 220) continue;
     enqueue(Number.isFinite(pr.renderDepth) ? pr.renderDepth : pr.x + pr.y, 4, pr);
-    if (tall && !pr.c3move) occludeStatic(pr, propRect(pr, px, py));
+    // Airborne Keep décor marked noHide is drawn as an overlay and does not need
+    // a ground-occlusion query; retain the normal path for all other props.
+    if (tall && !pr.c3move && !pr.noHide) occludeStatic(pr, propRect(pr, px, py));
   }
   // the Dark Forest's trees: only the buckets around the view (a tree's base may sit well below it)
   const tc = map.treeCells;
