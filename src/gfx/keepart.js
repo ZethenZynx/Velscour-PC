@@ -263,17 +263,17 @@ function fireTongue(ctx, x, y, w, h, t, ph) {
   ctx.closePath(); ctx.fill();
 }
 // Brazier body flames are a tiny finite set of palette/size/seed combinations.
-// Rasterizing their twelve animation frames once removes gradients and paths from
+// Rasterizing their animation frames once removes gradients and paths from
 // the per-frame Keep draw while retaining the existing flame shape and sparks.
 const brazierFireFrames = new Map();
 function getBrazierFireFrames(h, w, pal, seed) {
   const key = `${pal}|${h}|${w}|${seed}`;
   if (brazierFireFrames.has(key)) return brazierFireFrames.get(key);
-  const P = FIRE[pal] || FIRE.ember, count = 12;
+  const P = FIRE[pal] || FIRE.ember, count = 24;
   const padX = Math.ceil(w * 4.5), top = Math.ceil(h * 1.45), bottom = Math.ceil(h * 0.35);
   const frames = [];
   for (let i = 0; i < count; i++) {
-    const t = i / count * (TAU / 2.6), canvas = keepRasterCanvas(padX * 2, top + bottom), g = canvas.getContext('2d');
+    const t = i / count, canvas = keepRasterCanvas(padX * 2, top + bottom), g = canvas.getContext('2d');
     const x = padX, y = top;
     g.globalCompositeOperation = 'lighter'; g.globalAlpha = 0.3 + Math.sin(t * 3.1 + seed) * 0.05;
     g.drawImage(glowSprite(P.glow), x - w * 4.2, y - h * 1.25, w * 8.4, h * 1.55);
@@ -305,7 +305,7 @@ function getBrazierFireFrames(h, w, pal, seed) {
 export function drawFire(ctx, x, y, t, h, w, pal = 'sacred', seed = 0, sparks = 0) {
   const P = FIRE[pal] || FIRE.ember;
   const frames = getBrazierFireFrames(h, w, pal, seed);
-  const frame = frames[((Math.floor(t * 14) % frames.length) + frames.length) % frames.length];
+  const frame = frames[((Math.floor(t * frames.length) % frames.length) + frames.length) % frames.length];
   ctx.save(); ctx.drawImage(frame.img, x - frame.x, y - frame.y, frame.w, frame.h);
   for (let i = 0; i < sparks; i++) { const f = (t * (0.22 + (i % 5) * 0.03) + i * 0.618 + seed), u = f - Math.floor(f), a = i * 2.39 + seed;
     ctx.globalAlpha = (1 - u) * (1 - u) * 0.95; ctx.fillStyle = P.spark[i % 3 ? 0 : 1]; ctx.fillRect(x + Math.sin(a + t * 1.3 + u * 4) * (w * 0.5 + u * w * 1.6), y - h * (0.3 + u * 1.25), 1 + (i % 3 === 0), 1 + (i % 3 === 0)); }
