@@ -302,7 +302,21 @@ export function describe(sk, L, dmg) {
       break;
     }
     case 'buff': s = `${m.party ? 'You and your allies gain' : 'Gain'} +${buffAmount(sk, L)}% ${(m.buff || ['dmg']).map((b) => BUFFNAME[b] || b).join(', ')} for ${Math.round(skillDuration(sk, L))}s.${m.pulse ? ` Pulses for ${D} around you.` : ''}${m.transform ? ' Transforms your body.' : ''}`; break;
-    case 'curse': s = `${m.at === 'self' ? 'Nearby enemies' : 'Enemies in the target area'} ${(m.curse || ['amp']).map((c) => CURSENAME[c] || c).join(', ')} for ${Math.round(skillDuration(sk, L))}s.${(m.curse || []).some((c) => ['decay', 'bomb', 'doom'].includes(c)) ? ` Deals ${D}.` : ''}`; break;
+    case 'curse': {
+      const effects = m.curse || ['amp'];
+      const duration = Number(skillDuration(sk, L).toFixed(1));
+      const control = [];
+      if (effects.includes('slow')) control.push(`slowed by ${Math.min(65, 30 + curseAmount(sk, L) / 2)}% for ${duration}s`);
+      if (effects.includes('stun')) control.push(`stunned for ${Math.min(duration, 3)}s${sk.m.hit ? ' (bosses: 0.6s, 25% chance)' : ''}`);
+      const other = effects.filter((c) => !['slow', 'stun'].includes(c)).map((c) => CURSENAME[c] || c);
+      const effectText = [...control, ...other.map((c) => `${c} for ${duration}s`)].join(' and ');
+      const targetText = m.at === 'self' ? 'Nearby enemies' : 'Enemies in the target area';
+      s = m.hit
+        ? `Deals ${D} once per cast to each affected enemy. ${targetText} are ${effectText || effects.map((c) => CURSENAME[c] || c).join(', ')}.`
+        : `${targetText} ${effectText || effects.map((c) => CURSENAME[c] || c).join(', ')}.${effects.some((c) => ['decay', 'bomb', 'doom'].includes(c)) ? ` Deals ${D}.` : ''}`;
+      if (m.hit && sk.el === 'poison') s += ' Poison then deals 30% of the hit per second for 3.5s (before poison-duration bonuses).';
+      break;
+    }
     case 'heal': s = `Restore ${Math.round((m.amt || 20) * (1 + 0.04 * (L - 1)))}% of your life${m.party ? ' and your allies\' life' : ''}.`; break;
     case 'trap': s = `Place ${n > 1 ? n + ' ' + sk.fx + ' traps' : 'a ' + sk.fx + ' trap'} that ${m.pull ? 'pull and ' : ''}detonate near enemies for ${D}.`; break;
     case 'rain': s = `${n} ${plural(n, fx)} rain down on the target area, each dealing ${D}.`; break;

@@ -60,7 +60,7 @@ export const SKILLDATA = {
     // Tree 1: The Wilds (Companion Beasts & Primal Nature)
     [
       'Wolf Companion|summon|phys|wolf|sum=wolf n=2 max=4',
-      'Entangling Roots|curse|poison|thorn|curse=slow,stun r=1.3',
+      'Entangling Roots|curse|poison|thorn|curse=slow,stun r=1.3 hit cd=4',
       'Poison Ivy Shot|proj|poison|arrow|poison slow exp r=1.1',
       'Hawk Companion|summon|light|bird|sum=stormhawk n=2 max=2 cd=12',
       'Great Bear|summon|phys|bear|sum=bear max=1 cd=15',

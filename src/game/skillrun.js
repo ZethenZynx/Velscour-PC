@@ -374,7 +374,13 @@ export function castSkill(p, sk, L, tx, ty, opts = {}) {
       const r = 2.2 * (m.r ?? 1) * area;
       const amt = curseAmount(sk, L), dur = skillDuration(sk, L) * (1 + (morph ? morph.durPct : 0) / 100);
       const targets = w.hostiles(p.team, x, y, r);
-      for (const t of targets) for (const c of m.curse || ['amp']) applyCurse(p, t, c, amt, m.dur && ['stun', 'freeze'].includes(c) ? m.dur : dur, dmg, area);
+      for (const t of targets) {
+        // Entangling Roots is a damaging control skill. Resolve one ordinary
+        // combat hit per affected enemy at cast time; the lingering slow/stun
+        // are status effects only and must not tick damage on later frames.
+        if (m.hit) hit(p, t, roll(dmg), el, { ...o, aoe: true });
+        for (const c of m.curse || ['amp']) applyCurse(p, t, c, amt, m.dur && ['stun', 'freeze'].includes(c) ? m.dur : dur, dmg, area);
+      }
       addEffect(new Ring(x, y, 0.2, r, 0.6, E.glow, 3, { fill: true }));
       sigil(x, y, r, E);
       if (fx === 'shout') { addEffect(new Ring(x, y, 0.1, r * 1.2, 0.4, '#ffffff', 3)); sfx('roar'); }
