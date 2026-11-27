@@ -1018,7 +1018,20 @@ export function settingsDialog() {
   lf.onclick = () => { sfx('ui'); lootFilterDialog(() => { lf.textContent = `${lootFilter().on ? 'On' : 'Off'} · Set up`; }); };
   const labelFilterButton = d.box.querySelector('[data-label-filter]');
   labelFilterButton.onclick = () => { sfx('ui'); groundLabelFilterDialog(() => { labelFilterButton.textContent = `${lootLabelFilter().on ? 'On' : 'Off'} · Set up`; }); };
-  d.box.querySelector('[data-health-bars-open]').onclick = () => { sfx('ui'); openHealthBarSettings(); };
+  d.box.querySelector('[data-health-bars-open]').onclick = (event) => {
+    event.preventDefault();
+    // Open first so a broken or unavailable audio context cannot abort the
+    // settings action before the existing Health Bars window is created.
+    try {
+      openHealthBarSettings();
+    } catch (error) {
+      console.error('[health-bars] failed to open settings', error);
+      UI.dialog({ title: 'Health Bars', html: `<p>Could not open health bar settings: ${escapeHtml(error?.message || error)}</p>` });
+      return;
+    }
+    // UI feedback is optional; isolate it from the customization flow.
+    try { sfx('ui'); } catch (error) { console.warn('[health-bars] UI sound unavailable', error); }
+  };
   d.box.querySelectorAll('[data-k]').forEach((inp) => {
     inp.oninput = inp.onchange = () => {
       const k = inp.dataset.k;
