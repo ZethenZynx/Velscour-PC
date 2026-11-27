@@ -11,6 +11,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 VERSION = "0.1.8"
+STAMPED_SUFFIXES = {".js", ".mjs", ".html", ".css"}
 ASSET_EXTENSIONS = (
     "m?js|css|html|webp|png|jpe?g|gif|svg|mp3|ogg|wav|mp4|webm|json|atlas|bin|glb|gltf|woff2?"
 )
@@ -111,7 +112,7 @@ def main() -> None:
     build_id = f"pages-{commit}"
     updated = 0
     for path in output.rglob("*"):
-        if path.is_file() and path.suffix.lower() in {".js", ".html", ".css"}:
+        if path.is_file() and path.suffix.lower() in STAMPED_SUFFIXES:
             updated += rewrite_text(path, build_id)
     version_file = output / "src/data/build-version.js"
     version_text = version_file.read_text(encoding="utf-8")
