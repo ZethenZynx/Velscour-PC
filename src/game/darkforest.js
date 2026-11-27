@@ -11,7 +11,7 @@ export function createDarkForestRun(world, gen, biome, onSuccess = () => {}) {
   const run = {
     id: 'dark_forest',
     title: 'The Forest Guardian',
-    description: 'Follow the forest path to its guardian. Optional labyrinths north and south of the path hide bonus treasure; defeat the guardian to open the exit.',
+    description: 'Follow the forest path to its guardian. Optional labyrinths north and south hide deep treasure and may shelter an altar or shrine; defeat the guardian to open the exit.',
     type: 'forest',
     completed: false,
     failed: false,

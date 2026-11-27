@@ -802,7 +802,7 @@ export const game = {
   /** The one-line "what to do here" blurb for a biome (the town portal's floor picker). */
   biomeBlurb(biome) {
     if (regionOf(biome)) return regionOf(biome).portal;
-    return biome.id === 'dark_forest' ? 'Follow the main forest path to the Forest Guardian. Optional full-size labyrinths north and south of the path hold bonus treasure; defeat the guardian to open the exit.'
+    return biome.id === 'dark_forest' ? 'Follow the main forest path to the Forest Guardian. Optional full-size labyrinths north and south hold deep treasure and may shelter an altar or shrine; defeat the guardian to open the exit.'
       : biome.id === 'castle' ? 'Find your way through the castle grounds and buildings to the throne room, where the Castle Guardian waits. Defeat the guardian to open the exit.'
       : biome.id === 'overworld' ? 'Explore the hamlet and defeat the Forsaken Guardian at its center to open the exit.'
       : biome.id === 'sea_of_sand' ? 'Cross the sands and obelisk trials, then defeat the guardian to open the exit. The Scorpion King pyramid is a separate destination.'
@@ -2072,7 +2072,7 @@ export const game = {
     else if (sea) UI.log(`${world.seaRun.variant.name}: ${world.seaRun.variant.blurb} Hold the Dawnwake's deck against the Black Tide's boarders.`, '#ffe2a0');
     else if (biome.tower) UI.log(`${gen.variant.name}: ${gen.variant.epithet}. Climb the spiral stair; enemies wait along the way, then face the rooftop encounter.`, '#ffe2a0');
     else if (biome.cave) UI.log(`${gen.variant.name}: ${gen.variant.epithet}. The passages lead down to a lake under a great waterfall; the way on is a long climb to its top.`, '#ffe2a0');
-    else if (forest) UI.log('The Dark Forest closes in. Follow the main path to its guardian, or explore the optional full-size labyrinths north and south for bonus treasure.', '#c8f0a0');
+    else if (forest) UI.log('The Dark Forest closes in. Follow the main path to its guardian, or explore the optional full-size labyrinths north and south for deep treasure and a chance to find an altar or shrine.', '#c8f0a0');
     else if (castle) UI.log('The Castle walls and buildings form the route ahead. Find your way through them to the throne room, where the Castle Guardian waits; defeating it opens the exit.', '#e8d0a8');
     else if (biome.id === 'overworld') UI.log('The hamlet lies at the heart of the Forsaken Wilds. Defeat the Forsaken Guardian at its center to open the exit.', '#c8f0a0');
     else if (biome.overworld) {

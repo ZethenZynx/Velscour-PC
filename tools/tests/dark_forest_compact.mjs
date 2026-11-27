@@ -10,8 +10,9 @@ globalThis.Image = class { set src(_) { queueMicrotask(() => this.onload?.()); }
 const imp = (p) => import(pathToFileURL(path.join(root, p)));
 const { loadDarkForestTrees } = await imp('src/gfx/darkforest.js');
 const { BIOME_BY_ID } = await imp('src/data/biomes.js');
-const { generateDarkForest, DF_W, DF_H } = await imp('src/world/darkforest.js');
+const { generateDarkForest, chooseDarkForestMazeRewardSpot, DF_W, DF_H } = await imp('src/world/darkforest.js');
 const { createDarkForestRun } = await imp('src/game/darkforest.js');
+const { setupWorldObjects } = await imp('src/game/worldobjects.js');
 const { G } = await imp('src/state.js');
 await loadDarkForestTrees();
 const biome = BIOME_BY_ID.dark_forest;
@@ -27,6 +28,7 @@ for (let n = 1; n <= seeds; n++) {
   const enemies = regular.reduce((sum, s) => sum + s.n, 0);
   if (regular.length < 80 || regular.length > 110 || enemies < 220 || enemies > 340) throw Error('enemy population is outside the original forest scale at seed ' + (n * 7717 + 3) + ': ' + regular.length + ' packs, ' + enemies + ' enemies');
   if (g.chests.length !== 6) throw Error('expected two route caches and one cache in each of four optional labyrinths');
+  if (g.routeRewardSpots?.length < 20) throw Error('expected safe altar/shrine positions along the main path');
   const seen = new Uint8Array(m.w * m.h), idx = (x, y) => Math.floor(y) * m.w + Math.floor(x);
   const q = [idx(...g.start)]; seen[q[0]] = 1;
   for (let h = 0; h < q.length; h++) {
@@ -90,16 +92,67 @@ for (let n = 1; n <= seeds; n++) {
       const gapX = Math.max(0, x0 - px1, px0 - x1), gapY = Math.max(0, y0 - py1, py0 - y1);
       if (Math.hypot(gapX, gapY) < 20 || Math.hypot(maze.gate[0] - prev.gate[0], maze.gate[1] - prev.gate[1]) < 25) throw Error('adjacent labyrinths need a clear gap along the route');
     }
-    if (!g.chests.some(c => Math.hypot(c.x - maze.center[0] - 0.5, c.y - maze.center[1] - 0.5) < 2)) throw Error('each optional labyrinth must contain a reward chest');
+    const chest = g.chests.find((c) => c.mazeId === maze.id);
+    if (!chest) throw Error('each optional labyrinth must contain exactly one reward chest');
+    if (g.chests.filter((c) => c.mazeId === maze.id).length !== 1) throw Error('a maze must not receive duplicate reward chests');
+    const [mx0,my0,mx1,my1]=maze.rect,size=mx1-mx0,distances=new Int16Array(size*size);distances.fill(-1);
+    const entranceX=Math.floor(maze.entrance[0]),entranceY=Math.floor(maze.entrance[1]),startLocal=(entranceY-my0)*size+entranceX-mx0,queue=[startLocal];distances[startLocal]=0;
+    for(let head=0;head<queue.length;head++){const local=queue[head],x=mx0+local%size,y=my0+((local/size)|0),d=distances[local]+1;for(const[dx,dy]of[[1,0],[-1,0],[0,1],[0,-1]]){const X=x+dx,Y=y+dy,lx=X-mx0,ly=Y-my0;if(lx<1||ly<1||lx>=size-1||ly>=size-1||!m.walkableTile(X,Y))continue;const ni=ly*size+lx;if(distances[ni]>=0)continue;distances[ni]=d;queue.push(ni);}}
+    const chestLocal=(Math.floor(chest.y)-my0)*size+Math.floor(chest.x)-mx0,chestDepth=distances[chestLocal];
+    if(chestDepth<maze.backPathDistance-4)throw Error('maze chest is not among the deepest reachable cells at the far end');
+    if(maze.side==='north'?chest.y>=my0+size*.38:chest.y<=my0+size*.62)throw Error('maze chest is not toward the back end opposite the entrance');
+    for(const side of ['left','right']){
+      const candidates=maze.rewardCorners?.[side];if(!candidates?.length)throw Error('maze is missing an accessible back-corner altar/shrine position');
+      if(candidates.some((p)=>!m.walkable(p.x,p.y)||!seen[idx(p.x,p.y)]))throw Error('altar/shrine corner candidate is blocked or unreachable');
+    }
   }
   if (g.trees.length < 14000 || g.trees.length > 15500) throw Error('tree population drifted from the full-size forest');
   if (g.trees.some((t)=>m.walkable(t.x,t.y))) throw Error('blocking tree has no collision');
 }
 if (seeds > 1 && routeProfiles.size < Math.ceil(seeds * 0.75)) throw Error('path bends should vary across random seeds');
+let randomState=0x51a7e123,relocated=0;const relocatedMazes=new Set(),relocatedCorners=new Set();const seededRandom=()=>{randomState=(Math.imul(randomState,1664525)+1013904223)>>>0;return randomState/0x100000000;};
+const distributionGen=generateDarkForest(7,biome,tileset,0xdecafbad);
+for(let i=0;i<10000;i++){
+  const spot=chooseDarkForestMazeRewardSpot(distributionGen.labyrinths,distributionGen.chests,seededRandom);
+  if(!spot)continue;relocated++;
+  const maze=distributionGen.labyrinths.find((entry)=>entry.id===spot.mazeId),chest=distributionGen.chests.find((entry)=>entry.mazeId===maze.id);
+  if(!maze||!maze.rewardCorners[spot.side].some((p)=>p.x===spot.x&&p.y===spot.y))throw Error('relocated shrine/altar did not use a generated back corner');
+  if(Math.hypot(chest.x-spot.x,chest.y-spot.y)<8)throw Error('relocated shrine/altar overlaps its maze chest');
+  relocatedMazes.add(spot.mazeId);relocatedCorners.add(spot.side);
+}
+if(relocated<3600||relocated>4400)throw Error(`altar/shrine relocation rate should be approximately 40%, got ${relocated/100}%`);
+if(relocatedMazes.size!==4||relocatedCorners.size!==2)throw Error('maze selection or left/right corner randomization did not cover all options');
+const buildObjectWorld=(seed)=>{
+  G.char.worldObjectClaims={};
+  const gen=generateDarkForest(7,biome,tileset,seed),world={kind:'dungeon',depth:7,biome,map:gen.map,tileset,chests:gen.chests.map((ch)=>({...ch})),portals:[{x:gen.start[0],y:gen.start[1]},{x:gen.exit[0],y:gen.exit[1]}],rooms:[]};
+  return{gen,world};
+};
+const previousChar=G.char;G.char={worldObjectClaims:{}};
+{
+  const{gen,world}=buildObjectWorld(0xb451a7),realRandom=Math.random,values=[0,.1,0,.1,.1,.1,.1,.1];Math.random=()=>values.length?values.shift():.1;
+  try{
+    if(setupWorldObjects(world,gen.start,{special:true,gen})!==1)throw Error('relocated Forest shrine was not created');
+    const obj=world.chests.find((entry)=>entry.isCustomShrineAltar);
+    if(!obj||!gen.labyrinths.some((maze)=>obj.x>=maze.rect[0]&&obj.x<maze.rect[2]&&obj.y>=maze.rect[1]&&obj.y<maze.rect[3]))throw Error('selected Forest shrine did not relocate into a maze');
+    const maze=gen.labyrinths.find((entry)=>['left','right'].some((side)=>entry.rewardCorners[side].some((point)=>point.x===obj.x&&point.y===obj.y)));
+    if(!maze)throw Error('Forest shrine did not use a generated back corner');
+    if(world.chests.filter((entry)=>entry.isCustomShrineAltar).length!==1)throw Error('relocation duplicated the existing Forest shrine');
+  }finally{Math.random=realRandom;}
+}
+{
+  const{gen,world}=buildObjectWorld(0xb451a8),realRandom=Math.random,values=[0,.99];Math.random=()=>values.length?values.shift():0;
+  try{
+    if(setupWorldObjects(world,gen.start,{special:true,gen})!==1)throw Error('main-route Forest shrine was not retained');
+    const obj=world.chests.find((entry)=>entry.isCustomShrineAltar);
+    if(!obj||gen.labyrinths.some((maze)=>obj.x>=maze.rect[0]-2.5&&obj.x<maze.rect[2]+2.5&&obj.y>=maze.rect[1]-2.5&&obj.y<maze.rect[3]+2.5))throw Error('unrelocated Forest shrine did not remain along the main path');
+    if(!world.map.walkable(obj.x,obj.y)||!world.map.findPath(gen.start[0],gen.start[1],obj.x,obj.y,12000))throw Error('main-route Forest shrine is not accessible');
+  }finally{Math.random=realRandom;}
+}
+G.char=previousChar;
 const guardian = { rank:'boss', dead:false, x:179.5, y:12.5 }, world = { boss:guardian };
 let opened = false;
 const run = createDarkForestRun(world, {}, biome, () => { opened = true; });
 guardian.dead = true;
 run.bossDefeated(guardian);
 if (!run.completed || run.active || !opened) throw Error('guardian defeat did not complete the Forest run');
-console.log('PASS full-size Dark Forest: '+seeds+' seeds, connected boss route, six staggered on-route landmarks, four alternating side labyrinths with reward chests, exit callback verified');
+console.log(`PASS full-size Dark Forest: ${seeds} maze seeds; maze chests use deep walkable path-distance placements; altar/shrine corners are separated; relocation rate ${relocated/100}% across 10,000 rolls; guardian exit callback verified`);

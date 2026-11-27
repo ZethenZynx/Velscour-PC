@@ -11,6 +11,70 @@ const TREE_TYPES = [
 ];
 const clamp = (v, lo, hi) => Math.max(lo, Math.min(hi, v));
 
+/** Walk the maze from its gate and reserve deep, walkable reward positions. */
+function mazeRewardLayout(map, maze) {
+  const [ox, oy, ex, ey] = maze.rect, size = ex - ox;
+  const area = size * size, distance = new Int16Array(area); distance.fill(-1);
+  const queue = new Int32Array(area), startX = maze.gate[0] + 1;
+  const startY = maze.side === 'north' ? oy + size - 2 : oy + 1;
+  const start = (startY - oy) * size + startX - ox;
+  if (!map.walkableTile(startX, startY)) return null;
+  let head = 0, tail = 0; queue[tail++] = start; distance[start] = 0;
+  while (head < tail) {
+    const local = queue[head++], x = ox + local % size, y = oy + ((local / size) | 0), nextD = distance[local] + 1;
+    for (const [dx, dy] of [[1,0],[-1,0],[0,1],[0,-1]]) {
+      const nx = x + dx, ny = y + dy, lx = nx - ox, ly = ny - oy;
+      if (lx < 1 || ly < 1 || lx >= size - 1 || ly >= size - 1 || !map.walkableTile(nx, ny)) continue;
+      const ni = ly * size + lx;
+      if (distance[ni] >= 0) continue;
+      distance[ni] = nextD; queue[tail++] = ni;
+    }
+  }
+  let maxDistance = 0;
+  for (let i = 0; i < tail; i++) maxDistance = Math.max(maxDistance, distance[queue[i]]);
+  const backMinY = maze.side === 'north' ? 1 : size - 8;
+  const backMaxY = maze.side === 'north' ? 7 : size - 2;
+  const inBackBand = (x, y) => y >= backMinY && y <= backMaxY;
+  const cornerCandidates = (side) => {
+    const out = [];
+    for (let y = backMinY; y <= backMaxY; y++) for (let x = side === 'left' ? 1 : size - 8; x <= (side === 'left' ? 7 : size - 2); x++) {
+      const i = y * size + x, d = distance[i];
+      if (d >= 0) out.push({ x: ox + x + 0.5, y: oy + y + 0.5, pathDistance: d });
+    }
+    return out;
+  };
+  const left = cornerCandidates('left'), right = cornerCandidates('right');
+  if (!left.length || !right.length) return null;
+  const deepChestCandidates = [];
+  for (let local = 0; local < area; local++) {
+    const d = distance[local];
+    if (d < 0) continue;
+    const x = local % size, y = (local / size) | 0;
+    if (!inBackBand(x, y)) continue;
+    const px = ox + x + 0.5, py = oy + y + 0.5;
+    deepChestCandidates.push({ x: px, y: py, pathDistance: d });
+  }
+  if (!deepChestCandidates.length) return null;
+  const backDepth = Math.max(...deepChestCandidates.map((point) => point.pathDistance));
+  const deepestChestCandidates = deepChestCandidates.filter((point) => point.pathDistance >= backDepth - 4);
+  return { entrance: [startX + 0.5, startY + 0.5], maxPathDistance: maxDistance,
+    backPathDistance: backDepth, rewardCorners: { left, right }, deepChestCandidates: deepestChestCandidates };
+}
+
+/** Select an existing Dark Forest altar/shrine relocation; null keeps it on the main route. */
+export function chooseDarkForestMazeRewardSpot(mazes, chests = [], random = Math.random) {
+  if (!Array.isArray(mazes) || !mazes.length || random() >= 0.4) return null;
+  const choices = [];
+  for (const maze of mazes) for (const side of ['left','right']) {
+    for (const spot of maze.rewardCorners?.[side] || []) {
+      if (chests.every((chest) => Math.hypot(chest.x - spot.x, chest.y - spot.y) >= 8)) choices.push({ maze, side, spot });
+    }
+  }
+  if (!choices.length) return null;
+  const { maze, side, spot } = choices[Math.floor(random() * choices.length)];
+  return { x: spot.x, y: spot.y, mazeId: maze.id, side, pathDistance: spot.pathDistance };
+}
+
 export function generateDarkForest(depth, biome, tileset, seed) {
   if (tileset.pack !== 'dark_forest' || !darkForestTreesReady()) throw new Error('The Dark Forest art must load before generating it.');
   const rng = new RNG(seed >>> 0), map = new TileMap(DF_W, DF_H), N = DF_W * DF_H;
@@ -287,11 +351,15 @@ export function generateDarkForest(depth, biome, tileset, seed) {
         if (tx > 0 && ty > 0 && tx < DF_W - 1 && ty < DF_H - 1) { map.block[ty * DF_W + tx] = 0; map.v[ty * DF_W + tx] = floor(rng.pick(trailFloors)); }
       }
     }
-    maze.center = [ox + size / 2, oy + size / 2];
     maze.rect = [ox, oy, ox + size, oy + size];
+    maze.center = [ox + size / 2, oy + size / 2];
+    const rewardLayout = mazeRewardLayout(map, maze);
+    if (!rewardLayout) throw new Error(`Could not find accessible deep reward positions in Dark Forest labyrinth ${maze.id}.`);
+    Object.assign(maze, rewardLayout);
     mazeCells.push(maze);
-    // Each detour rewards exploration with its own cache, away from the gate.
-    chests.push({ x: maze.center[0] + 0.5, y: maze.center[1] + 0.5, rare: rng.chance(0.25) });
+    // Place each cache deep in the labyrinth, using maze-path distance from its gate.
+    const cacheSpot = rng.pick(maze.deepChestCandidates);
+    chests.push({ x: cacheSpot.x, y: cacheSpot.y, rare: rng.chance(0.25), mazeId: maze.id });
   }
 
   map.walls = []; map.doors = []; map.segments = []; map.kind ??= new Uint8Array(N);
@@ -315,7 +383,12 @@ export function generateDarkForest(depth, biome, tileset, seed) {
   const cells = Array.from({ length: bw * bh }, () => []);
   for (const tree of trees) cells[Math.floor(tree.y / B) * bw + Math.floor(tree.x / B)].push(tree);
   map.treeCells = { B, bw, bh, cells };
-  return { map, props, trees, buildings:[], wallHangings:[], townTiles:null, looks, spawns, chests, torches:[], labyrinths:mazeCells, landmarks, sideAreas, routeBends,
+  const routeRewardSpots = Array.from(reachable).filter((i) => {
+    const x = i % DF_W, y = (i / DF_W) | 0, px = x + 0.5, py = y + 0.5;
+    return distToRoute(px, py) <= 3.2 && !inMaze(px, py, 3) && !nearMazeSpur(px, py, 4) && map.walkableTile(x, y)
+      && !nearLandmark(px, py, 6) && !nearSideSpur(px, py, 3);
+  }).map((i) => ({ x: i % DF_W + 0.5, y: ((i / DF_W) | 0) + 0.5 }));
+  return { map, props, trees, buildings:[], wallHangings:[], townTiles:null, looks, spawns, chests, torches:[], labyrinths:mazeCells, routeRewardSpots, landmarks, sideAreas, routeBends,
     start, boss, exit, shrine:boss, sites:[], scenarioId:0, seed, layoutSeed:seed };
 }
 

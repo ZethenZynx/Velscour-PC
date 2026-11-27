@@ -114,7 +114,7 @@ export function setupHappenings(world, start, gen) {
   const affixCascade = worldHeresies(world).includes('omens');
   const torment = affixCascade && depth > FINAL_DEPTH;
   const specialObjects = !!(world.raid || gen.raid || world.biome.overworld || world.biome.challenge || world.biome.cave || world.biome.tower || world.biome.id === 'throne');
-  setupWorldObjects(world, start, { special: specialObjects });
+  setupWorldObjects(world, start, { special: specialObjects, gen });
   if (world.kind !== 'dungeon') return;
   let eventRoom = gen.eventRoom;
   if (world.biome.id === 'dark_forest' && gen.sideAreas?.length) {

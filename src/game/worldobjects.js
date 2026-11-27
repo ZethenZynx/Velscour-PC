@@ -13,6 +13,7 @@ import { GEMS, goldPile, goldScale, itemName, rarityAt } from '../data/items.js'
 import { depthLevel } from '../data/depth.js';
 import { UI } from '../ui/ui.js';
 import { shrineBuffDescription, shrineFloatingMessage, showShrineActivationMessage } from './shrineeffects.js';
+import { chooseDarkForestMazeRewardSpot } from '../world/darkforest.js';
 
 const RARITIES = [
   { name: 'Common', chance: 45, scale: 1, color: '#b8b8b8' },
@@ -399,13 +400,14 @@ function drawObject(world,o,ctx,sx,sy) {
   if(o.revealedUntil>(world.time||0)){ctx.strokeStyle=o.color;ctx.lineWidth=2;ctx.beginPath();ctx.ellipse(sx,sy,24,10,0,0,TAU);ctx.stroke();}
 }
 
-function roomSpots(world,start,count,special) {
+function roomSpots(world,start,count,special,excludeRects=[]) {
   const map=world.map,out=[],rooms=(world.rooms||[]).filter(r=>r.w||r.h).sort(()=>Math.random()-.5);
+  const excluded=(x,y)=>excludeRects.some(([x0,y0,x1,y1])=>x>=x0-2.5&&y>=y0-2.5&&x<x1+2.5&&y<y1+2.5);
   for(const r of rooms){if(out.length>=count)break;
     const cx=r.mx??r.cx??r.x+(r.w||1)/2,cy=r.my??r.cy??r.y+(r.h||1)/2;
     if(dist(cx,cy,start[0],start[1])<(special?6:8))continue;
     let [x,y]=[cx+rand(-1,1),cy+rand(-1,1)];if(!map.walkable(x,y))[x,y]=map.randomNear(cx,cy,2);
-    if(!map.walkable(x,y)||out.some(q=>dist(q[0],q[1],x,y)<5)||world.chests.some(c=>dist(c.x,c.y,x,y)<3)||(world.portals||[]).some(p=>dist(p.x,p.y,x,y)<5))continue;
+    if(!map.walkable(x,y)||excluded(x,y)||out.some(q=>dist(q[0],q[1],x,y)<5)||world.chests.some(c=>dist(c.x,c.y,x,y)<3)||(world.portals||[]).some(p=>dist(p.x,p.y,x,y)<5))continue;
     if(!map.findPath(start[0],start[1],x,y,12000))continue;
     out.push([x,y]);
   }
@@ -426,7 +428,7 @@ function roomSpots(world,start,count,special) {
     let available=tail;
     for(let tries=0;tries<Math.min(tail,160)&&out.length<count;tries++){
       const qi=randi(0,available-1),i=queue[qi];queue[qi]=queue[--available];const x=i%W+.5,y=Math.floor(i/W)+.5;
-      if(dist(x,y,start[0],start[1])<(special?6:8)||out.some(q=>dist(q[0],q[1],x,y)<5)||world.chests.some(c=>dist(c.x,c.y,x,y)<3)||(world.portals||[]).some(p=>dist(p.x,p.y,x,y)<5))continue;
+      if(excluded(x,y)||dist(x,y,start[0],start[1])<(special?6:8)||out.some(q=>dist(q[0],q[1],x,y)<5)||world.chests.some(c=>dist(c.x,c.y,x,y)<3)||(world.portals||[]).some(p=>dist(p.x,p.y,x,y)<5))continue;
       if(!map.findPath(start[0],start[1],x,y,4000))continue;out.push([x,y]);
     }
   }
@@ -434,7 +436,7 @@ function roomSpots(world,start,count,special) {
 }
 
 /** Add one single-use object to a floor, in its reserved shrine room when the dungeon has one. */
-export function setupWorldObjects(world,start,{special=false}={}) {
+export function setupWorldObjects(world,start,{special=false,gen=null}={}) {
   if(!world?.map||!world.tileset||world.kind==='town'||!start)return 0;
   world.chests ||= [];
   const claimKey=makeClaimKey(world),claims=G.char?.worldObjectClaims||{};
@@ -442,17 +444,31 @@ export function setupWorldObjects(world,start,{special=false}={}) {
   // Every ordinary dungeon reserves one authored shrine chamber for exactly one new object.
   // Special areas keep their separate placement because many have no room grid.
   const shrineRoom=!special?(world.rooms||[]).find(r=>r.shrineRoom):null;
-  const spots=[];
+  const def=pick(CATALOG),isForest=world.biome?.id==='dark_forest'&&Array.isArray(gen?.labyrinths),spots=[];
+  if(isForest&&labelsAsShrineOrAltar(def)){
+    const mazeSpot=chooseDarkForestMazeRewardSpot(gen.labyrinths,world.chests);
+    if(mazeSpot)spots.push([mazeSpot.x,mazeSpot.y]);
+    else if(gen.routeRewardSpots?.length){
+      const routes=[...gen.routeRewardSpots].sort(()=>Math.random()-.5);
+      for(const point of routes.slice(0,120)){
+        if(dist(point.x,point.y,start[0],start[1])<8||world.chests.some(c=>dist(c.x,c.y,point.x,point.y)<3)||(world.portals||[]).some(p=>dist(p.x,p.y,point.x,point.y)<5))continue;
+        // These coordinates were selected from the generator's entrance-connected floor set;
+        // avoid rerunning a costly A* search across the 192x192 overworld for this one object.
+        if(world.map.walkable(point.x,point.y)){spots.push([point.x,point.y]);break;}
+      }
+    }
+  }
   if(shrineRoom){
     const cx=shrineRoom.mx??shrineRoom.x+(shrineRoom.w||1)/2,cy=shrineRoom.my??shrineRoom.y+(shrineRoom.h||1)/2;
     let x=Math.floor(cx)+.5,y=Math.floor(cy)+.5;
     if(!world.map.walkable(x,y))[x,y]=world.map.randomNear(cx,cy,2);
     if(world.map.walkable(x,y)&&world.map.findPath(start[0],start[1],x,y,12000))spots.push([x,y]);
   }
+  if(!spots.length)spots.push(...roomSpots(world,start,1,special,isForest&&labelsAsShrineOrAltar(def)?gen.labyrinths.map((maze)=>maze.rect):[]));
   if(!spots.length)spots.push(...roomSpots(world,start,1,special));
   let made=0;
   for(const [x,y] of spots){
-    const def=pick(CATALOG),isDungeonShrine=!!shrineRoom&&!special,isCustomShrineAltar=labelsAsShrineOrAltar(def),o={...def,x,y,opened:false,reach:1.55,far:34,label:def.name,dot:def.color,labelColor:'#d4b8df',labelHeight:isDungeonShrine?82:74,rarity:rollRarity(),claimKey,spr:null,isDungeonShrine,isCustomShrineAltar};
+    const isDungeonShrine=!!shrineRoom&&!special,isCustomShrineAltar=labelsAsShrineOrAltar(def),o={...def,x,y,opened:false,reach:1.55,far:34,label:def.name,dot:def.color,labelColor:'#d4b8df',labelHeight:isDungeonShrine?82:74,rarity:rollRarity(),claimKey,spr:null,isDungeonShrine,isCustomShrineAltar};
     o.label=`${rar(o.rarity).name} ${o.name}`;o.spr=isDungeonShrine?findShrineSprite(world,o):findSprite(world,o);
     o.draw=(ctx,sx,sy)=>drawObject(world,o,ctx,sx,sy);
     o.use=()=>{if(o.opened||G.world!==world)return;useObject(world,o);};
