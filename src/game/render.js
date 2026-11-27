@@ -1382,7 +1382,7 @@ export function renderWorld(ctx, world) {
   world._perfVisibleEnemyCount = visibleEnemiesDrawn;
   if (profiling) markRenderPhase('renderSort');
   let q = hq;
-  xray.n = 0; xray.on = true; // creatures note their rims and bars for the see-through layer (drawSeeThrough)
+  xray.n = 0; xray.barN = 0; xray.on = true; // rims and overhead bars are queued independently for the see-through layer
   let depthDrawChunkStarted = profiling ? performance.now() : 0, depthDrawChunkTotal = 0, depthDrawChunkMax = 0, depthDrawChunkCount = 0;
   const depthDrawSamples = profiling ? (frame.profileDrawSamples || (frame.profileDrawSamples = new Uint16Array(16))) : null;
   if (depthDrawSamples) depthDrawSamples.fill(0);
@@ -1568,7 +1568,7 @@ const seeBox = [0, 0, 0, 0], seeLast = [0, 0, 0, 0];
 function drawSeeThrough(ctx, world, camT, hq, tx0, ty0, tx1, ty1) {
   const st = G.settings, W = ctx.canvas.width, H = ctx.canvas.height;
   const walls = st.wallLines === true && world.kind === 'dungeon' && !world.biome.overworld;
-  if (!xray.n && !walls) return;
+  if (!xray.n && !xray.barN && !walls) return;
   if (!seeCanvas || seeCanvas.width !== W || seeCanvas.height !== H) { seeCanvas = makeCanvas(W, H); seeLast.fill(0); }
   const oc = seeCanvas.getContext('2d'), box = seeBox;
   oc.setTransform(1, 0, 0, 1, 0, 0);

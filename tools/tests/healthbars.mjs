@@ -3,6 +3,7 @@ import { existsSync, readFileSync } from 'node:fs';
 import { G } from '../../src/state.js';
 import { BOSS_HEALTH_LAYOUT, DEFAULT_HEALTH_BAR_SETTINGS, HEALTH_BAR_CLASSES, bossFrameTrackBounds, drawHealthBarCanvas, healthBarCanvasLayout, healthBarClass, healthBarSettings, healthBarText, healthBarSummaryText, healthBarValueText, healthBarVisible, isTreasureImpEntity, normalizeHealthBarSettings, overheadHealthBarDrawEligible, overheadHealthBarEligible, preloadHealthBarArt } from '../../src/ui/healthbars.mjs';
 import { TREASURE_IMPS } from '../../src/data/treasureimps.js';
+import { Creature, drawXray, xray } from '../../src/game/creature.js';
 
 globalThis.localStorage ||= { getItem: () => null, setItem: () => {} };
 
@@ -86,6 +87,7 @@ const hud = readFileSync(new URL('../../src/ui/hud.js', import.meta.url), 'utf8'
 const settings = readFileSync(new URL('../../src/ui/healthbar-settings.mjs', import.meta.url), 'utf8');
 const css = readFileSync(new URL('../../css/style.css', import.meta.url), 'utf8');
 const creatureDraw = readFileSync(new URL('../../src/game/creature.js', import.meta.url), 'utf8');
+const worldRender = readFileSync(new URL('../../src/game/render.js', import.meta.url), 'utf8');
 const impFactory = readFileSync(new URL('../../src/game/happenings.js', import.meta.url), 'utf8');
 assert.match(html, /id="boss-emblem"/);
 assert.match(html, /id="boss-health-text"/);
@@ -123,6 +125,7 @@ assert.match(readFileSync(new URL('../../src/ui/healthbars.mjs', import.meta.url
 assert.doesNotMatch(creatureDraw, /e\.bc\s*=\s*col/, 'the old bar-color variable is not referenced after the health-bar renderer replaced it');
 assert.match(creatureDraw, /\[health-bar\] overhead setup failed; continuing creature rendering/, 'health-bar setup failures are isolated from creature/world rendering');
 assert.match(creatureDraw, /\[health-bar\] overhead bar failed; continuing world rendering/, 'deferred bar failures are isolated from the world render pass');
+assert.match(worldRender, /if \(!xray\.n && !xray\.barN && !walls\) return;/, 'the see-through pass runs even when a creature has a bar but no outline record');
 let restoreCount = 0;
 const throwingContext = {
   globalAlpha: 1,
@@ -179,6 +182,52 @@ for (const entry of HEALTH_BAR_CLASSES) {
 }
 assert.equal(normalizeHealthBarSettings(null).info.showClassificationIconsOverhead, false, 'reset to defaults turns overhead classification icons off');
 assert.equal(TREASURE_IMPS.length, 20, 'all registered Treasure Imp variants are included in the family audit');
+const camT = { a: 1, b: 0, c: 0, d: 1, e: 0, f: 0 };
+function queuedBarContext() {
+  const ctx = recordingContext();
+  ctx.canvas = { width: 640, height: 480 };
+  ctx.setTransform = () => {};
+  ctx.imageCalls = [];
+  ctx.drawImage = (img, ...args) => ctx.imageCalls.push({ src: img._src, args });
+  ctx.fillRects = [];
+  ctx.fillRect = (...args) => ctx.fillRects.push({ color: ctx.currentFill, args });
+  Object.defineProperty(ctx, 'fillStyle', { get() { return ctx.currentFill; }, set(value) { ctx.currentFill = value; ctx.styles.push(value); } });
+  return ctx;
+}
+function exerciseLiveOverheadPath(variant, fraction, theme) {
+  const imp = Object.create(Creature.prototype);
+  Object.assign(imp, { id: variant.id, team: 'enemy', treasureImp: true, impVariant: variant.id,
+    goblin: true, rank: 'unique', hp: 100 * fraction, maxHp: 100, targetable: false,
+    dead: false, hidden: false, alpha: undefined, status: {}, curses: {}, animT: 0, scale: 1 });
+  G.settings.healthBars = normalizeHealthBarSettings({ theme, overhead: { smoothHealthDepletion: false } });
+  xray.on = true; xray.n = 0; xray.barN = 0;
+  const ctx = queuedBarContext();
+  // This is the real creature overhead entry point. Untargetable imps produce
+  // no outline/rim record, which exposed the previous coupling bug.
+  imp.drawOverhead(ctx, 240, 120, 60);
+  assert.equal(xray.n, 0, `${variant.id} does not require an outline entry to queue its bar`);
+  assert.equal(xray.barN, 1, `${variant.id} reaches the deferred overhead bar renderer`);
+  const queued = xray.bars[0];
+  assert.equal(queued.entity, imp, `${variant.id} queued entity is the live imp`);
+  assert.equal(queued.alpha, 1, `${variant.id} bar receives visible opacity`);
+  assert.ok(Number.isFinite(queued.x) && Number.isFinite(queued.y) && queued.w > 0 && queued.h > 0,
+    `${variant.id} bar receives valid anchored coordinates and dimensions`);
+  assert.equal(queued.x + queued.w / 2, 240, `${variant.id} bar follows its current creature position`);
+  const box = [Infinity, Infinity, -Infinity, -Infinity];
+  drawXray(ctx, camT, true, box, false);
+  assert.equal(xray.barN, 0, `${variant.id} queue is released after rendering`);
+  if (theme === 'velscour') {
+    const fill = ctx.imageCalls.find(({ src, args }) => src.endsWith('fill-emerald.webp') && args.length === 8);
+    const empty = ctx.imageCalls.find(({ src, args }) => src.endsWith('overhead-empty.webp') && args.length === 4);
+    assert.ok(fill, `${variant.id} actual deferred renderer selects the textured green fill`);
+    assert.ok(empty, `${variant.id} actual deferred renderer provides a health track`);
+    assert.ok(Math.abs(fill.args[6] - empty.args[2] * fraction) < 1e-6,
+      `${variant.id} actual renderer scales green fill for ${Math.round(fraction * 100)}% health`);
+    assert.ok(!ctx.imageCalls.some(({ src }) => src.endsWith('/imp.webp')),
+      `${variant.id} has no classification icon when the optional icon setting is off`);
+  } else assert.ok(ctx.styles.includes('#128d36'), `${variant.id} Classic live renderer uses its green fill`);
+  return { imp, ctx, queued };
+}
 for (const variant of TREASURE_IMPS) {
   for (const theme of ['velscour', 'classic']) {
     G.settings.healthBars = normalizeHealthBarSettings({ theme });
@@ -191,6 +240,7 @@ for (const variant of TREASURE_IMPS) {
     assert.equal(overheadHealthBarDrawEligible({ ...imp, ghostDraw: true }), false, `${variant.id} still respects ghost rendering exclusions`);
     for (const fraction of [1, 0.5, 0.08]) {
       imp.hp = imp.maxHp * fraction;
+      exerciseLiveOverheadPath(variant, fraction, theme);
       const ctx = recordingContext();
       drawHealthBarCanvas(ctx, imp, 0, 0, 90, 12, { system: 'overhead', forceFraction: fraction });
       if (theme === 'velscour') {
@@ -200,6 +250,18 @@ for (const variant of TREASURE_IMPS) {
     }
   }
 }
+const filteredLiveImp = Object.create(Creature.prototype);
+Object.assign(filteredLiveImp, { team: 'enemy', treasureImp: true, impVariant: 'treasure', rank: 'unique',
+  hp: 100, maxHp: 100, targetable: false, dead: false, status: {}, curses: {}, animT: 0, scale: 1 });
+assert.equal(healthBarClass(filteredLiveImp).id, 'imp', 'the live family classification never selects the boss bar');
+xray.on = true; xray.n = 0; xray.barN = 0;
+G.settings.healthBars = normalizeHealthBarSettings({ classes: { imp: false } });
+filteredLiveImp.drawOverhead(queuedBarContext(), 240, 120, 60);
+assert.equal(xray.barN, 0, 'the live rendering path honors the Treasure Imp visibility checkbox');
+G.settings.healthBars = normalizeHealthBarSettings({ overhead: { visibility: 'hidden' } });
+filteredLiveImp.drawOverhead(queuedBarContext(), 240, 120, 60);
+assert.equal(xray.barN, 0, 'the live rendering path honors hidden overhead mode');
+G.settings.healthBars = normalizeHealthBarSettings();
 const escapedImp = { team: 'enemy', treasureImp: true, dungeonEventImpEscaped: true, targetable: false };
 assert.equal(overheadHealthBarEligible(escapedImp), false, 'an escaped/despawned imp does not keep a stale health bar');
 const visibilityProbeImp = { team: 'enemy', treasureImp: true, hp: 100, maxHp: 100, targetable: false };

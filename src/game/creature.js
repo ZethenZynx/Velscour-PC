@@ -161,7 +161,7 @@ export function drawRim(ctx, col, img, sx, sy, sw, sh, dx, dy, dw, dh, grow = 1,
 // in depth order; after the spells and the lighting they are laid over the whole scene again, every body cutting out
 // what was laid before it, so a hero, monster or pet shows through novas, walls and darkness but never over a nearer
 // body. on: noting (the world's depth pass only); list[0..n): {who, t (transform), a (alpha), col, o, img, src/dst rect, bar}.
-export const xray = { on: false, n: 0, list: [] };
+export const xray = { on: false, n: 0, list: [], barN: 0, bars: [] };
 // the device px bounds of rect (x, y, w, h) under transform t, written to out at i
 const bounds = (out, i, t, x, y, w, h) => {
   out[i] = out[i + 1] = Infinity; out[i + 2] = out[i + 3] = -Infinity;
@@ -222,8 +222,30 @@ export function drawXray(oc, camT, rings, box, under) {
     }
     e.who = e.img = e.t = e.barCreature = null; e.bar = false; // nothing held past the frame
   }
+  // Bars without a matching outline record need their own queue. A creature
+  // can legitimately have no outline record (Treasure Imps while untargetable
+  // are one case), so drawing its bar back into the depth pass lets walls and
+  // top-layer effects cover it. Bars attached to normal outline records retain
+  // their existing depth/occlusion behavior above.
+  for (let i = 0; i < xray.barN; i++) {
+    const bar = xray.bars[i];
+    if (!bar?.entity) continue;
+    oc.setTransform(camT);
+    oc.globalCompositeOperation = 'source-over';
+    oc.globalAlpha = Math.max(0.5, bar.alpha);
+    try {
+      drawOverheadHealthBar(oc, bar.entity, bar.x, bar.y, bar.w, bar.h);
+      lay(camT, bar.x - 1, bar.y, bar.w + 2, bar.h);
+    } catch (error) {
+      if (!healthBarRenderErrorReported) {
+        healthBarRenderErrorReported = true;
+        console.error('[health-bar] overhead bar failed; continuing world rendering', error);
+      }
+    }
+    bar.entity = null;
+  }
   oc.globalCompositeOperation = 'source-over'; oc.globalAlpha = 1;
-  xray.n = 0;
+  xray.n = 0; xray.barN = 0;
 }
 export class Creature {
   constructor(o = {}) {
@@ -714,9 +736,18 @@ export class Creature {
       bw *= kb; bh *= kb;
       const x = px - bw / 2, y = py - 4 * kb - bh + appearance.verticalOffset;
       this.barTop = y; this.barHeight = bh;
-      const e = xray.on && xray.n && xray.list[xray.n - 1];
-      if (e && e.who === this) { e.bar = true; e.barCreature = this; e.bx = x; e.by = y; e.bw = bw; e.bh = bh; }
-      else drawOverheadHealthBar(ctx, this, x, y, bw, bh);
+      if (xray.on) {
+        const outline = xray.n && xray.list[xray.n - 1];
+        if (outline?.who === this) {
+          outline.bar = true; outline.barCreature = this;
+          outline.bx = x; outline.by = y; outline.bw = bw; outline.bh = bh;
+        } else {
+          const i = xray.barN++;
+          const bar = xray.bars[i] || (xray.bars[i] = {});
+          bar.entity = this; bar.x = x; bar.y = y; bar.w = bw; bar.h = bh;
+          bar.alpha = this.alpha === undefined ? 1 : this.alpha;
+        }
+      } else drawOverheadHealthBar(ctx, this, x, y, bw, bh);
     } catch (error) {
       this.barTop = null; this.barHeight = 0;
       if (!healthBarRenderErrorReported) {
