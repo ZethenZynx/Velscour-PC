@@ -12,17 +12,17 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 VERSION = "0.1.8"
 ASSET_EXTENSIONS = (
-    "js|css|html|webp|png|jpe?g|gif|svg|mp3|ogg|wav|mp4|webm|json|atlas|bin|glb|gltf|woff2?"
+    "m?js|css|html|webp|png|jpe?g|gif|svg|mp3|ogg|wav|mp4|webm|json|atlas|bin|glb|gltf|woff2?"
 )
 LOCAL_REFERENCE = re.compile(
     rf"(?P<quote>[\"'`])(?P<url>(?:\.{1,2}/)*(?:assets|vendor|css)/[^\"'`\r\n]*?\.(?:{ASSET_EXTENSIONS}))(?P=quote)",
     re.IGNORECASE,
 )
 RELATIVE_MODULE = re.compile(
-    r"(?P<quote>[\"'`])(?P<url>(?:\.{1,2}/)[^\"'`\r\n]*?\.js)(?P=quote)"
+    r"(?P<quote>[\"'`])(?P<url>(?:\.{1,2}/)[^\"'`\r\n]*?\.m?js)(?P=quote)"
 )
 THREE_ADDON_MODULE = re.compile(
-    r"(?P<quote>[\"'`])(?P<url>three/addons/[^\"'`\r\n]*?\.js)(?P=quote)"
+    r"(?P<quote>[\"'`])(?P<url>three/addons/[^\"'`\r\n]*?\.m?js)(?P=quote)"
 )
 CSS_URL = re.compile(r"url\(\s*(?P<quote>[\"']?)(?P<url>[^\"')]+)(?P=quote)\s*\)", re.IGNORECASE)
 
