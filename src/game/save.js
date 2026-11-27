@@ -240,7 +240,7 @@ export function newCharData(classId, name) {
     tabs: Array(TAB_SLOTS).fill(null), tabAt: 0, // the Bard's Tabs: locked Music Sheets he plays (data/tabs.js)
     gold: 150, potions: { hp: 6, mp: 4, rejuv: 1, fury: 1 },
     depth: 1, deepest: 0, nextBiome: 'catacombs', biomeBag: [], cleared: {}, visitedAct2Town: false, act2AutoTravelDone: false, visitedAct4Town: false, act4AutoTravelDone: false, lastTown: 'act1', dungeonAffixes: [], nextAffixes: [], greedLevel: 0, greed: 0, greedSystemV1: true, greedAffixPreview: null, greedAffixPreviews: {}, greedPortalDestinations: {}, overworldMisses: 0, overworldLastVisit: null, seaOfSandRuns: {}, darkForestRuns: {}, wandererBounties: {}, npcEncounterDepths: {}, treasureImpDepths: [], treasureImpGuaranteedAreas: [], treasureImpRandomAreas: [], treasureImpGuaranteedPending: {}, treasureImpRandomCheckedAreas: [], treasureImpRandomPending: {}, treasureImpTutorialShown: false, townVictoryFireworksPending: false, townVictoryFireworksDone: false, breach: { best: 0, cleared: {} },
-    heresy: { on: [] }, rifts: { open: 1, best: 0, cleared: {}, bestTime: {}, runs: 0, fails: 0, deaths: 0 }, keys: 0, unbound: { wins: 0, best: 0 }, unboundExploration: { depth: 1, deepest: 1, cleared: {} }, sigilDropLevels: [], experienceMarks: { earned: 0, xp: 0 }, // per-hero post-level-cap progression; Mark currency itself remains account-wide
+    heresy: { on: [] }, rifts: { open: 1, best: 0, cleared: {}, bestTime: {}, runs: 0, fails: 0, deaths: 0 }, keys: 0, unbound: { wins: 0, best: 0 }, unboundExploration: { depth: 1, deepest: 1, cleared: {} }, sigilDropLevels: [], experienceMarks: { earned: 0, xp: 0 }, infernalMarkReconciliationV1: true, // new heroes use current rules without a retroactive award
     kills: 0, deaths: 0, created: Date.now(), lastPlayed: Date.now(), tips: {}, critterTutorialSeen: false, critterArrowEncounters: 0, wdmg: 1,
   };
   c.equip.weapon = rollItem(1, { slot: 'weapon', base: C.weapon, rarity: 0 });
@@ -404,6 +404,7 @@ export function migrate(c) {
     earned: Number.isFinite(earnedMarks) ? Math.max(0, Math.floor(earnedMarks)) : 0,
     xp: Number.isFinite(progressXp) ? Math.max(0, progressXp) : 0,
   };
+  c.infernalMarkReconciliationV1 = c.infernalMarkReconciliationV1 === true;
   c.dungeonAffixes = normalizeDungeonAffixIds(c.dungeonAffixes);
   c.nextAffixes = normalizeDungeonAffixIds(c.nextAffixes);
   const greedLevel = Math.max(0, Math.min(5, Math.floor(Number(c.greedLevel ?? c.greed) || 0)));

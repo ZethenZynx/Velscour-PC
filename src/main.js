@@ -29,6 +29,7 @@ import { performanceProfilerEnabled, profileBeginFrame, profileEnd, profileFinis
 import { observeAdaptivePerformance, performanceTier } from './core/performancequality.mjs';
 import { applyPerformanceQuality } from './gfx/vfx.js';
 import { ensureJewelBoxMigration } from './game/jewelboxstorage.mjs';
+import { reconcileInfernalMarksOnce } from './game/mark-reconciliation.mjs';
 import { renderResolutionScale } from './core/render-resolution.mjs';
 
 function resize() {
@@ -358,6 +359,7 @@ async function boot() {
     if (message) message.textContent = `The shared Jewel Box could not be migrated safely. Your character saves and migration backup are preserved. Reload to retry. ${jewelBoxMigration.error?.message || ''}`;
     return;
   }
+  reconcileInfernalMarksOnce();
   HUD.init();
   applyUILayoutSettings();
   applyVolumes();

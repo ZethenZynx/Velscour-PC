@@ -280,6 +280,28 @@ export function saveMarkXp() {
   xpDirty = false; xpSaved = Date.now();
   return true;
 }
+
+/** Apply only XP already present in a saved level-cap progress field but not yet converted into Marks. */
+export function reconcileRecordedMarkXp(character) {
+  if (!character || Number(character.level) < MAX_LEVEL) return { added: 0, beforeEarned: experienceEarned(character), afterEarned: experienceEarned(character), xp: nonNegativeFinite(character?.experienceMarks?.xp) };
+  const progress = character.experienceMarks && typeof character.experienceMarks === 'object' && !Array.isArray(character.experienceMarks)
+    ? character.experienceMarks : (character.experienceMarks = { earned: 0, xp: 0 });
+  progress.earned = experienceEarned(character);
+  progress.xp = nonNegativeFinite(progress.xp);
+  const beforeEarned = progress.earned;
+  const cappedXp = nonNegativeFinite(character.xp);
+  if (cappedXp > 0) {
+    progress.xp = Math.min(Number.MAX_VALUE, progress.xp + cappedXp);
+    character.xp = 0;
+  }
+  const added = affordableMarkCount(progress.xp, progress.earned);
+  if (added > 0) {
+    const cost = cumulativeMarkCost(progress.earned, added);
+    progress.xp = Math.max(0, progress.xp - cost);
+    progress.earned += added;
+  }
+  return { added, beforeEarned, afterEarned: progress.earned, xp: progress.xp };
+}
 export const capXp = (c = G.char) => {
   if (!c || c.level < MAX_LEVEL) return null;
   const progress = prepareCharacterMarkProgress(c);

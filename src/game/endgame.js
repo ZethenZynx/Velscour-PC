@@ -10,7 +10,7 @@ const MARKS_RESET_VERSION = 2;
 export const MARK_CATS = INFERNAL_UPGRADES.map((u) => u.id);
 let E = null;
 
-function blank() { return { v: 1, marksResetVersion: MARKS_RESET_VERSION, markXpMigrationV1: false, unlocked: 0, heresySelection: [], heresySelectionSet: false, marks: { pts: 0, xp: 0, spentValue: 0, rewardRemainder: 0, legacyFerocity: 0, spent: Object.fromEntries(MARK_CATS.map((id) => [id, 0])) }, storageRefundV1: { heroes: {}, reliquary: false }, bests: {}, keysFound: 0, unboundWins: 0 }; }
+function blank() { return { v: 1, marksResetVersion: MARKS_RESET_VERSION, markXpMigrationV1: false, infernalMarksReconciliationV1: null, unlocked: 0, heresySelection: [], heresySelectionSet: false, marks: { pts: 0, xp: 0, spentValue: 0, rewardRemainder: 0, legacyFerocity: 0, spent: Object.fromEntries(MARK_CATS.map((id) => [id, 0])) }, storageRefundV1: { heroes: {}, reliquary: false }, bests: {}, keysFound: 0, unboundWins: 0 }; }
 /** A record with every field present and sane (a damaged one keeps what it can). */
 export function fixEndgame(r) {
   const o = blank();
@@ -19,6 +19,7 @@ export function fixEndgame(r) {
   const resetLegacyMarks = version < 1;
   o.marksResetVersion = MARKS_RESET_VERSION;
   o.markXpMigrationV1 = !!r.markXpMigrationV1;
+  o.infernalMarksReconciliationV1 = r.infernalMarksReconciliationV1?.version === 1 ? r.infernalMarksReconciliationV1 : null;
   o.unlocked = Number(r.unlocked) > 0 ? Number(r.unlocked) : 0;
   o.heresySelection = Array.isArray(r.heresySelection) ? [...new Set(r.heresySelection.filter((id) => typeof id === 'string'))] : [];
   o.heresySelectionSet = !!r.heresySelectionSet;
