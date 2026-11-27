@@ -13,14 +13,41 @@ export const HEALTH_BAR_CLASSES = Object.freeze([
   { id: 'imp', label: 'Treasure Imp', color: '#128d36', fill: 'emerald', fillAsset: 'fill-emerald', icon: 'imp' },
   { id: 'companion', label: 'Companion / Summon', color: '#14939b', fill: 'teal', fillAsset: 'fill-teal', icon: 'companion' },
 ]);
-// Shared proportions for the boss frame, emblem, name, and bar. CSS uses the
-// same fractions for the live HUD; the settings canvas uses them directly.
+// Boss frame uses a horizontal nine-slice. Its usable aperture is not a fixed
+// percentage of the full bar: the side caps scale with the rendered frame
+// height, while the center stretches to the configured width. These source
+// pixels are the outer alpha boundaries of the open health channel in
+// frame-boss.webp (2172 x 724), measured across the channel's vertical span.
+const BOSS_FRAME_ART = Object.freeze({
+  width: 2172, height: 724, sliceLeft: 0.23, sliceRight: 0.88,
+  apertureLeft: 574, apertureRight: 1906,
+});
+
+/** Return the artwork channel bounds after nine-slicing, keeping the fill clear of the emblem. */
+export function bossFrameTrackBounds(frameWidth, frameHeight, minLeft = 0) {
+  const art = BOSS_FRAME_ART;
+  const sourceLeft = art.width * art.sliceLeft;
+  const sourceRight = art.width * art.sliceRight;
+  const sourceCenterWidth = sourceRight - sourceLeft;
+  let leftCap = frameHeight * sourceLeft / art.height;
+  let rightCap = frameHeight * (art.width - sourceRight) / art.height;
+  if (leftCap + rightCap > frameWidth) {
+    const scale = frameWidth / (leftCap + rightCap);
+    leftCap *= scale;
+    rightCap *= scale;
+  }
+  const centerWidth = Math.max(0, frameWidth - leftCap - rightCap);
+  const mapSourceX = (sourceX) => leftCap + (sourceX - sourceLeft) * centerWidth / sourceCenterWidth;
+  return { left: Math.max(minLeft, mapSourceX(art.apertureLeft)), right: mapSourceX(art.apertureRight) };
+}
+
+// Shared proportions for the boss frame, emblem, name, and vertical bar layout.
+// The live track's horizontal bounds are calculated from the frame artwork at
+// its actual rendered size; these percentage values are only CSS fallbacks.
 export const BOSS_HEALTH_LAYOUT = Object.freeze({
   frameTop: 18 / 178, frameHeight: 160 / 178,
-  // These are the visible inner boundaries in the boss frame. Keep the CSS HUD
-  // and canvas preview on the same slightly widened interior so full health has
-  // no sliver of unfilled track at either edge.
-  trackLeft: 0.224, trackRight: 0.084, trackTop: 18 / 178 + 0.33 * (160 / 178), trackHeight: 0.13 * (160 / 178),
+  trackLeft: 0.224, trackRight: 0.084,
+  trackTop: 18 / 178 + 0.33 * (160 / 178), trackHeight: 0.13 * (160 / 178),
   // Keep the skull over the left frame cap. Its right edge clears the health track.
   emblemCenterX: 0.14, emblemCenterY: 18 / 178 + 0.395 * (160 / 178), emblemWidth: 0.134, emblemHeight: 0.62 * (160 / 178),
   nameLeft: 0.224, nameRight: 0.084, nameTop: 0.005, nameHeight: 0.09,
@@ -302,30 +329,36 @@ export function drawHealthBarFrame(ctx, classification, x, y, w, h, system = 'ov
 /** Shared geometry for target bars and their settings preview labels and badges. */
 export function healthBarCanvasLayout(classification, x, y, w, h, system = 'target') {
   const boss = system === 'target' && classification?.id === 'boss';
-  const trackLeft = boss ? BOSS_HEALTH_LAYOUT.trackLeft : 0.14;
-  const trackRight = boss ? BOSS_HEALTH_LAYOUT.trackRight : 0.09;
   const trackTop = boss ? BOSS_HEALTH_LAYOUT.trackTop : 0.365;
   const trackHeight = boss ? BOSS_HEALTH_LAYOUT.trackHeight : 0.27;
-  const track = {
-    x: x + w * trackLeft,
-    y: y + h * trackTop,
-    width: w * (1 - trackLeft - trackRight),
-    height: h * trackHeight,
-  };
-  const emblemSize = Math.min(w * 0.124, h * 0.62);
+  const frame = boss
+    ? { x, y: y + h * BOSS_HEALTH_LAYOUT.frameTop, width: w, height: h * BOSS_HEALTH_LAYOUT.frameHeight }
+    : { x, y, width: w, height: h };
+  const emblemSize = boss
+    ? Math.min(w * BOSS_HEALTH_LAYOUT.emblemWidth, h * BOSS_HEALTH_LAYOUT.emblemHeight)
+    : Math.min(w * 0.124, h * 0.62);
   const emblemCenter = boss
     ? { x: x + w * BOSS_HEALTH_LAYOUT.emblemCenterX, y: y + h * BOSS_HEALTH_LAYOUT.emblemCenterY }
     : { x: x + w * 0.066, y: y + h * 0.5 };
+  const bossBounds = boss
+    ? bossFrameTrackBounds(frame.width, frame.height, emblemCenter.x - x + emblemSize / 2)
+    : null;
+  const trackLeft = boss ? bossBounds.left : w * 0.14;
+  const trackRight = boss ? bossBounds.right : w * 0.91;
+  const track = {
+    x: x + trackLeft,
+    y: y + h * trackTop,
+    width: trackRight - trackLeft,
+    height: h * trackHeight,
+  };
   return {
     boss,
     track,
-    frame: boss
-      ? { x, y: y + h * BOSS_HEALTH_LAYOUT.frameTop, width: w, height: h * BOSS_HEALTH_LAYOUT.frameHeight }
-      : { x, y, width: w, height: h },
+    frame,
     emblem: {
       centerX: emblemCenter.x,
       centerY: emblemCenter.y,
-      size: boss ? Math.min(w * BOSS_HEALTH_LAYOUT.emblemWidth, h * BOSS_HEALTH_LAYOUT.emblemHeight) : emblemSize,
+      size: emblemSize,
     },
     // Reserve the icon lane inside the frame's track, clear of both decorative caps.
     badge: {
@@ -380,15 +413,15 @@ export function drawHealthBarCanvas(ctx, entity, x, y, w, h, { system = 'overhea
     const top = target ? targetLayout.track.y : y + h * (bossFrame ? 0.37 : 0.365);
     const innerW = Math.max(0, right - left);
     const innerH = target ? targetLayout.track.height : h * (bossFrame ? 0.21 : 0.305);
-    // Paint the decorative frame first. Painting it after the fill covered the
-    // ends of the full-health bar in both the live target panel and its preview.
-    if (appearance.decorativeBorders && target) {
-      drawHealthBarFrame(ctx, classification, targetLayout.frame.x, targetLayout.frame.y, targetLayout.frame.width, targetLayout.frame.height, system);
-    }
     ctx.fillStyle = '#110b08'; ctx.fillRect(left, top, innerW, innerH);
     if (fill && fraction > 0) ctx.drawImage(fill, 0, 0, Math.max(1, fill.naturalWidth * fraction), fill.naturalHeight, left, top, innerW * fraction, innerH);
     else if (fraction > 0) { ctx.fillStyle = classification.color; ctx.fillRect(left, top, innerW * fraction, innerH); }
     ctx.fillStyle = 'rgba(255,236,190,.38)'; ctx.fillRect(left, top, innerW * fraction, Math.max(1, innerH * 0.2));
+    // The geometry is the frame's measured open aperture. Draw the frame over
+    // the fill so its antialiased inner edge masks subpixel seams consistently.
+    if (appearance.decorativeBorders && target) {
+      drawHealthBarFrame(ctx, classification, targetLayout.frame.x, targetLayout.frame.y, targetLayout.frame.width, targetLayout.frame.height, system);
+    }
     // Paint the emblem after the frame so both the icon and frame remain crisp.
     if (emblem) {
       const geom = target ? targetLayout.emblem : null;

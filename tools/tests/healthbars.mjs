@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { existsSync, readFileSync } from 'node:fs';
 import { G } from '../../src/state.js';
-import { BOSS_HEALTH_LAYOUT, DEFAULT_HEALTH_BAR_SETTINGS, HEALTH_BAR_CLASSES, drawHealthBarCanvas, healthBarCanvasLayout, healthBarClass, healthBarSettings, healthBarText, healthBarSummaryText, healthBarValueText, healthBarVisible, normalizeHealthBarSettings, overheadHealthBarEligible, preloadHealthBarArt } from '../../src/ui/healthbars.mjs';
+import { BOSS_HEALTH_LAYOUT, DEFAULT_HEALTH_BAR_SETTINGS, HEALTH_BAR_CLASSES, bossFrameTrackBounds, drawHealthBarCanvas, healthBarCanvasLayout, healthBarClass, healthBarSettings, healthBarText, healthBarSummaryText, healthBarValueText, healthBarVisible, normalizeHealthBarSettings, overheadHealthBarEligible, preloadHealthBarArt } from '../../src/ui/healthbars.mjs';
 import { TREASURE_IMPS } from '../../src/data/treasureimps.js';
 
 globalThis.localStorage ||= { getItem: () => null, setItem: () => {} };
@@ -106,8 +106,11 @@ assert.match(css, /healthbar-dialog/);
 assert.match(css, /--hb-boss-frame-top:10\.1124%/);
 assert.match(css, /--hb-boss-track-top:39\.7753%/);
 assert.match(css, /--hb-boss-track-height:11\.6854%/);
-assert.match(css, /#boss-bar\.healthbar-boss #boss-frame \{ z-index:1/);
+assert.match(css, /#boss-bar\.healthbar-boss #boss-frame \{ z-index:3/);
 assert.match(css, /#boss-bar\.healthbar-boss #boss-track \{ z-index:2/);
+assert.match(css, /#boss-bar\.healthbar-boss #boss-sub \{ left:var\(--hb-boss-name-left\);right:var\(--hb-boss-name-right\)/);
+assert.match(css, /#boss-bar\.healthbar-boss #boss-extra \{ left:var\(--hb-boss-name-left\);right:var\(--hb-boss-name-right\)/);
+assert.match(hud, /bossFrameTrackBounds\(rootRect\.width, rootRect\.height \* BOSS_HEALTH_LAYOUT\.frameHeight, emblemRight\)/, 'live HUD positions the track from actual frame and emblem dimensions');
 assert.match(css, /--hb-boss-emblem-center-x:14%/);
 assert.match(css, /healthbar-preview-wrap \{ overflow:visible/);
 assert.match(css, /healthbar-preview-heading > div\[hidden\] \{ display:none; \}/);
@@ -197,8 +200,27 @@ for (const [width, height] of [[456, 248], [1216, 93]]) {
   assert.ok(resized.emblem.centerX + resized.emblem.size / 2 < resized.track.x, `normal target emblem clears the fill at ${width}x${height}`);
 }
 const bossTargetLayout = healthBarCanvasLayout({ id: 'boss' }, 0, 0, 660, 178, 'target');
-assert.ok(bossTargetLayout.emblem.centerX + bossTargetLayout.emblem.size / 2 < bossTargetLayout.track.x, 'boss emblem clears the health track');
+assert.ok(bossTargetLayout.emblem.centerX + bossTargetLayout.emblem.size / 2 <= bossTargetLayout.track.x, 'boss emblem meets but does not overlap the health track');
 assert.ok(Math.abs(bossTargetLayout.emblem.centerY - (bossTargetLayout.track.y + bossTargetLayout.track.height / 2)) < 1e-9, 'boss emblem is vertically centered on the actual health track');
+for (const widthScale of [0.6, 1, 1.5]) for (const heightScale of [0.6, 1, 1.5]) {
+  const width = 660 * widthScale, height = 178 * heightScale;
+  const layout = healthBarCanvasLayout({ id: 'boss' }, 0, 0, width, height, 'target');
+  const aperture = bossFrameTrackBounds(width, height * BOSS_HEALTH_LAYOUT.frameHeight, layout.emblem.centerX + layout.emblem.size / 2);
+  assert.ok(Math.abs(layout.track.x - aperture.left) < 1e-9, `boss track starts at the artwork aperture for ${widthScale * 100}% x ${heightScale * 100}%`);
+  assert.ok(Math.abs(layout.track.x + layout.track.width - aperture.right) < 1e-9, `boss track ends at the artwork aperture for ${widthScale * 100}% x ${heightScale * 100}%`);
+  assert.ok(layout.track.width > 0, 'boss track remains usable at configured sizes');
+  const partialWidth = layout.track.width * 0.6;
+  assert.ok(layout.track.x + partialWidth < aperture.right, 'partial health depletes from right to left');
+  for (const fraction of [1, 0.6, 0.01]) {
+    const ctx = recordingContext(), calls = [];
+    ctx.drawImage = (img, ...args) => calls.push({ src: img._src, args });
+    drawHealthBarCanvas(ctx, { rank: 'boss', hp: fraction * 100, maxHp: 100 }, 0, 0, width, height, { system: 'target', forceFraction: fraction });
+    const fill = calls.find(({ src, args }) => src.endsWith('fill-crimson.webp') && args.length === 8);
+    assert.ok(fill, 'boss texture is drawn at every tested fill amount');
+    assert.equal(fill.args[4], layout.track.x, 'health changes preserve the measured left edge');
+    assert.ok(Math.abs(fill.args[6] - layout.track.width * fraction) < 1e-8, 'health depletes from the right edge only');
+  }
+}
 const maxPreviewWidth = 760 * 1.6;
 const responsivePreviewWidth = Math.max(980, Math.ceil(maxPreviewWidth + 220));
 assert.ok((responsivePreviewWidth - maxPreviewWidth) / 2 >= 110, 'preview canvas retains 110px safety margins at maximum target width');
@@ -210,12 +232,15 @@ const bossFillCall = targetCalls.find(({ src, args }) => src.endsWith('fill-crim
 assert.ok(bossFillCall, 'boss target preview uses the crimson texture');
 const bossFrameIndex = targetCalls.findIndex(({ src }) => src.endsWith('frame-boss.webp'));
 const bossFillIndex = targetCalls.findIndex(({ src }) => src.endsWith('fill-crimson.webp'));
-assert.ok(bossFrameIndex >= 0 && bossFrameIndex < bossFillIndex, 'boss fill is painted after the frame so the frame cannot cover its endpoints');
+assert.ok(bossFillIndex >= 0 && bossFrameIndex > bossFillIndex, 'boss frame overlays the fill at the measured aperture edge to mask subpixel seams');
+const renderedBossLayout = healthBarCanvasLayout({ id: 'boss' }, 10, 20, 660, 160, 'target');
 const [, , , , bossFillX, bossFillY, bossFillW, bossFillH] = bossFillCall.args;
-assert.equal(bossFillX, 10 + 660 * BOSS_HEALTH_LAYOUT.trackLeft);
+assert.equal(bossFillX, renderedBossLayout.track.x);
 assert.equal(bossFillY, 20 + 160 * BOSS_HEALTH_LAYOUT.trackTop);
-assert.equal(bossFillW, 660 * (1 - BOSS_HEALTH_LAYOUT.trackLeft - BOSS_HEALTH_LAYOUT.trackRight) * 0.4);
+assert.equal(bossFillW, renderedBossLayout.track.width * 0.4);
 assert.equal(bossFillH, 160 * BOSS_HEALTH_LAYOUT.trackHeight);
+const fullBossLayout = healthBarCanvasLayout({ id: 'boss' }, 0, 0, 660, 178, 'target');
+assert.equal(fullBossLayout.track.x + fullBossLayout.track.width, bossFrameTrackBounds(660, 160).right, '100% health reaches the artwork interior right boundary');
 const emblemCall = targetCalls.find(({ src }) => src.endsWith('/boss.webp'));
 assert.ok(emblemCall, 'boss emblem remains part of the top banner');
 const emblemSize = Math.min(660 * BOSS_HEALTH_LAYOUT.emblemWidth, 160 * BOSS_HEALTH_LAYOUT.emblemHeight);

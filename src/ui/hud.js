@@ -22,15 +22,28 @@ import { DUNGEON_AFFIX_BY_ID } from '../data/dungeonaffixes.js';
 import { dungeonAffixIconURL } from './dungeonaffixicons.js';
 import { appendEnemyHistory, createEnemyHistorySaveQueue, loadEnemyHistory } from './enemyhistory.js';
 import { profileEnd, profileRecord, profileStart } from '../core/perfdiagnostics.js';
-import { BOSS_HEALTH_LAYOUT, HEALTH_BAR_CLASSES, drawHealthBarFrame, healthBarClass, healthBarSettings, healthBarSummaryText, healthBarValueText, healthBarVisible, healthBarAffixText, healthBarStatusText, preloadHealthBarArt } from './healthbars.mjs';
+import { BOSS_HEALTH_LAYOUT, HEALTH_BAR_CLASSES, bossFrameTrackBounds, drawHealthBarFrame, healthBarClass, healthBarSettings, healthBarSummaryText, healthBarValueText, healthBarVisible, healthBarAffixText, healthBarStatusText, preloadHealthBarArt } from './healthbars.mjs';
 
 preloadHealthBarArt();
 function redrawTargetHealthBarFrame() {
   const bar = $('#boss-bar'), canvas = $('#boss-frame');
-  if (!bar || !canvas || bar.classList.contains('hidden') || bar.classList.contains('classic') || bar.classList.contains('no-frame')) return;
+  if (!bar || !canvas || bar.classList.contains('hidden')) return;
   const cls = HEALTH_BAR_CLASSES.find((entry) => entry.id === bar.dataset.healthbarClass);
+  const rootRect = bar.getBoundingClientRect();
+  if (!cls || !rootRect.width || !rootRect.height) return;
+  if (cls.id === 'boss') {
+    // The frame is nine-sliced by its rendered height, so its inner aperture
+    // cannot be represented by fixed percentages of the outer bar width.
+    // Derive the DOM track from the same source-art bounds as the canvas preview.
+    const emblemSize = Math.min(rootRect.width * BOSS_HEALTH_LAYOUT.emblemWidth, rootRect.height * BOSS_HEALTH_LAYOUT.emblemHeight);
+    const emblemRight = rootRect.width * BOSS_HEALTH_LAYOUT.emblemCenterX + emblemSize / 2;
+    const frameBounds = bossFrameTrackBounds(rootRect.width, rootRect.height * BOSS_HEALTH_LAYOUT.frameHeight, emblemRight);
+    bar.style.setProperty('--hb-boss-track-left', `${frameBounds.left}px`);
+    bar.style.setProperty('--hb-boss-track-right', `${rootRect.width - frameBounds.right}px`);
+  }
+  if (bar.classList.contains('classic') || bar.classList.contains('no-frame')) return;
   const rect = canvas.getBoundingClientRect(), dpr = Math.max(1, Number(G.dpr) || 1);
-  if (!cls || !rect.width || !rect.height) return;
+  if (!rect.width || !rect.height) return;
   const width = Math.ceil(rect.width * dpr), height = Math.ceil(rect.height * dpr);
   if (canvas.width !== width || canvas.height !== height) { canvas.width = width; canvas.height = height; }
   const ctx = canvas.getContext('2d');
