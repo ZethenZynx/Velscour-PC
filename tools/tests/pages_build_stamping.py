@@ -29,6 +29,30 @@ class PagesBuildStampingTests(unittest.TestCase):
             self.assertIn("'./ui.js?v=pages-0123456789abcdef'", rewritten)
             self.assertIn("'../state.js?v=pages-0123456789abcdef'", rewritten)
 
+    def test_deployment_excludes_maintainer_material_but_keeps_runtime_textures(self):
+        root = pages_build.ROOT
+
+        self.assertNotIn("tools", pages_build.deployment_ignore(str(root), ["tools", "index.html"]))
+        self.assertEqual(
+            pages_build.deployment_ignore(
+                str(root / "tools"), ["sea3d.js", "airship3d.js", "tests", "pages_build.py"]
+            ),
+            {"tests", "pages_build.py"},
+        )
+        self.assertIn("FinalClasses", pages_build.deployment_ignore(str(root / "assets"), ["FinalClasses", "tiles"]))
+        source_ignored = pages_build.deployment_ignore(
+            str(root / "assets/source"), ["biomes", "audio", "airship", "castle3d"]
+        )
+        self.assertEqual(source_ignored, {"biomes", "audio"})
+        airship_ignored = pages_build.deployment_ignore(
+            str(root / "assets/source/airship"), ["textures", "atlases", "qa", "README.md"]
+        )
+        self.assertEqual(airship_ignored, {"atlases", "qa", "README.md"})
+        castle_ignored = pages_build.deployment_ignore(
+            str(root / "assets/source/castle3d"), ["tex", "source_art"]
+        )
+        self.assertEqual(castle_ignored, {"source_art"})
+
 
 if __name__ == "__main__":
     unittest.main()

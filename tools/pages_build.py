@@ -28,6 +28,51 @@ THREE_ADDON_MODULE = re.compile(
 CSS_URL = re.compile(r"url\(\s*(?P<quote>[\"']?)(?P<url>[^\"')]+)(?P=quote)\s*\)", re.IGNORECASE)
 
 
+def deployment_ignore(directory: str, names: list[str]) -> set[str]:
+    """Exclude development/source material while retaining runtime assets.
+
+    Keep source texture directories that are loaded directly by the optional
+    3D airship/castle scenes. The original art packs and generator outputs are
+    in git for maintainers, but are not requested by the browser game.
+    """
+    base = Path(directory).resolve()
+    relative = base.relative_to(ROOT)
+    ignored = {
+        ".git", ".github", "node_modules", "__pycache__", ".pytest_cache",
+        "_site", "docs", "source_art", "reference_sheets", "qa",
+        "template", "SHA256SUMS.txt",
+    }
+    excluded = {name for name in names if name in ignored}
+
+    # A few scene modules live in tools/ but are imported by the game at
+    # runtime. Keep those modules; omit test suites and authoring utilities.
+    if relative == Path("tools"):
+        runtime_modules = {
+            "sea3d.js", "seaship3d.js", "seaship3d_dawnwake.js",
+            "seaship3d_small.js", "airship3d.js", "airship3d_ironclad.js",
+            "airship3d_skiffs.js",
+        }
+        excluded.update(name for name in names if name not in runtime_modules)
+    elif relative != Path(".") and "tools" in names:
+        excluded.add("tools")
+
+    if relative == Path("assets"):
+        excluded.add("FinalClasses")
+    elif relative == Path("assets/source"):
+        excluded.update(name for name in names if name not in {"airship", "castle3d"})
+    elif relative == Path("assets/source/airship"):
+        excluded.update(name for name in names if name != "textures")
+    elif relative == Path("assets/source/castle3d"):
+        excluded.update(name for name in names if name != "tex")
+
+    # Project notes and local helper scripts are not part of the game UI.
+    for name in names:
+        path = base / name
+        if path.is_file() and path.suffix.lower() in {".md", ".cmd", ".rules"}:
+            excluded.add(name)
+    return excluded
+
+
 def add_build_query(url: str, build_id: str) -> str:
     if not url or url.startswith(("data:", "blob:", "http:", "https:", "//", "#")):
         return url
@@ -105,9 +150,7 @@ def main() -> None:
     shutil.copytree(
         ROOT,
         output,
-        ignore=shutil.ignore_patterns(
-            ".git", ".github", "node_modules", "__pycache__", ".pytest_cache", "_site"
-        ),
+        ignore=deployment_ignore,
     )
     build_id = f"pages-{commit}"
     updated = 0
