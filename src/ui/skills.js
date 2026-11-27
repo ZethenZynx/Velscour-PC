@@ -1,4 +1,4 @@
-// Skill tree (spend points) and Skill Book (equip skills to the bar).
+// Skill tree (spend points, inspect abilities, and assign skills to the bar).
 import { G } from '../state.js';
 import { el, escapeHtml, fmtDmg } from '../core/util.js';
 import { shownDmg, heroDmgLevel } from '../data/depth.js';
@@ -386,39 +386,7 @@ export function renderTree(body) {
   body.appendChild(stage);
 }
 
-export function renderBook(body) {
-  const c = G.char, p = G.player;
-  body.innerHTML = '';
-  body.appendChild(el('div', 'dim', 'Your learned abilities. Drag one onto a skill bar slot (LMB, 1–9, 0, -, =, RMB) or hover/tap it to assign a slot.'));
-  const list = el('div', 'book-list');
-  list.style.minWidth = 'min(420px, 90vw)';
-  list.style.marginTop = '8px';
-  const learned = CLASS_SKILLS[c.classId].filter((s) => (c.skills[s.id] || 0) > 0);
-  if (!learned.length) list.appendChild(el('div', 'dim', 'No skills learned yet.'));
-  for (const sk of learned) {
-    const L = effLevel(p, sk);
-    const it = el('div', 'book-item');
-    const cv = document.createElement('canvas');
-    cv.width = 64; cv.height = 64;
-    cv.getContext('2d').drawImage(skillIcon(sk, 64), 0, 0);
-    it.appendChild(cv);
-    const slot = c.bar.indexOf(sk.id);
-    const morph = skillMorphFor(p, sk);
-    const effSk = morph ? applySkillMorph(sk, morph) : sk;
-    const meta = el('div', 'meta', `<b>${escapeHtml(sk.name)}</b> <span class="dim">Lv ${L}${slot >= 0 ? ` · [${SLOT_LABELS[slot]}]` : ''}${morph && morph.labels.length ? ` · <span style="color:#ffb86c">${morph.labels.map(escapeHtml).join(', ')}</span>` : ''}</span>${masteryHtml(effSk, true)}<p>${describe(effSk, L, skillDmg(sk, L))}</p>`);
-    it.appendChild(meta);
-    makeDrag(it, sk);
-    UI.tip(it, () => skillTooltip(sk), { interactive: true, key: 'book:' + sk.id });
-    list.appendChild(it);
-  }
-  body.appendChild(list);
-}
-
 export function toggleTree() {
   if (UI.isOpen('tree')) UI.closePanel('tree');
   else UI.openPanel('tree', 'Skill Tree', renderTree);
-}
-export function toggleBook() {
-  if (UI.isOpen('book')) UI.closePanel('book');
-  else UI.openPanel('book', 'Skill Book', renderBook);
 }

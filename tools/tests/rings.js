@@ -1,6 +1,6 @@
 // Rings and skill mastery: equips rings carrying each augment, casts skills into a pack of monsters and checks the
 // augments fire without errors; screenshots Wheel of Hammers with Storm Tether + Immolation at mastery 1 and 1000,
-// the inventory with four rings, a ring tooltip, the Gem Forge, and the skill book's mastery bars.
+// the inventory with four rings, a ring tooltip, the Gem Forge, and mastery details in the Skill Tree.
 // node tools/tests/rings.js
 const { openGame, report } = require('./harness');
 (async () => {
@@ -82,7 +82,7 @@ const { openGame, report } = require('./harness');
     await page.waitForTimeout(900);
     await shot(`rings_wheel_m${M}`);
   }
-  // UI: inventory with four rings, a ring tooltip, the Gem Forge, the skill book
+  // UI: inventory with four rings, a ring tooltip, the Gem Forge, and the Skill Tree
   await page.evaluate(async () => {
     const { G, game } = window.VELSCOUR;
     const { rollItem, makeGem } = await import('/src/data/items.js');
@@ -106,7 +106,9 @@ const { openGame, report } = require('./harness');
   await page.evaluate(async () => { (await import('/src/ui/vendor.js')).Vendor.open('socket'); });
   await page.waitForTimeout(500); await shot('rings_jeweler');
   await page.keyboard.press('Escape'); await page.keyboard.press('Escape');
-  await page.keyboard.press('b'); await page.waitForTimeout(500); await shot('rings_book');
+  await page.keyboard.press('k'); await page.waitForTimeout(500);
+  if (!(await page.locator('.panel[data-panel="tree"] .tree').count())) errors.push('Skill Tree did not open after removing the Skill Book');
+  await shot('rings_skill_tree');
   report(errors);
   await browser.close();
 })();

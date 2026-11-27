@@ -19,7 +19,6 @@ export const KEY_BINDING_ACTIONS = [
   { id: 'character', label: 'Character sheet', section: 'Interface', defaultKey: 'KeyC', aliases: ['KeyC'] },
   { id: 'skillTree', label: 'Skill tree', section: 'Interface', defaultKey: 'KeyK', aliases: ['KeyK'] },
   { id: 'talents', label: 'Talents', section: 'Interface', defaultKey: 'KeyT', aliases: ['KeyT'] },
-  { id: 'spellbook', label: 'Spellbook', section: 'Interface', defaultKey: 'KeyB', aliases: ['KeyB'] },
   { id: 'questLog', label: 'Quest log', section: 'Interface', defaultKey: 'KeyQ', aliases: ['KeyQ'] },
   { id: 'hearth', label: 'Hearthstone', section: 'Interface', defaultKey: 'KeyH', aliases: ['KeyH'] },
   { id: 'automap', label: 'Toggle map', section: 'Interface', defaultKey: 'Tab', aliases: ['Tab', 'KeyM'] },

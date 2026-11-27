@@ -181,7 +181,7 @@ import { JewelBox } from '../ui/jewelbox.js';
 import { startTownLife } from './townlife.js';
 import { startAct2AmbientCritters } from './townanimals.js';
 import { toggleInventory, toggleCharacter } from '../ui/inventory.js';
-import { toggleTree, toggleBook, showFirstSkillTutorial } from '../ui/skills.js';
+import { toggleTree, showFirstSkillTutorial } from '../ui/skills.js';
 import { toggleTalents } from '../ui/talents.js';
 import { toggleQuest } from '../ui/quest.js';
 import { setupVelscour } from './velscour.js';
@@ -2974,7 +2974,6 @@ export const game = {
       case 'character': case 'stats': toggleCharacter(); break;
       case 'skills': toggleTree(); break;
       case 'talents': toggleTalents(); break;
-      case 'book': toggleBook(); break;
       case 'quest': toggleQuest(); break;
       case 'menu': pauseMenu(); break;
     }
@@ -3350,7 +3349,6 @@ export const game = {
       if (input.consume('KeyC')) toggleCharacter();
       if (input.consume('KeyK')) toggleTree();
       if (input.consume('KeyT')) toggleTalents();
-      if (input.consume('KeyB')) toggleBook();
       if (input.consume('KeyQ')) toggleQuest();
       if (input.consume('KeyH')) useHearth();
       if (input.consume('F1')) helpDialog();

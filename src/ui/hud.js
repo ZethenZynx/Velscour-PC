@@ -1141,7 +1141,7 @@ export const HUD = {
 function slotTip(map) {
   if (typeof map === 'string') return `<b>${{ hp: 'Healing Potion', mp: 'Mana Potion', rejuv: 'Rejuvenation Potion', fury: 'Elixir of Fury' }[map]}</b><div class="dim">Key ${{ hp: 'Z', mp: 'X', rejuv: 'R', fury: 'V' }[map]} · Buy more from the Alchemist</div>${map === 'fury' ? `<div class="dim">${POTION_INFO.fury}</div>` : ''}`;
   const id = G.char.bar[map];
-  if (!id) return `<b>Empty slot [${SLOT_LABELS[map]}]</b><div class="dim">Click to choose a skill, or drag one here from the Skill Book (B).</div>`;
+  if (!id) return `<b>Empty slot [${SLOT_LABELS[map]}]</b><div class="dim">Click to choose a skill, or drag one here from the Skill Tree (K).</div>`;
   const sk = SKILLS[id];
   return `<b style="color:#ffe2a0">${escapeHtml(sk.name)}</b> <span class="dim">[${SLOT_LABELS[map]}]</span><div class="dim">Click to change</div>`;
 }

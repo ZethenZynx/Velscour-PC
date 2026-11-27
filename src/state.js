@@ -107,6 +107,18 @@ export function loadSettings() {
     }
     G.settings.gore = normalizeGorePreset(G.settings.gore);
     for (const key of ['lockSkillBar', 'mobileSkillBar', 'mobileHudV2', 'firstPerson']) delete G.settings[key];
+    // Retire settings that belonged only to the removed Skill Book.
+    let removedBookSettings = false;
+    if (G.settings.keybinds && Object.prototype.hasOwnProperty.call(G.settings.keybinds, 'spellbook')) {
+      delete G.settings.keybinds.spellbook;
+      removedBookSettings = true;
+    }
+    if (G.settings.panelPositions && Object.prototype.hasOwnProperty.call(G.settings.panelPositions, 'book')) {
+      delete G.settings.panelPositions.book;
+      if (!Object.keys(G.settings.panelPositions).length) delete G.settings.panelPositions;
+      removedBookSettings = true;
+    }
+    if (removedBookSettings) saveSettings();
   } catch (e) { /* ignore */ }
 }
 export function saveSettings() {

@@ -176,8 +176,8 @@ def process_ui():
 # The HUD art (assets/source/hud_bar.webp, 2000x667 transparent): two orbs and a 19-slot bar, LMB ` 1-9 0 - =
 # (13 keys), four potions (Z X C V), RMB; the XP track under it. Pixel positions measured from the art.
 HUD_KEYS = ["LMB", "`", "1", "2", "3", "4", "5", "6", "7", "8", "9", "0", "-", "=", "Z", "X", "C", "V", "RMB"]
-# hud_frames.webp (1415x1111): the minimap ring on top, the six HUD buttons in a row under it
-HUD_BUTTONS = ["bag", "skills", "book", "quest", "auto", "menu"]
+# hud_frames.webp (1415x1111): the minimap ring on top, the five retained HUD buttons under it
+HUD_BUTTONS = [("bag", 0), ("skills", 1), ("quest", 3), ("auto", 4), ("menu", 5)]
 BTN_SPLIT = [40, 270, 489, 708, 927, 1146, 1376]   # midpoints of the jewel pairs that join the buttons
 BTN_Y = (812, 1058)
 RING_BOX = (546, 26, 1392, 834)
@@ -220,14 +220,14 @@ def process_hud():
     ring_img = Image.fromarray(ring).resize((420, round(ring.shape[0] * rk)), Image.LANCZOS)
     save(ring_img, os.path.join(OUT, "ui", "minimap_ring.webp"))
     buttons = []
-    for i, name in enumerate(HUD_BUTTONS):
+    for name, i in HUD_BUTTONS:
         x0, x1 = BTN_SPLIT[i], BTN_SPLIT[i + 1]
         b = fa[BTN_Y[0]:BTN_Y[1], x0:x1].copy()
         yy, xx = np.mgrid[BTN_Y[0]:BTN_Y[1], x0:x1]
         cx = (x0 + x1) / 2
         b[..., 3] = np.where((yy < 838) & (np.abs(xx - cx) > 30), 0, b[..., 3])   # the ring's bottom jewel
         # pad to a common width, centred, so every button is the same size
-        W = max(BTN_SPLIT[j + 1] - BTN_SPLIT[j] for j in range(len(HUD_BUTTONS)))
+        W = max(BTN_SPLIT[j + 1] - BTN_SPLIT[j] for j in range(len(BTN_SPLIT) - 1))
         im = Image.new("RGBA", (W, b.shape[0]), (0, 0, 0, 0))
         im.paste(Image.fromarray(b), ((W - b.shape[1]) // 2, 0))
         k = 120 / im.width
@@ -243,7 +243,7 @@ def process_hud():
         "barTop": 290 - oy,   # top edge of the slot rail (above it only the orbs' frames rise)
         "ring": {"w": RING_BOX[2] - RING_BOX[0], "h": RING_BOX[3] - RING_BOX[1],
                  "hole": {"cx": RING_HOLE[0] - RING_BOX[0], "cy": RING_HOLE[1] - RING_BOX[1], "rx": RING_HOLE[2], "ry": RING_HOLE[3]}},
-        "buttons": {"names": buttons, "w": max(BTN_SPLIT[j + 1] - BTN_SPLIT[j] for j in range(len(HUD_BUTTONS))), "h": BTN_Y[1] - BTN_Y[0]},
+        "buttons": {"names": buttons, "w": max(BTN_SPLIT[j + 1] - BTN_SPLIT[j] for j in range(len(BTN_SPLIT) - 1)), "h": BTN_Y[1] - BTN_Y[0]},
     }
     with open(os.path.join(OUT, "ui", "hud.json"), "w") as f:
         json.dump(geo, f, indent=1)

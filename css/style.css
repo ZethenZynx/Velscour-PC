@@ -728,12 +728,6 @@ body.touch .reliquary-panel .codex-cell { width: 34px; height: 34px; }
 .talent-detail { width: 100%; box-sizing: border-box; }
 .assign-row { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 6px; }
 .assign-row button { min-width: 34px; padding: 4px 6px; font-size: 11px; }
-.book-list { display: flex; flex-direction: column; gap: 6px; }
-.book-item { display: flex; gap: 10px; align-items: center; padding: 6px; border: 1px solid #3a2a18; border-radius: 4px; background: rgba(0,0,0,.35); cursor: grab; }
-.book-item canvas { width: 48px; height: 48px; border-radius: 4px; border: 1px solid var(--gold-dim); flex: none; }
-.book-item .meta { flex: 1; min-width: 0; }
-.book-item .meta b { color: var(--gold-bright); font-family: var(--font-head); }
-.book-item .meta p { margin: 2px 0 0; font-size: 12px; color: var(--text-dim); }
 
 /* vendors */
 .shop-grid { display: grid; grid-template-columns: repeat(8, 44px); grid-auto-rows: 44px; gap: 3px; }
@@ -1231,7 +1225,7 @@ body.touch.portrait #hud-top-right {
   max-width: 65vw; pointer-events: none; justify-content: end;
 }
 body.touch.portrait #minimap-row, body.touch.portrait #hud-btncol { display: contents; }
-body.touch.portrait #hud-buttons { grid-area: buttons; display: grid; grid-template-columns: repeat(2, 32px); grid-template-rows: repeat(4, 34px); gap: 4px; margin: 0; max-width: none; pointer-events: none; }
+body.touch.portrait #hud-buttons { grid-area: buttons; display: grid; grid-template-columns: repeat(2, 32px); grid-template-rows: repeat(3, 34px); gap: 4px; margin: 0; max-width: none; pointer-events: none; }
 body.touch.portrait .hbtn { width: 32px; height: 34px; pointer-events: auto; }
 body.touch.portrait #minimap-wrap { grid-area: minimap; width: 108px; aspect-ratio: 303 / 285.5; margin: 0; pointer-events: none; }
 body.touch.portrait #velscour-skull { grid-area: skull; position: static; width: 34px; height: 38px; margin: 0; padding: 2px; pointer-events: auto; justify-self: center; }
