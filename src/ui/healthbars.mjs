@@ -380,13 +380,15 @@ export function drawHealthBarCanvas(ctx, entity, x, y, w, h, { system = 'overhea
     const top = target ? targetLayout.track.y : y + h * (bossFrame ? 0.37 : 0.365);
     const innerW = Math.max(0, right - left);
     const innerH = target ? targetLayout.track.height : h * (bossFrame ? 0.21 : 0.305);
+    // Paint the decorative frame first. Painting it after the fill covered the
+    // ends of the full-health bar in both the live target panel and its preview.
+    if (appearance.decorativeBorders && target) {
+      drawHealthBarFrame(ctx, classification, targetLayout.frame.x, targetLayout.frame.y, targetLayout.frame.width, targetLayout.frame.height, system);
+    }
     ctx.fillStyle = '#110b08'; ctx.fillRect(left, top, innerW, innerH);
     if (fill && fraction > 0) ctx.drawImage(fill, 0, 0, Math.max(1, fill.naturalWidth * fraction), fill.naturalHeight, left, top, innerW * fraction, innerH);
     else if (fraction > 0) { ctx.fillStyle = classification.color; ctx.fillRect(left, top, innerW * fraction, innerH); }
     ctx.fillStyle = 'rgba(255,236,190,.38)'; ctx.fillRect(left, top, innerW * fraction, Math.max(1, innerH * 0.2));
-    if (appearance.decorativeBorders && target) {
-      drawHealthBarFrame(ctx, classification, targetLayout.frame.x, targetLayout.frame.y, targetLayout.frame.width, targetLayout.frame.height, system);
-    }
     // Paint the emblem after the frame so both the icon and frame remain crisp.
     if (emblem) {
       const geom = target ? targetLayout.emblem : null;

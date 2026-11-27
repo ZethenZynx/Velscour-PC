@@ -20,7 +20,10 @@ assert.equal(Object.keys(defaults.classes).length, 8, 'all seven creature groups
 assert.equal(defaults.classes.player, false, 'player overhead bar defaults off');
 assert.equal(defaults.info.showEnemyName, false, 'overhead creature names default off');
 assert.equal(defaults.info.showEnemyLevel, false, 'overhead creature levels default off');
-assert.equal(Object.keys(defaults.info).length, 6, 'all requested optional information switches are present');
+assert.equal(Object.keys(defaults.info).length, 7, 'all optional information switches are present');
+assert.equal(defaults.info.showClassificationIconsOverhead, false, 'overhead classification icons default off');
+assert.equal(normalizeHealthBarSettings({ info: {} }).info.showClassificationIconsOverhead, false, 'older saves inherit the icons-off default');
+assert.equal(normalizeHealthBarSettings({ info: { showClassificationIconsOverhead: true } }).info.showClassificationIconsOverhead, true, 'saved icon preference is retained');
 assert.equal(normalizeHealthBarSettings({ theme: 'classic' }).theme, 'classic');
 assert.equal(normalizeHealthBarSettings({ overhead: { width: 900, visibility: 'bad' } }).overhead.width, 160, 'saved values are bounded');
 assert.equal(normalizeHealthBarSettings({ overhead: { visibility: 'bad' } }).overhead.visibility, 'always', 'unknown visibility values normalize safely');
@@ -35,9 +38,9 @@ for (const [entity, id] of samples) assert.equal(healthBarClass(entity).id, id, 
 assert.equal(HEALTH_BAR_CLASSES.length, 7, 'all seven reference classes are defined');
 assert.deepEqual(BOSS_HEALTH_LAYOUT, {
   frameTop: 18 / 178, frameHeight: 160 / 178,
-  trackLeft: 0.23, trackRight: 0.09, trackTop: 18 / 178 + 0.33 * (160 / 178), trackHeight: 0.13 * (160 / 178),
+  trackLeft: 0.224, trackRight: 0.084, trackTop: 18 / 178 + 0.33 * (160 / 178), trackHeight: 0.13 * (160 / 178),
   emblemCenterX: 0.14, emblemCenterY: 18 / 178 + 0.395 * (160 / 178), emblemWidth: 0.134, emblemHeight: 0.62 * (160 / 178),
-  nameLeft: 0.23, nameRight: 0.09, nameTop: 0.005, nameHeight: 0.09,
+  nameLeft: 0.224, nameRight: 0.084, nameTop: 0.005, nameHeight: 0.09,
   summaryTop: 18 / 178 + 0.70 * (160 / 178), extraTop: 18 / 178 + 0.83 * (160 / 178),
 }, 'boss frame components share one relative layout');
 
@@ -96,11 +99,15 @@ assert.match(settings, /option value="target">Boss Health Bar/);
 assert.match(settings, /selectedClass = next === 'target' \? bossClassIndex : lastOverheadClass/);
 assert.match(settings, /previewFraction = 1/);
 assert.match(settings, /box\.querySelector\('\[data-hb-class-nav\]'\)\.hidden = selectedSystem === 'target'/);
+assert.match(settings, /showClassificationIconsOverhead/);
+assert.match(settings, /data-hb-info/);
 assert.match(settings, /Reset to Defaults/);
 assert.match(css, /healthbar-dialog/);
 assert.match(css, /--hb-boss-frame-top:10\.1124%/);
 assert.match(css, /--hb-boss-track-top:39\.7753%/);
 assert.match(css, /--hb-boss-track-height:11\.6854%/);
+assert.match(css, /#boss-bar\.healthbar-boss #boss-frame \{ z-index:1/);
+assert.match(css, /#boss-bar\.healthbar-boss #boss-track \{ z-index:2/);
 assert.match(css, /--hb-boss-emblem-center-x:14%/);
 assert.match(css, /healthbar-preview-wrap \{ overflow:visible/);
 assert.match(css, /healthbar-preview-heading > div\[hidden\] \{ display:none; \}/);
@@ -158,7 +165,15 @@ for (const entry of HEALTH_BAR_CLASSES) {
   assert.ok(ctx.calls.some((src) => src.endsWith(leftCap)), `${entry.id} uses its appropriate cached left cap`);
   assert.ok(ctx.calls.some((src) => src.endsWith(rightCap)), `${entry.id} uses its appropriate cached right cap`);
 }
+G.settings.healthBars = normalizeHealthBarSettings({ info: { showClassificationIconsOverhead: true } });
+for (const entry of HEALTH_BAR_CLASSES) {
+  const ctx = recordingContext();
+  drawHealthBarCanvas(ctx, { rank: entry.id, hp: 50, maxHp: 100 }, 0, 0, 110, 12, { system: 'overhead' });
+  assert.ok(ctx.calls.includes(`assets/ui/healthbars/${entry.icon}.webp`), `${entry.id} overhead classification artwork is shown when enabled`);
+}
+assert.equal(normalizeHealthBarSettings(null).info.showClassificationIconsOverhead, false, 'reset to defaults turns overhead classification icons off');
 for (const variant of TREASURE_IMPS) {
+  G.settings.healthBars = normalizeHealthBarSettings();
   const imp = { team: 'enemy', goblin: true, impVariant: variant.id, rank: 'unique', hp: 100, maxHp: 100, targetable: false };
   assert.equal(healthBarClass(imp).id, 'imp', `${variant.id} Treasure Imp keeps its emerald classification despite its unique rank`);
   assert.equal(overheadHealthBarEligible(imp), true, `${variant.id} remains eligible for an overhead bar while fleeing/untargetable`);
@@ -193,6 +208,9 @@ G.settings.healthBars = normalizeHealthBarSettings({ info: { showHealthPercentag
 drawHealthBarCanvas(targetCtx, { rank: 'boss', hp: 40, maxHp: 100 }, 10, 20, 660, 160, { system: 'target', forceFraction: 0.4 });
 const bossFillCall = targetCalls.find(({ src, args }) => src.endsWith('fill-crimson.webp') && args.length === 8);
 assert.ok(bossFillCall, 'boss target preview uses the crimson texture');
+const bossFrameIndex = targetCalls.findIndex(({ src }) => src.endsWith('frame-boss.webp'));
+const bossFillIndex = targetCalls.findIndex(({ src }) => src.endsWith('fill-crimson.webp'));
+assert.ok(bossFrameIndex >= 0 && bossFrameIndex < bossFillIndex, 'boss fill is painted after the frame so the frame cannot cover its endpoints');
 const [, , , , bossFillX, bossFillY, bossFillW, bossFillH] = bossFillCall.args;
 assert.equal(bossFillX, 10 + 660 * BOSS_HEALTH_LAYOUT.trackLeft);
 assert.equal(bossFillY, 20 + 160 * BOSS_HEALTH_LAYOUT.trackTop);
