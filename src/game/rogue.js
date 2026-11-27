@@ -7,6 +7,7 @@
 // point. Shadow Dance makes every strike an Ambush while it lasts. The points drain a while after her last blow.
 // rogueCast is castSkill's hook: true = the move replaced the kind's cast, false = it failed, undefined = it adds to it.
 import { G } from '../state.js';
+import { applyStun } from './stun.mjs';
 import { rand, chance, TAU, clamp, angleTo, dist } from '../core/util.js';
 import { sfx } from '../core/audio.js';
 import { camera, isoX, isoY } from '../core/view.js';
@@ -236,7 +237,7 @@ export function rogueHit(p, tgt, dmg, el, o) {
   if (o.cp && o.cast !== S.paid) { S.paid = o.cast; gainCp(p, o.cp); }
   S.idle = 0;
   if (tgt.dead) return;
-  if (o.kidney && tgt.status.stun) tgt.status.stun.t = Math.max(tgt.status.stun.t, tgt.rank === 'boss' ? 0.8 : o.kidney);
+  if (o.kidney && tgt.status.stun) applyStun(p, tgt, tgt.rank === 'boss' ? Math.min(0.8, o.stunDuration || 0.8) : (o.stunDuration || o.kidney), { max: true, cooldown: o.stunCooldown, key: o.stunKey || o.sk, skipGate: true });
   if (o.rupture && tgt.status.bleed) { tgt.status.bleed.t = 3 + o.rupture * 2; tgt.status.bleed.dps *= 1 + o.rupture * 0.4; }
   if ((o.melee || o.fin !== undefined) && !o.sig && (S.cutT || 0) <= 0) { // a bloody cut (a few a moment, not one a hit)
     S.cutT = G.touch ? 0.09 : 0.04;

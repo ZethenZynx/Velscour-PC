@@ -25,6 +25,29 @@ const KIND_MANA = {
   aoe: 1.2, trap: 1.1, leap: 1.1, dash: 0.9, blink: 1.0, orbit: 1.3, whirl: 1.2, heal: 1.3, corpse: 1.1,
 };
 const KIND_CD = { summon: 0.6, leap: 0.7, dash: 0.6, blink: 0.4, heal: 4, trap: 0.3 };
+// These stun skills previously had no recast delay. Their Rank 1 stun is 1.1s,
+// so short cooldowns preserve their offensive role while leaving a recovery gap.
+const STUN_COOLDOWN_OVERRIDES = {
+  'paladin.1.0': 1.5,            // Smite: single-target melee
+  'barbarian.2.0': 1.5,          // Ground Stomp: compact area
+  'slime_lord.2.4': 1.5,         // Engulf: single-target melee
+  'boomerang_knight.0.3': 2,     // Heavy Rang: returning projectile can hit repeatedly
+  'boomerang_knight.2.3': 2.5,   // Wind Spout: area stun plus knockback
+  'lancer.0.5': 2,               // Sunspear: piercing projectile
+  'lancer.1.1': 1.5,             // Shield Slam: single-target melee
+  'monk.0.4': 1.5,               // Iron Palm: single-target explosive melee
+  'monk.1.2': 2.5,               // Radiant Bell: delayed area stun
+  'gunner.3.3': 2.5,             // Concussion Grenade: delayed area stun
+  'monk.3.1': 2,                 // Resonating Bellstrike: area stun
+  'ninja.3.0': 2,                // Nunchaku Flurry: final-hit stun chance
+  'ninja.3.3': 3,                // Dragon Flail: repeated whirlwind hits
+};
+// Keep the existing short movement-skill cooldowns; shorten only their stun.
+const STUN_BASE_OVERRIDES = {
+  'monk.0.1': 0.45,              // Flying Kick: 75% of its 0.6s base cooldown
+  'bard.3.2': 0.525,             // Stage Dive: 75% of its 0.7s base cooldown
+  'lancer.3.4': 0.525,           // Phalanx Leap: 75% of its 0.7s base cooldown
+};
 const KIND_USE = { melee: 0.36, proj: 0.32, buff: 0.3, summon: 0.4, curse: 0.35, blink: 0.2, dash: 0.25, leap: 0.25 };
 const ATTACK_FX = new Set(['arrow', 'bullet', 'rang', 'javelin', 'blade', 'axe', 'chakram', 'rock', 'disc', 'pshield', 'tshield', 'bomb', 'rocket']);
 
@@ -97,7 +120,7 @@ export function manaCost(sk, L) {
   const row = sk.tierRow ?? sk.row;
   return Math.round((2.5 + Math.pow(row, 1.4) * 3.2) * rankResourceScale(L) * (sk.m.mana ?? 1) * (KIND_MANA[sk.kind] ?? 1) * 10) / 10;
 }
-export function cooldown(sk) { return sk.m.cd ?? KIND_CD[sk.kind] ?? 0; }
+export function cooldown(sk) { return sk.m.cd ?? STUN_COOLDOWN_OVERRIDES[sk.id] ?? KIND_CD[sk.kind] ?? 0; }
 export function useTime(sk) { return sk.m.barrage ? 0 : KIND_USE[sk.kind] ?? 0.42; }
 export function weaponCoef(sk) {
   if (sk.m.wc !== undefined) return sk.m.wc;
@@ -115,6 +138,54 @@ export function skillDuration(sk, L) {
   if (sk.kind === 'curse') return Math.min(60, (d ?? 6) + (L - 1) * 0.15);
   if (sk.kind === 'buff') return Math.min(skillDurationLimit(sk), (d ?? 20) + (L - 1) * 0.3);
   return d ?? 0;
+}
+
+/** Rank-independent PvE stun duration used by combat and tooltip regression checks. */
+export function skillStunDuration(sk, { boss = false, effectiveCooldown = Infinity, comboPoints = 0 } = {}) {
+  const m = sk?.m || {};
+  const cdCap = Number.isFinite(effectiveCooldown) && effectiveCooldown >= 0 ? effectiveCooldown * 0.75 : Infinity;
+  if (sk.kind === 'summon' && SUMMONS[m.sum]?.atk?.stun) return Math.min(1.1, 0.75 * 2);
+  if ((m.curse || []).includes('stun')) return Math.min(m.dur ?? (sk.kind === 'curse' ? 6 : 0), boss ? 0.6 : 3, cdCap);
+  if (sk.classId === 'ninja' && m.nin === 'iai') return Math.min(boss ? 0.2 : 0.5, cdCap);
+  if (sk.classId === 'ninja' && m.nin === 'grapple') return Math.min(boss ? 0.3 : 1.2, cdCap);
+  if (sk.classId === 'ninja' && m.nin === 'chucks') return Math.min(0.8, cdCap);
+  if (sk.classId === 'rogue' && m.rog === 'kidney') return Math.min(boss ? 0.8 : 1.1 + 0.45 * Math.max(0, Number(comboPoints) || 0), cdCap);
+  if (STUN_BASE_OVERRIDES[sk.id] !== undefined) return Math.min(STUN_BASE_OVERRIDES[sk.id], cdCap);
+  if (m.stun) return Math.min(1.1, cdCap);
+  return 0;
+}
+
+function stunSummary(sk, { baseSkill = sk, effectiveCooldown = Infinity, internalCooldown = 0, comboPoints = 0 } = {}) {
+  const m = sk.m || {}, base = baseSkill.m || {};
+  const rankOneSkill = { ...baseSkill, m: { ...base, ...(m.stun ? { stun: true } : {}), ...((m.curse || []).includes('stun') ? { curse: ['stun'] } : {}) } };
+  const seconds = (n) => `${Number(n.toFixed(2)).toString()}s`;
+  const pv = (duration) => `${seconds(duration)} PvE / ${seconds(duration * 0.5)} PvP`;
+  if ((m.curse || []).includes('stun')) {
+    const normal = skillStunDuration(rankOneSkill, { effectiveCooldown });
+    const boss = skillStunDuration(rankOneSkill, { boss: true, effectiveCooldown });
+    const internal = internalCooldown > 0 ? `; ${internalCooldown}s internal stun cooldown per target` : '';
+    return `Stun: ${pv(normal)}${boss < normal ? `; bosses ${seconds(boss)} / ${seconds(boss * 0.5)} PvP (25% chance)` : ''}${internal}.`;
+  }
+  if (baseSkill.classId === 'rogue' && base.rog === 'kidney') {
+    const normal = skillStunDuration(baseSkill, { effectiveCooldown, comboPoints });
+    const boss = skillStunDuration(baseSkill, { boss: true, effectiveCooldown });
+    const internal = internalCooldown > 0 ? `; ${internalCooldown}s internal stun cooldown per target` : '';
+    return `Stun: ${seconds(normal)} PvE / ${seconds(normal * 0.5)} PvP at ${comboPoints} Combo Points (1.1s plus 0.45s per point, capped by 75% of effective cooldown); bosses ${seconds(boss)} / ${seconds(boss * 0.5)} PvP, with the existing 2.25% hit-stun chance${internal}.`;
+  }
+  if (baseSkill.classId === 'ninja' && base.nin === 'iai') {
+    const normal = skillStunDuration(baseSkill, { effectiveCooldown }), boss = skillStunDuration(baseSkill, { boss: true, effectiveCooldown });
+    return `Stun: ${pv(normal)}; bosses ${seconds(boss)} / ${seconds(boss * 0.5)} PvP${internalCooldown > 0 ? `; ${internalCooldown}s internal stun cooldown per target` : ''}.`;
+  }
+  if (baseSkill.classId === 'ninja' && base.nin === 'grapple') {
+    const normal = skillStunDuration(baseSkill, { effectiveCooldown }), boss = skillStunDuration(baseSkill, { boss: true, effectiveCooldown });
+    return `Stun: ${pv(normal)}; bosses ${seconds(boss)} / ${seconds(boss * 0.5)} PvP${internalCooldown > 0 ? `; ${internalCooldown}s internal stun cooldown per target` : ''}.`;
+  }
+  if (baseSkill.classId === 'ninja' && base.nin === 'chucks') return `The final hit has a 30% chance to stun for ${pv(skillStunDuration(baseSkill, { effectiveCooldown }))}; bosses are immune to this stun${internalCooldown > 0 ? `; ${internalCooldown}s internal stun cooldown per target` : ''}.`;
+  if (baseSkill.classId === 'ninja' && base.nin === 'drop') return `Holds the seized target stunned during the lift; the impact stun is ${pv(skillStunDuration(rankOneSkill, { effectiveCooldown }))} (2.25% chance vs. bosses)${internalCooldown > 0 ? `; ${internalCooldown}s internal stun cooldown per target` : ''}.`;
+  if (sk.kind === 'summon' && SUMMONS[m.sum]?.atk?.stun) return `Its melee attacks stun for ${pv(1.1)} with a 2s internal stun cooldown per target.`;
+  if (m.stun && !base.stun && internalCooldown > 0) return `Stun: ${pv(skillStunDuration(rankOneSkill, { effectiveCooldown: internalCooldown }))}; 2s internal stun cooldown per target.`;
+  if (m.stun || base.stun) return `Stun: ${pv(skillStunDuration(rankOneSkill, { effectiveCooldown }))} (2.25% chance vs. bosses)${internalCooldown > 0 ? `; ${internalCooldown}s internal stun cooldown per target` : ''}.`;
+  return '';
 }
 
 /** Keep high-rank duration scaling inside the intended combat-buff windows. */
@@ -246,7 +317,7 @@ const CURSENAME = { amp: 'take increased damage', weaken: 'deal less damage', sl
 const plural = (n, s) => (n === 1 ? s : s.endsWith('s') ? s : s + 's');
 
 /** Human readable description. dmg = [min,max] already scaled for the player. */
-export function describe(sk, L, dmg) {
+export function describe(sk, L, dmg, stunOptions = {}) {
   const m = sk.m, el = (ELEM[sk.el] || ELEM.phys).name.toLowerCase();
   const D = dmg ? `<b>${dmg[0]}–${dmg[1]}</b> ${el} damage` : `${el} damage`;
   const n = m.n || 1;
@@ -265,7 +336,6 @@ export function describe(sk, L, dmg) {
   if (m.bleed) flags.push('Causes bleeding');
   if (m.freeze) flags.push('Can freeze');
   if (m.slow) flags.push('Slows');
-  if (m.stun) flags.push('Stuns');
   if (m.knock) flags.push('Knockback');
   if (m.leech) flags.push('Life steal');
   if (m.pull) flags.push('Pulls enemies');
@@ -307,7 +377,6 @@ export function describe(sk, L, dmg) {
       const duration = Number(skillDuration(sk, L).toFixed(1));
       const control = [];
       if (effects.includes('slow')) control.push(`slowed by ${Math.min(65, 30 + curseAmount(sk, L) / 2)}% for ${duration}s`);
-      if (effects.includes('stun')) control.push(`stunned for ${Math.min(duration, 3)}s${sk.m.hit ? ' (bosses: 0.6s, 25% chance)' : ''}`);
       const other = effects.filter((c) => !['slow', 'stun'].includes(c)).map((c) => CURSENAME[c] || c);
       const effectText = [...control, ...other.map((c) => `${c} for ${duration}s`)].join(' and ');
       const targetText = m.at === 'self' ? 'Nearby enemies' : 'Enemies in the target area';
@@ -337,7 +406,8 @@ export function describe(sk, L, dmg) {
   const N = NOTES[m.note];
   if (N && m.free) flags.push('Fills the bar: with less than a beat left it plays a shorter note');
   const score = N ? `<br><span style="color:#ffd88a">&#9835; ${N.name} · ${N.clef ? `no beats: changes the key to ${N.clef}` : `${N.beats} beat${N.beats === 1 ? '' : 's'} of the measure${N.rest ? ' (rests restore mana and life at the Cadence)' : ` · ${REGISTERS[registerOf(sk)].name}`}`}</span>` : '';
-  return s + (flags.length ? ` <i>${flags.join(' · ')}.</i>` : '') + score;
+  const stun = stunSummary(sk, stunOptions);
+  return s + (stun ? ` ${stun}` : '') + (flags.length ? ` <i>${flags.join(' · ')}.</i>` : '') + score;
 }
 
 export function classTrees(cls) { return CLASSES[cls].trees; }

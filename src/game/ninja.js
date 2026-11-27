@@ -6,6 +6,7 @@
 // (MIRROR_DMG of it each). Grappling Hook pulls hookCount(L) foes to him: one at rank 1, one more every four ranks,
 // five from rank 17; a guardian too heavy to drag pulls him to it instead.
 import { G } from '../state.js';
+import { applyStun } from './stun.mjs';
 import { bodyR } from '../world/map.js';
 import { rand, chance, TAU, clamp, angleTo, dist } from '../core/util.js';
 import { sfx } from '../core/audio.js';
@@ -179,7 +180,7 @@ function iaido(p, sk, tx, ty, C) {
   w.map.rememberPosition(p);
   cutBetween(x0, y0, x1, y1, { width: 3, dur: 0.5, color: WHITE });
   sfx('swing', 1);
-  for (const t of victims) { t.status.stun = { t: Math.max(t.status.stun ? t.status.stun.t : 0, t.rank === 'boss' ? 0.2 : 0.5) }; }
+  for (const t of victims) applyStun(p, t, t.rank === 'boss' ? Math.min(0.2, o.stunDuration || 0.5) : Math.min(0.5, o.stunDuration || 0.5), { max: true, cooldown: o.stunCooldown, key: o.stunKey || sk.id });
   later(w, 0.36, () => { // the blade goes home
     cutBetween(x0, y0, x1, y1, { width: 9, dur: 0.3 });
     sparkle(p.x, p.y, 34, WHITE, 6, 0.2);
@@ -204,12 +205,12 @@ class HeavensDrop {
     this.t += dt;
     const u = this.t / this.up, d = (this.t - this.up) / this.down;
     p.z = u < 1 ? 150 * (1 - (1 - u) * (1 - u)) : 150 * Math.max(0, 1 - d * d);
-    if (t && !t.dead) { t.z = p.z * 0.85; t.x = p.x + (p.flip ? -0.3 : 0.3); t.y = p.y + 0.05; t.status.stun = { t: 0.9 }; }
+    if (t && !t.dead) { t.z = p.z * 0.85; t.x = p.x + (p.flip ? -0.3 : 0.3); t.y = p.y + 0.05; applyStun(p, t, Math.min(0.9, this.C.o.stunDuration || 0.9), { cooldown: this.C.o.stunCooldown, key: this.C.o.stunKey || this.C.o.sk }); }
     if (chance(dt * 40)) w.addHazard(new AfterImage(p, { life: 0.22, a: 0.35 }));
     if (this.t >= this.up + this.down) {
       p.z = 0; p.channel = null; if (t) t.z = 0;
       const { dmg, o, el } = this.C;
-      if (t && !t.dead) hit(p, t, roll(dmg) * 1.6, el, { ...o, melee: true, cut: true });
+      if (t && !t.dead) hit(p, t, roll(dmg) * 1.6, el, { ...o, melee: true, cut: true, stunSkipGate: true });
       explode(w, p, p.x, p.y, this.r, dmg, el, { ...o, knock: 0.9 }, 'eruption');
       addEffect(new Ring(p.x, p.y, 0.2, this.r * 1.3, 0.4, CYAN, 5));
       addDecal(p.x, p.y, 'rgba(10,6,4,0.6)', this.r * 0.5, 'scorch', 0.7);
@@ -372,7 +373,7 @@ class Grapple {
     if (p.dead || t.dead) return false;
     if (this.t < 0) { this.hx = p.x; this.hy = p.y; this.hz = 30; return true; }
     if (this.t < this.out) { const u = this.t / this.out; this.hx = p.x + (t.x - p.x) * u; this.hy = p.y + (t.y - p.y) * u; this.hz = 30 - 8 * u; return true; }
-    if (!this.bit) { this.bit = true; sparkle(t.x, t.y, 24, WHITE, 5, 0.2); sfx('hit', 0.6); t.status.stun = { t: t.rank === 'boss' ? 0.3 : 1.2 }; this.sx = t.x; this.sy = t.y; }
+    if (!this.bit) { this.bit = true; sparkle(t.x, t.y, 24, WHITE, 5, 0.2); sfx('hit', 0.6); applyStun(p, t, Math.min(t.rank === 'boss' ? 0.3 : 1.2, this.C.o.stunDuration || 1.2), { cooldown: this.C.o.stunCooldown, key: this.C.o.stunKey || this.C.o.sk }); this.sx = t.x; this.sy = t.y; }
     const u = Math.min(1, (this.t - this.out) / this.pull), e = u * u * (3 - 2 * u), [dx, dy] = this.dest;
     if (this.heavy) { // too heavy: the rope takes him to it, but collision still applies
       const nx = this.px + (dx - this.px) * e, ny = this.py + (dy - this.py) * e;
@@ -475,7 +476,7 @@ function backflip(p, sk, tx, ty, C) {
 export function ninjaHit(p, tgt, dmg, el, o) {
   if (o.dot || !o.sk || !o.sk.startsWith('ninja.')) return;
   const S = ninjaOf(p);
-  if (o.chucks && o.hitIndex === (o.hitCount || 1) - 1 && !tgt.dead && tgt.rank !== 'boss' && chance(0.3)) tgt.status.stun = { t: 0.8 };
+  if (o.chucks && o.hitIndex === (o.hitCount || 1) - 1 && !tgt.dead && tgt.rank !== 'boss' && chance(0.3)) applyStun(p, tgt, Math.min(0.8, o.stunDuration || 0.8), { cooldown: o.stunCooldown, key: o.stunKey || o.sk });
   if (!(o.cut || o.melee) || S.cutT > 0 || o.aoe) return;
   S.cutT = G.touch ? 0.08 : 0.035;
   const a = o.ang ?? angleTo(p.x, p.y, tgt.x, tgt.y);

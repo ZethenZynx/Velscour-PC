@@ -45,7 +45,17 @@ import { noteFind, codexMf } from './reliquary.js';
 import { markBonuses, gainMarkXp } from './marks.js';
 import { endgame, saveEndgame } from './endgame.js';
 import { heresyHero, heresyAllows, heresyAbilityCostMul, heresyCooldownMul, heresyShrineDurationMul } from './heresies.js';
+
 import { keepBonuses, keepGold, keepItem, keepPotion, keepLevel } from './keep.js';
+
+/** Shared cooldown calculation for casting, anti-stun-lock timing and tooltips. */
+export function effectiveSkillCooldown(player, sk, morph = skillMorphFor(player, sk), quickOverride = null) {
+  const aug = player?.augFor?.(sk);
+  const quick = quickOverride ?? (aug && aug.haste ? 1 - Math.min(0.6, 0.25 * aug.haste) : 1);
+  const morphMul = morph?.cdPct ? 1 - morph.cdPct / 100 : 1;
+  const dungeonMul = player?.world?.dungeonAffixes?.includes('spell_fatigue') ? 1.25 : 1;
+  return cooldown(sk) * (1 - (Number(player?.st?.cdr) || 0) / 100) * quick * morphMul * dungeonMul * heresyCooldownMul(player?.char, player?.world);
+}
 
 // XP for the next level across the Level 1-100 progression curve.
 const xpCurve = (L) => (45 * L * L + 35 * L) * (1 + Math.pow(L / 25, 1.25));
@@ -669,13 +679,12 @@ export class Player extends Creature {
     this.castLock = useTime(sk) / (1 + spd / 100);
     this.castFree = FREE_CAST.has(sk.kind); // Diablo style: buffs, summons, totems and turrets don't root the hero
     const morph = skillMorphFor(this, sk);
-    const morphCdMul = morph && morph.cdPct ? 1 - morph.cdPct / 100 : 1;
-    const dungeonCooldownMul = this.world && this.world.dungeonAffixes?.includes('spell_fatigue') ? 1.25 : 1;
-    this.cooldowns[sk.id] = cooldown(sk) * (1 - this.st.cdr / 100) * quick * morphCdMul * dungeonCooldownMul * heresyCooldownMul(this.char, this.world);
+    const effectiveCooldown = effectiveSkillCooldown(this, sk, morph, quick);
+    this.cooldowns[sk.id] = effectiveCooldown;
     this.aim = [tx, ty];
     this.lastEl = (morph && morph.el) || sk.el;
     if (sk.id === 'barbarian.0.0') this.bashCastSerial++;
-    const ok = castSkill(this, sk, L, tx, ty);
+    const ok = castSkill(this, sk, L, tx, ty, { stunCooldown: effectiveCooldown });
     if (ok === false) { this.mana += cost; this.cooldowns[sk.id] = 0; return false; }
     if (rageCost(sk, L)) { this.rage -= rageCost(sk, L) * heresyCostMul; this.char.rage = this.rage; }
     if (this.world && this.world.dungeonAffixes?.includes('curse_of_slowness')) this.affixSlowUntil = (this.world.time || 0) + DUNGEON_AFFIX_CONFIG.playerCurses.slowDuration;
@@ -690,7 +699,7 @@ export class Player extends Creature {
     this.gainMastery(sk.id, 4 * Math.pow(dl, 1.5) * (augmentable(sk) ? 0.15 : 1.2));
     const echo = (this.st.echoChance || 0) / 100 + (aug && aug.echo ? Math.min(0.6, 0.2 * aug.echo) : 0);
     if (echo && !isMovementSkill(sk) && chance(echo) && sk.kind !== 'summon' && sk.kind !== 'buff') {
-      this.world.addHazard(new Timer(0.2, () => { if (!this.dead) { castSkill(this, sk, L, this.aim ? this.aim[0] : tx, this.aim ? this.aim[1] : ty, { echo: true }); floatText(this.x, this.y, 64, 'Echo!', '#ff80ff', 11); } }));
+      this.world.addHazard(new Timer(0.2, () => { if (!this.dead) { castSkill(this, sk, L, this.aim ? this.aim[0] : tx, this.aim ? this.aim[1] : ty, { echo: true, stunCooldown: effectiveCooldown }); floatText(this.x, this.y, 64, 'Echo!', '#ff80ff', 11); } }));
     }
     this.moving = false;
     return true;

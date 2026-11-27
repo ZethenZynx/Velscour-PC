@@ -5,7 +5,7 @@ import { shownDmg, heroDmgLevel } from '../data/depth.js';
 import { sfx } from '../core/audio.js';
 import { UI, draggable } from './ui.js';
 import { skillIcon, skillIconURL } from './icons.js';
-import { CLASS_SKILLS, SKILLS, MAX_SKILL_LEVEL, describe, manaCost, rageCost, whirlwindRageCost, whirlwindRageRate, cooldown, ROW_LEVELS, effLevel } from '../data/skills.js';
+import { CLASS_SKILLS, SKILLS, MAX_SKILL_LEVEL, describe, manaCost, rageCost, whirlwindRageCost, whirlwindRageRate, ROW_LEVELS, effLevel } from '../data/skills.js';
 import { CLASSES } from '../data/classes.js';
 import { elem } from '../gfx/vfx.js';
 import { LMB, SLOT_LABELS, freeSlot } from '../data/bar.js';
@@ -13,6 +13,7 @@ import { MAX_MASTERY, masteryNeed, masteryMul, masteryTier, TIER_NAMES } from '.
 import { AUGMENTS } from '../data/rings.js';
 import { skillUp } from './skillup.js';
 import { skillMorphFor, applySkillMorph } from '../data/talents.js';
+import { effectiveSkillCooldown } from '../game/player.js';
 
 /** A skill's damage range on the shown scale of the hero's depth (data/depth.js). */
 const skillDmg = (sk, L) => G.player.skillDamage(sk, L).map((v) => fmtDmg(shownDmg(v, heroDmgLevel(G.char))));
@@ -188,12 +189,12 @@ export function skillDetail(sk) {
     <div><h3 style="margin:0 0 3px">${escapeHtml(sk.name)}</h3><div>${tags}</div></div>
   </div>`;
   h += `<div class="dim" style="margin:4px 0">Level ${base}${L > base ? ` <span style="color:#8fb4ff">(+${L - base})</span>` : ''} / ${MAX_SKILL_LEVEL} · Requires character level ${sk.reqLevel}${sk.prereq ? ` · Requires ${escapeHtml(SKILLS[sk.prereq].name)}` : ''}</div>`;
-  h += `<p style="margin:6px 0">${describe(effSk, showL, dmg)}</p>`;
+  const currentEffCd = effectiveSkillCooldown(p, sk, morph);
+  h += `<p style="margin:6px 0">${describe(effSk, showL, dmg, { baseSkill: sk, effectiveCooldown: currentEffCd > 0 ? currentEffCd : 2, internalCooldown: currentEffCd > 0 ? 0 : 2, comboPoints: p.rogue?.cp || 0 })}</p>`;
   if (morph && morph.labels && morph.labels.length) {
     h += `<div style="margin:4px 0;font-size:12px;color:#ffb86c">Talent Morphs: <b>${morph.labels.map(escapeHtml).join(', ')}</b></div>`;
   }
-  const rc = rageCost(sk, showL), cd = cooldown(sk);
-  const effCd = cd ? Math.max(0.2, cd * (1 - p.st.cdr / 100) * (1 - (morph ? morph.cdPct || 0 : 0) / 100)) : 0;
+  const rc = rageCost(sk, showL), effCd = effectiveSkillCooldown(p, sk, morph);
   h += `<div class="dim">${rc || (sk.classId === 'barbarian' && sk.kind === 'whirl') ? 'Rage' : 'Mana'}: <b style="color:${rc || (sk.classId === 'barbarian' && sk.kind === 'whirl') ? '#ff9933' : '#8fb4ff'}">${resourceCostLabel(sk, showL)}</b>${effCd ? ` · Cooldown: <b>${effCd.toFixed(1)}s</b>` : ''}</div>`;
   if (base < MAX_SKILL_LEVEL) {
     const nd = skillDmg(sk, Math.max(1, L + 1));
@@ -250,12 +251,12 @@ export function skillTooltip(sk) {
     </div>
   </div>`;
   h += `<div class="dim" style="font-size:12px;margin:3px 0">Level <b style="color:#f3e5c8">${base}</b>${L > base ? ` <span style="color:#8fb4ff">(+${L - base})</span>` : ''} / ${MAX_SKILL_LEVEL} · Req. Lv ${sk.reqLevel}${sk.prereq ? ` · Needs ${escapeHtml(SKILLS[sk.prereq].name)}` : ''}</div>`;
-  h += `<div style="margin:6px 0;line-height:1.4">${describe(effSk, showL, dmg)}</div>`;
+  const currentEffCd = effectiveSkillCooldown(p, sk, morph);
+  h += `<div style="margin:6px 0;line-height:1.4">${describe(effSk, showL, dmg, { baseSkill: sk, effectiveCooldown: currentEffCd > 0 ? currentEffCd : 2, internalCooldown: currentEffCd > 0 ? 0 : 2, comboPoints: p.rogue?.cp || 0 })}</div>`;
   if (morph && morph.labels && morph.labels.length) {
     h += `<div style="margin:4px 0;font-size:12px;color:#ffb86c">Talent Morphs: <b>${morph.labels.map(escapeHtml).join(', ')}</b></div>`;
   }
-  const rc = rageCost(sk, showL), cd = cooldown(sk);
-  const effCd = cd ? Math.max(0.2, cd * (1 - p.st.cdr / 100) * (1 - (morph ? morph.cdPct || 0 : 0) / 100)) : 0;
+  const rc = rageCost(sk, showL), effCd = effectiveSkillCooldown(p, sk, morph);
   h += `<div class="dim" style="font-size:13px">${rc || (sk.classId === 'barbarian' && sk.kind === 'whirl') ? 'Rage' : 'Mana'}: <b style="color:${rc || (sk.classId === 'barbarian' && sk.kind === 'whirl') ? '#ff9933' : '#8fb4ff'}">${resourceCostLabel(sk, showL)}</b>${effCd ? ` · Cooldown: <b>${effCd.toFixed(1)}s</b>` : ''}</div>`;
   if (base < MAX_SKILL_LEVEL) {
     const nd = skillDmg(sk, Math.max(1, L + 1));

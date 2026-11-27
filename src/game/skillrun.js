@@ -7,8 +7,9 @@ import { camera } from '../core/view.js';
 import { GroundItem } from './loot.js';
 import { explosionFx } from '../gfx/shapes.js';
 import { hit, aoe, chainHit } from './combat.js';
+import { applyStun } from './stun.mjs';
 import { Projectile, Delayed, Area, makeWall, Orbit, Whirl, Leap, Dash, cursorDashLength, NovaWave, BeamCh, Trap, Rain, Fissure, AuraFx, explode, coneTargets } from './hazards.js';
-import { buffAmount, curseAmount, skillDuration, skillDurationLimit, spearBarrageAreas, ricochetCount, RICOCHET_BLAST, whirlwindRageRate } from '../data/skills.js';
+import { buffAmount, curseAmount, skillDuration, skillStunDuration, skillDurationLimit, spearBarrageAreas, ricochetCount, RICOCHET_BLAST, whirlwindRageRate } from '../data/skills.js';
 import { createSummon } from './monster.js';
 import { lanceLeap, lanceSpearBarrage } from '../gfx/lancefx.js';
 import { shieldVariantForSkill, shieldOrbitRadius, preloadLancerShield } from '../gfx/lancershields.js';
@@ -96,18 +97,23 @@ export function castSkill(p, sk, L, tx, ty, opts = {}) {
   if (castSfx) o.silentSfx = true; // Avoid stacking the old generic holy sound under these bespoke casts.
   if (m.curse && sk.kind !== 'curse') o.curse = Array.isArray(m.curse) ? m.curse : [m.curse];
   else delete o.curse;
-  o.sk = sk.id; o.vis = vis;
+  o.sk = sk.id; o.vis = vis; o.stunKey = baseSk.id;
+  o.stunCooldown = Number.isFinite(opts.stunCooldown) && opts.stunCooldown > 0 ? opts.stunCooldown : 0;
+  o.stunDuration = skillStunDuration(sk, { effectiveCooldown: o.stunCooldown || 2 });
   if (sk.id === 'barbarian.0.0') o.rageCast = p.bashCastSerial;
   if (aug) o.aug = aug;
   const bard = sk.classId === 'bard' && m.note ? noteTier(L) : -1; // the Bard's notes: staff colour/particle tier
   if (bard >= 0) { o.bardT = bard; if (m.free) fx = 'n_' + bardNoteFor(p, sk); } // the basic note shrinks to fit the bar
   if (!opts.echo) { masteryCastFx(p, sk, M, tx, ty); classCastFx(p, sk, L, tx, ty); if (bard >= 0) bardCastFx(p, sk, L, tx, ty); }
   // Canon: the same phrase answers itself a moment later
-  if (bard >= 0 && m.canon && !opts.echo) later(w, 0.32, () => { if (!p.dead && p.world === w) castSkill(p, baseSk, L, p.aim ? p.aim[0] : tx, p.aim ? p.aim[1] : ty, { echo: true }); });
+  if (bard >= 0 && m.canon && !opts.echo) later(w, 0.32, () => { if (!p.dead && p.world === w) castSkill(p, baseSk, L, p.aim ? p.aim[0] : tx, p.aim ? p.aim[1] : ty, { echo: true, stunCooldown: opts.stunCooldown }); });
   p.face(ang);
   // the Astronomer's special spells (`astro=`): true replaced the kind's cast, false failed, undefined adds to it
   const own = astro ? astroCast : sk.classId === 'rogue' ? rogueCast : sk.classId === 'ninja' ? ninjaCast : null;
   const special = own ? own(p, sk, L, tx, ty, { dmg, area, o, el, E, vis, ang, echo: !!opts.echo }) : undefined;
+  // Rogue finishers derive their fixed base duration from the current combo
+  // points. Keep that value from the shared calculation for combat and UI.
+  if (o.kidney) o.stunDuration = skillStunDuration(baseSk, { effectiveCooldown: o.stunCooldown || 2, comboPoints: p.rogue?.cp || 0 });
   if (special === false) return false;
   if (special !== true) switch (sk.kind) {
     case 'melee': {
@@ -373,13 +379,16 @@ export function castSkill(p, sk, L, tx, ty, opts = {}) {
       const [x, y] = self ? [p.x, p.y] : clampTarget(w, p, tx, ty, 9);
       const r = 2.2 * (m.r ?? 1) * area;
       const amt = curseAmount(sk, L), dur = skillDuration(sk, L) * (1 + (morph ? morph.durPct : 0) / 100);
+      // Stun is a fixed Rank 1 control duration. Duration bonuses may extend
+      // other curse effects, but cannot extend the stun portion.
+      const stunDur = skillStunDuration(baseSk, { effectiveCooldown: o.stunCooldown || 2 });
       const targets = w.hostiles(p.team, x, y, r);
       for (const t of targets) {
         // Entangling Roots is a damaging control skill. Resolve one ordinary
         // combat hit per affected enemy at cast time; the lingering slow/stun
         // are status effects only and must not tick damage on later frames.
         if (m.hit) hit(p, t, roll(dmg), el, { ...o, aoe: true });
-        for (const c of m.curse || ['amp']) applyCurse(p, t, c, amt, m.dur && ['stun', 'freeze'].includes(c) ? m.dur : dur, dmg, area);
+        for (const c of m.curse || ['amp']) applyCurse(p, t, c, amt, m.dur && ['stun', 'freeze'].includes(c) ? m.dur : dur, dmg, area, stunDur, o.stunCooldown, o.stunKey);
       }
       addEffect(new Ring(x, y, 0.2, r, 0.6, E.glow, 3, { fill: true }));
       sigil(x, y, r, E);
@@ -533,7 +542,7 @@ function withMore(sk, extra) {
   return { ...sk, m };
 }
 
-export function applyCurse(src, t, c, amt, dur, dmg, area = 1) {
+export function applyCurse(src, t, c, amt, dur, dmg, area = 1, stunDuration = dur, stunCooldown = 0, stunKey = null) {
   if (t.dead) return;
   const boss = t.rank === 'boss';
   switch (c) {
@@ -542,7 +551,7 @@ export function applyCurse(src, t, c, amt, dur, dmg, area = 1) {
     case 'leech': t.curses.leech = { t: dur, amt: Math.max(4, amt / 3), src }; break;
     case 'thorns': t.curses.thorns = { t: dur, amt: Math.max(40, amt * 2), src }; break;
     case 'fear': if (!boss) t.status.fear = { t: Math.min(dur, 4) }; break;
-    case 'stun': if (!boss || chance(0.25)) t.status.stun = { t: Math.min(dur, boss ? 0.6 : 3) }; break;
+    case 'stun': if (!boss || chance(0.25)) applyStun(src, t, Math.min(stunDuration, boss ? 0.6 : 3), { cooldown: stunCooldown, key: stunKey }); break;
     case 'freeze': if (!boss) t.status.freeze = { t: 1.6 }; break;
     case 'confuse': if (!boss) t.curses.confuse = { t: dur, src }; break;
     case 'charm':

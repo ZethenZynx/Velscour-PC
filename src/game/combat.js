@@ -26,6 +26,7 @@ import { skillMorphFor } from '../data/talents.js';
 import { EXTRA_AFFIX_DEATHS } from './affixcatalogruntime.js';
 import { notifyBossDefeated } from './bosscompletion.js';
 import { createCombatSoundGate } from './combat-sound-gate.mjs';
+import { applyStun, isPlayerControlledSource } from './stun.mjs';
 
 const PLAYER_RES = { fire: 'fire', cold: 'cold', light: 'light', poison: 'poison', acid: 'poison' };
 const LEECH_K = 2; // life/mana leech: a whole monster's life taken returns LEECH_K x leech% of the hero's own
@@ -471,7 +472,13 @@ function applyStatus(src, tgt, dmg, el, o) {
   if (el === 'blood' || o.bleed) s.bleed = { t: Math.max(s.bleed?.t || 0, 3 * dotTime), dps: Math.max(s.bleed && s.bleed.t > 0 ? s.bleed.dps : 0, dmg * 0.3), src };
   if (crowdControlLands && !unyielding && (el === 'cold' || o.slow || leg.frostbite)) s.chill = { t: 2.2 * (tgt.isPlayer ? ccTime : 1), amt: o.slow ? 0.45 : 0.3 };
   if (crowdControlLands && !unyielding && ((o.freeze && chance(boss ? 0 : 0.35)) || (leg.frostbite && chance(0.1) && !boss))) s.freeze = { t: (tgt.isPlayer ? 0.8 : 1.4) * (tgt.isPlayer ? ccTime : 1) };
-  if (crowdControlLands && !unyielding && o.stun && (!boss || chance(0.15))) s.stun = { t: (tgt.isPlayer ? 0.5 : 1.1) * (tgt.isPlayer ? ccTime : 1) };
+  if (crowdControlLands && !unyielding && o.stun && (!boss || chance(0.15))) {
+    // Player-vs-player stuns use the same PvE base (1.1s), then apply the
+    // centralized 50% PvP factor and the target's existing CC resistance.
+    // Enemy attacks keep their historical 0.5s base against players.
+    const baseDuration = tgt.isPlayer && !isPlayerControlledSource(src) ? 0.5 : (o.stunDuration > 0 ? o.stunDuration : 1.1);
+    applyStun(src, tgt, baseDuration, { cooldown: o.stunCooldown, key: o.stunKey || o.sk, skipGate: o.stunSkipGate });
+  }
   if (crowdControlLands && o.fear && !boss) s.fear = { t: 2.5 * (tgt.isPlayer ? ccTime : 1) };
   if (el === 'acid') { s.shred = { t: 3 * dotTime, amt: 0.15 }; s.slow = { t: 2 * (tgt.isPlayer ? ccTime : 1), amt: 0.15 }; }
   if (o.curse && !tgt.isPlayer) for (const c of o.curse) tgt.curses[c] = { t: 5, amt: 25, src };

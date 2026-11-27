@@ -24,6 +24,9 @@ const { openGame, report } = require('./harness');
       G.char.skills[sk.id] = 5;
       G.player.recompute();
       G.player.mana = G.player.maxMana = 9999;
+      // Keep the one-hit damage assertion deterministic; the regression is
+      // about one cast's baseline damage, not random critical hit variance.
+      G.player.st.critChance = 0;
       G.godMode = false;
       const { BIOME_BY_ID } = await import('/src/data/biomes.js');
       game.buildDungeon(8, BIOME_BY_ID.catacombs);
@@ -91,7 +94,7 @@ const { openGame, report } = require('./harness');
       const next = p.skillDamage(sk, p.skillLevel(sk) + 1).map((value) => fmtDmg(shownDmg(value, heroDmgLevel(G.char))));
       if (!tooltip.includes(`Next level: ${next[0]}–${next[1]} damage`))
         problems.push('Next-level tooltip damage does not match the next skillDamage() calculation');
-      if (!tooltip.includes('slowed by') || !tooltip.includes(`${skillDuration(sk, 5).toFixed(1)}s`) || !tooltip.includes('stunned for'))
+      if (!tooltip.includes('slowed by') || !tooltip.includes(`${skillDuration(sk, 5).toFixed(1)}s`) || !tooltip.includes('Stun: 3s PvE / 1.5s PvP'))
         problems.push('Main tooltip omits Roots slow/stun values or durations');
       if (!tooltip.includes('30% of the hit per second for 3.5s')) problems.push('Main tooltip omits standard poison damage-over-time');
       if (!tooltip.includes('Cooldown: <b>4.0s</b>')) problems.push('Tooltip does not show the 4.0s cooldown');
