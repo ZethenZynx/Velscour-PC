@@ -23,7 +23,7 @@ const INFO_TOGGLES = [
 const previewEntity = (entry, fraction) => ({
   name: entry.id === 'imp' ? 'Treasure Imp' : entry.label === 'Normal Monster' ? 'Sandstalker' : entry.label === 'Unique Monster' ? "Zahir's Sandstalker" : `${entry.label} Sandstalker`,
   rank: ['normal', 'champion', 'unique', 'boss'].includes(entry.id) ? entry.id : 'normal',
-  nemesis: entry.id === 'nemesis', goblin: entry.id === 'imp', summon: entry.id === 'companion',
+  nemesis: entry.id === 'nemesis', treasureImp: entry.id === 'imp', summon: entry.id === 'companion',
   team: entry.id === 'companion' ? 'player' : 'enemy', isPlayer: false, hp: 68 * fraction, maxHp: 68, level: 84,
   affixes: ['strong', 'vampiric'], status: { burn: { t: 2 }, chill: { t: 0 } },
 });

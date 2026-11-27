@@ -564,7 +564,7 @@ function createTreasureImp(world, at, variant, options = {}) {
   const goldModifier = impGoldModifier(world);
   const hasGoldTrail = ['gold', 'mixed'].includes(treasureImpTrailType(variant.id));
   const goldReserve = hasGoldTrail ? treasureImpGoldReserve(lvl, goldScale(lvl), goldModifier) : 0;
-  Object.assign(m, { name: variant.name, impVariant: variant.id, impColor: variant.color, nameColor: variant.color,
+  Object.assign(m, { name: variant.name, treasureImp: true, impVariant: variant.id, impColor: variant.color, nameColor: variant.color,
     goblin: true, aura: variant.color, scale: 0.9, dmg: 0, xp: m.xp * 8, awake: true, rank: 'unique', affixes: [], impEffect: variant.effect,
     impLeft: null, impDiscovered: false, impEscapeWarned: false, impParticleT: 0, dungeonEventImp: !!options.event,
     impSpawnSource: options.event ? 'dungeon-event' : options.specialEncounter || 'natural',

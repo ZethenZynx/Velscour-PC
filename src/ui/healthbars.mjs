@@ -148,15 +148,24 @@ export function healthBarClass(entity) {
   if (!entity) return HEALTH_BAR_CLASSES[0];
   if (entity.team === 'player' && entity.summon) return HEALTH_BAR_CLASSES[6];
   if (entity.isPlayer) return PLAYER_BAR_CLASS;
+  // The explicit family marker wins over rank and incidental enemy flags.
+  // Legacy checks remain below for already-created entities during transitions.
+  if (entity.treasureImp === true) return HEALTH_BAR_CLASSES[5];
   if (entity.nemesis || entity.rank === 'nemesis') return HEALTH_BAR_CLASSES[4];
-  if (entity.goblin || entity.treasureImp || entity.impVariant || entity.rank === 'imp') return HEALTH_BAR_CLASSES[5];
+  if (entity.goblin === true || entity.impVariant || entity.rank === 'imp') return HEALTH_BAR_CLASSES[5];
   if (entity.isRaid || entity.rank === 'raid' || entity.rank === 'boss' || entity === entity.world?.boss) return HEALTH_BAR_CLASSES[3];
   return HEALTH_BAR_CLASSES.find((entry) => entry.id === entity.rank) || HEALTH_BAR_CLASSES[0];
 }
 
 /** All variant IDs share the same imp classification, even when their rank or targeting state differs. */
 export function isTreasureImpEntity(entity) {
-  return !!(entity && (entity.goblin === true || entity.treasureImp === true || entity.impVariant || entity.rank === 'imp'));
+  return !!(entity && (entity.treasureImp === true || entity.goblin === true || entity.impVariant || entity.rank === 'imp'));
+}
+
+/** Nonvisual hidden-bar flags must never suppress a live Treasure Imp's family bar. */
+export function overheadHealthBarDrawEligible(entity) {
+  if (!entity || entity.ghostDraw || entity.clutter) return false;
+  return !entity.noLifeBar || isTreasureImpEntity(entity);
 }
 
 function combatIsActive(entity) {

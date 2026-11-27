@@ -14,7 +14,7 @@ import { isPlayerHostile } from './targeting.js';
 import { MAX_TEMPORARY_BUFF_SECONDS, normalizeTemporaryBuff } from './buffduration.mjs';
 import { RectGrid } from './rectgrid.mjs';
 import { goesOver, sheerCount } from '../gfx/sheer.js';
-import { drawOverheadHealthBar, healthBarSettings, healthBarVisible, overheadHealthBarEligible } from '../ui/healthbars.mjs';
+import { drawOverheadHealthBar, healthBarSettings, healthBarVisible, overheadHealthBarDrawEligible, overheadHealthBarEligible } from '../ui/healthbars.mjs';
 
 // Bounds for the visible sprite after its local flip/rotation/scale transforms.
 // Kept in world-pixel coordinates and projected by render.js with the current camera.
@@ -681,7 +681,7 @@ export class Creature {
   }
 
   drawOverhead(ctx, px, py, w) {
-    if (this.ghostDraw || this.clutter || this.noLifeBar) return; // a see-through copy carries no overhead marks
+    if (!overheadHealthBarDrawEligible(this)) return; // a see-through copy carries no overhead marks
     // stun stars / curse marks
     const s = this.status;
     if ((s.stun && s.stun.t > 0) || (s.fear && s.fear.t > 0)) {

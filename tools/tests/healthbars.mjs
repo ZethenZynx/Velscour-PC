@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { existsSync, readFileSync } from 'node:fs';
 import { G } from '../../src/state.js';
-import { BOSS_HEALTH_LAYOUT, DEFAULT_HEALTH_BAR_SETTINGS, HEALTH_BAR_CLASSES, bossFrameTrackBounds, drawHealthBarCanvas, healthBarCanvasLayout, healthBarClass, healthBarSettings, healthBarText, healthBarSummaryText, healthBarValueText, healthBarVisible, normalizeHealthBarSettings, overheadHealthBarEligible, preloadHealthBarArt } from '../../src/ui/healthbars.mjs';
+import { BOSS_HEALTH_LAYOUT, DEFAULT_HEALTH_BAR_SETTINGS, HEALTH_BAR_CLASSES, bossFrameTrackBounds, drawHealthBarCanvas, healthBarCanvasLayout, healthBarClass, healthBarSettings, healthBarText, healthBarSummaryText, healthBarValueText, healthBarVisible, isTreasureImpEntity, normalizeHealthBarSettings, overheadHealthBarDrawEligible, overheadHealthBarEligible, preloadHealthBarArt } from '../../src/ui/healthbars.mjs';
 import { TREASURE_IMPS } from '../../src/data/treasureimps.js';
 
 globalThis.localStorage ||= { getItem: () => null, setItem: () => {} };
@@ -86,6 +86,7 @@ const hud = readFileSync(new URL('../../src/ui/hud.js', import.meta.url), 'utf8'
 const settings = readFileSync(new URL('../../src/ui/healthbar-settings.mjs', import.meta.url), 'utf8');
 const css = readFileSync(new URL('../../css/style.css', import.meta.url), 'utf8');
 const creatureDraw = readFileSync(new URL('../../src/game/creature.js', import.meta.url), 'utf8');
+const impFactory = readFileSync(new URL('../../src/game/happenings.js', import.meta.url), 'utf8');
 assert.match(html, /id="boss-emblem"/);
 assert.match(html, /id="boss-health-text"/);
 assert.match(html, /<canvas id="boss-frame"/);
@@ -100,6 +101,8 @@ assert.match(settings, /selectedClass = next === 'target' \? bossClassIndex : la
 assert.match(settings, /previewFraction = 1/);
 assert.match(settings, /box\.querySelector\('\[data-hb-class-nav\]'\)\.hidden = selectedSystem === 'target'/);
 assert.match(settings, /showClassificationIconsOverhead/);
+assert.match(settings, /treasureImp: entry\.id === 'imp'/, 'the Imp preview uses the same authoritative family marker as live variants');
+assert.match(impFactory, /name: variant\.name, treasureImp: true, impVariant: variant\.id/, 'the shared spawn factory marks every Treasure Imp variant');
 assert.match(settings, /data-hb-info/);
 assert.match(settings, /Reset to Defaults/);
 assert.match(css, /healthbar-dialog/);
@@ -149,10 +152,10 @@ globalThis.Image = TestImage;
 preloadHealthBarArt();
 function recordingContext() {
   return {
-    globalAlpha: 1, calls: [], saves: 0, restores: 0, save() { this.saves++; }, restore() { this.saves--; this.restores++; }, beginPath() {}, rect() {}, clip() {},
-    drawImage(img, ...args) { this.calls.push(img._src); }, fillRect() {},
+    globalAlpha: 1, calls: [], styles: [], saves: 0, restores: 0, save() { this.saves++; }, restore() { this.saves--; this.restores++; }, beginPath() {}, rect() {}, clip() {},
+    drawImage(img, ...args) { this.calls.push(img._src); }, fillRect() {}, strokeRect() {},
     createLinearGradient() { return { addColorStop() {} }; },
-    set fillStyle(value) {}, set shadowColor(value) {}, set shadowBlur(value) {},
+    set fillStyle(value) { this.styles.push(value); }, set shadowColor(value) {}, set shadowBlur(value) {},
   };
 }
 G.settings.healthBars = normalizeHealthBarSettings();
@@ -175,22 +178,44 @@ for (const entry of HEALTH_BAR_CLASSES) {
   assert.ok(ctx.calls.includes(`assets/ui/healthbars/${entry.icon}.webp`), `${entry.id} overhead classification artwork is shown when enabled`);
 }
 assert.equal(normalizeHealthBarSettings(null).info.showClassificationIconsOverhead, false, 'reset to defaults turns overhead classification icons off');
+assert.equal(TREASURE_IMPS.length, 20, 'all registered Treasure Imp variants are included in the family audit');
 for (const variant of TREASURE_IMPS) {
-  G.settings.healthBars = normalizeHealthBarSettings();
-  const imp = { team: 'enemy', goblin: true, impVariant: variant.id, rank: 'unique', hp: 100, maxHp: 100, targetable: false };
-  assert.equal(healthBarClass(imp).id, 'imp', `${variant.id} Treasure Imp keeps its emerald classification despite its unique rank`);
-  assert.equal(overheadHealthBarEligible(imp), true, `${variant.id} remains eligible for an overhead bar while fleeing/untargetable`);
-  assert.equal(healthBarVisible(imp, 'overhead'), true, `${variant.id} follows the imp visibility setting`);
-  for (const fraction of [1, 0.5, 0.08]) {
-    imp.hp = imp.maxHp * fraction;
-    const ctx = recordingContext();
-    drawHealthBarCanvas(ctx, imp, 0, 0, 90, 12, { system: 'overhead', forceFraction: fraction });
-    assert.ok(ctx.calls.includes('assets/ui/healthbars/fill-emerald.webp'), `${variant.id} renders emerald fill at ${Math.round(fraction * 100)}% health`);
-    assert.ok(!ctx.calls.includes('assets/ui/healthbars/imp.webp'), `${variant.id} overhead bar has no classification emblem`);
+  for (const theme of ['velscour', 'classic']) {
+    G.settings.healthBars = normalizeHealthBarSettings({ theme });
+    const imp = { team: 'enemy', treasureImp: true, rank: 'unique', hp: 100, maxHp: 100, targetable: false };
+    assert.equal(healthBarClass(imp).id, 'imp', `${variant.id} Treasure Imp keeps its emerald classification despite its unique rank`);
+    assert.equal(isTreasureImpEntity(imp), true, `${variant.id} uses the shared Treasure Imp family classification`);
+    assert.equal(overheadHealthBarEligible(imp), true, `${variant.id} remains eligible for an overhead bar while fleeing/untargetable`);
+    assert.equal(healthBarVisible(imp, 'overhead'), true, `${variant.id} follows the imp visibility setting`);
+    assert.equal(overheadHealthBarDrawEligible({ ...imp, noLifeBar: true }), true, `${variant.id} is not suppressed by a generic noLifeBar rendering flag`);
+    assert.equal(overheadHealthBarDrawEligible({ ...imp, ghostDraw: true }), false, `${variant.id} still respects ghost rendering exclusions`);
+    for (const fraction of [1, 0.5, 0.08]) {
+      imp.hp = imp.maxHp * fraction;
+      const ctx = recordingContext();
+      drawHealthBarCanvas(ctx, imp, 0, 0, 90, 12, { system: 'overhead', forceFraction: fraction });
+      if (theme === 'velscour') {
+        assert.ok(ctx.calls.includes('assets/ui/healthbars/fill-emerald.webp'), `${variant.id} Velscour theme renders emerald fill at ${Math.round(fraction * 100)}% health`);
+        assert.ok(!ctx.calls.includes('assets/ui/healthbars/imp.webp'), `${variant.id} overhead bar has no classification emblem by default`);
+      } else assert.ok(ctx.styles.includes('#128d36'), `${variant.id} Classic theme retains emerald fill at ${Math.round(fraction * 100)}% health`);
+    }
   }
 }
+const escapedImp = { team: 'enemy', treasureImp: true, dungeonEventImpEscaped: true, targetable: false };
+assert.equal(overheadHealthBarEligible(escapedImp), false, 'an escaped/despawned imp does not keep a stale health bar');
+const visibilityProbeImp = { team: 'enemy', treasureImp: true, hp: 100, maxHp: 100, targetable: false };
+G.settings.healthBars = normalizeHealthBarSettings({ overhead: { visibility: 'damaged' } });
+assert.equal(healthBarVisible(visibilityProbeImp, 'overhead'), false, 'damaged-only mode hides a full-health imp');
+visibilityProbeImp.hp = 99;
+assert.equal(healthBarVisible(visibilityProbeImp, 'overhead'), true, 'damaged-only mode shows an injured imp');
+G.settings.healthBars.overhead.visibility = 'hidden';
+assert.equal(healthBarVisible(visibilityProbeImp, 'overhead'), false, 'the general overhead visibility mode remains authoritative');
+G.settings.healthBars = normalizeHealthBarSettings();
+G.settings.healthBars = normalizeHealthBarSettings({ info: { showClassificationIconsOverhead: true } });
+const impIconContext = recordingContext();
+drawHealthBarCanvas(impIconContext, { team: 'enemy', treasureImp: true, rank: 'unique', hp: 100, maxHp: 100 }, 0, 0, 90, 12, { system: 'overhead' });
+assert.ok(impIconContext.calls.includes('assets/ui/healthbars/imp.webp'), 'the optional classification icon appears when enabled');
 G.settings.healthBars.classes.imp = false;
-assert.equal(healthBarVisible({ team: 'enemy', goblin: true, impVariant: 'treasure', hp: 50, maxHp: 100 }, 'overhead'), false, 'the Treasure Imp visibility setting is honored');
+assert.equal(healthBarVisible({ team: 'enemy', treasureImp: true, hp: 50, maxHp: 100 }, 'overhead'), false, 'the Treasure Imp visibility setting is honored for the canonical classification');
 G.settings.healthBars.classes.imp = true;
 const normalTargetLayout = healthBarCanvasLayout({ id: 'normal' }, 0, 0, 760, 155, 'target');
 assert.ok(normalTargetLayout.emblem.centerX + normalTargetLayout.emblem.size / 2 < normalTargetLayout.track.x, 'normal target emblem clears the start of the health track');
