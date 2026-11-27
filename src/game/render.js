@@ -40,7 +40,7 @@ import { drawTerrain, drawColumn, occludersFor, occludersOfRect, occluderObj, cl
 import { hopArc } from './alpine.js';
 import { townStorageChestArtFor } from '../data/town-storage-chests.js';
 import { CURSED_CHEST_VARIANT, selectDungeonChestVariant } from '../data/chestappearances.js';
-import { MAP_TERRAIN_COLORS, eternalBreachMapColor, terrainColor, terrainKindFromName } from '../gfx/mapcolors.js';
+import { MAP_TERRAIN_COLORS, eternalBreachMapColor, herringtonTownMapColor, terrainColor, terrainKindFromName } from '../gfx/mapcolors.js';
 import { profileRecord } from '../core/perfdiagnostics.js';
 import { healthBarClass, healthBarSettings } from '../ui/healthbars.mjs';
 
@@ -252,7 +252,16 @@ function floorEntry(world, v) {
 // Resolve a tile's material once per floor atlas. The map itself is redrawn as the player explores, but the art
 // metadata is static; this keeps minimap updates cheap on large outdoor and endgame maps.
 const floorMapColors = new WeakMap();
+let herringtonTransitionPairs = null;
+const herringtonTransitions = () => {
+  if (herringtonTransitionPairs) return herringtonTransitionPairs;
+  const pairs = Object.keys(A.town?.meta?.transitions || {});
+  if (pairs.length) herringtonTransitionPairs = pairs;
+  return pairs;
+};
 function floorMapColor(world, variant) {
+  const townColor = herringtonTownMapColor(world, variant, herringtonTransitions());
+  if (townColor) return townColor;
   const floors = world.townTiles || world.tileset?.floors;
   if (!floors) return terrainColor(null, world.biome?.id);
   let colors = floorMapColors.get(floors);
@@ -291,6 +300,8 @@ function mapTerrainColor(world, map, i) {
 function mapCellColor(world, map, i) {
   const breachColor = eternalBreachMapColor(map, i);
   if (breachColor) return breachColor;
+  const townColor = map.t[i] !== 1 ? herringtonTownMapColor(world, map.v?.[i], herringtonTransitions(), true) : null;
+  if (townColor) return townColor;
   if (map.wet?.[i]) return map.wet[i] > 1 ? MAP_TERRAIN_COLORS.deepWater : MAP_TERRAIN_COLORS.water;
   if (map.sea) return MAP_TERRAIN_COLORS.deepWater;
   if (map.sky || map.ghostTrain || map.voidFace) return MAP_TERRAIN_COLORS.void;

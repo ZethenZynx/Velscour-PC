@@ -12,6 +12,41 @@ export const ETERNAL_BREACH_MAP_COLORS = Object.freeze({
   walkable: '#645476', boundary: '#929BA8', inaccessible: '#141217', pathway: '#847396',
 });
 
+// Herrington Hollow uses the town tileset, whose rendered floor materials do
+// not carry the semantic names used by dungeon floor atlases. Keep its map
+// palette local so the shared stone/wall colors for other areas stay intact.
+export const HERRINGTON_TOWN_MAP_COLORS = Object.freeze({
+  grass: '#536743', gravel: '#947754', dirt: '#806044', mud: '#594536',
+  stone: '#88785f', concrete: '#786e5e', boundary: '#484137',
+});
+
+const TOWN_FLOOR_MATERIALS = ['grass', 'gravel', 'dirt', 'mud', 'stone', 'concrete'];
+const townTransitionColors = new Map();
+function blendTownFloorColors(a, b) {
+  const x = HERRINGTON_TOWN_MAP_COLORS[a] || HERRINGTON_TOWN_MAP_COLORS.stone;
+  const y = HERRINGTON_TOWN_MAP_COLORS[b] || HERRINGTON_TOWN_MAP_COLORS.stone;
+  const channel = (offset) => Math.round((parseInt(x.slice(offset, offset + 2), 16) + parseInt(y.slice(offset, offset + 2), 16)) / 2);
+  return `#${[1, 3, 5].map((offset) => channel(offset).toString(16).padStart(2, '0')).join('')}`;
+}
+
+/** Return a Herrington Hollow map color, or null for every other area. */
+export function herringtonTownMapColor(world, variant, transitionPairs = [], blocked = false) {
+  if (world?.kind !== 'town' || world?.biome?.id !== 'town') return null;
+  if (blocked) return HERRINGTON_TOWN_MAP_COLORS.boundary;
+  const tile = Number(variant);
+  if (Number.isInteger(tile) && tile >= 0 && tile < TOWN_FLOOR_MATERIALS.length) return HERRINGTON_TOWN_MAP_COLORS[TOWN_FLOOR_MATERIALS[tile]];
+  const pairIndex = Number.isInteger(tile) && tile >= 6 ? Math.floor((tile - 6) / 8) : -1;
+  const pair = transitionPairs[pairIndex];
+  if (pair) {
+    if (townTransitionColors.has(pair)) return townTransitionColors.get(pair);
+    const [a, b] = pair.split('__');
+    const color = blendTownFloorColors(a, b);
+    townTransitionColors.set(pair, color);
+    return color;
+  }
+  return HERRINGTON_TOWN_MAP_COLORS.stone;
+}
+
 /** Resolve the Breach's revealed collision grid into its dedicated map palette. */
 export function eternalBreachMapColor(map, i) {
   const own = map?.breach?.own, bridges = map?.breach?.bridgeOf;
