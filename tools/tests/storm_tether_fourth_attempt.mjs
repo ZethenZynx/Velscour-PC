@@ -9,6 +9,11 @@ import { hit } from '../../src/game/combat.js';
 import { G } from '../../src/state.js';
 import { clearVfx, effects } from '../../src/gfx/vfx.js';
 
+// Browser-only floating text checks the FontFaceSet. The test intentionally
+// exercises shared combat hits under Node, so provide the minimal ready-font
+// surface without creating a canvas or changing combat behavior.
+globalThis.document ||= { fonts: { check: () => true } };
+
 const median = (v) => v.sort((a, b) => a - b)[v.length >> 1];
 const augmentsSource = await readFile(new URL('../../src/game/augments.js', import.meta.url), 'utf8');
 const combatSource = await readFile(new URL('../../src/game/combat.js', import.meta.url), 'utf8');
@@ -23,6 +28,7 @@ assert.match(augmentsSource, /h\.tetherT = 0\.25/, 'damage cadence remains four 
 assert.match(augmentsSource, /\* 0\.3 \* pow/, 'damage per retained connection uses the existing multiplier');
 const liveTether = augmentsSource.slice(augmentsSource.indexOf('function tether('));
 assert.doesNotMatch(liveTether, /Bolt\(|tetherVisualT|showTether|addEffect\(/, 'Storm Tether damage path creates no lightning visuals');
+assert.doesNotMatch(liveTether, /\bsfx\s*\(/, 'persistent Storm Tether pulses do not request audio');
 assert.doesNotMatch(augmentsSource.slice(augmentsSource.indexOf("case 'tether':"), augmentsSource.indexOf("case 'detonate':")), /Bolt\(|addEffect\(/, 'non-hazard Tether damage proc has no lightning visual');
 assert.match(combatSource, /!o\.noClassHitFx/, 'shared combat honors the tether-specific class-effects opt-out');
 assert.match(combatSource, /showFx && !o\.noHitFx/, 'shared combat honors the tether-specific hit-particle opt-out');
@@ -120,19 +126,26 @@ const player = {
   st: { addedDamage: {}, critChance: 0, markPenetration: 0, markEliteDamage: 0, markFullHealthDamage: 0,
     markExecution: 0, markRiftDamage: 0, markUnboundDamage: 0, markImpDamage: 0, bossDmg: 0,
     lifeSteal: 0, markLifeSteal: 0, manaSteal: 0, legend: {}, legendary: {}, procs: [] },
-  char: { skills: {} }, curses: {}, onHit() {}, heal() {},
+  char: { skills: {} }, curses: {}, onHit() { this.onHitCalls = (this.onHitCalls || 0) + 1; }, heal() {},
 };
 const target = () => ({ id: 9001, team: 'enemy', x: 1, y: 0, hp: 1e9, maxHp: 1e9, r: 0.35, res: {},
   curses: {}, status: {}, world, level: 100, rank: 'boss', scale: 1, hpShow: 0, dead: false });
 Object.assign(G, { world, char: { madT: 0 }, settings: { reduceFlashing: true, shake: false, lifeBars: false }, ui: null, godMode: false });
 const normalTarget = target(), tetherTarget = target();
 const normalDamage = hit(player, normalTarget, 10, 'light', { sk: 'paladin.0.0', crit: false, noVariance: true });
+assert.equal(player.onHitCalls, 1, 'ordinary direct hits still enter class on-hit behavior');
 const tetherDamage = hit(player, tetherTarget, 10, 'light', {
   proc: true, noArc: true, crit: false, noVariance: true, sk: 'paladin.0.0',
   silent: true, lightFx: true, noClassHitFx: true, noHitFx: true,
 });
 assert.equal(tetherDamage, normalDamage, 'quiet tether hit preserves the shared combat damage result');
 assert.equal(tetherTarget.hp, normalTarget.hp, 'feedback suppression does not alter target health');
+assert.equal(player.onHitCalls, 1, 'Storm Tether proc ticks do not enter class on-hit hooks that can retrigger signature audio');
+for (let tick = 0; tick < 20; tick++) hit(player, tetherTarget, 10, 'light', {
+  proc: true, noArc: true, crit: false, noVariance: true, sk: 'paladin.0.0',
+  silent: true, lightFx: true, noClassHitFx: true, noHitFx: true,
+});
+assert.equal(player.onHitCalls, 1, 'repeated four-per-second tether pulses cannot retrigger class on-hit hooks');
 let fullFeedbackHitMs = 0, particleOnlyHitMs = 0, quietHitMs = 0;
 const hitIterations = 1200;
 for (let round = 0; round < 4; round++) {

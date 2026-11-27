@@ -426,7 +426,12 @@ export function hit(src, tgt, amount, el = 'phys', o = {}) {
     if (ls > 0) src.heal(share * src.maxHp * ls * (o.dot ? 0.3 : 1), true);
     if (st.manaSteal > 0) src.mana = Math.min(src.maxMana, src.mana + share * src.maxMana * st.manaSteal / 100);
     if (tgt.curses.leech && tgt.curses.leech.t > 0) src.heal(share * src.maxHp * tgt.curses.leech.amt / 100 * 0.3, true);
-    src.onHit && src.onHit(tgt, dmg, el, o);
+    // Proc damage is a terminal effect: it must not enter the attacker's
+    // on-hit pipeline (class signatures/passives and relic procs). The ring
+    // augment path already observes this boundary below; without the same
+    // guard here persistent procs such as Storm Tether can repeatedly charge
+    // signature attacks and replay their activation sounds on every pulse.
+    if (!o.proc && src.onHit) src.onHit(tgt, dmg, el, o);
   } else if (!o.worldObjectBonus && src && src.summon && (src.leech || src.selfLeech) && src.owner) {
     if (src.leech) leechHeal(src.owner, tgt, dmg, src.leech * 0.25);
     if (src.selfLeech && !src.dead) {
