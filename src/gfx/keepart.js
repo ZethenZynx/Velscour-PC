@@ -11,11 +11,40 @@ import { glowSprite } from './vfx.js';
 import { developerRecordingActive } from '../core/developer-session.js';
 
 export const KEEP_DIR = 'assets/tiles/tkeep/';
+export const KEEP_BAKE_VERSION = '2026-11-26-keep-raster-1';
 const DECOR_DIR = KEEP_DIR + 'decor/';
 const R = 2;   // decoration canvases are drawn at 2x (k = 0.5) so they stay crisp zoomed in
 let A = null, loading = null;
 let generation = 0;
 let keepCacheDiagnostics = null;
+// Static Keep decorations are uploaded once as ImageBitmaps on desktop Chromium. Keep the existing
+// HTML-canvas path on touch devices and other browsers, where this optimization is not reliable.
+let rasterKeepArt;
+function keepRasterCanvas(w, h, source = null) {
+  if (rasterKeepArt === undefined) {
+    try {
+      const touch = !!G.touch || (typeof matchMedia === 'function' && matchMedia('(pointer: coarse)').matches) ||
+        ('ontouchstart' in window && navigator.maxTouchPoints > 0);
+      const chromium = navigator.userAgentData
+        ? navigator.userAgentData.brands.some((b) => /Chromium/.test(b.brand))
+        : /\bChrome\/\d/.test(navigator.userAgent);
+      rasterKeepArt = !touch && chromium && !globalThis.VELSCOUR_NO_RASTER &&
+        !/[?&]noraster\b/.test(location.search) && typeof OffscreenCanvas === 'function' &&
+        'transferToImageBitmap' in OffscreenCanvas.prototype;
+    } catch { rasterKeepArt = false; }
+  }
+  if (!rasterKeepArt) return makeCanvas(w, h);
+  try {
+    const c = new OffscreenCanvas(Math.max(1, Math.ceil(w)), Math.max(1, Math.ceil(h)));
+    if (!c.getContext('2d', { willReadFrequently: !!source })) return makeCanvas(w, h);
+    c._keepRaster = true;
+    return c;
+  } catch { return makeCanvas(w, h); }
+}
+function finishKeepCanvas(canvas) {
+  if (!canvas?._keepRaster || typeof canvas.transferToImageBitmap !== 'function') return canvas;
+  try { return canvas.transferToImageBitmap(); } catch { return canvas; }
+}
 export function resetKeepCacheDiagnostics() { keepCacheDiagnostics = { loads: 0, cachedLoads: 0, inFlightJoins: 0, releases: 0, cacheEvictions: 0, spriteCacheHits: 0, spriteCacheMisses: 0, residentSpritesAtRelease: 0 }; }
 export function keepCacheDiagnosticReport() { return keepCacheDiagnostics ? { ...keepCacheDiagnostics, recordingActive: developerRecordingActive(), residentSpritesNow: A?.cache?.size || 0, assetsResident: !!A, loadInFlight: !!loading } : { enabled: false }; }
 const loadImg = (src) => new Promise((ok, no) => { const i = new Image(); i.onload = () => ok(i); i.onerror = () => no(new Error(src)); i.src = src; });
@@ -23,21 +52,22 @@ const loadImg = (src) => new Promise((ok, no) => { const i = new Image(); i.onlo
 /** Everything the keep draws: the baked set, the decor atlases, the Castle Keep pack's props. Safe to call again. */
 export function loadKeepArt() {
   // The baked pages are shared with Castle/Skyship and may be replaced while the Keep pack is cached.
-  if (A && A.baked !== castle3dState()) { A.cache.clear(); A = null; loading = null; generation++; }
+  if (A && A.baked !== castle3dState()) { clearKeepCache(A); A = null; loading = null; generation++; }
   if (A) { if (developerRecordingActive() && keepCacheDiagnostics) keepCacheDiagnostics.cachedLoads++; return Promise.resolve(A); }
   if (loading) { if (developerRecordingActive() && keepCacheDiagnostics) keepCacheDiagnostics.inFlightJoins++; return loading; }
   if (developerRecordingActive() && keepCacheDiagnostics) keepCacheDiagnostics.loads++;
   const requestGeneration = generation;
   const pending = Promise.all([
-    loadBaked(KEEP_DIR),
+    loadBaked(KEEP_DIR, KEEP_BAKE_VERSION),
     fetch(DECOR_DIR + 'decor.json').then((r) => r.json()),
     loadImg(DECOR_DIR + 'banners.webp'), loadImg(DECOR_DIR + 'glass.webp'), loadImg(DECOR_DIR + 'rugs.webp'),
     loadImg('assets/tiles/castle_keep/scatter.webp'), fetch('assets/tiles/castle_keep/pack.json').then((r) => r.json()),
-  ]).then(([baked, meta, banners, glass, rugs, scat, pack]) => {
+    fetch(KEEP_DIR + 'brazier_front.json').then((r) => r.json()).then((f) => loadImg(f.png).then((img) => ({ ...f, img }))).catch(() => null),
+  ]).then(([baked, meta, banners, glass, rugs, scat, pack, front]) => {
     // Tessariel's Azure/Ivory and The Ember's Blue/White are replaced in their
     // original atlas frames, so all callers (including saved decoration IDs)
     // resolve the new art through the same established atlas path.
-    const art = { baked, meta, banners, glass, rugs, scat, pack, cache: new Map() };
+    const art = { baked, meta, banners, glass, rugs, scat, pack, front, cache: new Map() };
     // A load that finishes after leaving the Keep may satisfy its old caller, but must not repopulate the live cache.
     if (requestGeneration === generation) A = art;
     return art;
@@ -46,11 +76,15 @@ export function loadKeepArt() {
   return loading;
 }
 export const keepArt = () => A;
+function clearKeepCache(art) {
+  for (const sprite of art?.cache?.values?.() || []) (sprite?.img || sprite?.spr?.img)?.close?.();
+  art?.cache?.clear?.();
+}
 /** Release Keep-owned canvases and let the shared baked pages reload on the next visit. */
 export function releaseKeepArt() {
   generation++;
   if (developerRecordingActive() && keepCacheDiagnostics) { keepCacheDiagnostics.releases++; keepCacheDiagnostics.residentSpritesAtRelease += A?.cache?.size || 0; keepCacheDiagnostics.cacheEvictions += A?.cache?.size || 0; }
-  if (A) A.cache.clear();
+  clearKeepCache(A);
   A = null;
   loading = null;
 }
@@ -60,10 +94,11 @@ const ground = (x, y, lv) => [(x - y) * HW, (x + y) * HH - lv * 4];
 /** A canvas covering world-px box [x0, y0, x1, y1] at R, and the sprite record for a prop standing at ground point g. */
 function spriteCanvas(box, g, draw) {
   const [x0, y0, x1, y1] = box.map((v, i) => (i < 2 ? Math.floor(v) - 2 : Math.ceil(v) + 2));
-  const c = makeCanvas(Math.max(2, (x1 - x0) * R), Math.max(2, (y1 - y0) * R)), x = c.getContext('2d');
+  const c = keepRasterCanvas(Math.max(2, (x1 - x0) * R), Math.max(2, (y1 - y0) * R)), x = c.getContext('2d');
   x.imageSmoothingEnabled = true; x.imageSmoothingQuality = 'high';
   draw(x, x0, y0);
-  return { img: c, sx: 0, sy: 0, w: c.width, h: c.height, ox: (x0 - g[0]) * R, oy: (y0 - g[1]) * R };
+  const w = c.width, h = c.height;
+  return { img: finishKeepCanvas(c), sx: 0, sy: 0, w, h, ox: (x0 - g[0]) * R, oy: (y0 - g[1]) * R };
 }
 /** The corner, along and down vectors (world px) of a w-wide face rect on plane `axis` = c, from level zt down to zb.
  *  A face along x (plane y = c) faces +y; one along y (plane x = c) faces +x; both read left to right on screen. */
@@ -162,7 +197,7 @@ export function rugCanvas(id, rect) {
   const pts = [ground(x0, y0, z), ground(x1, y0, z), ground(x1, y1, z), ground(x0, y1, z)];
   const bx0 = Math.floor(Math.min(...pts.map((p) => p[0]))) - 2, by0 = Math.floor(Math.min(...pts.map((p) => p[1]))) - 2;
   const bx1 = Math.ceil(Math.max(...pts.map((p) => p[0]))) + 2, by1 = Math.ceil(Math.max(...pts.map((p) => p[1]))) + 2;
-  const c = makeCanvas((bx1 - bx0) * R, (by1 - by0) * R), x = c.getContext('2d');
+  const c = keepRasterCanvas((bx1 - bx0) * R, (by1 - by0) * R), x = c.getContext('2d');
   // the weave: pattern space (u, v) in tiles -> world px, one 192 px swatch per tile
   const sw = makeCanvas(m.r[2], m.r[3]); sw.getContext('2d').drawImage(A.rugs, m.r[0], m.r[1], m.r[2], m.r[3], 0, 0, m.r[2], m.r[3]);
   const pat = x.createPattern(sw, 'repeat'), s = 1 / m.r[2];
@@ -177,7 +212,7 @@ export function rugCanvas(id, rect) {
   x.lineWidth = 2.2 * R; x.strokeStyle = '#a8843c'; poly(0.13); x.stroke();
   x.lineWidth = 0.8 * R; x.strokeStyle = '#e8cc7a'; poly(0.13); x.stroke();
   x.lineWidth = 1 * R; x.strokeStyle = 'rgba(30,20,8,0.6)'; poly(0.03); x.stroke();
-  const out = { img: c, x0: bx0, y0: by0, w: bx1 - bx0, h: by1 - by0, rect };
+  const out = { img: finishKeepCanvas(c), x0: bx0, y0: by0, w: bx1 - bx0, h: by1 - by0, rect };
   A.cache.set(key, out);
   return out;
 }
@@ -198,6 +233,13 @@ export function trophySprite(art) {
   const [pg, sx, sy, w, h, ox, oy] = S.f[0];
   return { spr: { img: st.imgs[pg], sx, sy, w, h, ox: ox * S.S, oy: oy * S.S }, k: 1 / S.S };
 }
+/** A baked Keep sprite by name, using the same pivot and scale as the shared castle bake. */
+export function bakedSprite(name) {
+  const st = castle3dState(), S = st?.sprites?.[name];
+  if (!S) return null;
+  const [pg, sx, sy, w, h, ox, oy] = S.f[0];
+  return { spr: { img: st.imgs[pg], sx, sy, w, h, ox: ox * S.S, oy: oy * S.S }, k: 1 / S.S };
+}
 /** A painted Castle Keep prop by name (assets/tiles/castle_keep/pack.json scatter), at the packs' scale. */
 export function keepProp(name) {
   const s = A && A.pack.scatter.find((q) => q.name === name);
@@ -205,38 +247,140 @@ export function keepProp(name) {
   return { spr: { img: A.scat, sx: s.x, sy: s.y, w: s.w, h: s.h, ox: s.ox, oy: s.oy }, k: 64 / A.pack.tile[0] };
 }
 
-// ------------------------------------------------------------------ the Sacred Flame
-/** Tessariel's green fire over the basin: tongues of flame, embers rising, a pale core. x, y: the rim's centre (world px). */
-export function drawSacredFlame(ctx, x, y, t, k = 1) {
-  ctx.save();
-  ctx.globalCompositeOperation = 'lighter';
-  ctx.globalAlpha = 0.42 + Math.sin(t * 3.1) * 0.06;
-  ctx.drawImage(glowSprite('#7dff5a'), x - 80 * k, y - 140 * k, 160 * k, 170 * k);
-  ctx.globalCompositeOperation = 'source-over';
-  // the tongues: layered teardrops, deep green outside, bright green, then gold-white within; drawn solid so they read
-  const tongue = (dx, h, w, col, ph, a) => {
-    const sway = Math.sin(t * 5.2 + ph) * 4 * k, top = y - h * k * (0.84 + 0.16 * Math.sin(t * 7.3 + ph * 2));
-    ctx.globalAlpha = a; ctx.fillStyle = col; ctx.beginPath();
-    ctx.moveTo(x + (dx - w) * k, y);
-    ctx.bezierCurveTo(x + (dx - w * 1.1) * k, y - h * k * 0.35, x + (dx - w * 0.3) * k + sway * 0.5, y - h * k * 0.7, x + dx * k + sway, top);
-    ctx.bezierCurveTo(x + (dx + w * 0.3) * k + sway * 0.5, y - h * k * 0.7, x + (dx + w * 1.1) * k, y - h * k * 0.35, x + (dx + w) * k, y);
-    ctx.closePath(); ctx.fill();
-  };
-  for (let i = 0; i < 7; i++) tongue((i - 3) * 6, 44 + Math.abs(3 - i) * -5 + (i % 2) * 8, 8, '#1f8a34', i * 1.7, 0.85);
-  for (let i = 0; i < 5; i++) tongue((i - 2) * 5, 40 + (i === 2 ? 14 : 0) - Math.abs(2 - i) * 4, 6.5, '#45d84a', i * 2.3 + 1, 0.9);
-  for (let i = 0; i < 3; i++) tongue((i - 1) * 4, 30 + (i === 1 ? 10 : 0), 4.5, '#b8ff70', i * 1.3 + 2, 0.95);
-  tongue(0, 24, 3.2, '#fbffd8', 0.6, 1);
-  ctx.globalCompositeOperation = 'lighter';
-  ctx.globalAlpha = 0.45;
-  ctx.drawImage(glowSprite('#e8ffb0'), x - 22 * k, y - 50 * k, 44 * k, 52 * k);
-  // embers rising from it
-  for (let i = 0; i < 18; i++) {
-    const f = (t * 0.32 + i / 18) % 1, a = i * 2.39;
-    ctx.globalAlpha = (1 - f) * 0.95;
-    ctx.fillStyle = i % 3 ? '#b8ff70' : '#fff4b0';
-    ctx.fillRect(x + Math.sin(a + t * 1.3) * (10 + f * 16) * k, y - (18 + f * 110) * k, 2 * k, 2 * k);
+const FIRE = {
+  sacred: { out: ['#35d24c', '#0f6a2c'], mid: ['#d6ff84', '#3fe050'], core: ['#fffbe6', '#ffe27a'], glow: '#7dff5a', spark: ['#b8ff70', '#fff4b0'] },
+  ember: { out: ['#f0701c', '#8a2408'], mid: ['#ffc848', '#f0781c'], core: ['#fff6d0', '#ffd860'], glow: '#ff9a40', spark: ['#ffb050', '#fff0b0'] },
+};
+function fireTongue(ctx, x, y, w, h, t, ph) {
+  const N = 9;
+  ctx.beginPath(); ctx.moveTo(x - w, y);
+  for (let side = -1; side <= 1; side += 2) for (let k = 1; k <= N; k++) {
+    const q = side < 0 ? k / N : 1 - k / N;
+    const prof = (q < 0.18 ? 0.8 + q / 0.18 * 0.2 : Math.pow((1 - q) / 0.82, 0.78)) * (1 + 0.2 * Math.sin(q * 8 - t * 9 + ph + side));
+    const sway = Math.sin(t * 2.6 + ph + q * 2.4) * q * w * 0.9 + Math.sin(t * 6.1 + ph * 2 + q * 5) * q * w * 0.32;
+    ctx.lineTo(x + sway + side * w * prof, y - q * h);
   }
+  ctx.closePath(); ctx.fill();
+}
+/** A warm Ember flame on the Keep's wall braziers. */
+export function drawFire(ctx, x, y, t, h, w, pal = 'sacred', seed = 0, sparks = 0) {
+  const P = FIRE[pal] || FIRE.ember;
+  const grad = (c, top) => { const g = ctx.createLinearGradient(0, y, 0, y - top); g.addColorStop(0, c[0]); g.addColorStop(0.7, c[1]); g.addColorStop(1, c[1] + '66'); return g; };
+  ctx.save(); ctx.globalCompositeOperation = 'lighter'; ctx.globalAlpha = 0.3 + Math.sin(t * 3.1 + seed) * 0.05;
+  ctx.drawImage(glowSprite(P.glow), x - w * 4.2, y - h * 1.25, w * 8.4, h * 1.55); ctx.globalCompositeOperation = 'source-over';
+  const layer = (n, spread, hk, wk, c, a, off) => {
+    ctx.fillStyle = grad(c, h * hk * 1.08); ctx.globalAlpha = a;
+    for (let i = 0; i < n; i++) { const u = n > 1 ? i / (n - 1) * 2 - 1 : 0, ph = seed + off + i * 2.39;
+      fireTongue(ctx, x + u * w * spread, y, w * wk * (1 - Math.abs(u) * 0.25), h * hk * (1 - Math.abs(u) * 0.42) * (0.9 + 0.1 * Math.sin(t * 5.3 + ph * 1.7)), t, ph); }
+  };
+  layer(5, 0.6, 1, 0.62, P.out, 0.96, 0); layer(4, 0.42, 0.78, 0.46, P.mid, 0.97, 1.3); layer(3, 0.22, 0.52, 0.36, P.core, 1, 2.1);
+  ctx.globalCompositeOperation = 'lighter'; ctx.globalAlpha = 0.5; ctx.drawImage(glowSprite(P.core[1]), x - w * 1.5, y - h * 0.5, w * 3, h * 0.6);
+  for (let i = 0; i < sparks; i++) { const f = (t * (0.22 + (i % 5) * 0.03) + i * 0.618 + seed) % 1, a = i * 2.39 + seed;
+    ctx.globalAlpha = (1 - f) * (1 - f) * 0.95; ctx.fillStyle = P.spark[i % 3 ? 0 : 1]; ctx.fillRect(x + Math.sin(a + t * 1.3 + f * 4) * (w * 0.5 + f * w * 1.6), y - h * (0.3 + f * 1.25), 1 + (i % 3 === 0), 1 + (i % 3 === 0)); }
   ctx.restore();
+}
+
+/** The Keeper's chandelier, with baked candle offsets attached for its small animated flames. */
+export function chandelierSprite() {
+  const r = bakedSprite('chandelier');
+  const st = castle3dState();
+  return r && { ...r, candles: st?.idx?.candles || [] };
+}
+
+/** A subdued, raster-cached silhouette for an unearned trophy on its empty plinth. */
+export function ghostSprite(art) {
+  const r = trophySprite(art);
+  if (!r || !A) return null;
+  const key = 'ghost|' + art;
+  if (A.cache.has(key)) { if (developerRecordingActive() && keepCacheDiagnostics) keepCacheDiagnostics.spriteCacheHits++; return A.cache.get(key); }
+  if (developerRecordingActive() && keepCacheDiagnostics) keepCacheDiagnostics.spriteCacheMisses++;
+  const s = r.spr, c = keepRasterCanvas(s.w, s.h, s.img), x = c.getContext('2d');
+  x.filter = 'grayscale(1) contrast(0.8) brightness(1.25)'; x.drawImage(s.img, s.sx, s.sy, s.w, s.h, 0, 0, s.w, s.h); x.filter = 'none';
+  x.globalCompositeOperation = 'source-atop'; x.fillStyle = 'rgba(120,128,140,0.28)'; x.fillRect(0, 0, s.w, s.h);
+  const img = finishKeepCanvas(c);
+  const out = { spr: { img, sx: 0, sy: 0, w: s.w, h: s.h, ox: s.ox, oy: s.oy }, k: r.k };
+  A.cache.set(key, out);
+  return out;
+}
+
+/** Restore the near edge of the Sacred Flame's brazier over the animated fire. Its mask and pieces come from the same
+ *  Keep bake, so this overlay shares world coordinates and stays aligned at every camera zoom. */
+export function brazierFront() {
+  const F = A?.front, st = F && castle3dState();
+  if (!F || !st || st.dir !== KEEP_DIR || st.S !== F.S) return null;
+  const key = 'front';
+  if (A.cache.has(key)) return A.cache.get(key);
+  const c = keepRasterCanvas(F.w, F.h, st.imgs[0]), x = c.getContext('2d'), W = st.idx.W;
+  for (const tile of F.tiles || []) for (const id of [st.base.get(tile), st.over.get(tile)]) {
+    if (id === undefined) continue;
+    const [pg, sx, sy, w, h, ox, oy] = st.pieces[id], tx = tile % W, ty = (tile / W) | 0;
+    x.drawImage(st.imgs[pg], sx, sy, w, h, Math.round((ox + (tx - ty) * HW) * st.S) - F.x,
+      Math.round((oy + (tx + ty) * HH) * st.S) - F.y, w, h);
+  }
+  x.globalCompositeOperation = 'destination-in'; x.drawImage(F.img, 0, 0);
+  const out = { img: finishKeepCanvas(c), x: F.x / st.S, y: F.y / st.S, w: F.w / st.S, h: F.h / st.S };
+  A.cache.set(key, out);
+  return out;
+}
+export function drawBrazierFront(ctx) { const f = brazierFront(); if (f) ctx.drawImage(f.img, f.x, f.y, f.w, f.h); }
+
+/** Light animated candle flames on the Keep's chandeliers and candelabra. */
+export function drawCandle(ctx, x, y, t, seed = 0) {
+  const f = Math.sin(t * 11 + seed * 3) * 0.5 + Math.sin(t * 17 + seed) * 0.3;
+  ctx.save(); ctx.globalCompositeOperation = 'lighter'; ctx.globalAlpha = 0.5 + f * 0.1;
+  ctx.drawImage(glowSprite('#ffb050'), x - 13, y - 16, 26, 26); ctx.restore();
+  ctx.save(); ctx.fillStyle = '#ff9a30'; ctx.beginPath(); ctx.ellipse(x, y - 2.6 - f * 0.5, 1.5, 3.2 + f * 0.6, 0, 0, TAU); ctx.fill();
+  ctx.fillStyle = '#fff0a8'; ctx.beginPath(); ctx.ellipse(x, y - 1.8, 0.8, 1.7, 0, 0, TAU); ctx.fill(); ctx.restore();
+}
+
+// ------------------------------------------------------------------ the Sacred Flame
+// Deterministic noise drives the upstream pixel-fire animation without allocating particles each frame.
+const FIRE_NOISE = (() => { const n = new Float32Array(4096); let s = 90210; for (let i = 0; i < n.length; i++) { s = (Math.imul(s, 1664525) + 1013904223) >>> 0; n[i] = s / 4294967296; } return n; })();
+function fireNoise(x, y) {
+  const xi = Math.floor(x), yi = Math.floor(y), fx = x - xi, fy = y - yi, u = fx * fx * (3 - 2 * fx), v = fy * fy * (3 - 2 * fy);
+  const a = FIRE_NOISE[((yi & 63) << 6) | (xi & 63)], b = FIRE_NOISE[((yi & 63) << 6) | ((xi + 1) & 63)], c = FIRE_NOISE[(((yi + 1) & 63) << 6) | (xi & 63)], d = FIRE_NOISE[(((yi + 1) & 63) << 6) | ((xi + 1) & 63)];
+  return (a + (b - a) * u) * (1 - v) + (c + (d - c) * u) * v;
+}
+const FW = 54, FH = 72, FB = 12, FIRE_STEPS = [[6,52,28,215],[12,104,42,255],[34,178,64,255],[112,234,86,255],[206,255,128,255],[255,252,216,255]];
+let fireCanvas = null, firePixels = null;
+function drawPixelFire(ctx, x, y, t, k) {
+  if (!fireCanvas) { fireCanvas = makeCanvas(FW, FH + FB); firePixels = fireCanvas.getContext('2d').createImageData(FW, FH + FB); }
+  const d = firePixels.data, w0 = 0.273 * Math.min(1, 1.3 / k), e0 = w0 * FW / 2 / FH;
+  for (let py = 0; py < FH + FB; py++) {
+    const h = (FH - 1 - py) / FH, hh = Math.max(0, h);
+    const w = h < 0 ? w0 : h < 0.12 ? w0 + (0.44 - w0) * h / 0.12 : Math.pow((1 - h) / 0.88, 0.9) * 0.44;
+    const sway = (fireNoise(h * 3.2 + t * 0.9, 7.3) - 0.5) * 0.3 * hh;
+    for (let px = 0; px < FW; px++) {
+      const o = (py * FW + px) * 4, u = (px + 0.5) / FW - 0.5, a = Math.abs(u - sway) / (w + 0.001), q = h < 0 ? Math.hypot(a, h / e0) : a;
+      let I = 0;
+      if (q < 1.3) I = (1 - q) * (1.2 - hh * 0.78) + (fireNoise(px * 0.17, py * 0.12 + t * 5.4) * 0.62 + fireNoise(px * 0.39 + 11, py * 0.27 + t * 9.5) * 0.38 - 0.5) * (h < 0 ? 0.3 : 0.42 + h * 1.05) + ((px + py) & 1) * 0.045;
+      const ix = I < 0.17 ? -1 : I < 0.31 ? 0 : I < 0.46 ? 1 : I < 0.63 ? 2 : I < 0.82 ? 3 : I < 1 ? 4 : 5, j = ix < 0 ? null : FIRE_STEPS[ix];
+      if (!j) { d[o + 3] = 0; continue; }
+      d[o] = j[0]; d[o + 1] = j[1]; d[o + 2] = j[2]; d[o + 3] = j[3];
+    }
+  }
+  const fctx = fireCanvas.getContext('2d'); fctx.putImageData(firePixels, 0, 0);
+  const sm = ctx.imageSmoothingEnabled; ctx.imageSmoothingEnabled = false;
+  ctx.drawImage(fireCanvas, x - FW * k, y - FH * 2 * k, FW * 2 * k, (FH + FB) * 2 * k); ctx.imageSmoothingEnabled = sm;
+  for (let i = 0; i < 22; i++) { const f = (t * (0.2 + (i % 5) * 0.035) + i * 0.618) % 1, a = i * 2.39, s = i % 4 === 0 ? 3 : 2;
+    ctx.globalAlpha = (1 - f) * (1 - f); ctx.fillStyle = i % 3 ? '#b8ff70' : '#fff4b0';
+    ctx.fillRect(Math.round(x + Math.sin(a + t * 1.2 + f * 5) * (10 + f * 30) * k), Math.round(y - (64 + f * 140) * k), s, s); }
+  ctx.globalAlpha = 1;
+}
+/** Upstream pixel-art Sacred Flame. The optional front callback restores the baked brazier rim over the fire. */
+export function drawSacredFlame(ctx, x, y, t, k = 1, front = null) {
+  ctx.save(); ctx.globalCompositeOperation = 'lighter';
+  const g = ctx.createLinearGradient(0, y, 0, y - 260 * k);
+  g.addColorStop(0, 'rgba(150,255,120,0.20)'); g.addColorStop(0.5, 'rgba(150,255,120,0.07)'); g.addColorStop(1, 'rgba(150,255,120,0)');
+  ctx.fillStyle = g; ctx.beginPath(); ctx.moveTo(x - 16 * k, y); ctx.lineTo(x - 30 * k, y - 260 * k); ctx.lineTo(x + 30 * k, y - 260 * k); ctx.lineTo(x + 16 * k, y); ctx.closePath(); ctx.fill(); ctx.restore();
+  ctx.save(); ctx.globalCompositeOperation = 'lighter'; ctx.globalAlpha = 0.26 + Math.sin(t * 3.1) * 0.04; ctx.drawImage(glowSprite('#7dff5a'), x - 80 * k, y - 170 * k, 160 * k, 200 * k); ctx.restore();
+  drawPixelFire(ctx, x, y + 4, t, k);
+  const motes = (far) => { ctx.save(); ctx.globalCompositeOperation = 'lighter';
+    for (let i = 0; i < 12; i++) { const a = t * (i % 2 ? 0.9 : -0.6) + i * TAU / 12, r = i % 2 ? 44 : 34, lift = 14 + (i % 3) * 16 + Math.sin(t * 1.3 + i) * 4;
+      if ((Math.sin(a) < 0) !== far) continue; ctx.globalAlpha = (far ? 0.3 : 0.9) * (0.7 + 0.3 * Math.sin(t * 3 + i * 1.7));
+      ctx.drawImage(glowSprite(i % 3 ? '#b8ff70' : '#fff0a0'), x + Math.cos(a) * r * k - 5, y - lift * k + Math.sin(a) * r * 0.45 * k - 5, 10, 10); }
+    ctx.restore(); };
+  motes(true); if (front) front(ctx); motes(false);
 }
 
 // ------------------------------------------------------------------ the windows' light

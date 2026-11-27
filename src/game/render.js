@@ -25,7 +25,8 @@ import { canCullCreaturesByViewport, viewportCandidatesContainPlayer } from './r
 import { castleTileDressing, drawCastleParticles, drawCastleWater, MAT } from '../gfx/castleground.js';
 import { drawRim, RIM, xray, drawXray } from './creature.js';
 import { drawKeepGate } from '../gfx/keepgate.js';
-import { drawLightShafts, drawSacredFlame } from '../gfx/keepart.js';
+import { drawLightShafts, drawSacredFlame, drawBrazierFront } from '../gfx/keepart.js';
+import { renownRank } from '../data/keep.js';
 import { isPlayerHostile, isPlayerTargetable, setCreatureTargetBounds } from './targeting.js';
 import { drawNebula } from '../gfx/breach.js';
 import { drawAbyss, drawSheerTiles, drawPlunge, FACE_H } from '../gfx/sheer.js';
@@ -437,6 +438,9 @@ function drawProp(ctx, pr, alpha) {
       ctx.globalCompositeOperation = 'source-over';
     }
   }
+  // Keep-local candle and brazier effects are attached to static props by keepworld.js. Run them
+  // after the baked sprite so the flames sit at their authored offsets and share its depth order.
+  if (pr.keepDecor && typeof pr.fx === 'function') { ctx.save(); pr.fx(ctx, x, y, G.time); ctx.restore(); }
   if (alpha < 1 || pr.light) ctx.globalAlpha = 1;
 }
 
@@ -824,10 +828,12 @@ function drawNpc(ctx, n) {
   }
   if (n.hidden) { n.sbox = null; return; }
   if (n.keepFlame) {
-    const x = isoX(n.x, n.y), y = isoY(n.x, n.y) - (n.lv || 0) * 4;
-    drawSacredFlame(ctx, x, y - 26, G.time, 0.82);
-    n.sbox = [x - 30, y - 62, x + 30, y + 4];
-    n.viewH = 62;
+    const x = isoX(n.x, n.y), baseY = isoY(n.x, n.y) - (n.lv || 0) * 4 - 9.6;
+    const k = 1 + renownRank(G.char?.keep?.renown || 0) * 0.012 + (G.char?.keep?.kindled?.until > Date.now() ? 0.08 : 0) + (G.world?.flameSurge || 0) * 0.45;
+    // The rasterized near rim is drawn between far/near motes, keeping the flame inside the brazier crown.
+    drawSacredFlame(ctx, x, baseY - 36, G.time, k, drawBrazierFront);
+    n.sbox = [x - 34, baseY - 36 - 150 * k, x + 34, baseY - 20];
+    n.viewH = 36 + 150 * k;
     return;
   }
   // Vendors retain their existing hand-painted artwork, names and shops.

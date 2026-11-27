@@ -9,21 +9,22 @@
 // castle's is assets/tiles/castle3d/ itself). One set is loaded at a time.
 import { castleVariant } from '../data/castles.js';
 const DIR = 'assets/tiles/castle3d/';
-let state = null, loading = null, loadingDir = null;
+let state = null, loading = null, loadingDir = null, loadingVersion = null;
 
 /** Load a baked set once (a level loads its set before generating, like its pack). */
-export function loadBaked(dir) {
-  if (state && state.dir === dir) return Promise.resolve(state);
-  if (loading && loadingDir === dir) return loading;
-  state = null; loadingDir = dir;
-  loading = fetch(dir + 'index.json').then((r) => r.json()).then((idx) => Promise.all(idx.pages.map((p) => new Promise((ok, no) => {
+export function loadBaked(dir, version = '') {
+  if (state && state.dir === dir && state.version === version) return Promise.resolve(state);
+  if (loading && loadingDir === dir && loadingVersion === version) return loading;
+  state = null; loadingDir = dir; loadingVersion = version;
+  const cacheBust = version ? `?v=${encodeURIComponent(version)}` : '';
+  loading = fetch(dir + 'index.json' + cacheBust).then((r) => r.json()).then((idx) => Promise.all(idx.pages.map((p) => new Promise((ok, no) => {
     // decoded here, while the level loads: the first draw of an undecoded 4096 px page stalled a frame (~230 ms)
-    const img = new Image(); img.onload = () => (img.decode ? img.decode().catch(() => {}) : Promise.resolve()).then(() => ok(img)); img.onerror = () => no(new Error('baked page ' + dir + p)); img.src = dir + p;
+    const img = new Image(); img.onload = () => (img.decode ? img.decode().catch(() => {}) : Promise.resolve()).then(() => ok(img)); img.onerror = () => no(new Error('baked page ' + dir + p)); img.src = dir + p + cacheBust;
   }))).then((imgs) => {
     const base = new Map(), over = new Map();
     for (let k = 0; k < idx.tiles.length; k += 3) (idx.tiles[k + 1] ? over : base).set(idx.tiles[k], idx.tiles[k + 2]);
     if (loadingDir !== dir) return state;   // another set was asked for meanwhile
-    state = { dir, S: idx.S, imgs, pieces: idx.pieces, base, over, roofs: idx.roofs, moving: idx.moving, sprites: idx.sprites, anchors: idx.anchors, idx };
+    state = { dir, version, S: idx.S, imgs, pieces: idx.pieces, base, over, roofs: idx.roofs, moving: idx.moving, sprites: idx.sprites, anchors: idx.anchors, idx };
     return state;
   })).catch((e) => { loading = null; throw e; });
   return loading;
@@ -42,7 +43,7 @@ export function warmBaked(ctx) {
   ctx.restore();
 }
 /** Release the decoded pages when the level is left. */
-export function releaseCastle3D() { state = null; loading = null; loadingDir = null; }
+export function releaseCastle3D() { state = null; loading = null; loadingDir = null; loadingVersion = null; }
 
 /** Draw piece `id` for tile (tx, ty), whose ground corner is at world (px, py) (no elevation: pieces are absolute). */
 export function drawPiece(ctx, id, px, py) {

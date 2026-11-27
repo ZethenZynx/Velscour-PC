@@ -44,7 +44,7 @@ import { noteFind, codexMf } from './reliquary.js';
 import { markBonuses, gainMarkXp } from './marks.js';
 import { endgame, saveEndgame } from './endgame.js';
 import { heresyHero, heresyAllows, heresyAbilityCostMul, heresyCooldownMul, heresyShrineDurationMul } from './heresies.js';
-import { keepBonuses, keepGold, keepItem, keepPotion } from './keep.js';
+import { keepBonuses, keepGold, keepItem, keepPotion, keepLevel } from './keep.js';
 
 // XP for the next level across the Level 1-100 progression curve.
 const xpCurve = (L) => (45 * L * L + 35 * L) * (1 + Math.pow(L / 25, 1.25));
@@ -435,6 +435,7 @@ export class Player extends Creature {
       if (earnedTalent) G.ui.log('You earned a <b>Talent Point</b>! Open the Passive Talent Tree (T) to spend it.', '#ffd860');
       G.ui.refresh();
     }
+    keepLevel(c);
     if (G.game?.autosave) G.game.autosave();
   }
   /** Grimdark level-up: a dark sigil bursting into flames, a column of blood-red hellfire, rainbow lightning forking

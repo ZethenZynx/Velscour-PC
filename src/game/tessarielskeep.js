@@ -3,10 +3,10 @@
 import { G } from '../state.js';
 import { World } from './world.js';
 import { TOWN_BIOME } from '../data/biomes.js';
-import { KEEP_NAME, CASTELLAN, EMBER_COLOR, KINDLE, TROPHY_BY_ID, defaultDecor } from '../data/keep.js';
+import { KEEP_NAME, CASTELLAN, KEEP_FOLK as KEEP_FOLK_DATA, EMBER_COLOR, KINDLE, TROPHY_BY_ID, defaultDecor } from '../data/keep.js';
 import { VENDORS } from '../world/town.js';
 import { generateKeep, keepProps, keepDressTile } from '../world/keepworld.js';
-import { loadKeepArt, KEEP_DIR } from '../gfx/keepart.js';
+import { loadKeepArt, KEEP_DIR, KEEP_BAKE_VERSION } from '../gfx/keepart.js';
 import { loadBaked } from '../gfx/castle3dart.js';
 import { biomeTileSet } from '../core/assets.js';
 import { addLight } from '../gfx/vfx.js';
@@ -25,7 +25,7 @@ export const TESSARIEL_KEEP_BIOME = {
   blood: '#8a0b08', torch: '#ffb050', fog: '#06080a', keep: true,
 };
 
-const KEEP_FOLK = [CASTELLAN.sprite, '41_friar', '09_knight_silver_censer', '14_knight_dusk_lancer', '42_priest', '13_knight_frostbound'];
+const KEEP_FOLK = [CASTELLAN.sprite, ...KEEP_FOLK_DATA.map(([sprite]) => sprite)];
 
 const SERVICE_SPOTS = [
   [11.5, 13.5], [11.5, 17.5], [11.5, 22.5], [11.5, 27.5],
@@ -49,7 +49,10 @@ export function reachableKeepSpot(map, start, requested, occupied = []) {
 
 /** Load the original bake once and assemble the Keep around fork-native services. */
 export async function buildTessarielKeep(game, services) {
-  await Promise.all([loadBaked(KEEP_DIR), loadKeepArt()]);
+  await Promise.all([loadBaked(KEEP_DIR, KEEP_BAKE_VERSION), loadKeepArt()]);
+  // The upstream Saga givers and companion cards open Keep tabs through this UI hook. The fork's
+  // central UI does not install it globally, so bind the existing Keep panel during Keep assembly.
+  if (G.ui) G.ui.keep ??= KeepUI;
   const generated = generateKeep(), { map, anchors: A } = generated;
   const world = new World('town', {
     map, tileset: biomeTileSet(TOWN_BIOME), biome: TESSARIEL_KEEP_BIOME, depth: 0,

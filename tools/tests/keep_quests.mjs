@@ -43,7 +43,7 @@ const fresh = () => ({ id: 'qa' + Math.random(), name: 'QA', classId: 'paladin',
 G.char = fresh();
 const c = G.char, k = K.keepState(c);
 for (const s of K.sagaList(c)) if (s.open) K.takeSaga(s.saga.id, c);
-if (Object.keys(k.sagas).length !== D.SAGAS.filter((s) => s.min <= 0).length) fail('took the wrong Sagas at depth 0');
+if (Object.keys(k.sagas).length !== D.SAGAS.filter((s) => s.min <= c.deepest && (s.minLevel || 0) <= c.level).length) fail('took the wrong Sagas at depth 0 / level 1');
 for (let i = 0; i < 39; i++) K.keepEvent('kill');
 if (k.owed.some((o) => o.id === 'ember_road#0')) fail('chapter 1 paid at 39 of 40');
 K.keepEvent('kill');

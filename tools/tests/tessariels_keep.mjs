@@ -6,11 +6,21 @@ import { KEEP_TABS } from '../../src/ui/keep.js';
 import { keepState, sagaList, keepBonuses } from '../../src/game/keep.js';
 import { shouldReleaseCastle3D, shouldReleaseTownSheets } from '../../src/game/levelart.mjs';
 import { TROPHIES } from '../../src/data/keep.js';
+import * as KeepArt from '../../src/gfx/keepart.js';
 
 const { map, start, anchors } = generateKeep();
 assert.equal(map.keep, true);
 assert.equal(map.c3only, true, 'the original baked isometric architecture remains active');
 assert.ok(map.walkable(start[0], start[1]), 'the player arrival point is walkable');
+const bakedIndex = JSON.parse(await readFile(new URL('../../assets/tiles/tkeep/index.json', import.meta.url), 'utf8'));
+const keepBuilderSource = await readFile(new URL('../../src/game/tessarielskeep.js', import.meta.url), 'utf8');
+assert.match(keepBuilderSource, /G\.ui\.keep\s*\?\?=\s*KeepUI/, 'Saga givers and companions open Keep panels through the fork UI');
+const renderSource = await readFile(new URL('../../src/game/render.js', import.meta.url), 'utf8');
+assert.match(renderSource, /pr\.keepDecor\s*&&\s*typeof pr\.fx === 'function'/, "the Keep's rasterized static decorations retain animated candle and brazier effects");
+for (const page of bakedIndex.pages) await access(new URL(`../../assets/tiles/tkeep/${page}`, import.meta.url));
+await access(new URL('../../assets/tiles/tkeep/brazier_front.json', import.meta.url));
+for (const name of ['drawBrazierFront', 'drawCandle', 'drawFire', 'chandelierSprite', 'ghostSprite'])
+  assert.equal(typeof KeepArt[name], 'function', `the upstream Keep artwork export ${name} is available`);
 
 const occupied = [];
 const place = (label, point) => {
@@ -57,7 +67,7 @@ assert.equal(state.renown, savedKeep.renown, 'migration preserves Renown');
 assert.deepEqual(state.sagas, savedKeep.sagas, 'migration preserves saga chapter progress');
 assert.deepEqual(state.done, savedKeep.done, 'migration preserves deed records');
 assert.deepEqual(state.have.trophy, savedKeep.have.trophy, 'migration preserves earned trophies');
-assert.equal(sagaList(hero).length, 8, 'all authored Sagas are available');
+assert.equal(sagaList(hero).length, 11, 'all authored Sagas are available');
 assert.ok(keepBonuses(hero).gf > 0, 'Renown bonuses contribute to active player stats');
 
 assert.equal(shouldReleaseCastle3D({ id: 'catacombs' }, { keep: true }), false, 'late dungeon cleanup cannot unload the active Keep');
