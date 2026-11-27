@@ -22,14 +22,14 @@ import { DUNGEON_AFFIX_BY_ID } from '../data/dungeonaffixes.js';
 import { dungeonAffixIconURL } from './dungeonaffixicons.js';
 import { appendEnemyHistory, createEnemyHistorySaveQueue, loadEnemyHistory } from './enemyhistory.js';
 import { profileEnd, profileRecord, profileStart } from '../core/perfdiagnostics.js';
-import { HEALTH_BAR_CLASSES, drawHealthBarFrame, healthBarClass, healthBarSettings, healthBarSummaryText, healthBarValueText, healthBarVisible, healthBarAffixText, healthBarStatusText, preloadHealthBarArt } from './healthbars.mjs';
+import { BOSS_HEALTH_LAYOUT, HEALTH_BAR_CLASSES, drawHealthBarFrame, healthBarClass, healthBarSettings, healthBarSummaryText, healthBarValueText, healthBarVisible, healthBarAffixText, healthBarStatusText, preloadHealthBarArt } from './healthbars.mjs';
 
 preloadHealthBarArt();
 function redrawTargetHealthBarFrame() {
   const bar = $('#boss-bar'), canvas = $('#boss-frame');
   if (!bar || !canvas || bar.classList.contains('hidden') || bar.classList.contains('classic') || bar.classList.contains('no-frame')) return;
   const cls = HEALTH_BAR_CLASSES.find((entry) => entry.id === bar.dataset.healthbarClass);
-  const rect = bar.getBoundingClientRect(), dpr = Math.max(1, Number(G.dpr) || 1);
+  const rect = canvas.getBoundingClientRect(), dpr = Math.max(1, Number(G.dpr) || 1);
   if (!cls || !rect.width || !rect.height) return;
   const width = Math.ceil(rect.width * dpr), height = Math.ceil(rect.height * dpr);
   if (canvas.width !== width || canvas.height !== height) { canvas.width = width; canvas.height = height; }
@@ -704,7 +704,7 @@ export const HUD = {
     const barTarget = activeBoss && healthBarVisible(activeBoss, 'target') ? activeBoss
       : targetedBoss && healthBarVisible(targetedBoss, 'target') ? targetedBoss : null;
     const barClass = barTarget === activeBoss ? HEALTH_BAR_CLASSES.find((entry) => entry.id === 'boss') : healthBarClass(barTarget);
-    set('boss', barTarget ? `${barTarget.id}|${barClass.id}|${barSettings.theme}|${barSettings.target.width}|${barSettings.target.height}|${barSettings.target.opacity}|${barSettings.target.verticalOffset}|${barSettings.target.decorativeBorders}|${barSettings.target.smoothHealthDepletion}|${barSettings.info.showEnemyName}|${G.W}|${G.H}|${G.dpr}` : '', () => {
+    set('boss', barTarget ? `${barTarget.id}|${barClass.id}|${barSettings.theme}|${barSettings.target.width}|${barSettings.target.height}|${barSettings.target.opacity}|${barSettings.target.verticalOffset}|${barSettings.target.decorativeBorders}|${barSettings.target.smoothHealthDepletion}|${G.W}|${G.H}|${G.dpr}` : '', () => {
       const bar = $('#boss-bar'), visible = !!barTarget;
       bar.classList.toggle('hidden', !visible);
       for (const id of ['normal', 'champion', 'unique', 'boss', 'nemesis', 'imp', 'companion']) bar.classList.toggle(`healthbar-${id}`, visible && id === barClass.id);
@@ -714,14 +714,27 @@ export const HUD = {
       bar.classList.toggle('healthbar-smooth', !!barSettings.target.smoothHealthDepletion);
       bar.style.setProperty('--hb-target-width', String(barSettings.target.width / 100));
       bar.style.setProperty('--hb-target-height', String(barSettings.target.height / 100));
-      bar.style.setProperty('--hb-target-base-height', barClass.id === 'boss' ? '160px' : barSettings.theme === 'classic' ? '64px' : '124px');
+      bar.style.setProperty('--hb-target-base-height', barSettings.theme === 'classic' ? '64px' : barClass.id === 'boss' ? '178px' : '124px');
       bar.style.setProperty('--hb-target-opacity', String(barSettings.target.opacity / 100));
       bar.style.setProperty('--hb-target-offset', `${barSettings.target.verticalOffset}px`);
+      const bossLayout = barClass.id === 'boss' ? {
+        'frame-top': BOSS_HEALTH_LAYOUT.frameTop, 'frame-height': BOSS_HEALTH_LAYOUT.frameHeight,
+        'track-left': BOSS_HEALTH_LAYOUT.trackLeft, 'track-right': BOSS_HEALTH_LAYOUT.trackRight,
+        'track-top': BOSS_HEALTH_LAYOUT.trackTop, 'track-height': BOSS_HEALTH_LAYOUT.trackHeight,
+        'emblem-center-x': BOSS_HEALTH_LAYOUT.emblemCenterX, 'emblem-center-y': BOSS_HEALTH_LAYOUT.emblemCenterY,
+        'emblem-width': BOSS_HEALTH_LAYOUT.emblemWidth, 'emblem-height': BOSS_HEALTH_LAYOUT.emblemHeight,
+        'name-left': BOSS_HEALTH_LAYOUT.nameLeft, 'name-right': BOSS_HEALTH_LAYOUT.nameRight,
+        'name-top': BOSS_HEALTH_LAYOUT.nameTop, 'name-height': BOSS_HEALTH_LAYOUT.nameHeight,
+        'summary-top': BOSS_HEALTH_LAYOUT.summaryTop, 'extra-top': BOSS_HEALTH_LAYOUT.extraTop,
+      } : null;
+      if (bossLayout) for (const [key, value] of Object.entries(bossLayout)) bar.style.setProperty(`--hb-boss-${key}`, `${value * 100}%`);
       if (!visible) return;
       redrawTargetHealthBarFrame();
       $('#boss-emblem').src = `assets/ui/healthbars/${barClass.icon}.webp`;
       $('#boss-emblem').alt = barClass.label;
-      $('#boss-name').textContent = barSettings.info.showEnemyName ? (barTarget.name || '') : '';
+      // The encounter banner always names the boss. The optional name setting
+      // controls creature labels above overhead bars only.
+      $('#boss-name').textContent = barTarget.name || '';
       const tr = $('#boss-track');
       tr.querySelectorAll('.boss-mark').forEach((e) => e.remove());
       if (barTarget === activeBoss && activeBoss.raid) for (const k of activeBoss.raid.marks) { const d = el('div', 'boss-mark'); d.style.left = k * 100 + '%'; tr.appendChild(d); }

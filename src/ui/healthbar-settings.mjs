@@ -1,6 +1,6 @@
 import { G, saveSettings } from '../state.js';
 import { UI } from './ui.js';
-import { drawHealthBarCanvas, HEALTH_BAR_CLASSES, healthBarSummaryText, healthBarValueText, normalizeHealthBarSettings, preloadHealthBarArt } from './healthbars.mjs';
+import { BOSS_HEALTH_LAYOUT, drawHealthBarCanvas, HEALTH_BAR_CLASSES, healthBarSummaryText, healthBarValueText, normalizeHealthBarSettings, preloadHealthBarArt } from './healthbars.mjs';
 
 const VISIBILITY = [
   ['always', 'Always Visible'], ['damaged', 'Only When Damaged'], ['combat', 'Only During Combat'],
@@ -35,7 +35,7 @@ export function openHealthBarSettings() {
   const html = `<div class="healthbar-settings">
     <div class="healthbar-preview-card">
       <div class="healthbar-preview-heading"><b>Preview</b><div><button type="button" class="btn small" data-hb-class-prev aria-label="Previous creature type">‹</button><span data-hb-class-name>Normal Monster</span><button type="button" class="btn small" data-hb-class-next aria-label="Next creature type">›</button></div></div>
-      <div class="healthbar-preview-wrap"><canvas data-hb-preview width="980" height="190" aria-label="Health bar preview"></canvas></div>
+      <div class="healthbar-preview-wrap"><canvas data-hb-preview width="980" height="250" aria-label="Health bar preview"></canvas></div>
       <div class="healthbar-preview-controls"><label>Preview bar<select data-hb-system><option value="overhead">Overhead Creature Bar</option><option value="target">Top Target Bar</option></select></label><label>Preview health<select data-hb-fraction><option value="1">Full</option><option value="0.5">Partial</option><option value="0.08">Nearly Depleted</option></select></label></div>
     </div>
     <div class="healthbar-settings-columns">
@@ -63,25 +63,35 @@ export function openHealthBarSettings() {
   const renderPreview = () => {
     const s = G.settings.healthBars, entry = HEALTH_BAR_CLASSES[selectedClass], entity = previewEntity(entry, previewFraction);
     const w = canvas.width, h = canvas.height;
+    const bossTarget = selectedSystem === 'target' && entry.id === 'boss';
     ctx.clearRect(0, 0, w, h);
     ctx.fillStyle = 'rgba(8,5,4,.7)'; ctx.fillRect(0, 0, w, h);
     const barW = (selectedSystem === 'target' ? 760 : 560) * s[selectedSystem].width / 100;
-    const barH = (selectedSystem === 'target' ? 155 : 42) * s[selectedSystem].height / 100;
+    const barH = (selectedSystem === 'target' ? (bossTarget ? 178 : 155) : 42) * s[selectedSystem].height / 100;
     const x = (w - barW) * 0.5, y = selectedSystem === 'target' ? 19 : 68;
     drawHealthBarCanvas(ctx, entity, x, y, barW, barH, { system: selectedSystem, forceFraction: previewFraction });
     const info = s.info;
     ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.shadowColor = '#000'; ctx.shadowBlur = 4;
     ctx.fillStyle = entry.id === 'boss' ? '#ffd29a' : entry.color;
-    ctx.font = `700 ${selectedSystem === 'target' ? 30 : 24}px Cinzel, Georgia, serif`;
-    const name = info.showEnemyName ? entity.name : '';
-    if (name) ctx.fillText(name, selectedSystem === 'target' ? w * 0.56 : x + barW * 0.5, y + (selectedSystem === 'target' ? barH * 0.28 : -18), barW * 0.9);
+    ctx.font = `700 ${bossTarget ? 14 : selectedSystem === 'target' ? 30 : 24}px Cinzel, Georgia, serif`;
+    const name = bossTarget || info.showEnemyName ? entity.name : '';
+    if (name) {
+      const nameX = bossTarget ? x + barW * (BOSS_HEALTH_LAYOUT.trackLeft + (1 - BOSS_HEALTH_LAYOUT.trackLeft - BOSS_HEALTH_LAYOUT.trackRight) / 2) : selectedSystem === 'target' ? w * 0.56 : x + barW * 0.5;
+      const nameY = bossTarget ? y + barH * (BOSS_HEALTH_LAYOUT.nameTop + BOSS_HEALTH_LAYOUT.nameHeight / 2) : y + (selectedSystem === 'target' ? barH * 0.28 : -18);
+      ctx.fillText(name, nameX, nameY, barW * (bossTarget ? 1 - BOSS_HEALTH_LAYOUT.trackLeft - BOSS_HEALTH_LAYOUT.trackRight : 0.9));
+    }
     if (selectedSystem === 'target') {
       const values = healthBarValueText(entity, s);
-      if (values) { ctx.fillStyle = '#fff0d4'; ctx.font = '700 15px Georgia, serif'; ctx.fillText(values, x + barW * 0.56, y + barH * 0.545, barW * 0.62); }
+      if (values) {
+        ctx.fillStyle = '#fff0d4'; ctx.font = '700 15px Georgia, serif';
+        const valueX = bossTarget ? x + barW * (BOSS_HEALTH_LAYOUT.trackLeft + (1 - BOSS_HEALTH_LAYOUT.trackLeft - BOSS_HEALTH_LAYOUT.trackRight) / 2) : x + barW * 0.56;
+        const valueY = bossTarget ? y + barH * (BOSS_HEALTH_LAYOUT.trackTop + BOSS_HEALTH_LAYOUT.trackHeight / 2) : y + barH * 0.545;
+        ctx.fillText(values, valueX, valueY, barW * (bossTarget ? 1 - BOSS_HEALTH_LAYOUT.trackLeft - BOSS_HEALTH_LAYOUT.trackRight : 0.62));
+      }
     }
     ctx.fillStyle = '#ead9ba'; ctx.font = `${selectedSystem === 'target' ? 18 : 13}px Georgia, serif`;
     const sub = selectedSystem === 'target' ? healthBarSummaryText(entity, s) : (info.showEnemyLevel ? `Lv. ${entity.level}` : '');
-    if (sub) ctx.fillText(sub, w * 0.56, y + barH * 0.76, barW * 0.7);
+    if (sub) ctx.fillText(sub, bossTarget ? x + barW * 0.57 : w * 0.56, y + barH * (bossTarget ? BOSS_HEALTH_LAYOUT.summaryTop : 0.76), barW * 0.7);
     ctx.shadowBlur = 0;
     if (s.info.showAffixIcons && entity.affixes.length) { ctx.fillStyle = '#dbc5f2'; ctx.font = '13px Georgia, serif'; ctx.fillText('✦ Strong  ·  ✦ Vampiric', w * 0.56, h - 9); }
   };

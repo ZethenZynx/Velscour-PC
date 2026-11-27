@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { existsSync, readFileSync } from 'node:fs';
 import { G } from '../../src/state.js';
-import { DEFAULT_HEALTH_BAR_SETTINGS, HEALTH_BAR_CLASSES, drawHealthBarCanvas, healthBarClass, healthBarSettings, healthBarText, healthBarSummaryText, healthBarValueText, healthBarVisible, normalizeHealthBarSettings, preloadHealthBarArt } from '../../src/ui/healthbars.mjs';
+import { BOSS_HEALTH_LAYOUT, DEFAULT_HEALTH_BAR_SETTINGS, HEALTH_BAR_CLASSES, drawHealthBarCanvas, healthBarClass, healthBarSettings, healthBarText, healthBarSummaryText, healthBarValueText, healthBarVisible, normalizeHealthBarSettings, preloadHealthBarArt } from '../../src/ui/healthbars.mjs';
 
 globalThis.localStorage ||= { getItem: () => null, setItem: () => {} };
 
@@ -26,6 +26,13 @@ const samples = [
 ];
 for (const [entity, id] of samples) assert.equal(healthBarClass(entity).id, id, `${id} classification resolves correctly`);
 assert.equal(HEALTH_BAR_CLASSES.length, 7, 'all seven reference classes are defined');
+assert.deepEqual(BOSS_HEALTH_LAYOUT, {
+  frameTop: 18 / 178, frameHeight: 160 / 178,
+  trackLeft: 0.23, trackRight: 0.09, trackTop: 18 / 178 + 0.33 * (160 / 178), trackHeight: 0.13 * (160 / 178),
+  emblemCenterX: 0.17, emblemCenterY: 18 / 178 + 0.395 * (160 / 178), emblemWidth: 0.134, emblemHeight: 0.62 * (160 / 178),
+  nameLeft: 0.23, nameRight: 0.09, nameTop: 0.005, nameHeight: 0.09,
+  summaryTop: 18 / 178 + 0.70 * (160 / 178), extraTop: 18 / 178 + 0.83 * (160 / 178),
+}, 'boss frame components share one relative layout');
 
 G.settings.healthBars = normalizeHealthBarSettings();
 G.settings.lifeBars = true;
@@ -80,6 +87,10 @@ assert.match(hud, /healthBarValueText\(barTarget, barSettings\)/, 'boss health v
 assert.match(settings, /data-hb-class-next/);
 assert.match(settings, /Reset to Defaults/);
 assert.match(css, /healthbar-dialog/);
+assert.match(css, /--hb-boss-frame-top:10\.1124%/);
+assert.match(css, /--hb-boss-track-top:39\.7753%/);
+assert.match(css, /--hb-boss-track-height:11\.6854%/);
+assert.match(hud, /\$\('#boss-name'\)\.textContent = barTarget\.name \|\| ''/, 'boss names remain visible independently of overhead name labels');
 assert.match(readFileSync(new URL('../../src/ui/healthbars.mjs', import.meta.url), 'utf8'), /drawHealthBarFrame/);
 assert.doesNotMatch(creatureDraw, /e\.bc\s*=\s*col/, 'the old bar-color variable is not referenced after the health-bar renderer replaced it');
 assert.match(creatureDraw, /\[health-bar\] overhead setup failed; continuing creature rendering/, 'health-bar setup failures are isolated from creature/world rendering');
@@ -132,6 +143,22 @@ for (const entry of HEALTH_BAR_CLASSES) {
   assert.ok(ctx.calls.some((src) => src.endsWith(leftCap)), `${entry.id} uses its appropriate cached left cap`);
   assert.ok(ctx.calls.some((src) => src.endsWith(rightCap)), `${entry.id} uses its appropriate cached right cap`);
 }
+const targetCtx = recordingContext(), targetCalls = [];
+targetCtx.drawImage = (img, ...args) => targetCalls.push({ src: img._src, args });
+G.settings.healthBars = normalizeHealthBarSettings({ info: { showHealthPercentage: true, showNumericalHealth: true } });
+drawHealthBarCanvas(targetCtx, { rank: 'boss', hp: 40, maxHp: 100 }, 10, 20, 660, 160, { system: 'target', forceFraction: 0.4 });
+const bossFillCall = targetCalls.find(({ src, args }) => src.endsWith('fill-crimson.webp') && args.length === 8);
+assert.ok(bossFillCall, 'boss target preview uses the crimson texture');
+const [, , , , bossFillX, bossFillY, bossFillW, bossFillH] = bossFillCall.args;
+assert.equal(bossFillX, 10 + 660 * BOSS_HEALTH_LAYOUT.trackLeft);
+assert.equal(bossFillY, 20 + 160 * BOSS_HEALTH_LAYOUT.trackTop);
+assert.equal(bossFillW, 660 * (1 - BOSS_HEALTH_LAYOUT.trackLeft - BOSS_HEALTH_LAYOUT.trackRight) * 0.4);
+assert.equal(bossFillH, 160 * BOSS_HEALTH_LAYOUT.trackHeight);
+const emblemCall = targetCalls.find(({ src }) => src.endsWith('/boss.webp'));
+assert.ok(emblemCall, 'boss emblem remains part of the top banner');
+const emblemSize = Math.min(660 * BOSS_HEALTH_LAYOUT.emblemWidth, 160 * BOSS_HEALTH_LAYOUT.emblemHeight);
+assert.equal(emblemCall.args[0], 10 + 660 * BOSS_HEALTH_LAYOUT.emblemCenterX - emblemSize / 2);
+assert.equal(emblemCall.args[1], 20 + 160 * BOSS_HEALTH_LAYOUT.emblemCenterY - emblemSize / 2);
 const isolatedFailureContext = recordingContext();
 isolatedFailureContext.drawImage = () => { throw new Error('intentional artwork draw failure'); };
 assert.throws(() => drawHealthBarCanvas(isolatedFailureContext, { rank: 'normal', hp: 1, maxHp: 1 }, 0, 0, 100, 12, { system: 'overhead' }), /intentional artwork draw failure/);

@@ -12,6 +12,15 @@ export const HEALTH_BAR_CLASSES = Object.freeze([
   { id: 'imp', label: 'Treasure Imp', color: '#128d36', fill: 'emerald', fillAsset: 'fill-emerald', icon: 'imp' },
   { id: 'companion', label: 'Companion / Summon', color: '#14939b', fill: 'teal', fillAsset: 'fill-teal', icon: 'companion' },
 ]);
+// Shared proportions for the boss frame, emblem, name, and bar. CSS uses the
+// same fractions for the live HUD; the settings canvas uses them directly.
+export const BOSS_HEALTH_LAYOUT = Object.freeze({
+  frameTop: 18 / 178, frameHeight: 160 / 178,
+  trackLeft: 0.23, trackRight: 0.09, trackTop: 18 / 178 + 0.33 * (160 / 178), trackHeight: 0.13 * (160 / 178),
+  emblemCenterX: 0.17, emblemCenterY: 18 / 178 + 0.395 * (160 / 178), emblemWidth: 0.134, emblemHeight: 0.62 * (160 / 178),
+  nameLeft: 0.23, nameRight: 0.09, nameTop: 0.005, nameHeight: 0.09,
+  summaryTop: 18 / 178 + 0.70 * (160 / 178), extraTop: 18 / 178 + 0.83 * (160 / 178),
+});
 const PLAYER_BAR_CLASS = Object.freeze({ id: 'player', label: 'Player', color: '#c52b20', fill: 'red', fillAsset: 'fill-red', icon: null });
 
 export const DEFAULT_HEALTH_BAR_SETTINGS = Object.freeze({
@@ -293,22 +302,29 @@ export function drawHealthBarCanvas(ctx, entity, x, y, w, h, { system = 'overhea
     const frame = image(bossFrame ? 'frame-boss' : system === 'target' ? 'frame-target' : 'frame'), fill = image(classification.fillAsset), emblem = classification.icon ? image(classification.icon) : null;
     if (!frame) { drawFallback(ctx, x, y, w, h, fraction, classification.color); return; }
     const target = system === 'target';
-    const leftFraction = bossFrame ? (target ? 0.23 : 0.24) : target ? 0.12 : 0.201;
-    const rightFraction = bossFrame ? 0.12 : target ? 0.09 : 0.12;
-    const left = x + h * frame.naturalWidth * leftFraction / frame.naturalHeight;
-    const right = x + w - h * frame.naturalWidth * rightFraction / frame.naturalHeight;
-    const top = y + h * (bossFrame ? 0.37 : 0.365);
+    const bossTarget = bossFrame && target;
+    const leftFraction = bossTarget ? BOSS_HEALTH_LAYOUT.trackLeft : bossFrame ? 0.24 : target ? 0.12 : 0.201;
+    const rightFraction = bossTarget ? BOSS_HEALTH_LAYOUT.trackRight : bossFrame ? 0.12 : target ? 0.09 : 0.12;
+    const left = bossTarget ? x + w * leftFraction : x + h * frame.naturalWidth * leftFraction / frame.naturalHeight;
+    const right = bossTarget ? x + w * (1 - rightFraction) : x + w - h * frame.naturalWidth * rightFraction / frame.naturalHeight;
+    const top = y + h * (bossTarget ? BOSS_HEALTH_LAYOUT.trackTop : bossFrame ? 0.37 : 0.365);
     const innerW = Math.max(0, right - left);
-    const innerH = h * (bossFrame ? 0.21 : target ? 0.27 : 0.305);
-    if (appearance.decorativeBorders) drawHealthBarFrame(ctx, classification, x, y, w, h, system);
+    const innerH = h * (bossTarget ? BOSS_HEALTH_LAYOUT.trackHeight : bossFrame ? 0.21 : target ? 0.27 : 0.305);
+    if (appearance.decorativeBorders && !bossTarget) drawHealthBarFrame(ctx, classification, x, y, w, h, system);
     ctx.fillStyle = '#110b08'; ctx.fillRect(left, top, innerW, innerH);
     if (fill && fraction > 0) ctx.drawImage(fill, 0, 0, Math.max(1, fill.naturalWidth * fraction), fill.naturalHeight, left, top, innerW * fraction, innerH);
     else if (fraction > 0) { ctx.fillStyle = classification.color; ctx.fillRect(left, top, innerW * fraction, innerH); }
     ctx.fillStyle = 'rgba(255,236,190,.38)'; ctx.fillRect(left, top, innerW * fraction, Math.max(1, innerH * 0.2));
+    if (appearance.decorativeBorders && bossTarget) {
+      drawHealthBarFrame(ctx, classification, x, y + h * BOSS_HEALTH_LAYOUT.frameTop, w, h * BOSS_HEALTH_LAYOUT.frameHeight, system);
+    }
     if (emblem) {
-      const size = h * 0.62;
-      const centerX = x + h * frame.naturalWidth * (bossFrame ? 0.156 : target ? 0.066 : 0.118) / frame.naturalHeight;
-      ctx.drawImage(emblem, centerX - size / 2, y + h * 0.5 - size / 2, size, size);
+      const size = bossTarget
+        ? Math.min(w * BOSS_HEALTH_LAYOUT.emblemWidth, h * BOSS_HEALTH_LAYOUT.emblemHeight)
+        : h * 0.62;
+      const centerX = bossTarget ? x + w * BOSS_HEALTH_LAYOUT.emblemCenterX : x + h * frame.naturalWidth * (bossFrame ? 0.156 : target ? 0.066 : 0.118) / frame.naturalHeight;
+      const centerY = y + h * (bossTarget ? BOSS_HEALTH_LAYOUT.emblemCenterY : 0.5);
+      ctx.drawImage(emblem, centerX - size / 2, centerY - size / 2, size, size);
     }
     let iconAt = 0;
     if (entity && s.info.showAffixIcons && Array.isArray(entity.affixes)) {
