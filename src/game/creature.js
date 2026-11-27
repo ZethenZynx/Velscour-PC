@@ -677,7 +677,7 @@ export class Creature {
         outerPivot: ar ? pivot : null, outerRot: ar, outerScale: tuck,
       });
     }
-    const mid = this.spriteH * this.scale * 0.5;
+    const mid = h * 0.5;
     this.lastArt = { a, x: where.x, y: where.y, k, flip: this.flip, rot: where.rot, ar, mid };
     if (ar) { const tuck = 1 - 0.16 * Math.sin(Math.PI * au); ctx.save(); ctx.translate(where.x, where.y - mid); ctx.rotate(ar); ctx.scale(tuck, tuck); ctx.translate(-where.x, -(where.y - mid)); }
     if (this.drawArtLayer) this.drawArtLayer(ctx, 'back', where);
@@ -697,7 +697,10 @@ export class Creature {
     ctx.restore();
     if (this.drawArtLayer) this.drawArtLayer(ctx, 'front', where);
     if (ar) ctx.restore();
-    const top = py - this.spriteH * this.scale - z;
+    // Use the exact rendered artwork anchor, not Creature.spriteH: custom
+    // artFrame entities may not define spriteH (Treasure Imps are one such
+    // family), which previously produced a NaN overhead-bar Y coordinate.
+    const top = where.y + dy;
     this.screenTop = top;
     this.drawOverhead(ctx, px, top - 4, w * 0.6);
   }

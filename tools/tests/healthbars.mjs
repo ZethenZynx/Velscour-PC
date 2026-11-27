@@ -4,13 +4,19 @@ import { G } from '../../src/state.js';
 import { BOSS_HEALTH_LAYOUT, DEFAULT_HEALTH_BAR_SETTINGS, HEALTH_BAR_CLASSES, bossFrameTrackBounds, drawHealthBarCanvas, healthBarCanvasLayout, healthBarClass, healthBarSettings, healthBarText, healthBarSummaryText, healthBarValueText, healthBarVisible, isTreasureImpEntity, normalizeHealthBarSettings, overheadHealthBarDrawEligible, overheadHealthBarEligible, preloadHealthBarArt } from '../../src/ui/healthbars.mjs';
 import { TREASURE_IMPS } from '../../src/data/treasureimps.js';
 import { Creature, drawXray, xray } from '../../src/game/creature.js';
+import { isoX } from '../../src/core/view.js';
+import { createTreasureImp } from '../../src/game/happenings.js';
+import { BIOME_BY_ID } from '../../src/data/biomes.js';
 
-globalThis.localStorage ||= { getItem: () => null, setItem: () => {} };
+const storedSettings = new Map();
+globalThis.localStorage = { getItem: (key) => storedSettings.get(key) || null, setItem: (key, value) => storedSettings.set(key, value) };
+globalThis.document ||= { createElement: () => ({ width: 0, height: 0, getContext: () => ({ fillRect() {} }) }) };
 
 const defaults = normalizeHealthBarSettings();
 assert.equal(defaults.theme, 'velscour', 'Velscour theme is the default');
 assert.deepEqual(defaults.overhead, { ...DEFAULT_HEALTH_BAR_SETTINGS.overhead }, 'overhead settings have independent default dimensions and visibility');
 assert.deepEqual(defaults.target, { ...DEFAULT_HEALTH_BAR_SETTINGS.target }, 'target settings have independent default dimensions and visibility');
+assert.deepEqual(defaults.imp, { visibility: 'always' }, 'Treasure Imp visibility defaults to always independently of other creatures');
 assert.equal(defaults.overhead.width, 60, 'new and reset overhead bars default to 60% width');
 assert.equal(defaults.overhead.height, 100, 'overhead bar height remains at 100% by default');
 assert.equal(defaults.target.width, 100, 'boss health bar width remains at 100% by default');
@@ -29,6 +35,31 @@ assert.equal(normalizeHealthBarSettings({ theme: 'classic' }).theme, 'classic');
 assert.equal(normalizeHealthBarSettings({ overhead: { width: 900, visibility: 'bad' } }).overhead.width, 160, 'saved values are bounded');
 assert.equal(normalizeHealthBarSettings({ overhead: { visibility: 'bad' } }).overhead.visibility, 'always', 'unknown visibility values normalize safely');
 assert.equal(normalizeHealthBarSettings(null, false).overhead.visibility, 'damaged', 'old Life Bars off preference is preserved');
+
+G.settings.healthBars = {
+  overhead: { width: 88, visibility: 'damaged', opacity: 72 }, target: { width: 120 },
+  classes: { normal: false, imp: false }, info: { showEnemyLevel: true },
+  imp: { visibility: 'hidden', obsoleteFrameMode: 'basic' }, obsoleteImpBar: true,
+};
+G.settings.lifeBars = false;
+const migratedImpSettings = healthBarSettings();
+assert.equal(migratedImpSettings.classes.imp, true, 'legacy Imp visibility is reset once');
+assert.equal(migratedImpSettings.imp.visibility, 'always', 'legacy Imp mode is reset to always visible');
+assert.equal(migratedImpSettings.overhead.width, 88, 'migration preserves customized global width');
+assert.equal(migratedImpSettings.overhead.opacity, 72, 'migration preserves customized global opacity');
+assert.equal(migratedImpSettings.overhead.visibility, 'damaged', 'migration does not alter other creatures display mode');
+assert.equal(migratedImpSettings.classes.normal, false, 'migration does not alter other class preferences');
+assert.equal(migratedImpSettings.info.showEnemyLevel, true, 'migration does not alter information preferences');
+assert.equal(migratedImpSettings.impPreferencesVersion, 1, 'migration completion is persisted in settings');
+assert.equal(JSON.parse(storedSettings.get('velscour_settings_v1')).healthBars.impPreferencesVersion, 1, 'migration marker is written to browser settings storage');
+assert.equal(Object.hasOwn(migratedImpSettings, 'obsoleteImpBar'), false, 'obsolete top-level health-bar keys are discarded');
+assert.equal(Object.hasOwn(migratedImpSettings.imp, 'obsoleteFrameMode'), false, 'obsolete Imp-specific keys are discarded');
+assert.equal(healthBarSettings().classes.imp, true, 'repeated settings reads do not rerun or undo the migration');
+migratedImpSettings.imp.visibility = 'damaged';
+G.settings.healthBars = normalizeHealthBarSettings(migratedImpSettings);
+assert.equal(healthBarSettings().imp.visibility, 'damaged', 'subsequent Imp customization is retained');
+G.settings.healthBars = normalizeHealthBarSettings();
+G.settings.lifeBars = true;
 
 const samples = [
   [{ rank: 'normal' }, 'normal'], [{ rank: 'champion' }, 'champion'], [{ rank: 'unique' }, 'unique'],
@@ -105,7 +136,10 @@ assert.match(settings, /box\.querySelector\('\[data-hb-class-nav\]'\)\.hidden = 
 assert.match(settings, /showClassificationIconsOverhead/);
 assert.match(settings, /treasureImp: entry\.id === 'imp'/, 'the Imp preview uses the same authoritative family marker as live variants');
 assert.match(impFactory, /name: variant\.name, treasureImp: true, impVariant: variant\.id/, 'the shared spawn factory marks every Treasure Imp variant');
+assert.match(impFactory, /export function createTreasureImp/, 'automated coverage invokes the production Treasure Imp factory');
+assert.match(creatureDraw, /const top = where\.y \+ dy/, 'custom art overhead bars use the rendered sprite ground anchor rather than optional spriteH');
 assert.match(settings, /data-hb-info/);
+assert.match(settings, /data-hb-imp-visibility/, 'the Imp-specific visibility setting is connected to the settings panel');
 assert.match(settings, /Reset to Defaults/);
 assert.match(css, /healthbar-dialog/);
 assert.match(css, /--hb-boss-frame-top:10\.1124%/);
@@ -149,10 +183,18 @@ class TestImage {
   complete = true;
   naturalWidth = 256;
   naturalHeight = 128;
+  width = 256;
+  height = 128;
   set src(value) { this._src = value; }
 }
 globalThis.Image = TestImage;
 preloadHealthBarArt();
+G.char ||= { level: 40, depth: 150 };
+G.player ||= { st: { goldFind: 0, markGold: 0 } };
+G.player.st ||= { goldFind: 0, markGold: 0 };
+const impTestWorld = { depth: 150, biome: BIOME_BY_ID.catacombs, kind: 'dungeon', time: 0, creatures: [], happen: { imps: [] },
+  add(entity) { entity.world = this; this.creatures.push(entity); } };
+const actualImps = new Map();
 function recordingContext() {
   return {
     globalAlpha: 1, calls: [], styles: [], saves: 0, restores: 0, save() { this.saves++; }, restore() { this.saves--; this.restores++; }, beginPath() {}, rect() {}, clip() {},
@@ -187,6 +229,10 @@ function queuedBarContext() {
   const ctx = recordingContext();
   ctx.canvas = { width: 640, height: 480 };
   ctx.setTransform = () => {};
+  ctx.getTransform = () => ({ a: 1, b: 0, c: 0, d: 1, e: 0, f: 0 });
+  ctx.translate = ctx.rotate = ctx.scale = () => {};
+  ctx.ellipse = ctx.arc = ctx.moveTo = ctx.lineTo = ctx.closePath = ctx.fill = ctx.stroke = ctx.fillText = () => {};
+  ctx.strokeStyle = '#fff'; ctx.lineWidth = 1; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
   ctx.imageCalls = [];
   ctx.drawImage = (img, ...args) => ctx.imageCalls.push({ src: img._src, args });
   ctx.fillRects = [];
@@ -195,37 +241,41 @@ function queuedBarContext() {
   return ctx;
 }
 function exerciseLiveOverheadPath(variant, fraction, theme) {
-  const imp = Object.create(Creature.prototype);
-  Object.assign(imp, { id: variant.id, team: 'enemy', treasureImp: true, impVariant: variant.id,
-    goblin: true, rank: 'unique', hp: 100 * fraction, maxHp: 100, targetable: false,
-    dead: false, hidden: false, alpha: undefined, status: {}, curses: {}, animT: 0, scale: 1 });
-  G.settings.healthBars = normalizeHealthBarSettings({ theme, overhead: { smoothHealthDepletion: false } });
+  const imp = actualImps.get(variant.id) || createTreasureImp(impTestWorld, [100, 100], variant, { event: true });
+  actualImps.set(variant.id, imp);
+  imp.targetable = false; // mirrors the untargetable flee state that exposed the old outline coupling
+  imp.hp = imp.maxHp * fraction;
+  imp.spawnT = 1;
+  G.settings.healthBars = normalizeHealthBarSettings({ theme, impPreferencesVersion: 1, overhead: { smoothHealthDepletion: false } });
   xray.on = true; xray.n = 0; xray.barN = 0;
   const ctx = queuedBarContext();
-  // This is the real creature overhead entry point. Untargetable imps produce
-  // no outline/rim record, which exposed the previous coupling bug.
-  imp.drawOverhead(ctx, 240, 120, 60);
+  // The production factory creates a Monster instance with its real variant
+  // marker, custom sprite frame, health values, and Creature.draw path.
+  imp.draw(ctx);
   assert.equal(xray.n, 0, `${variant.id} does not require an outline entry to queue its bar`);
   assert.equal(xray.barN, 1, `${variant.id} reaches the deferred overhead bar renderer`);
   const queued = xray.bars[0];
   assert.equal(queued.entity, imp, `${variant.id} queued entity is the live imp`);
+  assert.equal(imp.spriteH, undefined, `${variant.id} factory-created custom-art creature reproduces the old missing spriteH field`);
   assert.equal(queued.alpha, 1, `${variant.id} bar receives visible opacity`);
+  assert.ok(Number.isFinite(imp.barTop) && imp.barHeight > 0, `${variant.id} has finite screen-space health-bar bounds`);
   assert.ok(Number.isFinite(queued.x) && Number.isFinite(queued.y) && queued.w > 0 && queued.h > 0,
-    `${variant.id} bar receives valid anchored coordinates and dimensions`);
-  assert.equal(queued.x + queued.w / 2, 240, `${variant.id} bar follows its current creature position`);
+    `${variant.id} bar receives valid anchored coordinates and dimensions (${JSON.stringify({ x: queued.x, y: queued.y, w: queued.w, h: queued.h, top: imp.barTop, height: imp.barHeight, barN: xray.barN })})`);
+  assert.equal(queued.x + queued.w / 2, isoX(imp.x, imp.y), `${variant.id} bar follows its actual projected creature position`);
+  assert.equal(queued.entity.hp, imp.maxHp * fraction, `${variant.id} renderer retains its factory-created current health`);
   const box = [Infinity, Infinity, -Infinity, -Infinity];
   drawXray(ctx, camT, true, box, false);
   assert.equal(xray.barN, 0, `${variant.id} queue is released after rendering`);
   if (theme === 'velscour') {
-    const fill = ctx.imageCalls.find(({ src, args }) => src.endsWith('fill-emerald.webp') && args.length === 8);
-    const empty = ctx.imageCalls.find(({ src, args }) => src.endsWith('overhead-empty.webp') && args.length === 4);
+    const fill = ctx.imageCalls.find(({ src, args }) => String(src || '').endsWith('fill-emerald.webp') && args.length === 8);
+    const empty = ctx.imageCalls.find(({ src, args }) => String(src || '').endsWith('overhead-empty.webp') && args.length === 4);
     assert.ok(fill, `${variant.id} actual deferred renderer selects the textured green fill`);
     assert.ok(empty, `${variant.id} actual deferred renderer provides a health track`);
     assert.ok(Math.abs(fill.args[6] - empty.args[2] * fraction) < 1e-6,
       `${variant.id} actual renderer scales green fill for ${Math.round(fraction * 100)}% health`);
-    assert.ok(!ctx.imageCalls.some(({ src }) => src.endsWith('/imp.webp')),
+    assert.ok(!ctx.imageCalls.some(({ src }) => String(src || '').endsWith('/imp.webp')),
       `${variant.id} has no classification icon when the optional icon setting is off`);
-  } else assert.ok(ctx.styles.includes('#128d36'), `${variant.id} Classic live renderer uses its green fill`);
+  } else assert.ok(ctx.styles.includes('#28934E'), `${variant.id} Classic live renderer uses the approved emerald fill`);
   return { imp, ctx, queued };
 }
 for (const variant of TREASURE_IMPS) {
@@ -246,7 +296,7 @@ for (const variant of TREASURE_IMPS) {
       if (theme === 'velscour') {
         assert.ok(ctx.calls.includes('assets/ui/healthbars/fill-emerald.webp'), `${variant.id} Velscour theme renders emerald fill at ${Math.round(fraction * 100)}% health`);
         assert.ok(!ctx.calls.includes('assets/ui/healthbars/imp.webp'), `${variant.id} overhead bar has no classification emblem by default`);
-      } else assert.ok(ctx.styles.includes('#128d36'), `${variant.id} Classic theme retains emerald fill at ${Math.round(fraction * 100)}% health`);
+      } else assert.ok(ctx.styles.includes('#28934E'), `${variant.id} Classic theme retains emerald fill at ${Math.round(fraction * 100)}% health`);
     }
   }
 }
@@ -255,22 +305,24 @@ Object.assign(filteredLiveImp, { team: 'enemy', treasureImp: true, impVariant: '
   hp: 100, maxHp: 100, targetable: false, dead: false, status: {}, curses: {}, animT: 0, scale: 1 });
 assert.equal(healthBarClass(filteredLiveImp).id, 'imp', 'the live family classification never selects the boss bar');
 xray.on = true; xray.n = 0; xray.barN = 0;
-G.settings.healthBars = normalizeHealthBarSettings({ classes: { imp: false } });
+G.settings.healthBars = normalizeHealthBarSettings({ classes: { imp: false }, impPreferencesVersion: 1 });
 filteredLiveImp.drawOverhead(queuedBarContext(), 240, 120, 60);
 assert.equal(xray.barN, 0, 'the live rendering path honors the Treasure Imp visibility checkbox');
-G.settings.healthBars = normalizeHealthBarSettings({ overhead: { visibility: 'hidden' } });
+G.settings.healthBars = normalizeHealthBarSettings({ impPreferencesVersion: 1, imp: { visibility: 'hidden' } });
 filteredLiveImp.drawOverhead(queuedBarContext(), 240, 120, 60);
-assert.equal(xray.barN, 0, 'the live rendering path honors hidden overhead mode');
+assert.equal(xray.barN, 0, 'the live rendering path honors the dedicated Imp visibility mode');
 G.settings.healthBars = normalizeHealthBarSettings();
 const escapedImp = { team: 'enemy', treasureImp: true, dungeonEventImpEscaped: true, targetable: false };
 assert.equal(overheadHealthBarEligible(escapedImp), false, 'an escaped/despawned imp does not keep a stale health bar');
 const visibilityProbeImp = { team: 'enemy', treasureImp: true, hp: 100, maxHp: 100, targetable: false };
-G.settings.healthBars = normalizeHealthBarSettings({ overhead: { visibility: 'damaged' } });
-assert.equal(healthBarVisible(visibilityProbeImp, 'overhead'), false, 'damaged-only mode hides a full-health imp');
+G.settings.healthBars = normalizeHealthBarSettings({ overhead: { visibility: 'damaged' }, impPreferencesVersion: 1 });
+assert.equal(healthBarVisible(visibilityProbeImp, 'overhead'), true, 'full-health Imps remain visible when other creatures use damaged-only mode');
+G.settings.healthBars.imp.visibility = 'damaged';
+assert.equal(healthBarVisible(visibilityProbeImp, 'overhead'), false, 'an explicitly selected Imp damaged-only mode hides a full-health imp');
 visibilityProbeImp.hp = 99;
 assert.equal(healthBarVisible(visibilityProbeImp, 'overhead'), true, 'damaged-only mode shows an injured imp');
-G.settings.healthBars.overhead.visibility = 'hidden';
-assert.equal(healthBarVisible(visibilityProbeImp, 'overhead'), false, 'the general overhead visibility mode remains authoritative');
+G.settings.healthBars.imp.visibility = 'hidden';
+assert.equal(healthBarVisible(visibilityProbeImp, 'overhead'), false, 'the dedicated Imp visibility mode can hide Imp bars');
 G.settings.healthBars = normalizeHealthBarSettings();
 G.settings.healthBars = normalizeHealthBarSettings({ info: { showClassificationIconsOverhead: true } });
 const impIconContext = recordingContext();
@@ -338,4 +390,4 @@ isolatedFailureContext.drawImage = () => { throw new Error('intentional artwork 
 assert.throws(() => drawHealthBarCanvas(isolatedFailureContext, { rank: 'normal', hp: 1, maxHp: 1 }, 0, 0, 100, 12, { system: 'overhead' }), /intentional artwork draw failure/);
 assert.equal(isolatedFailureContext.saves, 0, 'image-backed bars restore nested canvas state after a draw failure');
 assert.equal(isolatedFailureContext.restores, 2);
-console.log('health bar models, visibility rules, settings and hook wiring passed');
+console.log(`Health-bar unit checks and actual factory/draw/X-ray-path regression passed for ${TREASURE_IMPS.length} Treasure Imp variants.`);

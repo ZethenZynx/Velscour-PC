@@ -47,6 +47,7 @@ export function openHealthBarSettings() {
         <label class="healthbar-check-row"><input type="checkbox" data-hb-appearance="decorativeBorders"> Decorative Borders</label>
         <label class="healthbar-check-row"><input type="checkbox" data-hb-appearance="smoothHealthDepletion"> Smooth Health Depletion</label>
         <label class="healthbar-control-row">Overhead visibility<select data-hb-visibility="overhead">${VISIBILITY.map(([v, n]) => `<option value="${v}">${n}</option>`).join('')}</select></label>
+        <label class="healthbar-control-row">Treasure Imp visibility<select data-hb-imp-visibility>${VISIBILITY.map(([v, n]) => `<option value="${v}">${n}</option>`).join('')}</select></label>
         <label class="healthbar-control-row">Boss health bar visibility<select data-hb-visibility="target">${VISIBILITY.map(([v, n]) => `<option value="${v}">${n}</option>`).join('')}</select></label>
       </section>
       <section class="healthbar-settings-section"><h3>Creature Visibility</h3><div class="healthbar-toggle-grid">${CLASS_TOGGLES.map(([key, label]) => `<label><input type="checkbox" data-hb-class="${key}"> ${label}</label>`).join('')}</div>
@@ -117,6 +118,7 @@ export function openHealthBarSettings() {
     }
     for (const key of ['decorativeBorders', 'smoothHealthDepletion']) box.querySelector(`[data-hb-appearance="${key}"]`).checked = s[selectedSystem][key];
     box.querySelectorAll('[data-hb-visibility]').forEach((control) => control.value = s[control.dataset.hbVisibility].visibility);
+    box.querySelector('[data-hb-imp-visibility]').value = s.imp.visibility;
     box.querySelectorAll('[data-hb-class]').forEach((control) => control.checked = !!s.classes[control.dataset.hbClass]);
     box.querySelectorAll('[data-hb-info]').forEach((control) => control.checked = !!s.info[control.dataset.hbInfo]);
     box.querySelector('[data-hb-class-name]').textContent = HEALTH_BAR_CLASSES[selectedClass].label;
@@ -151,6 +153,9 @@ export function openHealthBarSettings() {
   box.querySelectorAll('[data-hb-visibility]').forEach((control) => control.onchange = () => {
     const s = G.settings.healthBars[control.dataset.hbVisibility]; set(s, 'visibility', control.value);
   });
+  box.querySelector('[data-hb-imp-visibility]').onchange = (e) => {
+    set(G.settings.healthBars.imp, 'visibility', e.target.value);
+  };
   box.querySelectorAll('[data-hb-class]').forEach((control) => control.onchange = () => {
     set(G.settings.healthBars.classes, control.dataset.hbClass, control.checked);
   });

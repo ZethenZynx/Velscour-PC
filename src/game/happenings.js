@@ -559,7 +559,8 @@ function discoverImp(world, m) {
   }
 }
 
-function createTreasureImp(world, at, variant, options = {}) {
+/** Shared constructor for every registered Treasure Imp variant. */
+export function createTreasureImp(world, at, variant, options = {}) {
   const lvl = depthLevel(world.depth), m = makeMonster(world, 'imp', world.biome, lvl + 1, 'normal', at[0], at[1], 0, null);
   const goldModifier = impGoldModifier(world);
   const hasGoldTrail = ['gold', 'mixed'].includes(treasureImpTrailType(variant.id));

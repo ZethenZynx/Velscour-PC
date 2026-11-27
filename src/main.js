@@ -31,6 +31,7 @@ import { applyPerformanceQuality } from './gfx/vfx.js';
 import { ensureJewelBoxMigration } from './game/jewelboxstorage.mjs';
 import { reconcileInfernalMarksOnce } from './game/mark-reconciliation.mjs';
 import { renderResolutionScale } from './core/render-resolution.mjs';
+import { healthBarSettings } from './ui/healthbars.mjs';
 
 function resize() {
   G.W = window.innerWidth;
@@ -306,6 +307,10 @@ function reportError(err) {
 
 async function boot() {
   loadSettings();
+  // Migrate the legacy Imp visibility preference before the first creature or
+  // health-bar settings panel is rendered; the migration preserves all other
+  // health-bar and game preferences.
+  healthBarSettings();
   G.performanceQualityTier = performanceTier(G.settings);
   // Developer Mode only unlocks the manual recorder; booting the game never starts monitoring.
   setPerformanceProfilerEnabled(false);

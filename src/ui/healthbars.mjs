@@ -1,7 +1,7 @@
 // Shared health-bar preferences, classification and low-allocation canvas renderer.
 // Static frame, emblem and fill artwork is loaded once and reused by overhead bars,
 // the target banner and the settings preview.
-import { G } from '../state.js';
+import { G, saveSettings } from '../state.js';
 import { isPlayerTargetable } from '../game/targeting.js';
 
 export const HEALTH_BAR_CLASSES = Object.freeze([
@@ -10,7 +10,7 @@ export const HEALTH_BAR_CLASSES = Object.freeze([
   { id: 'unique', label: 'Unique Monster', color: '#d99916', fill: 'gold', fillAsset: 'fill-gold', icon: 'unique' },
   { id: 'boss', label: 'Boss', color: '#c51e16', fill: 'crimson', fillAsset: 'fill-crimson', icon: 'boss' },
   { id: 'nemesis', label: 'Nemesis', color: '#8d35d5', fill: 'purple', fillAsset: 'fill-purple', icon: 'nemesis' },
-  { id: 'imp', label: 'Treasure Imp', color: '#128d36', fill: 'emerald', fillAsset: 'fill-emerald', icon: 'imp' },
+  { id: 'imp', label: 'Treasure Imp', color: '#28934E', fill: 'emerald', fillAsset: 'fill-emerald', icon: 'imp' },
   { id: 'companion', label: 'Companion / Summon', color: '#14939b', fill: 'teal', fillAsset: 'fill-teal', icon: 'companion' },
 ]);
 // Boss frame uses a horizontal nine-slice. Its usable aperture is not a fixed
@@ -59,6 +59,7 @@ export const DEFAULT_HEALTH_BAR_SETTINGS = Object.freeze({
   theme: 'velscour',
   overhead: Object.freeze({ width: 60, height: 100, opacity: 100, verticalOffset: 0, decorativeBorders: true, smoothHealthDepletion: true, visibility: 'always' }),
   target: Object.freeze({ width: 100, height: 100, opacity: 100, verticalOffset: 0, decorativeBorders: true, smoothHealthDepletion: true, visibility: 'always' }),
+  imp: Object.freeze({ visibility: 'always' }),
   classes: Object.freeze({ normal: true, champion: true, unique: true, boss: true, nemesis: true, imp: true, companion: true, player: false }),
   info: Object.freeze({ showEnemyName: false, showEnemyLevel: false, showHealthPercentage: false, showNumericalHealth: false, showAffixIcons: true, showStatusEffectIcons: true, showClassificationIconsOverhead: false }),
 });
@@ -69,6 +70,7 @@ const STATUS_LABELS = [['burn', 'Burn'], ['poison', 'Poison'], ['bleed', 'Bleed'
 const AFFIX_LABELS = Object.freeze({ strong: 'Strong', fast: 'Fast', tough: 'Stone Skin', fiery: 'Fire', frozen: 'Cold', shocking: 'Lightning', vampiric: 'Vampiric', teleport: 'Teleport', multishot: 'Multishot', thorns: 'Thorns', regen: 'Regeneration' });
 const AFFIX_GLYPHS = Object.freeze({ strong: 'S', fast: 'F', tough: 'T', fiery: 'F', frozen: 'C', shocking: 'L', vampiric: 'V', teleport: 'T', multishot: 'M', thorns: 'R', regen: '+' });
 const OVERHEAD_DRAW_OPTIONS = Object.freeze({ system: 'overhead' });
+const IMP_PREFERENCES_VERSION = 1;
 const OVERHEAD_TINTED_CAP_CLASSES = new Set(['normal', 'champion', 'nemesis', 'imp', 'companion']);
 const ASSET_ROOT = 'assets/ui/healthbars/';
 const ART = Object.create(null);
@@ -112,8 +114,12 @@ export function normalizeHealthBarSettings(value, legacyLifeBars = true) {
     theme: src.theme === 'classic' ? 'classic' : 'velscour',
     overhead: { ...DEFAULT_HEALTH_BAR_SETTINGS.overhead, ...(src.overhead || {}) },
     target: { ...DEFAULT_HEALTH_BAR_SETTINGS.target, ...(src.target || {}) },
+    // Keep this small, typed surface so old test/experiment keys cannot
+    // compete with the renderer's single authoritative Imp visibility mode.
+    imp: { visibility: src.imp?.visibility ?? DEFAULT_HEALTH_BAR_SETTINGS.imp.visibility },
     classes: { ...DEFAULT_HEALTH_BAR_SETTINGS.classes, ...(src.classes || {}) },
     info: { ...DEFAULT_HEALTH_BAR_SETTINGS.info, ...(src.info || {}) },
+    impPreferencesVersion: Number.isInteger(src.impPreferencesVersion) ? src.impPreferencesVersion : 0,
   };
   // An old player's explicit preference is retained as the new overhead display mode.
   if (!Object.hasOwn(src, 'overhead') && legacyLifeBars === false) out.overhead.visibility = 'damaged';
@@ -127,6 +133,7 @@ export function normalizeHealthBarSettings(value, legacyLifeBars = true) {
     a.smoothHealthDepletion = a.smoothHealthDepletion !== false;
     a.visibility = VISIBILITY.has(a.visibility) ? a.visibility : 'always';
   }
+  out.imp.visibility = VISIBILITY.has(out.imp.visibility) ? out.imp.visibility : 'always';
   for (const key of Object.keys(DEFAULT_HEALTH_BAR_SETTINGS.classes)) out.classes[key] = out.classes[key] !== false;
   for (const key of Object.keys(DEFAULT_HEALTH_BAR_SETTINGS.info)) out.info[key] = out.info[key] !== false;
   // This is a newly added optional display feature; existing saves without the
@@ -138,8 +145,25 @@ export function healthBarSettings() {
   const st = G.settings || {};
   // Normalize once per saved-settings object, never via deep comparison during each creature draw.
   if (!st.healthBars || st.healthBars !== settingsRef) {
-    st.healthBars = normalizeHealthBarSettings(st.healthBars, st.lifeBars !== false);
-    settingsRef = st.healthBars;
+    const saved = st.healthBars;
+    const normalized = normalizeHealthBarSettings(saved, st.lifeBars !== false);
+    if (normalized.impPreferencesVersion < IMP_PREFERENCES_VERSION) {
+      // Earlier releases persisted only a global class checkbox. A saved OFF
+      // value could therefore keep every Imp hidden forever, and legacy Life
+      // Bars settings could make a full-health Imp invisible. Migrate just the
+      // Imp's own visibility preferences; all other categories and appearance
+      // settings remain untouched. Rebuilding the known schema also discards
+      // stale, unsupported Imp-only keys from older experiments.
+      normalized.classes.imp = true;
+      normalized.imp.visibility = 'always';
+      normalized.impPreferencesVersion = IMP_PREFERENCES_VERSION;
+      st.healthBars = normalized;
+      settingsRef = normalized;
+      saveSettings();
+    } else {
+      st.healthBars = normalized;
+      settingsRef = normalized;
+    }
   }
   return st.healthBars;
 }
@@ -183,7 +207,7 @@ export function healthBarVisible(entity, system = 'overhead') {
   if (isPlayer && (system !== 'overhead' || !s.classes.player)) return false;
   const category = healthBarClass(entity).id;
   if (!s.classes[category] || (isPlayer && !s.classes.player)) return false;
-  const mode = s[system]?.visibility || 'always';
+  const mode = category === 'imp' && system === 'overhead' ? s.imp.visibility : s[system]?.visibility || 'always';
   if (mode === 'hidden') return false;
   if (mode === 'damaged' && entity.hp >= entity.maxHp) return false;
   if (mode === 'combat' && !combatIsActive(entity)) return false;
