@@ -7,7 +7,7 @@ const ACKNOWLEDGED_UPDATES_KEY = 'velscour_update_acknowledged_v1';
 export const UPDATE_CHECK_INTERVAL_MS = 5 * 60 * 1000;
 const changeKey = ({ date, title }) => `${date || ''}\u0000${String(title || '').trim().toLocaleLowerCase()}`;
 const bundledChanges = new Set(RECENT_CHANGES.map(changeKey));
-let updateState = { status: 'unknown', available: false, runningBuildId: GAME_BUILD_ID, runningVersion: GAME_VERSION, deployedBuildId: null, deployedVersion: null, checkedAt: 0 };
+let updateState = { status: 'unknown', available: false, runningBuildId: GAME_BUILD_ID, runningVersion: GAME_VERSION, deployedBuildId: null, deployedVersion: null, deployedCommit: null, checkedAt: 0 };
 let checkInFlight = null;
 let monitorTimer = null;
 
@@ -46,25 +46,33 @@ function compareVersions(a, b) {
   return 0;
 }
 
-/** Compare this running build to the no-cache build identity served by GitHub Pages. */
+/** Compare this running build with the identity embedded in the live Pages artifact. */
 export async function checkForGameUpdates() {
   if (checkInFlight) return checkInFlight;
   checkInFlight = (async () => {
     try {
-      const buildUrl = new URL('../data/build-version.js', import.meta.url);
+      // Resolve from the Pages root rather than from this module URL. The latter may
+      // carry a build query, and the version endpoint must always be a fresh request.
+      const buildUrl = new URL('src/data/build-version.js', document.baseURI);
       buildUrl.searchParams.set('_update_check', String(Date.now()));
       const response = await fetch(buildUrl.href, {
         cache: 'no-store',
-        headers: { Accept: 'text/javascript', 'Cache-Control': 'no-cache' },
+        headers: { Accept: 'text/javascript', 'Cache-Control': 'no-cache, no-store', Pragma: 'no-cache' },
         credentials: 'same-origin',
+        signal: AbortSignal.timeout(10000),
       });
       if (!response.ok) throw new Error(`GitHub Pages returned HTTP ${response.status}`);
       const source = await response.text();
       const match = source.match(/export\s+const\s+GAME_BUILD_ID\s*=\s*(['"])(.*?)\1/);
       const versionMatch = source.match(/export\s+const\s+GAME_VERSION\s*=\s*(['"])(.*?)\1/);
+      const commitMatch = source.match(/export\s+const\s+GAME_GIT_COMMIT\s*=\s*(['"])(.*?)\1/);
       if (!match || !match[2]) throw new Error('The deployed build identity is missing or invalid');
       const deployedBuildId = match[2];
       const deployedVersion = versionMatch?.[2] || null;
+      const deployedCommit = commitMatch?.[2] || (deployedBuildId.startsWith('pages-') ? deployedBuildId.slice(6) : null);
+      if (deployedBuildId.startsWith('pages-') && !/^[0-9a-f]{40}$/i.test(deployedCommit || '')) {
+        throw new Error('The deployed build commit identifier is invalid');
+      }
       const versionOrder = compareVersions(deployedVersion, GAME_VERSION);
       const available = versionOrder == null ? deployedBuildId !== GAME_BUILD_ID
         : versionOrder > 0 || (versionOrder === 0 && deployedBuildId !== GAME_BUILD_ID);
@@ -73,6 +81,7 @@ export async function checkForGameUpdates() {
         available,
         deployedBuildId,
         deployedVersion,
+        deployedCommit,
         error: null,
       });
     } catch (error) {
@@ -109,25 +118,22 @@ export function showUpdateDialog(items = []) {
   });
 }
 
-/** Refreshes the hosted Pages response and cache-busts the page; browser saves are not touched. */
+/** Refreshes the hosted Pages response and loads the newly versioned module graph. */
 export async function reloadGameForUpdate(updates = []) {
   if (typeof window === 'undefined') return;
-  const url = new URL(window.location.href);
   const stamp = String(Date.now());
+  const url = new URL(window.location.href);
   url.searchParams.set('_velscour_update', stamp);
   const freshPage = new URL(window.location.pathname, window.location.origin);
   freshPage.searchParams.set('_velscour_update', stamp);
-  let pageResponded = false;
   try {
     const response = await fetch(freshPage.href, { cache: 'reload', credentials: 'same-origin' });
-    pageResponded = response.ok;
+    if (!response.ok) throw new Error(`The latest game page returned HTTP ${response.status}`);
   } catch (_) { /* navigating still retries the latest published page */ }
-  if (pageResponded) {
-    try {
-      const acknowledged = acknowledgedChanges();
-      for (const item of updates) acknowledged.add(changeKey(item));
-      localStorage.setItem(ACKNOWLEDGED_UPDATES_KEY, JSON.stringify([...acknowledged].slice(-500)));
-    } catch (_) { /* update can still proceed when browser storage is unavailable */ }
-  }
+  try {
+    const acknowledged = acknowledgedChanges();
+    for (const item of updates) acknowledged.add(changeKey(item));
+    localStorage.setItem(ACKNOWLEDGED_UPDATES_KEY, JSON.stringify([...acknowledged].slice(-500)));
+  } catch (_) { /* update can still proceed when browser storage is unavailable */ }
   window.location.replace(url.href);
 }

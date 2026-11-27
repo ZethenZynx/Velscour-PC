@@ -1,5 +1,5 @@
-// GitHub Pages serves the main branch directly; no package installation is required.
-// Bump this identity whenever publishing a new GitHub Pages build. The updater
-// fetches this file directly with cache disabled to identify the deployed build.
-export const GAME_VERSION = '0.1.7';
-export const GAME_BUILD_ID = 'fork-main-boss-healthbar-aperture-2026-11-26';
+// tools/pages_build.py stamps the published artifact with its exact source commit.
+// The source values are only used by local development builds.
+export const GAME_VERSION = '0.1.8';
+export const GAME_BUILD_ID = 'fork-main-update-system-0.1.8';
+export const GAME_GIT_COMMIT = 'source';
