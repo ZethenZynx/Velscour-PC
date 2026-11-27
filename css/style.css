@@ -962,6 +962,8 @@ body.touch .reliquary-panel .codex-cell { width: 34px; height: 34px; }
 .settings-tab-pane { display: none; min-height: 220px; }
 .settings-tab-pane.active { display: block; }
 .settings-grid { display: grid; grid-template-columns: auto 1fr; gap: 8px 14px; align-items: center; text-align: left; }
+.update-check-controls { display:flex; align-items:center; flex-wrap:wrap; gap:6px 10px; min-width:0; }
+.update-check-status { min-height:1em; font-size:11px; }
 .developer-warning { margin: 0 0 14px; padding: 11px 13px; border: 1px solid #b77924; border-left: 4px solid #e2a33a; border-radius: 4px; background: linear-gradient(110deg, rgba(101,55,13,.42), rgba(47,28,12,.28)); color: #ffcc72; box-shadow: 0 0 12px rgba(191,117,28,.12); }
 .developer-warning strong { display: block; margin-bottom: 5px; color: #ffd47d; font: 800 14px var(--font-head); letter-spacing: .6px; }
 .developer-warning p { margin: 0; color: #e3c392; font-size: 12px; line-height: 1.45; }

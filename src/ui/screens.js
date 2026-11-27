@@ -20,7 +20,7 @@ import { RECENT_CHANGES } from '../data/recent-changes.js';
 import { FILTER_ROWS, lootFilter, lootLabelFilter, saveLootFilterSettings } from '../game/lootfilter.js';
 import { validateCharName } from '../core/profanity.js';
 import { loadRecentChanges, getCachedRecentChanges, getRecentChangesState, RECENT_CHANGES_REFRESH_MS } from '../game/recentchanges.js';
-import { changesAfterBundledBuild, showUpdateDialog } from '../game/updater.js';
+import { changesAfterBundledBuild, checkForGameUpdates, getGameUpdateStatus, showUpdateDialog, startGameUpdateMonitor } from '../game/updater.js';
 import { MOUSE_CURSOR_DEFAULTS, refreshMouseCursor } from './mousecursor.js';
 import { CharacterPortrait } from './characterportrait.js';
 import { openHealthBarSettings } from './healthbar-settings.mjs';
@@ -64,12 +64,12 @@ export function titleScreen() {
   bundledUpdateButton.setAttribute('aria-label', 'Reload to apply the latest game update');
   bundledUpdateButton.onclick = () => {
     if (!s.classList.contains('title-ready')) return;
-    initAudio(); sfx('ui'); showUpdateDialog(updatesAvailable);
+    initAudio(); sfx('ui'); showUpdateDialog(updatesAvailable.length ? updatesAvailable : getCachedRecentChanges());
   };
   updateNotices.appendChild(bundledUpdateButton);
   s.appendChild(updateNotices);
   const menu = el('div', 'title-menu');
-  const add = (label, fn, cls = 'btn big') => { const b = el('button', cls, label); b.onclick = () => { if (!s.classList.contains('title-ready')) return; initAudio(); sfx('ui'); goFullscreen(); fn(); }; menu.appendChild(b); return b; };
+  const add = (label, fn, cls = 'btn big') => { const b = el('button', cls, label); b.onclick = () => { if (!s.classList.contains('title-ready')) return; initAudio(); sfx('ui'); goFullscreen(); fn(b); }; menu.appendChild(b); return b; };
   // Rebuild from local browser saves whenever the title is shown.
   const fill = () => {
     menu.textContent = '';
@@ -81,7 +81,16 @@ export function titleScreen() {
     });
     add(`Heroes <span style="font-size:13px;color:#a8977c">· ${used}/${CLASS_IDS.length}</span>`, () => classSelect(last ? last.classId : 'paladin'));
     add('Settings', settingsDialog, 'btn');
-    bundledUpdateButton.classList.toggle('hidden', !updatesAvailable.length);
+    bundledUpdateButton.classList.toggle('hidden', !getGameUpdateStatus().available);
+    add('Check for Updates', async (button) => {
+      button.disabled = true; button.textContent = 'Checking for updates...';
+      const result = await checkForGameUpdates();
+      if (button.isConnected) { button.disabled = false; button.textContent = 'Check for Updates'; }
+      if (result.status === 'available') showUpdateDialog(getCachedRecentChanges());
+      else if (result.status === 'latest') UI.dialog({ title: 'Game Up to Date', html: '<p>You are running the latest version available on GitHub Pages.</p>', buttons: [{ label: 'Done' }] });
+      else if (result.status === 'ahead') UI.dialog({ title: 'Game Up to Date', html: '<p>This running build is newer than the version currently deployed on GitHub Pages.</p>', buttons: [{ label: 'Done' }] });
+      else UI.dialog({ title: 'Unable to Check for Updates', html: `<p>Unable to check for updates from GitHub Pages. ${escapeHtml(result.error || 'Check your connection and try again.')}</p>`, buttons: [{ label: 'Done' }] });
+    }, 'btn');
     add('Credits', () => creditsScreen(titleScreen), 'btn');
     add('How to Play', helpDialog, 'btn');
   };
@@ -216,8 +225,16 @@ export function titleScreen() {
     });
   };
   refreshChanges();
+  const updateStateListener = (event) => {
+    if (current === s) bundledUpdateButton.classList.toggle('hidden', !event.detail?.available);
+  };
+  document.addEventListener('velscour-update-status', updateStateListener);
+  startGameUpdateMonitor();
   const refreshTimer = setInterval(refreshChanges, RECENT_CHANGES_REFRESH_MS);
-  currentCleanup = () => clearInterval(refreshTimer);
+  currentCleanup = () => {
+    clearInterval(refreshTimer);
+    document.removeEventListener('velscour-update-status', updateStateListener);
+  };
   attachTitleFx(s, s.querySelector('.title-logo'), {
     tag: s.querySelector('.title-tag'),
     menu,
@@ -594,6 +611,7 @@ export function settingsDialog() {
   </div>
   <div class="settings-tab-pane" data-pane="general">
     <div class="settings-grid">
+      <label>GitHub Pages updates</label><div class="update-check-controls"><button type="button" class="btn small" data-check-game-updates>Check for Updates</button><span class="update-check-status dim" data-update-check-status role="status" aria-live="polite"></span></div>
       <label>Hero backups</label><button class="btn small" data-backups>View</button>
       <label>Pause while menus open</label><input type="checkbox" data-k="pauseMenus" ${st.pauseMenus !== false ? 'checked' : ''}>
       <label title="Keep previously seen cutscenes at normal speed">Don't fast-forward seen cutscenes</label><input type="checkbox" data-k="noSkipCine" ${st.noSkipCine ? 'checked' : ''}>
@@ -706,6 +724,20 @@ export function settingsDialog() {
 `;
   let stopKeyCaptureListener = () => {};
   const d = UI.dialog({ title: 'Settings', html, cls: 'settings-dialog', buttons: [{ label: 'Done', fn: () => { stopKeyCaptureListener(); camera.computeZoom(); if (UI.hud && UI.hud.applyVisibilitySettings) UI.hud.applyVisibilitySettings(); saveSettings(); } }] });
+  const updateCheckButton = d.box.querySelector('[data-check-game-updates]');
+  const updateCheckStatus = d.box.querySelector('[data-update-check-status]');
+  if (updateCheckButton) updateCheckButton.onclick = async () => {
+    updateCheckButton.disabled = true;
+    updateCheckButton.textContent = 'Checking for updates...';
+    if (updateCheckStatus) updateCheckStatus.textContent = 'Checking for updates...';
+    const result = await checkForGameUpdates();
+    updateCheckButton.disabled = false;
+    updateCheckButton.textContent = 'Check for Updates';
+    if (updateCheckStatus) updateCheckStatus.textContent = result.status === 'available' ? 'Update available.'
+      : result.status === 'latest' ? 'You are running the latest version.'
+        : result.status === 'ahead' ? 'This build is newer than the current GitHub Pages deployment.' : 'Unable to check for updates.';
+    if (result.status === 'available') showUpdateDialog(getCachedRecentChanges());
+  };
   const tabBtns = d.box.querySelectorAll('.settings-tab-btn');
   const tabPanes = d.box.querySelectorAll('.settings-tab-pane');
   const setTab = (name) => {
