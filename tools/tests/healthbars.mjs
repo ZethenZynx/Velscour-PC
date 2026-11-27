@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { existsSync, readFileSync } from 'node:fs';
 import { G } from '../../src/state.js';
-import { BOSS_HEALTH_LAYOUT, DEFAULT_HEALTH_BAR_SETTINGS, HEALTH_BAR_CLASSES, drawHealthBarCanvas, healthBarClass, healthBarSettings, healthBarText, healthBarSummaryText, healthBarValueText, healthBarVisible, normalizeHealthBarSettings, preloadHealthBarArt } from '../../src/ui/healthbars.mjs';
+import { BOSS_HEALTH_LAYOUT, DEFAULT_HEALTH_BAR_SETTINGS, HEALTH_BAR_CLASSES, drawHealthBarCanvas, healthBarCanvasLayout, healthBarClass, healthBarSettings, healthBarText, healthBarSummaryText, healthBarValueText, healthBarVisible, normalizeHealthBarSettings, preloadHealthBarArt } from '../../src/ui/healthbars.mjs';
 
 globalThis.localStorage ||= { getItem: () => null, setItem: () => {} };
 
@@ -29,7 +29,7 @@ assert.equal(HEALTH_BAR_CLASSES.length, 7, 'all seven reference classes are defi
 assert.deepEqual(BOSS_HEALTH_LAYOUT, {
   frameTop: 18 / 178, frameHeight: 160 / 178,
   trackLeft: 0.23, trackRight: 0.09, trackTop: 18 / 178 + 0.33 * (160 / 178), trackHeight: 0.13 * (160 / 178),
-  emblemCenterX: 0.17, emblemCenterY: 18 / 178 + 0.395 * (160 / 178), emblemWidth: 0.134, emblemHeight: 0.62 * (160 / 178),
+  emblemCenterX: 0.14, emblemCenterY: 18 / 178 + 0.395 * (160 / 178), emblemWidth: 0.134, emblemHeight: 0.62 * (160 / 178),
   nameLeft: 0.23, nameRight: 0.09, nameTop: 0.005, nameHeight: 0.09,
   summaryTop: 18 / 178 + 0.70 * (160 / 178), extraTop: 18 / 178 + 0.83 * (160 / 178),
 }, 'boss frame components share one relative layout');
@@ -90,6 +90,9 @@ assert.match(css, /healthbar-dialog/);
 assert.match(css, /--hb-boss-frame-top:10\.1124%/);
 assert.match(css, /--hb-boss-track-top:39\.7753%/);
 assert.match(css, /--hb-boss-track-height:11\.6854%/);
+assert.match(css, /--hb-boss-emblem-center-x:14%/);
+assert.match(css, /healthbar-preview-wrap \{ overflow:visible/);
+assert.match(settings, /<canvas data-hb-preview width="980" height="300"/);
 assert.match(hud, /\$\('#boss-name'\)\.textContent = barTarget\.name \|\| ''/, 'boss names remain visible independently of overhead name labels');
 assert.match(readFileSync(new URL('../../src/ui/healthbars.mjs', import.meta.url), 'utf8'), /drawHealthBarFrame/);
 assert.doesNotMatch(creatureDraw, /e\.bc\s*=\s*col/, 'the old bar-color variable is not referenced after the health-bar renderer replaced it');
@@ -143,6 +146,19 @@ for (const entry of HEALTH_BAR_CLASSES) {
   assert.ok(ctx.calls.some((src) => src.endsWith(leftCap)), `${entry.id} uses its appropriate cached left cap`);
   assert.ok(ctx.calls.some((src) => src.endsWith(rightCap)), `${entry.id} uses its appropriate cached right cap`);
 }
+const normalTargetLayout = healthBarCanvasLayout({ id: 'normal' }, 0, 0, 760, 155, 'target');
+assert.ok(normalTargetLayout.emblem.centerX + normalTargetLayout.emblem.size / 2 < normalTargetLayout.track.x, 'normal target emblem clears the start of the health track');
+assert.ok(normalTargetLayout.badge.centerX + normalTargetLayout.badge.radius * 2.45 < normalTargetLayout.track.x + normalTargetLayout.track.width, 'target badges remain inside the track end caps');
+for (const [width, height] of [[456, 248], [1216, 93]]) {
+  const resized = healthBarCanvasLayout({ id: 'normal' }, 0, 0, width, height, 'target');
+  assert.ok(resized.emblem.centerX + resized.emblem.size / 2 < resized.track.x, `normal target emblem clears the fill at ${width}x${height}`);
+}
+const bossTargetLayout = healthBarCanvasLayout({ id: 'boss' }, 0, 0, 660, 178, 'target');
+assert.ok(bossTargetLayout.emblem.centerX + bossTargetLayout.emblem.size / 2 < bossTargetLayout.track.x, 'boss emblem clears the health track');
+assert.ok(Math.abs(bossTargetLayout.emblem.centerY - (bossTargetLayout.track.y + bossTargetLayout.track.height / 2)) < 1e-9, 'boss emblem is vertically centered on the actual health track');
+const maxPreviewWidth = 760 * 1.6;
+const responsivePreviewWidth = Math.max(980, Math.ceil(maxPreviewWidth + 220));
+assert.ok((responsivePreviewWidth - maxPreviewWidth) / 2 >= 110, 'preview canvas retains 110px safety margins at maximum target width');
 const targetCtx = recordingContext(), targetCalls = [];
 targetCtx.drawImage = (img, ...args) => targetCalls.push({ src: img._src, args });
 G.settings.healthBars = normalizeHealthBarSettings({ info: { showHealthPercentage: true, showNumericalHealth: true } });

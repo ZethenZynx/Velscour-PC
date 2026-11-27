@@ -17,7 +17,8 @@ export const HEALTH_BAR_CLASSES = Object.freeze([
 export const BOSS_HEALTH_LAYOUT = Object.freeze({
   frameTop: 18 / 178, frameHeight: 160 / 178,
   trackLeft: 0.23, trackRight: 0.09, trackTop: 18 / 178 + 0.33 * (160 / 178), trackHeight: 0.13 * (160 / 178),
-  emblemCenterX: 0.17, emblemCenterY: 18 / 178 + 0.395 * (160 / 178), emblemWidth: 0.134, emblemHeight: 0.62 * (160 / 178),
+  // Keep the skull over the left frame cap. Its right edge clears the health track.
+  emblemCenterX: 0.14, emblemCenterY: 18 / 178 + 0.395 * (160 / 178), emblemWidth: 0.134, emblemHeight: 0.62 * (160 / 178),
   nameLeft: 0.23, nameRight: 0.09, nameTop: 0.005, nameHeight: 0.09,
   summaryTop: 18 / 178 + 0.70 * (160 / 178), extraTop: 18 / 178 + 0.83 * (160 / 178),
 });
@@ -275,6 +276,43 @@ export function drawHealthBarFrame(ctx, classification, x, y, w, h, system = 'ov
   return true;
 }
 
+/** Shared geometry for target bars and their settings preview labels and badges. */
+export function healthBarCanvasLayout(classification, x, y, w, h, system = 'target') {
+  const boss = system === 'target' && classification?.id === 'boss';
+  const trackLeft = boss ? BOSS_HEALTH_LAYOUT.trackLeft : 0.14;
+  const trackRight = boss ? BOSS_HEALTH_LAYOUT.trackRight : 0.09;
+  const trackTop = boss ? BOSS_HEALTH_LAYOUT.trackTop : 0.365;
+  const trackHeight = boss ? BOSS_HEALTH_LAYOUT.trackHeight : 0.27;
+  const track = {
+    x: x + w * trackLeft,
+    y: y + h * trackTop,
+    width: w * (1 - trackLeft - trackRight),
+    height: h * trackHeight,
+  };
+  const emblemSize = Math.min(w * 0.124, h * 0.62);
+  const emblemCenter = boss
+    ? { x: x + w * BOSS_HEALTH_LAYOUT.emblemCenterX, y: y + h * BOSS_HEALTH_LAYOUT.emblemCenterY }
+    : { x: x + w * 0.066, y: y + h * 0.5 };
+  return {
+    boss,
+    track,
+    frame: boss
+      ? { x, y: y + h * BOSS_HEALTH_LAYOUT.frameTop, width: w, height: h * BOSS_HEALTH_LAYOUT.frameHeight }
+      : { x, y, width: w, height: h },
+    emblem: {
+      centerX: emblemCenter.x,
+      centerY: emblemCenter.y,
+      size: boss ? Math.min(w * BOSS_HEALTH_LAYOUT.emblemWidth, h * BOSS_HEALTH_LAYOUT.emblemHeight) : emblemSize,
+    },
+    // Reserve the icon lane inside the frame's track, clear of both decorative caps.
+    badge: {
+      centerX: track.x + track.width * 0.85,
+      centerY: track.y + track.height * 0.5,
+      radius: Math.max(1, h * 0.045),
+    },
+  };
+}
+
 /** Draw a reusable, image-backed Velscour bar. Coordinates are in the caller's current canvas space. */
 export function drawHealthBarCanvas(ctx, entity, x, y, w, h, { system = 'overhead', forceClass = null, forceFraction = null } = {}) {
   const s = healthBarSettings(), appearance = s[system] || s.overhead;
@@ -303,34 +341,45 @@ export function drawHealthBarCanvas(ctx, entity, x, y, w, h, { system = 'overhea
     if (!frame) { drawFallback(ctx, x, y, w, h, fraction, classification.color); return; }
     const target = system === 'target';
     const bossTarget = bossFrame && target;
-    const leftFraction = bossTarget ? BOSS_HEALTH_LAYOUT.trackLeft : bossFrame ? 0.24 : target ? 0.12 : 0.201;
-    const rightFraction = bossTarget ? BOSS_HEALTH_LAYOUT.trackRight : bossFrame ? 0.12 : target ? 0.09 : 0.12;
-    const left = bossTarget ? x + w * leftFraction : x + h * frame.naturalWidth * leftFraction / frame.naturalHeight;
-    const right = bossTarget ? x + w * (1 - rightFraction) : x + w - h * frame.naturalWidth * rightFraction / frame.naturalHeight;
-    const top = y + h * (bossTarget ? BOSS_HEALTH_LAYOUT.trackTop : bossFrame ? 0.37 : 0.365);
+    const targetLayout = target ? healthBarCanvasLayout(classification, x, y, w, h, system) : null;
+    const leftFraction = bossFrame ? (target ? BOSS_HEALTH_LAYOUT.trackLeft : 0.24) : target ? 0.12 : 0.201;
+    const rightFraction = bossFrame ? (target ? BOSS_HEALTH_LAYOUT.trackRight : 0.12) : target ? 0.09 : 0.12;
+    const left = target ? targetLayout.track.x : x + h * frame.naturalWidth * leftFraction / frame.naturalHeight;
+    const right = target ? targetLayout.track.x + targetLayout.track.width : x + w - h * frame.naturalWidth * rightFraction / frame.naturalHeight;
+    const top = target ? targetLayout.track.y : y + h * (bossFrame ? 0.37 : 0.365);
     const innerW = Math.max(0, right - left);
-    const innerH = h * (bossTarget ? BOSS_HEALTH_LAYOUT.trackHeight : bossFrame ? 0.21 : target ? 0.27 : 0.305);
-    if (appearance.decorativeBorders && !bossTarget) drawHealthBarFrame(ctx, classification, x, y, w, h, system);
+    const innerH = target ? targetLayout.track.height : h * (bossFrame ? 0.21 : 0.305);
     ctx.fillStyle = '#110b08'; ctx.fillRect(left, top, innerW, innerH);
     if (fill && fraction > 0) ctx.drawImage(fill, 0, 0, Math.max(1, fill.naturalWidth * fraction), fill.naturalHeight, left, top, innerW * fraction, innerH);
     else if (fraction > 0) { ctx.fillStyle = classification.color; ctx.fillRect(left, top, innerW * fraction, innerH); }
     ctx.fillStyle = 'rgba(255,236,190,.38)'; ctx.fillRect(left, top, innerW * fraction, Math.max(1, innerH * 0.2));
-    if (appearance.decorativeBorders && bossTarget) {
-      drawHealthBarFrame(ctx, classification, x, y + h * BOSS_HEALTH_LAYOUT.frameTop, w, h * BOSS_HEALTH_LAYOUT.frameHeight, system);
+    if (appearance.decorativeBorders && target) {
+      drawHealthBarFrame(ctx, classification, targetLayout.frame.x, targetLayout.frame.y, targetLayout.frame.width, targetLayout.frame.height, system);
     }
+    // Paint the emblem after the frame so both the icon and frame remain crisp.
     if (emblem) {
-      const size = bossTarget
-        ? Math.min(w * BOSS_HEALTH_LAYOUT.emblemWidth, h * BOSS_HEALTH_LAYOUT.emblemHeight)
-        : h * 0.62;
-      const centerX = bossTarget ? x + w * BOSS_HEALTH_LAYOUT.emblemCenterX : x + h * frame.naturalWidth * (bossFrame ? 0.156 : target ? 0.066 : 0.118) / frame.naturalHeight;
-      const centerY = y + h * (bossTarget ? BOSS_HEALTH_LAYOUT.emblemCenterY : 0.5);
+      const geom = target ? targetLayout.emblem : null;
+      const size = geom?.size ?? h * 0.62;
+      const centerX = geom?.centerX ?? x + h * frame.naturalWidth * (bossFrame ? 0.156 : 0.118) / frame.naturalHeight;
+      const centerY = geom?.centerY ?? y + h * 0.5;
       ctx.drawImage(emblem, centerX - size / 2, centerY - size / 2, size, size);
     }
     let iconAt = 0;
+    const activeStatuses = entity && s.info.showStatusEffectIcons
+      ? STATUS_COLORS.filter(([id]) => entity.status?.[id]?.t > 0)
+      : [];
+    const affixCount = entity && s.info.showAffixIcons && Array.isArray(entity.affixes)
+      ? Math.min(4, entity.affixes.length)
+      : 0;
+    const badgeCount = Math.min(4, affixCount + activeStatuses.length);
+    const badgeX = (index, radius) => target
+      ? targetLayout.badge.centerX + (index - (badgeCount - 1) / 2) * radius * 2.45
+      : x + w * (0.895 + index * 0.019);
     if (entity && s.info.showAffixIcons && Array.isArray(entity.affixes)) {
-      const count = Math.min(4, entity.affixes.length), r = Math.max(1, h * 0.045);
-      for (let i = 0; i < count && iconAt < 4; i++, iconAt++) {
-        const cx = x + w * (0.895 + iconAt * 0.019), cy = y + h * 0.5;
+      const r = target ? targetLayout.badge.radius : Math.max(1, h * 0.045);
+      for (let i = 0; i < affixCount && iconAt < 4; i++, iconAt++) {
+        const cx = badgeX(iconAt, r);
+        const cy = target ? targetLayout.badge.centerY : y + h * 0.5;
         ctx.beginPath(); ctx.fillStyle = '#ffd678'; ctx.strokeStyle = '#3b1a0a'; ctx.lineWidth = Math.max(0.6, r * 0.45);
         ctx.arc(cx, cy, r * 1.65, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
         ctx.fillStyle = '#281307'; ctx.font = `bold ${Math.max(6, r * 2.1)}px Georgia,serif`; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
@@ -338,8 +387,10 @@ export function drawHealthBarCanvas(ctx, entity, x, y, w, h, { system = 'overhea
       }
     }
     if (entity && s.info.showStatusEffectIcons) {
-      for (const [id, color] of STATUS_COLORS) if (entity.status?.[id]?.t > 0 && iconAt < 4) {
-        const r = Math.max(1, h * 0.045), cx = x + w * (0.895 + iconAt++ * 0.019), cy = y + h * 0.5;
+      for (const [id, color] of activeStatuses) if (iconAt < 4) {
+        const r = target ? targetLayout.badge.radius : Math.max(1, h * 0.045), at = iconAt++;
+        const cx = badgeX(at, r);
+        const cy = target ? targetLayout.badge.centerY : y + h * 0.5;
         ctx.beginPath(); ctx.fillStyle = color; ctx.strokeStyle = '#1a0d0a'; ctx.lineWidth = Math.max(0.6, r * 0.45);
         ctx.arc(cx, cy, r * 1.4, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
         ctx.fillStyle = '#170b07'; ctx.font = `bold ${Math.max(6, r * 1.8)}px Georgia,serif`; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
