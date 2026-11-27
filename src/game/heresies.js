@@ -218,7 +218,7 @@ export function heresyMonster(m, ids) {
   m._heresy = true;
   if (!ids || !ids.length) return;
   if (ids.includes('iron')) { m.maxHp *= 1.5; m.hp *= 1.5; }
-  if (ids.includes('cruel')) m.dmg *= 1.3;
+  if (ids.includes('cruel')) m.dmg *= 1.2;
   if (ids.includes('unholy_resilience')) m.heresyRegen = 0.01;
   if (ids.includes('relentless_assault')) m.heresyAttackRate = 1.25;
   if (ids.includes('swift_pursuit')) m.speed *= 1.3;
@@ -340,13 +340,13 @@ export function legionGate(world, near, n, lvl, opts = {}) {
 }
 
 // ---------------------------------------------------------------- the hero
-/** Glass Cannon: { life: -25, dmg: +15 } (percent) where it is in force. */
+/** Glass Cannon: { life: -15, dmg: +15 } (percent) where it is in force. */
 export function heresyHero(c = G.char) {
   return {
-    life: heresyActive('glass', c) ? -25 : 0,
+    life: heresyActive('glass', c) ? -15 : 0,
     dmg: heresyActive('glass', c) ? 15 : 0,
-    armorMul: heresyActive('shattered_armor', c) ? 0.8 : 1,
-    resPenalty: heresyActive('elemental_frailty', c) ? 15 : 0,
+    armorMul: heresyActive('shattered_armor', c) ? 0.85 : 1,
+    resPenalty: heresyActive('elemental_frailty', c) ? 10 : 0,
     healingMul: heresyActive('mortal_wounds', c) ? 0.6 : 1,
   };
 }

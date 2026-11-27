@@ -20,7 +20,7 @@ export const DUNGEON_AFFIXES = Object.freeze(
     "id": "brutal",
     "name": "Brutal",
     "category": "Enemy Stat Modifiers",
-    "description": "All enemies deal 25% more damage.",
+    "description": "All enemies deal 15% more damage.",
     "implemented": true
   },
   {
@@ -34,7 +34,7 @@ export const DUNGEON_AFFIXES = Object.freeze(
     "id": "frenzied",
     "name": "Frenzied",
     "category": "Enemy Stat Modifiers",
-    "description": "Enemies attack 35% faster.",
+    "description": "Enemies attack 20% faster.",
     "implemented": true
   },
   {
@@ -83,7 +83,7 @@ export const DUNGEON_AFFIXES = Object.freeze(
     "id": "critical",
     "name": "Critical",
     "category": "Enemy Stat Modifiers",
-    "description": "Enemies have a 20% chance to deal double damage.",
+    "description": "Enemies have a 20% chance to deal 150% damage.",
     "implemented": true
   },
   {
@@ -104,7 +104,7 @@ export const DUNGEON_AFFIXES = Object.freeze(
     "id": "empowered",
     "name": "Empowered",
     "category": "Enemy Stat Modifiers",
-    "description": "Enemies gain 5% damage for each other enemy nearby, up to 50%.",
+    "description": "Enemies gain 2.5% damage for each other enemy nearby, up to 25%.",
     "implemented": true
   },
   {
@@ -1817,13 +1817,13 @@ export const DUNGEON_AFFIX_CONFIG = Object.freeze(
     "bossDamageMultiplier": 1.2
   },
   "brutal": {
-    "damageMultiplier": 1.25
+    "damageMultiplier": 1.15
   },
   "swift": {
     "speedMultiplier": 1.3
   },
   "frenzied": {
-    "attackSpeedMultiplier": 1.35
+    "attackSpeedMultiplier": 1.2
   },
   "armored": {
     "physicalDamageMultiplier": 0.8,
@@ -1851,15 +1851,15 @@ export const DUNGEON_AFFIX_CONFIG = Object.freeze(
   },
   "critical": {
     "chance": 0.2,
-    "damageMultiplier": 2
+    "damageMultiplier": 1.5
   },
   "berserking": {
     "healthThreshold": 0.3,
     "attackSpeedMultiplier": 1.5
   },
   "empowered": {
-    "perEnemyDamageBonus": 0.05,
-    "maxDamageBonus": 0.5,
+    "perEnemyDamageBonus": 0.025,
+    "maxDamageBonus": 0.25,
     "radius": 6
   },
   "thunderstorm": {

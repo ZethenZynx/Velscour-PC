@@ -137,7 +137,7 @@ export function hit(src, tgt, amount, el = 'phys', o = {}) {
   if (src && (src.affixSummonerPactT || 0) > 0) dmg *= 1.2;
   if (src && src.rank === 'boss' && src.affixVengefulStacks) dmg *= 1 + Math.min(0.5, src.affixVengefulStacks * 0.05);
   if (src && src.rank === 'boss' && sourceAffixes.includes('final_stand') && src.hp < src.maxHp * 0.1) dmg *= 1.5;
-  if (src?.team === 'enemy' && world?.heresy?.ids?.includes('blood_frenzy') && src.hp < src.maxHp * 0.5) dmg *= 1.25;
+  if (src?.team === 'enemy' && world?.heresy?.ids?.includes('blood_frenzy') && src.hp < src.maxHp * 0.5) dmg *= 1.15;
   if (src?.team === 'enemy' && src.rank === 'boss' && world?.heresy?.ids?.includes('final_defiance') && src.hp < src.maxHp * 0.25) dmg *= 1.25;
   if (world.affixSurgeUntil > world.time && world.affixSurgeId && sourceAffixes.includes(world.affixSurgeId)) dmg *= 1.25;
   if (enemyAttack && sourceAffixes.includes('critical') && tgt.team !== 'enemy' &&
