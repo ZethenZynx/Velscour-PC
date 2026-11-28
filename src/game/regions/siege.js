@@ -4,7 +4,7 @@
 import { registerRegion, regionVariant } from '../regions.js';
 import { loadCastlePack, castleRamparts } from '../../gfx/castle.js';
 import { loadBiomeArt } from '../../core/assets.js';
-import { BIOME_BY_ID } from '../../data/biomes.js';
+import { BIOME_BY_ID, campaignActForBiome } from '../../data/biomes.js';
 import { generateSiege, keepSet, SIEGE_VARIANTS } from '../../world/siege.js';
 import { createSiegeRun, siegeWaves } from '../siege.js';
 
@@ -20,7 +20,7 @@ const R = registerRegion({
   ready: () => !!castleRamparts() && !!keepSet(),
   castleArt: true,   // keep the Castle pack loaded while here (game.js releaseLevelArt)
   generate: (depth, biome, seed) => {
-    const v = regionVariant(R)?.id || 'keep';
+    const v = regionVariant(R, campaignActForBiome(depth, biome.id))?.id || 'keep';
     for (let k = 0; k < 6; k++) { try { return generateSiege(depth, biome, (seed + k * 7919) >>> 0, v); } catch (e) { if (k === 5) throw e; } }
   },
   createRun: (world, gen, biome, depth, win) => createSiegeRun(world, gen, biome, depth, win),

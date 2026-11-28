@@ -2,8 +2,8 @@
 // down over three fights, cornered in its lair. Five territories (data/huntlands.js), one rolled per level ('hunt 3',
 // 'hunt fen'). The territory is world/hunt.js, the hunt itself game/hunt.js.
 import { registerRegion, regionVariant } from '../regions.js';
+import { BIOME_BY_ID, campaignActForBiome } from '../../data/biomes.js';
 import { loadBiomeArt, biomeTileSet } from '../../core/assets.js';
-import { BIOME_BY_ID } from '../../data/biomes.js';
 import { loadDarkForestTrees, darkForestTreesReady } from '../../gfx/darkforest.js';
 import { loadSeaOfSandPack } from '../../gfx/seaofsand.js';
 import { HUNT_LANDS } from '../../data/huntlands.js';
@@ -24,7 +24,7 @@ const R = registerRegion({
   load: () => Promise.all([loadBiomeArt(BIOME_BY_ID.dark_forest), loadDarkForestTrees(), regionVariant(R)?.id === 'badlands' ? loadSeaOfSandPack() : null]),
   ready: () => darkForestTreesReady() && biomeTileSet(BIOME_BY_ID.dark_forest).pack === 'dark_forest',
   generate: (depth, biome, seed) => {
-    const v = regionVariant(R), gen = generateHunt(depth, biome, seed, v?.id);
+    const v = regionVariant(R, campaignActForBiome(depth, biome.id)), gen = generateHunt(depth, biome, seed, v?.id);
     gen.variant = { id: gen.hunt.land, name: v?.name || HUNT_LANDS[0].name, look: WEATHER[gen.hunt.land] };
     return gen;
   },

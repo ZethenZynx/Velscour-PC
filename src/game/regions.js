@@ -22,6 +22,7 @@
 //             a number, id or name ('train 3', 'siege frost') or the HAIL VELSCOUR! list picks one. load() and
 //             generate() read the level's variant with regionVariant(region).
 import { G } from '../state.js';
+import { chooseCampaignVariant, eligibleCampaignVariants } from '../data/biomes.js';
 
 export const REGIONS = {};
 export function registerRegion(r) { REGIONS[r.id] = r; return r; }
@@ -50,15 +51,24 @@ export function parseRegionWord(message) {
 export const regionByWord = (message) => parseRegionWord(message)?.region || null;
 /** Roll the variant the next level of this region is built as: the one asked for (G.regionWant[id], used once),
  * else any but the one seen last (G.char.lastRegionVariant). */
-export function rollRegionVariant(r) {
+export function rollRegionVariant(r, campaignAct = null) {
   if (!r?.variants?.length) return null;
   const c = G.char, want = G.regionWant?.[r.id];
   if (G.regionWant) delete G.regionWant[r.id];
-  let v = findVariant(r, want);
-  if (!v) { const last = c?.lastRegionVariant?.[r.id], pool = r.variants.filter((q) => q.id !== last); v = pool[Math.floor(Math.random() * pool.length)] || r.variants[0]; }
+  const eligible = eligibleCampaignVariants(r.id, campaignAct, r.variants);
+  if (!eligible.length) throw new Error(`No ${r.id} variants are eligible for campaign Act ${campaignAct}`);
+  // Resolve explicit region requests inside the filtered pool too; a request from another Act
+  // must never leak into campaign generation through a fallback path.
+  let v = want ? findVariant({ ...r, variants: eligible }, want) : null;
+  if (!v) v = chooseCampaignVariant(r.id, campaignAct, eligible, { lastId: c?.lastRegionVariant?.[r.id] });
+  if (!v) throw new Error(`Unable to select an eligible ${r.id} variant`);
   (G.regionNext ||= {})[r.id] = v;
   if (c) (c.lastRegionVariant ||= {})[r.id] = v.id;
   return v;
 }
 /** The variant this level of the region is built as (rolled by loadLevelArt; rolled here if a test skipped it). */
-export const regionVariant = (r) => G.regionNext?.[r.id] || rollRegionVariant(r);
+export function regionVariant(r, campaignAct = null) {
+  const current = G.regionNext?.[r.id];
+  if (current && (!campaignAct || eligibleCampaignVariants(r.id, campaignAct, r.variants).some((v) => v.id === current.id))) return current;
+  return rollRegionVariant(r, campaignAct);
+}

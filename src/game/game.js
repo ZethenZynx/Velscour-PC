@@ -22,7 +22,7 @@ import { preloadBarFx } from '../gfx/artfx.js';
 import { SKILLS } from '../data/skills.js';
 import { setClassItems, setRingContext } from '../data/items.js';
 import { BREACH_BIOME, BREACH_WALLS } from '../data/biomes.js';
-import { BIOMES, BETA_BIOMES, BIOME_BY_ID, TOWN_BIOME, ACT2_TOWN_BIOME, drawBiome, biomeChoices, biomesForDepth, takeBiome, mixPartner, recordBiomeVisit } from '../data/biomes.js';
+import { BIOMES, BETA_BIOMES, BIOME_BY_ID, TOWN_BIOME, ACT2_TOWN_BIOME, drawBiome, biomeChoices, biomesForDepth, takeBiome, mixPartner, recordBiomeVisit, campaignActForBiome, chooseCampaignVariant, eligibleCampaignVariants } from '../data/biomes.js';
 import { ARCH } from '../data/enemies.js';
 import { resolveLevelCheatName } from './velscourcheats.js';
 import { CLASSES } from '../data/classes.js';
@@ -1382,7 +1382,7 @@ export const game = {
     try {
       const mix = mixPartner(biome);
       LoadingScreen.setProgress(30, `Summoning ${biome.name}…`);
-      await this.loadLevelArt(biome, mix);
+      await this.loadLevelArt(biome, mix, { campaignAct: campaignActForBiome(depth, biome.id) });
       LoadingScreen.setProgress(55, 'Forging realm…');
       this.buildDungeon(depth, biome, mix, false, { practiceFinalBoss });
       const w = G.world;
@@ -1421,7 +1421,7 @@ export const game = {
     sfx('portal');
     try {
       LoadingScreen.setProgress(30, `Summoning ${biome.name}…`);
-      await this.loadLevelArt(biome, null);
+      await this.loadLevelArt(biome, null, { campaignAct: campaignActForBiome(depth, biome.id) });
       LoadingScreen.setProgress(55, 'Forging realm…');
       this.buildDungeon(depth, biome, null);
       const w = G.world;
@@ -1446,8 +1446,9 @@ export const game = {
   warmArt() { return warmLevelArt(G.world); },
 
   // the art a level of this biome needs before it can be generated (the portal and Velscour's level select share it)
-  loadLevelArt(biome, mix = null) {
-    if (regionOf(biome)) { rollRegionVariant(regionOf(biome)); return regionOf(biome).load(biome); } // a new region and its variant (game/regions.js)
+  loadLevelArt(biome, mix = null, { campaignAct = null } = {}) {
+    const eligibleAct = campaignAct;
+    if (regionOf(biome)) { rollRegionVariant(regionOf(biome), eligibleAct); return regionOf(biome).load(biome); } // a new region and its eligible variant (game/regions.js)
     if (biome.id === 'scorpion_king_pyramid') return Promise.all([loadDunes3D(), loadSeaOfSandPack()]);
     if (biome.id === 'sea_of_sand') { // the flat cliff maze (0) or one of the ten dune variants with their pyramids (src/data/dunes.js), never the one seen last
       const c = G.char, kept = c?.seaOfSandRuns?.[c.depth], n = DUNE_VARIANTS.length + 1, last = c?.lastSand ?? -1;
@@ -1456,10 +1457,25 @@ export const game = {
       if (G.sandNext > 0) return loadDunes3D().catch((e) => { console.warn(e); G.sandNext = 0; return loadSeaOfSandPack(); });
       return loadSeaOfSandPack();
     }
-    if (biome.id === 'castle') { // one of the castles (src/data/castles.js), never the one seen last; the first if its bake won't load
-      const last = CASTLE_VARIANTS.findIndex((v) => v.id === G.char?.lastCastle), k = Math.floor(Math.random() * (CASTLE_VARIANTS.length - (last >= 0 ? 1 : 0)));
-      G.castleNext = G.castleVariant ?? (last >= 0 && k >= last ? k + 1 : k);
-      return Promise.all([loadCastlePack(), loadCastle3D(G.castleNext).catch((e) => { console.warn(e); G.castleNext = 0; return loadCastle3D(0); })]);
+    if (biome.id === 'castle') { // choose and fall back only within this campaign Act's Castle pool
+      const eligible = eligibleCampaignVariants('castle', eligibleAct, CASTLE_VARIANTS);
+      if (!eligible.length) return Promise.reject(new Error(`No Castle variants are eligible for campaign Act ${eligibleAct}`));
+      const forced = G.castleVariant == null ? null : typeof G.castleVariant === 'string'
+        ? G.castleVariant
+        : CASTLE_VARIANTS[((Number(G.castleVariant) % CASTLE_VARIANTS.length) + CASTLE_VARIANTS.length) % CASTLE_VARIANTS.length]?.id;
+      const selected = chooseCampaignVariant('castle', eligibleAct, eligible, { lastId: G.char?.lastCastle, requestedId: forced });
+      const order = [selected, ...eligible.filter((v) => v.id !== selected.id)];
+      G.castleNext = CASTLE_VARIANTS.findIndex((v) => v.id === selected.id);
+      return Promise.all([loadCastlePack(), (async () => {
+        let lastError;
+        for (const variant of order) {
+          const index = CASTLE_VARIANTS.findIndex((v) => v.id === variant.id);
+          G.castleNext = index; // even a later asset failure must leave a same-Act generation fallback
+          try { await loadCastle3D(index); G.castleNext = index; return; }
+          catch (error) { lastError = error; console.warn(`Castle variant ${variant.id} failed to load; trying another eligible variant.`, error); }
+        }
+        throw lastError || new Error(`No loadable Castle variant for campaign Act ${eligibleAct}`);
+      })()]);
     }
     if (biome.id === 'dark_forest') return Promise.all([loadBiomeArt(biome), loadDarkForestTrees()]);
     if (biome.challenge) return loadBiomeArt(biome); // the Breach's two packs (pack, wallPack, moreFloors/morePacks)
@@ -1523,7 +1539,8 @@ export const game = {
         LoadingScreen.setProgress(25, `Loading ${biome.name} assets…`);
         await yieldForLoadingPaint();
         const loadArtStarted = profileStart();
-        try { await this.loadLevelArt(biome, mix); }
+        const campaignAct = campaignActForBiome(depth, biome.id);
+        try { await this.loadLevelArt(biome, mix, { campaignAct }); }
         finally { if (loadArtStarted) profileExternalTiming('dungeon.requiredArtLoad', loadArtStarted, { biome: biome.id, depth, async: true }); }
       } catch (e) { console.warn(e); }
       try {
@@ -1593,7 +1610,7 @@ export const game = {
       : biome.cave ? generateCaverns(depth, biome, layoutSeed, G.caveVariant ?? G.caveNext)
       : biome.id === 'scorpion_king_pyramid' && dunes3dReady() ? generateDunes(depth, biome, layoutSeed, DUNE_VARIANTS.findIndex((v) => v.id === 'red'))
       : biome.id === 'sea_of_sand' && (G.sandVariant ?? G.sandNext) > 0 && dunes3dReady() ? generateDunes(depth, biome, layoutSeed, (G.sandVariant ?? G.sandNext) - 1)
-      : biome.overworld ? generateOverworld(depth, biome, layoutSeed, biome.id === 'castle' ? G.castleVariant ?? G.castleNext : null) : generateDungeon(depth, biome, tileset, layoutSeed, { practiceVelscour: practiceFinalBoss, unbound: !!G.unboundNext });
+      : biome.overworld ? generateOverworld(depth, biome, layoutSeed, biome.id === 'castle' ? G.castleNext : null) : generateDungeon(depth, biome, tileset, layoutSeed, { practiceVelscour: practiceFinalBoss, unbound: !!G.unboundNext });
     let gen, accessibilityError = null, generationSeed = seed;
     for (let attempt = 0; attempt <= 4; attempt++) {
       generationSeed = attempt === 0 ? seed : ((seed + Math.imul(attempt, 0x9e3779b9)) >>> 0);

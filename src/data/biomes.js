@@ -579,11 +579,45 @@ export const OVERWORLD_BIOME_IDS = BIOMES.filter((b) => b.overworld).map((b) => 
 
 /** The fixed environment order for each 25-depth campaign act. Each cycle restarts at its act boundary. */
 export const CAMPAIGN_ENVIRONMENT_ROTATIONS = {
-  1: ['overworld', 'dark_forest', 'castle', 'castle_keep'],
-  2: ['sea_of_sand', 'great_hunt', 'serpentine_tower', 'scorpion_king_pyramid'],
-  3: ['mountainside', 'depths_edge', 'snowy_summit', 'endless_siege'],
+  // The non-finale depths cycle through these environments; finale depths are fixed below.
+  // The added families are shared across Acts, with variant pools filtered by the authoritative assignments.
+  1: ['overworld', 'dark_forest', 'castle', 'castle_keep', 'great_hunt', 'endless_siege'],
+  2: ['sea_of_sand', 'great_hunt', 'serpentine_tower', 'castle', 'scorpion_king_pyramid'],
+  3: ['mountainside', 'depths_edge', 'snowy_summit', 'endless_siege', 'castle', 'great_hunt'],
   4: ['pirate_seas', 'skyship', 'ghost_train', 'deep_mines'],
 };
+
+/** Campaign-only Act assignments for variants in the three multi-Act level families.
+ * Endgame, Rift, and explicitly opened region runs do not pass a campaign Act and remain unrestricted. */
+export const CAMPAIGN_VARIANT_ACTS = Object.freeze({
+  castle: Object.freeze({
+    ironcrown: 1, blackfen: 1, solenne: 1, sunscar: 2, hoarfrost: 3,
+    cinderhold: 1, mourncross: 1, goldspire: 1, bloodmoat: 1, hexenmere: 1, thornwick: 1,
+  }),
+  great_hunt: Object.freeze({ wood: 1, badlands: 2, tundra: 3, fen: 1, crags: 3 }),
+  endless_siege: Object.freeze({ keep: 1, frost: 3, river: 3, pass: 3, mire: 1 }),
+});
+
+/** Return the variants allowed for a campaign Act. An empty array is intentional: callers must not fall back across Acts. */
+export function eligibleCampaignVariants(family, act, variants) {
+  if (!Array.isArray(variants)) return [];
+  const assignments = CAMPAIGN_VARIANT_ACTS[family];
+  if (act == null || !assignments) return variants.slice();
+  return variants.filter((variant) => assignments[variant.id] === act);
+}
+
+/** Select within the eligible pool, honoring valid explicit choices and avoiding the last variant when possible. */
+export function chooseCampaignVariant(family, act, variants, { lastId = null, requestedId = null, random = Math.random } = {}) {
+  const eligible = eligibleCampaignVariants(family, act, variants);
+  if (!eligible.length) return null;
+  const requested = requestedId == null ? null : eligible.find((variant) => variant.id === requestedId);
+  if (requested) return requested;
+  let pool = eligible.filter((variant) => variant.id !== lastId);
+  if (!pool.length) pool = eligible;
+  const value = Number(random());
+  const index = Math.min(pool.length - 1, Math.max(0, Math.floor((Number.isFinite(value) ? value : 0) * pool.length)));
+  return pool[index];
+}
 
 /** Keep act finales in the environments suited to their signature boss encounters. */
 export const CAMPAIGN_BOSS_ENVIRONMENTS = {
@@ -592,6 +626,13 @@ export const CAMPAIGN_BOSS_ENVIRONMENTS = {
   75: 'snowy_summit',      // Hollowmere
   [FINAL_DEPTH]: 'throne', // Velscour; never part of the rotation or endgame pool
 };
+
+/** The Act for a biome only when it is the scheduled campaign environment at that depth. */
+export function campaignActForBiome(depth, biomeId) {
+  depth = Math.max(1, Math.floor(Number(depth) || 1));
+  if (depth > FINAL_DEPTH || campaignBiomeForDepth(depth) !== biomeId) return null;
+  return ACTS.find((act) => depth >= act.start && depth <= act.end)?.act ?? null;
+}
 
 export function campaignBiomeForDepth(depth) {
   depth = Math.max(1, Math.floor(Number(depth) || 1));
