@@ -110,6 +110,94 @@ assert.equal(ambiguous.cleared[100], undefined);
 assert.equal(Endgame.endgame().unlocked, 123456, 'account-wide victory/unlock remains untouched');
 assert.equal(JSON.parse(storage.get(`velscour_saves_v1_sanctum_recovery_backup_v1_${encodeURIComponent(ambiguous.id)}`)).character.depth, 101);
 
+// The uniquely identified Level 56 Ranger from the campaign-depth incident is
+// repaired on load, with an exact pre-migration copy and no account-wide edits.
+const rangerRepair = character('affected-level-56-ranger', 101, 100, { 1: true, 25: true, 50: true, 75: true, 100: true });
+rangerRepair.rebalancedV1 = true;
+rangerRepair.nextBiome = 'catacombs';
+rangerRepair.lastTown = 'act4';
+rangerRepair.visitedAct2Town = true;
+rangerRepair.act2AutoTravelDone = true;
+rangerRepair.visitedAct3Town = true;
+rangerRepair.act3AutoTravelDone = true;
+rangerRepair.visitedAct4Town = true;
+rangerRepair.act4AutoTravelDone = true;
+rangerRepair.greedLevel = rangerRepair.greed = 3;
+rangerRepair.dungeonAffixes = ['burrowing'];
+rangerRepair.nextAffixes = ['burrowing'];
+const preserveRangerFields = JSON.parse(JSON.stringify(rangerRepair));
+const otherHero = Save.newCharData('paladin', 'Unchanged Hero');
+otherHero.id = 'unchanged-other-hero';
+storage.set('velscour_saves_v1', JSON.stringify([rangerRepair, otherHero]));
+storage.set('velscour_endgame_v1', JSON.stringify({ marksResetVersion: 2, unlocked: 0, marks: { pts: 0, spent: {} } }));
+Endgame.resetEndgameCache();
+assert.equal(Endgame.endgameUnlocked(rangerRepair), true, 'the false per-character Depth 100 clear grants Endgame access before repair');
+const deployedVictory = Endgame.endgame().unlocked;
+const restoredRanger = Save.migrate(rangerRepair);
+assert.equal(restoredRanger.depth, 26);
+assert.equal(restoredRanger.deepest, 25);
+assert.deepEqual(restoredRanger.cleared, { 1: true, 25: true }, 'only Act I clears and the Act I finale remain complete');
+assert.equal(Endgame.endgameUnlocked(restoredRanger), false, 'removing the false per-character final clear removes its Endgame access');
+assert.equal(restoredRanger.lastTown, 'act2');
+assert.equal(restoredRanger.visitedAct2Town, true);
+assert.equal(restoredRanger.act2AutoTravelDone, true);
+assert.equal(restoredRanger.visitedAct3Town, false);
+assert.equal(restoredRanger.act3AutoTravelDone, false);
+assert.equal(restoredRanger.visitedAct4Town, false);
+assert.equal(restoredRanger.act4AutoTravelDone, false);
+assert.equal(restoredRanger.nextBiome, 'sea_of_sand', 'Depth 26 is assigned its Act II campaign biome');
+assert.equal(restoredRanger.greed, 3, 'unrelated endgame preference is preserved');
+assert.equal(restoredRanger.level, preserveRangerFields.level);
+assert.equal(restoredRanger.xp, preserveRangerFields.xp);
+assert.equal(restoredRanger.gold, preserveRangerFields.gold);
+assert.equal(restoredRanger.skillPoints, preserveRangerFields.skillPoints);
+assert.deepEqual(restoredRanger.attrs, preserveRangerFields.attrs);
+assert.deepEqual(restoredRanger.skills, preserveRangerFields.skills);
+assert.deepEqual(restoredRanger.mastery, preserveRangerFields.mastery);
+assert.deepEqual(restoredRanger.equip, preserveRangerFields.equip);
+assert.deepEqual(restoredRanger.bag, preserveRangerFields.bag);
+assert.deepEqual(restoredRanger.gemBag, preserveRangerFields.gemBag);
+assert.deepEqual(restoredRanger.stash, preserveRangerFields.stash);
+assert.deepEqual(restoredRanger.potions, preserveRangerFields.potions);
+assert.equal(restoredRanger.marks.pts, preserveRangerFields.marks.pts);
+assert.equal(restoredRanger.marks.xp, preserveRangerFields.marks.xp);
+assert.equal(restoredRanger.marks.spent.life, preserveRangerFields.marks.spent.life);
+assert.equal(restoredRanger.sanctumRangerAct2RestoreV1, 1);
+const rangerBackupKey = `velscour_saves_v1_sanctum_ranger_act2_backup_v1_${encodeURIComponent(restoredRanger.id)}`;
+const rangerBackup = JSON.parse(storage.get(rangerBackupKey));
+assert.equal(rangerBackup.character.depth, 101, 'exact original Ranger save is backed up before repair');
+assert.deepEqual(rangerBackup.character.cleared, preserveRangerFields.cleared);
+assert.equal(rangerBackup.character.level, 56);
+const savedAfterRangerRepair = JSON.parse(storage.get('velscour_saves_v1'));
+assert.equal(savedAfterRangerRepair.find((hero) => hero.id === otherHero.id).name, otherHero.name,
+  'other character remains untouched by the targeted save write');
+assert.equal(Endgame.endgame().unlocked, deployedVictory, 'account-wide Endgame unlock remains unchanged');
+restoredRanger.depth = 27;
+Save.migrate(restoredRanger);
+assert.equal(restoredRanger.depth, 27, 'completed targeted migration never resets later legitimate progression');
+
+// If two Rangers match the signature, do not guess. The current character gets
+// a character-specific confirmation path that only repairs that selected save.
+const duplicateA = character('duplicate-affected-ranger-a', 101, 100, { 25: true, 100: true });
+const duplicateB = character('duplicate-affected-ranger-b', 101, 100, { 25: true, 100: true });
+duplicateA.rebalancedV1 = duplicateB.rebalancedV1 = true;
+storage.set('velscour_saves_v1', JSON.stringify([duplicateA, duplicateB]));
+Save.migrate(duplicateA);
+assert.equal(duplicateA.depth, 101, 'ambiguous matches are not changed automatically');
+assert.equal(Save.rangerAct2RepairReview(duplicateA).available, true);
+assert.equal(Save.repairRangerAct2Progression(duplicateA), true);
+assert.equal(duplicateA.depth, 26);
+assert.equal(duplicateA.cleared[100], undefined);
+assert.equal(Save.rangerAct2RepairReview(duplicateA).available, false, 'confirmed repair is one-time');
+assert.equal(JSON.parse(storage.get(`velscour_saves_v1_sanctum_ranger_act2_backup_v1_${encodeURIComponent(duplicateA.id)}`)).character.depth, 101);
+assert.equal(JSON.parse(storage.get('velscour_saves_v1')).find((hero) => hero.id === duplicateB.id).depth, 101,
+  'the nonselected matching Ranger remains untouched');
+
+const nonmatchingRanger = character('other-level-55-ranger', 101, 100, { 25: true, 100: true });
+nonmatchingRanger.level = 55;
+storage.set('velscour_saves_v1', JSON.stringify([nonmatchingRanger]));
+assert.equal(Save.migrate(nonmatchingRanger).depth, 101, 'other Rangers do not match the authorized level-specific repair');
+
 // Reload recovery from a saved active challenge context preserves all character progression.
 const interrupted = character('interrupted-challenge', 26, 25, { 25: true });
 interrupted.heresyEncounterContext = Progression.snapshotHeresyProgression(interrupted,
@@ -139,5 +227,7 @@ assert.match(gameSource, /const returnPortal = [\s\S]*?this\.restoreHeresyChalle
 const settingsSource = await readFile(new URL('../../src/ui/screens.js', import.meta.url), 'utf8');
 assert.match(settingsSource, /sanctumRecoveryReview\(G\.char\)[\s\S]*?data-sanctum-recovery/,
   'ambiguous legacy saves expose a character-specific recovery choice');
+assert.match(settingsSource, /rangerAct2RepairReview\(G\.char\)[\s\S]*?data-ranger-act2-recovery/,
+  'ambiguous affected Rangers expose a character-specific Depth 26 confirmation');
 
-console.log('Forbidden Sanctum progression regression checks passed: representative origin depths, both challenge entry kinds, death depth, return/town path wiring, interrupted reload, confirmed legacy recovery with backup, and account unlock preservation.');
+console.log('Forbidden Sanctum progression regression checks passed: challenge origin/death/return paths, reload recovery, uniquely targeted Ranger repair and backup, ambiguous confirmation, other-character preservation, and account unlock preservation.');

@@ -9,7 +9,7 @@ import { DEFAULT_AUDIO_SETTINGS, AUDIO_VOLUME_GROUPS, AUDIO_SECTIONS, AUDIO_PRES
 import { CLASS_IDS, A } from '../core/assets.js';
 import { CLASSES, ATTRS } from '../data/classes.js';
 import { UI, $ } from './ui.js';
-import { listSaves, heroesByClass, deleteClassSaves, classSaves, writeSave, savesReadable, unreadableSaves, sanctumRecoveryReview, repairSanctumCampaignDepth } from '../game/save.js';
+import { listSaves, heroesByClass, deleteClassSaves, classSaves, writeSave, savesReadable, unreadableSaves, sanctumRecoveryReview, repairSanctumCampaignDepth, rangerAct2RepairReview, repairRangerAct2Progression } from '../game/save.js';
 import { backupHeroes, listBackups } from '../game/herobackup.js';
 import { heroCanvas, excitable, preloadPortraits } from './heroanim.js';
 import { savedGearPreview } from '../core/gearart.js';
@@ -622,6 +622,7 @@ function unifiedDiagnosticsMarkup() {
 export function settingsDialog() {
   const st = G.settings;
   const sanctumRecovery = sanctumRecoveryReview(G.char);
+  const rangerRecovery = rangerAct2RepairReview(G.char);
   const html = `<div class="settings-tabs">
     <button type="button" class="settings-tab-btn" data-tab="general">General</button>
     <button type="button" class="settings-tab-btn" data-tab="audio">Audio</button>
@@ -642,7 +643,7 @@ export function settingsDialog() {
     <div class="settings-grid">
       <label>GitHub Pages updates</label><div class="update-check-controls"><button type="button" class="btn small" data-check-game-updates>Check for Updates</button><span class="update-check-status dim" data-update-check-status role="status" aria-live="polite"></span></div>
       <label>Hero backups</label><button class="btn small" data-backups>View</button>
-      ${sanctumRecovery.available ? `<section class="sanctum-recovery-note" role="note"><b>Campaign depth needs review</b><p>This character's save records Depth 101 and a Depth 100 clear. If this character entered a Forbidden Sanctum and died without defeating Velscour at Depth 100, review a character-only restore. The game will back up this hero's full save first. Account-wide unlocks and other characters are not changed.</p><button type="button" class="btn small" data-sanctum-recovery>Review campaign depth</button></section>` : ''}
+      ${rangerRecovery.available ? `<section class="sanctum-recovery-note" role="note"><b>Restore ${escapeHtml(G.char?.name || 'Ranger')} to Act II</b><p>This Level 56 Ranger will resume at Depth 26 in Sunscorch Oasis. The original character save is backed up first. Other characters and account-wide unlocks are not changed.</p><button type="button" class="btn small" data-ranger-act2-recovery>Back up and restore to Depth 26</button></section>` : !rangerRecovery.available && sanctumRecovery.available ? `<section class="sanctum-recovery-note" role="note"><b>Campaign depth needs review</b><p>This character's save records Depth 101 and a Depth 100 clear. If this character entered a Forbidden Sanctum and died without defeating Velscour at Depth 100, review a character-only restore. The game will back up this hero's full save first. Account-wide unlocks and other characters are not changed.</p><button type="button" class="btn small" data-sanctum-recovery>Review campaign depth</button></section>` : ''}
       <label>Pause while menus open</label><input type="checkbox" data-k="pauseMenus" ${st.pauseMenus !== false ? 'checked' : ''}>
       <label title="Keep previously seen cutscenes at normal speed">Don't fast-forward seen cutscenes</label><input type="checkbox" data-k="noSkipCine" ${st.noSkipCine ? 'checked' : ''}>
       <label title="Immediately skip cutscenes and keep the camera tracking you at your chosen zoom">Skip cutscenes and camera transitions</label><input type="checkbox" data-k="skipCutscenes" ${st.skipCutscenes ? 'checked' : ''}>
@@ -784,6 +785,29 @@ export function settingsDialog() {
           UI.log(saved
             ? `Campaign progression restored for ${escapeHtml(character.name || 'this hero')} at Depth ${character.depth}. The pre-repair save is backed up in this browser.`
             : 'The pre-repair save is backed up, but the restored depth could not be confirmed as saved. Keep this session open and retry after resolving the browser storage error.',
+          saved ? '#b8e8a0' : '#ff9a80');
+        } },
+      ],
+    });
+  };
+  const rangerRecoveryButton = d.box.querySelector('[data-ranger-act2-recovery]');
+  if (rangerRecoveryButton) rangerRecoveryButton.onclick = () => {
+    const character = G.char, review = rangerAct2RepairReview(character);
+    if (!review.available || character?.classId !== 'ranger' || Number(character.level) !== 56) return;
+    const recoveryDialog = UI.dialog({
+      title: 'Restore Ranger to Act II',
+      html: `<p>Confirm the character-specific repair for <b>${escapeHtml(character.name || 'Ranger')}</b> (Level 56 Ranger).</p><p>This sets campaign progress to Depth 26, marks Act I complete, clears this hero's Act II–IV completion flags, and returns this hero to Sunscorch Oasis. A verified copy of the original character save is created before the change. Shared unlocks, other heroes, and this hero's level, experience, skills, equipment, inventory, gold, and Infernal Marks are preserved.</p>`,
+      buttons: [
+        { label: 'Cancel' },
+        { label: 'Back Up and Restore', cls: 'red', fn: () => {
+          if (!repairRangerAct2Progression(character)) {
+            UI.log('The Ranger campaign repair was not applied because the original character backup could not be verified.', '#ff9a80');
+            return;
+          }
+          const saved = !!G.game?.autosave?.();
+          UI.log(saved
+            ? `${escapeHtml(character.name || 'Ranger')} is restored to Act II at Depth 26. The original character save is backed up in this browser.`
+            : 'The original save is backed up and the Ranger is restored in this session, but the updated save could not be confirmed. Keep this session open and retry after resolving the browser storage error.',
           saved ? '#b8e8a0' : '#ff9a80');
         } },
       ],

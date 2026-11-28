@@ -31,7 +31,85 @@ const SKILL_POINT_LEVEL_RESET = 'skillPointLevelResetV1';
 const OVERHAUL_EXTRA_KEYS = ['velscour_bard_heard', 'velscour_taunts_v1'];
 const WEAPON_COMPAT_BACKUP_PREFIX = KEY + '_weapon_compat_backup_v1_';
 const SANCTUM_RECOVERY_BACKUP_PREFIX = KEY + '_sanctum_recovery_backup_v1_';
+const RANGER_ACT2_REPAIR_BACKUP_PREFIX = KEY + '_sanctum_ranger_act2_backup_v1_';
+const RANGER_ACT2_REPAIR_DONE = 'sanctumRangerAct2RestoreV1';
+const RANGER_ACT2_REPAIR_PENDING = 'sanctumRangerAct2RestorePendingV1';
 let overhaulResetChecked = false;
+
+function isAffectedRangerSanctumSave(c) {
+  return c?.classId === 'ranger'
+    && Number(c.level) === 56
+    && Number(c.depth) === FINAL_DEPTH + 1
+    && Number(c.deepest) >= FINAL_DEPTH
+    && !!c.cleared?.[FINAL_DEPTH]
+    && !c[RANGER_ACT2_REPAIR_DONE];
+}
+
+/** Keep an exact character-only copy before the specifically authorized Ranger repair. */
+function backupRangerAct2Repair(c) {
+  if (!c?.id) return false;
+  const key = RANGER_ACT2_REPAIR_BACKUP_PREFIX + encodeURIComponent(c.id);
+  try {
+    const prior = JSON.parse(localStorage.getItem(key) || 'null');
+    if (prior?.version === 1 && prior.characterId === c.id && prior.character?.id === c.id) return true;
+    const backup = { version: 1, characterId: c.id, characterName: c.name || '', savedAt: Date.now(), character: JSON.parse(JSON.stringify(c)) };
+    localStorage.setItem(key, JSON.stringify(backup));
+    const verified = JSON.parse(localStorage.getItem(key) || 'null');
+    return verified?.version === 1 && verified.characterId === c.id && verified.character?.id === c.id
+      && verified.character.depth === c.depth && verified.character.level === c.level;
+  } catch (error) {
+    console.warn('The Ranger campaign repair was not applied because its original character save could not be backed up and verified.', error);
+    return false;
+  }
+}
+
+function applyRangerAct2Progression(c) {
+  // Keep earlier valid progress, mark the Act I finale complete, and remove all
+  // later per-character campaign clears that the false Depth 100 completion implied.
+  const priorClears = c.cleared && typeof c.cleared === 'object' && !Array.isArray(c.cleared) ? c.cleared : {};
+  c.cleared = Object.fromEntries(Object.entries(priorClears)
+    .filter(([depth, cleared]) => Number.isInteger(Number(depth)) && Number(depth) > 0 && Number(depth) < 25 && !!cleared));
+  c.cleared[25] = true;
+  c.depth = 26;
+  c.deepest = 25;
+  c.biomeBag = [];
+  c.nextBiome = drawBiome(c, 26);
+  c.lastTown = 'act2';
+  c.visitedAct2Town = true;
+  c.act2AutoTravelDone = true;
+  c.visitedAct3Town = false;
+  c.act3AutoTravelDone = false;
+  c.visitedAct4Town = false;
+  c.act4AutoTravelDone = false;
+  c.greedAffixPreview = null;
+  c.dungeonAffixes = [];
+  c.nextAffixes = [];
+  c[RANGER_ACT2_REPAIR_PENDING] = false;
+  c[RANGER_ACT2_REPAIR_DONE] = 1;
+}
+
+/** Review for the exact Level 56 Ranger affected by the Sanctum depth bug. */
+export function rangerAct2RepairReview(character) {
+  const needsReview = !!character?.[RANGER_ACT2_REPAIR_PENDING] || isAffectedRangerSanctumSave(character);
+  return { available: needsReview && !character?.[RANGER_ACT2_REPAIR_DONE], targetDepth: 26, characterId: character?.id || null };
+}
+
+/** Character-specific confirmation path used only if more than one save matches the exact signature. */
+export function repairRangerAct2Progression(character) {
+  const review = rangerAct2RepairReview(character);
+  if (!review.available || !backupRangerAct2Repair(character)) return false;
+  applyRangerAct2Progression(character);
+  return true;
+}
+
+function prepareAffectedRangerRepair(c) {
+  if (!isAffectedRangerSanctumSave(c)) return { auto: false, ambiguous: false };
+  const matches = readAll().filter(isAffectedRangerSanctumSave);
+  if (matches.length !== 1 || matches[0]?.id !== c.id) return { auto: false, ambiguous: matches.length > 1 };
+  // This is called before normal save migration mutates any field, so the backup
+  // contains the exact original local character record.
+  return { auto: backupRangerAct2Repair(c), ambiguous: false };
+}
 
 /** Move newly incompatible equipped weapons without changing the saved item object. */
 function migrateClassWeaponEquipment(c) {
@@ -431,6 +509,7 @@ function rescaleFlatDmg(it, a) {
 
 /** Fill in fields added by later versions. */
 export function migrate(c) {
+  const rangerRepair = prepareAffectedRangerRepair(c);
   // Legacy sealed gear is already fully rolled equipment; removing the flag
   // restores ordinary use without changing its stats, identity, or location.
   eachGear(c, (item) => { delete item.sealed; });
@@ -789,6 +868,17 @@ export function migrate(c) {
   refundStorageMarks({ heroId: c.id, heroMarks, reliquaryMarks });
   c.storageMarkRefundV1 = true;
   if (jewelBoxMigrationComplete()) c.jewelBox = [];
+  if (rangerRepair.ambiguous) c[RANGER_ACT2_REPAIR_PENDING] = true;
+  if (rangerRepair.auto && !c[RANGER_ACT2_REPAIR_DONE]) {
+    applyRangerAct2Progression(c);
+    // The migrated copy is written immediately. If storage rejects it, the
+    // original save remains intact and the verified backup allows a safe retry.
+    if (!writeSave(c)) console.warn('The Ranger progression repair is backed up but could not yet be saved; it will retry on the next load.');
+  } else if (rangerRepair.ambiguous) {
+    // Persist only a review marker; the character-specific confirmation screen
+    // performs the repair after the player selects the correct Ranger.
+    writeSave(c);
+  }
   recoverReliquaryGoldTransfer(c, writeSave);
   return c;
 }
