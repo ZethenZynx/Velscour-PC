@@ -162,7 +162,7 @@ export function createTowerRun(world, gen, biome, onSuccess) {
     draw(ctx) { drawTower3D(ctx, tw); },
     /** Over the sprites: the railings and chandeliers, then whoever hangs in the well in front of them (render.js). */
     front(ctx) { drawTowerFront(ctx); for (const c of world.creatures) if (c.towerFront && !c.dead) c.draw(ctx); },
-    minimap: (c, W, H, big, opacity) => minimap(world, tw, c, W, H, big, opacity),
+    minimap: (c, W, H, big, opacity) => drawTowerMinimap(world, tw, c, W, H, big, opacity),
   };
   void buildTower3D(g).catch((e) => console.warn(e));
   void loadAirships().catch((e) => console.warn('Airships unavailable', e));
@@ -769,16 +769,16 @@ class Strike {
 }
 
 // ------------------------------------------------------------------ minimap: the tower from above
-function minimap(world, tw, c, W, H, big, terrainOpacity = 1) {
+export function drawTowerMinimap(world, tw, c, W, H, big, terrainOpacity = 1) {
   const g = tw.g, p = world.player, cx = W / 2, cy = H / 2, R = Math.min(W, H) * 0.42, k = R / (g.rWall + 2);
-  const a0 = -Math.PI / 2; let turns = 0;
+  const a0 = -Math.PI / 2; let turns = 0, s = 0;
   c.save(); c.globalAlpha = terrainOpacity;
   c.strokeStyle = 'rgba(200,180,140,0.55)'; c.lineWidth = big ? 3 : 2;
   c.beginPath(); c.arc(cx, cy, g.rWall * k, 0, TAU); c.stroke();
   if (!tw.roof) {
     c.beginPath(); c.arc(cx, cy, g.rIn * k, 0, TAU); c.stroke();
     // the stair climbed so far, as an arc that wraps once per turn
-    const s = clamp(g.s(p.x), 0, g.sEnd); turns = s / g.C;
+    s = clamp(g.s(p.x), 0, g.sEnd); turns = s / g.C;
     c.strokeStyle = 'rgba(255,200,110,0.8)'; c.lineWidth = (g.w * k) * 0.5;
     const rr = g.rc * k;
     c.beginPath(); c.arc(cx, cy, rr, a0, a0 + (turns % 1) * TAU); c.stroke();
