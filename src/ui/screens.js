@@ -9,7 +9,7 @@ import { DEFAULT_AUDIO_SETTINGS, AUDIO_VOLUME_GROUPS, AUDIO_SECTIONS, AUDIO_PRES
 import { CLASS_IDS, A } from '../core/assets.js';
 import { CLASSES, ATTRS } from '../data/classes.js';
 import { UI, $ } from './ui.js';
-import { listSaves, heroesByClass, deleteClassSaves, classSaves, writeSave, savesReadable, unreadableSaves } from '../game/save.js';
+import { listSaves, heroesByClass, deleteClassSaves, classSaves, writeSave, savesReadable, unreadableSaves, sanctumRecoveryReview, repairSanctumCampaignDepth } from '../game/save.js';
 import { backupHeroes, listBackups } from '../game/herobackup.js';
 import { heroCanvas, excitable, preloadPortraits } from './heroanim.js';
 import { savedGearPreview } from '../core/gearart.js';
@@ -621,6 +621,7 @@ function unifiedDiagnosticsMarkup() {
 
 export function settingsDialog() {
   const st = G.settings;
+  const sanctumRecovery = sanctumRecoveryReview(G.char);
   const html = `<div class="settings-tabs">
     <button type="button" class="settings-tab-btn" data-tab="general">General</button>
     <button type="button" class="settings-tab-btn" data-tab="audio">Audio</button>
@@ -641,6 +642,7 @@ export function settingsDialog() {
     <div class="settings-grid">
       <label>GitHub Pages updates</label><div class="update-check-controls"><button type="button" class="btn small" data-check-game-updates>Check for Updates</button><span class="update-check-status dim" data-update-check-status role="status" aria-live="polite"></span></div>
       <label>Hero backups</label><button class="btn small" data-backups>View</button>
+      ${sanctumRecovery.available ? `<section class="sanctum-recovery-note" role="note"><b>Campaign depth needs review</b><p>This character's save records Depth 101 and a Depth 100 clear. If this character entered a Forbidden Sanctum and died without defeating Velscour at Depth 100, review a character-only restore. The game will back up this hero's full save first. Account-wide unlocks and other characters are not changed.</p><button type="button" class="btn small" data-sanctum-recovery>Review campaign depth</button></section>` : ''}
       <label>Pause while menus open</label><input type="checkbox" data-k="pauseMenus" ${st.pauseMenus !== false ? 'checked' : ''}>
       <label title="Keep previously seen cutscenes at normal speed">Don't fast-forward seen cutscenes</label><input type="checkbox" data-k="noSkipCine" ${st.noSkipCine ? 'checked' : ''}>
       <label title="Immediately skip cutscenes and keep the camera tracking you at your chosen zoom">Skip cutscenes and camera transitions</label><input type="checkbox" data-k="skipCutscenes" ${st.skipCutscenes ? 'checked' : ''}>
@@ -759,6 +761,34 @@ export function settingsDialog() {
 `;
   let stopKeyCaptureListener = () => {};
   const d = UI.dialog({ title: 'Settings', html, cls: 'settings-dialog', buttons: [{ label: 'Done', fn: () => { stopKeyCaptureListener(); camera.computeZoom(); if (UI.hud && UI.hud.applyVisibilitySettings) UI.hud.applyVisibilitySettings(); saveSettings(); } }] });
+  const recoveryButton = d.box.querySelector('[data-sanctum-recovery]');
+  if (recoveryButton) recoveryButton.onclick = () => {
+    const character = G.char, review = sanctumRecoveryReview(character);
+    if (!review.available) return;
+    const recoverySuggestion = review.suggestedDepth
+      ? `Suggested depth: ${review.suggestedDepth}.`
+      : 'No earlier clear is recorded, so the previous depth cannot be inferred from this save.';
+    const recoveryDialog = UI.dialog({
+      title: 'Restore Campaign Depth',
+      html: `<p>Choose the campaign depth this hero should resume. When available, the suggestion uses the highest recorded campaign clear below Depth 100.</p><p class="dim">${recoverySuggestion} A complete character-save backup is verified before any change. Shared Endgame unlocks are never changed.</p><label class="sanctum-recovery-depth">Campaign depth <input type="number" min="${review.minimumDepth}" max="${review.maximumDepth}" step="1" value="${review.suggestedDepth ?? ''}" data-sanctum-depth></label><label class="sanctum-recovery-final-clear"><input type="checkbox" data-sanctum-clear-final> Remove this character's Depth 100 clear marker (select only if this character never defeated Velscour at Depth 100)</label>`,
+      buttons: [
+        { label: 'Cancel' },
+        { label: 'Back Up and Restore', cls: 'red', fn: () => {
+          const depthInput = recoveryDialog.box.querySelector('[data-sanctum-depth]');
+          const removeFinal = !!recoveryDialog.box.querySelector('[data-sanctum-clear-final]')?.checked;
+          if (!repairSanctumCampaignDepth(character, depthInput?.value, { removeDepth100Clear: removeFinal })) {
+            UI.log('Campaign depth was not changed. The verified recovery backup could not be created or the selected depth was invalid.', '#ff9a80');
+            return;
+          }
+          const saved = !!G.game?.autosave?.();
+          UI.log(saved
+            ? `Campaign progression restored for ${escapeHtml(character.name || 'this hero')} at Depth ${character.depth}. The pre-repair save is backed up in this browser.`
+            : 'The pre-repair save is backed up, but the restored depth could not be confirmed as saved. Keep this session open and retry after resolving the browser storage error.',
+          saved ? '#b8e8a0' : '#ff9a80');
+        } },
+      ],
+    });
+  };
   const buildInfo = {
     running: d.box.querySelector('[data-running-build-id]'),
     deployed: d.box.querySelector('[data-deployed-build-id]'),

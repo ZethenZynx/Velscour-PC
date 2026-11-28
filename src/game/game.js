@@ -30,6 +30,7 @@ import { generateDungeon, isRaidDepth } from '../world/dungeon.js';
 import { findReachableInteractableSpot } from '../core/interactable-hit.js';
 import { FINAL_DEPTH, MAX_DEPTH, depthLevel, blockStart, isSuperbossDepth, superbossForDepth, getActForDepth, isActFinaleDepth, ACTS } from '../data/depth.js';
 import { addDefiance, clearDefiance, defianceText, tickBlessing } from './defiance.js';
+import { snapshotHeresyProgression, restoreHeresyProgression, heresyDeathProgression } from './heresyprogression.mjs';
 import { setupHappenings, announceDungeonAffixes, happeningsTick, eventImpsTick, spawnGuaranteedImp, townHappening, townTick, beginVictoryTownCelebration, recordDepth, markNemesis } from './happenings.js';
 import { setupWorldObjects, worldObjectsTick, clearWorldObjectBuffs } from './worldobjects.js';
 import { setupDungeonEvent, dungeonEventTick } from './dungeonevents.js';
@@ -537,6 +538,8 @@ export const game = {
   },
 
   enterTown() {
+    // A temporary Heresy arena must never be interpreted as a newly cleared campaign floor.
+    if (G.world?.heresyChallenge) this.restoreHeresyChallengeProgress(G.world);
     if (G.char?.lastTown === 'act4' && act4Unlocked(G.char)) {
       void this.enterTessarielKeep();
       return;
@@ -2244,8 +2247,7 @@ export const game = {
     if (G.world !== origin || !portal?.active) return false;
     if (!portal.challengeWorld) portal.challengeWorld = this.makeHeresyChallenge('sanctum', origin);
     if (!portal.challengeWorld) return false;
-    this.enterHeresyChallenge(origin, portal.challengeWorld);
-    return true;
+    return !!this.enterHeresyChallenge(origin, portal.challengeWorld);
   },
 
   enterHeresyThrone() {
@@ -2259,8 +2261,7 @@ export const game = {
       this.heresyThroneWorld = this.makeHeresyChallenge('throne', null);
     }
     if (!this.heresyThroneWorld) return false;
-    this.enterHeresyChallenge(null, this.heresyThroneWorld);
-    return true;
+    return !!this.enterHeresyChallenge(null, this.heresyThroneWorld);
   },
 
   makeHeresyChallenge(kind, origin) {
@@ -2281,10 +2282,12 @@ export const game = {
     challenge.chests = (gen.chests || []).map((ch) => ({ ...ch, opened: false, reach: 1.2, use() { if (!this.opened) { this.opened = true; dropChest(challenge, this, depth); } } }));
     const returnPortal = { x: gen.start[0] + 1, y: gen.start[1], type: 'heresy-return', active: true, color: '#3a8aff', reach: 1.6, label: 'Return to the Original Dungeon', use: () => {
       const back = origin || G.world?.heresyChallenge?.origin;
+      this.restoreHeresyChallengeProgress(challenge);
       if (!back) { this.enterTown(); return; }
       const start = back.startPos || [back.player?.x || gen.start[0], back.player?.y || gen.start[1]];
       const safe = findReachableInteractableSpot(back.map, start, start[0], start[1], 5, 0.4, 0.42) || start;
       this.setWorld(back, safe, challenge); void warmEnemyArt(back);
+      this.autosave();
       HUD.setArea(back.biome?.name || 'Dungeon', `Depth ${back.depth || c.depth}${worldRank(back) ? ` · Heresy ${worldRank(back)}` : ''}`, back.dungeonAffixes || []);
       playMusic(locationMusicKind(back)); setAmbience(back.biome?.id || 'hell');
     } };
@@ -2364,12 +2367,37 @@ export const game = {
   },
 
   enterHeresyChallenge(origin, challenge) {
+    const character = G.char;
+    const progression = snapshotHeresyProgression(character, origin, challenge.heresyChallenge.kind);
+    challenge.heresyChallenge.progression = progression;
+    challenge.heresyChallenge.progressionRestored = false;
+    character.heresyEncounterContext = progression;
+    // Save the real progression before entering the challenge's virtual scaling depth.
+    if (!this.autosave()) {
+      character.heresyEncounterContext = null;
+      UI.log('The challenge was not entered because the progression snapshot could not be saved. Please free browser save space and try again.', '#ff9a80');
+      return false;
+    }
     const start = challenge.startPos || [challenge.player?.x || 0, challenge.player?.y || 0];
     this.setWorld(challenge, start, G.world);
     HUD.setArea(challenge.heresyChallenge.kind === 'throne' ? 'The Throne of Damnation' : 'Forbidden Sanctum', `A Heresy challenge · Depth ${challenge.depth}`, challenge.dungeonAffixes || []);
     playMusic('wilds', { delay: 1 }); setAmbience('hell');
     UI.centerMsg(challenge.heresyChallenge.kind === 'throne' ? 'THE THRONE OF DAMNATION' : 'FORBIDDEN SANCTUM', 'Defeat every guardian to claim the sanctum’s treasure.', 3);
     return challenge;
+  },
+
+  restoreHeresyChallengeProgress(world = G.world) {
+    const character = G.char;
+    const challengeState = world?.heresyChallenge;
+    if (challengeState?.progressionRestored) return false;
+    const context = character?.heresyEncounterContext || challengeState?.progression;
+    if (!character || !context) return false;
+    const restored = restoreHeresyProgression(character, context);
+    if (restored && G.char === character) {
+      if (challengeState) challengeState.progressionRestored = true;
+      this.autosave();
+    }
+    return restored;
   },
 
   completeHeresyChallenge(world, origin) {
@@ -2546,8 +2574,9 @@ export const game = {
     if (w && w.breach) return this.breachDeath(src);
     if (w && w.rift) return this.riftDeath(src);
     if (w && (w.unbound || w.unboundExploration)) return this.unboundDeath(src);
+    const { depth } = heresyDeathProgression(c, w);
+    if (w?.heresyChallenge) this.restoreHeresyChallengeProgress(w);
     c.deaths = (c.deaths || 0) + 1;
-    const depth = w && w.kind === 'dungeon' ? w.depth : c.depth;
     // Greed selection and the active endgame affix set persist across death.
     const n = addDefiance(c, depth);
     markNemesis(c, src, depth); // the killer comes back as a unique (game/happenings.js)

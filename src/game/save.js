@@ -11,7 +11,8 @@ import { migrateBar, BAR_SIZE } from '../data/bar.js';
 import { TAB_SLOTS } from '../data/tabs.js';
 import { newMacros, migrateMacros } from '../data/macros.js';
 import { reliquary, acknowledgeReliquaryGoldTransfer, recoverReliquaryGoldTransfer } from './reliquary.js';
-import { refundStorageMarks } from './endgame.js';
+import { refundStorageMarks, campaignVictoryRecorded } from './endgame.js';
+import { isLegacySanctumDepthCorruption, lastVerifiedCampaignClear, suggestedSanctumRecoveryDepth, restoreHeresyProgression } from './heresyprogression.mjs';
 import { stashRaw, listRaw } from './herobackup.js';
 import { jewelBoxMigrationComplete } from './jewelboxstorage.mjs';
 import { setPotionCounts } from './potionpurchase.js';
@@ -29,6 +30,7 @@ const OVERHAUL_BACKUP_KEY = 'velscour_campaign_overhaul_backup_v1';
 const SKILL_POINT_LEVEL_RESET = 'skillPointLevelResetV1';
 const OVERHAUL_EXTRA_KEYS = ['velscour_bard_heard', 'velscour_taunts_v1'];
 const WEAPON_COMPAT_BACKUP_PREFIX = KEY + '_weapon_compat_backup_v1_';
+const SANCTUM_RECOVERY_BACKUP_PREFIX = KEY + '_sanctum_recovery_backup_v1_';
 let overhaulResetChecked = false;
 
 /** Move newly incompatible equipped weapons without changing the saved item object. */
@@ -121,6 +123,52 @@ export function applyCampaignOverhaulReset() {
 export function campaignOverhaulBackup() {
   try { return JSON.parse(localStorage.getItem(OVERHAUL_BACKUP_KEY) || 'null'); } catch (_) { return null; }
 }
+
+/** Snapshot a complete character record before changing progression during a Sanctum recovery. */
+function backupSanctumRecovery(c) {
+  if (!c?.id) return false;
+  const key = SANCTUM_RECOVERY_BACKUP_PREFIX + encodeURIComponent(c.id);
+  try {
+    const prior = JSON.parse(localStorage.getItem(key) || 'null');
+    if (prior?.version === 1 && prior.characterId === c.id && prior.character) return true;
+    const backup = { version: 1, characterId: c.id, characterName: c.name || '', savedAt: Date.now(), character: JSON.parse(JSON.stringify(c)) };
+    localStorage.setItem(key, JSON.stringify(backup));
+    const check = JSON.parse(localStorage.getItem(key) || 'null');
+    return check?.version === 1 && check.characterId === c.id && check.character?.id === c.id;
+  } catch (error) {
+    console.warn('Sanctum progression recovery was not applied because its character backup could not be verified.', error);
+    return false;
+  }
+}
+
+/** A character at the artificial Sanctum depth can be ambiguous if another hero unlocked Endgame. */
+export function sanctumRecoveryReview(character) {
+  if (!isLegacySanctumDepthCorruption(character)) return { available: false };
+  const verifiedClear = lastVerifiedCampaignClear(character);
+  return {
+    available: true,
+    suggestedDepth: verifiedClear > 0 ? suggestedSanctumRecoveryDepth(character) : null,
+    minimumDepth: Math.min(FINAL_DEPTH, verifiedClear + 1),
+    maximumDepth: FINAL_DEPTH,
+    verifiedClear,
+    accountCampaignVictory: campaignVictoryRecorded(),
+  };
+}
+
+/** User-confirmed, character-only repair for ambiguous legacy saves. */
+export function repairSanctumCampaignDepth(character, depth, { removeDepth100Clear = false } = {}) {
+  const review = sanctumRecoveryReview(character);
+  const target = Math.floor(Number(depth));
+  if (!review.available || !Number.isInteger(target) || target < review.minimumDepth || target > review.maximumDepth) return false;
+  if (character.sanctumProgressionRepairV1) return false;
+  if (!backupSanctumRecovery(character)) return false;
+  character.depth = target;
+  character.deepest = review.verifiedClear;
+  if (removeDepth100Clear) delete character.cleared[FINAL_DEPTH];
+  character.sanctumProgressionRepairV1 = 1;
+  return true;
+}
+
 function readAll() {
   let list;
   const raw = localStorage.getItem(KEY);
@@ -240,7 +288,7 @@ export function newCharData(classId, name) {
     tabs: Array(TAB_SLOTS).fill(null), tabAt: 0, // the Bard's Tabs: locked Music Sheets he plays (data/tabs.js)
     gold: 150, potions: { hp: 6, mp: 4, rejuv: 1, fury: 1 },
     depth: 1, deepest: 0, nextBiome: 'catacombs', biomeBag: [], cleared: {}, visitedAct2Town: false, act2AutoTravelDone: false, visitedAct4Town: false, act4AutoTravelDone: false, lastTown: 'act1', dungeonAffixes: [], nextAffixes: [], greedLevel: 0, greed: 0, greedSystemV1: true, greedAffixPreview: null, greedAffixPreviews: {}, greedPortalDestinations: {}, overworldMisses: 0, overworldLastVisit: null, seaOfSandRuns: {}, darkForestRuns: {}, wandererBounties: {}, npcEncounterDepths: {}, treasureImpDepths: [], treasureImpGuaranteedAreas: [], treasureImpRandomAreas: [], treasureImpGuaranteedPending: {}, treasureImpRandomCheckedAreas: [], treasureImpRandomPending: {}, treasureImpTutorialShown: false, townVictoryFireworksPending: false, townVictoryFireworksDone: false, breach: { best: 0, cleared: {} },
-    heresy: { on: [] }, rifts: { open: 1, best: 0, cleared: {}, bestTime: {}, runs: 0, fails: 0, deaths: 0 }, keys: 0, unbound: { wins: 0, best: 0 }, unboundExploration: { depth: 1, deepest: 1, cleared: {} }, sigilDropLevels: [], experienceMarks: { earned: 0, xp: 0 }, infernalMarkReconciliationV1: true, // new heroes use current rules without a retroactive award
+    heresy: { on: [] }, heresyEncounterContext: null, rifts: { open: 1, best: 0, cleared: {}, bestTime: {}, runs: 0, fails: 0, deaths: 0 }, keys: 0, unbound: { wins: 0, best: 0 }, unboundExploration: { depth: 1, deepest: 1, cleared: {} }, sigilDropLevels: [], experienceMarks: { earned: 0, xp: 0 }, infernalMarkReconciliationV1: true, // new heroes use current rules without a retroactive award
     kills: 0, deaths: 0, created: Date.now(), lastPlayed: Date.now(), tips: {}, critterTutorialSeen: false, critterArrowEncounters: 0, wdmg: 1,
   };
   c.equip.weapon = rollItem(1, { slot: 'weapon', base: C.weapon, rarity: 0 });
@@ -470,6 +518,10 @@ export function migrate(c) {
   c.potions = Object.assign({ hp: 0, mp: 0, rejuv: 0, fury: 0 }, c.potions);
   setPotionCounts(c, c.potions);
   c.cleared = c.cleared || {};
+  // If the browser closed mid-challenge, the temporary world is not resumed on reload.
+  // Restore the saved progression context before town entry can infer any campaign clears.
+  if (c.heresyEncounterContext) restoreHeresyProgression(c, c.heresyEncounterContext);
+  c.heresyEncounterContext = null;
   // Existing characters who already reached the Act II milestone should never be auto-teleported
   // by this update. Fresh characters keep the one-time arrival available until their first clear.
   if (typeof c.act2AutoTravelDone !== 'boolean') {
