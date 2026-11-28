@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
-import { actSelectionRows, act2Unlocked, shouldAutoTravelToAct2, act3Unlocked, shouldAutoTravelToAct3, act4Unlocked, shouldAutoTravelToAct4 } from '../../src/game/actselection.js';
+import { actSelectionRows, act2Unlocked, act3Unlocked, act4Unlocked, actFinaleExit, recordActFinaleProgress } from '../../src/game/actselection.js';
 import { G } from '../../src/state.js';
 import { game } from '../../src/game/game.js';
 import { UI } from '../../src/ui/ui.js';
@@ -16,22 +16,26 @@ assert.equal(actSelectionRows({ depth: 1, deepest: 24, cleared: { 25: true } })[
 assert.equal(actSelectionRows({ depth: 30, deepest: 29 })[1].requirement, 'Defeat Ossuarch and complete Depth 25 to unlock Act 2.');
 assert.equal(actSelectionRows({ deepest: 74 })[3].requirement, "Complete the Act III finale at Depth 75 to unlock Tessariel's Keep.");
 assert.equal(act2Unlocked({ depth: 25, deepest: 24 }), false);
-assert.equal(shouldAutoTravelToAct2({ depth: 25, deepest: 24, act2AutoTravelDone: false }, 25, true), true);
-assert.equal(shouldAutoTravelToAct2({ depth: 26, deepest: 25, act2AutoTravelDone: true }, 25, true), false, 'a completed arrival never repeats');
-assert.equal(shouldAutoTravelToAct2({ deepest: 25, act2AutoTravelDone: false }, 25, true), false, 'existing unlocked characters do not get teleported');
-assert.equal(shouldAutoTravelToAct2({ deepest: 24, act2AutoTravelDone: false }, 25, false), false, 'an already cleared depth does not trigger arrival');
 assert.equal(act3Unlocked({ deepest: 49, cleared: {} }), false);
 assert.equal(act3Unlocked({ deepest: 50 }), true);
-assert.equal(shouldAutoTravelToAct3({ deepest: 49, act3AutoTravelDone: false }, 50, true), true);
-assert.equal(shouldAutoTravelToAct3({ deepest: 50, act3AutoTravelDone: false }, 50, true), false, 'existing Act III progression does not teleport');
-assert.equal(shouldAutoTravelToAct3({ deepest: 49, act3AutoTravelDone: true }, 50, true), false, 'the one-time town arrival cannot repeat');
 assert.equal(act4Unlocked({ depth: 76, deepest: 74 }), false, 'display depth alone does not bypass the unlock milestone');
 assert.equal(act4Unlocked({ deepest: 75 }), true);
 assert.equal(act4Unlocked({ cleared: { 75: true } }), true);
-assert.equal(shouldAutoTravelToAct4({ deepest: 74, act4AutoTravelDone: false }, 75, true), true);
-assert.equal(shouldAutoTravelToAct4({ deepest: 75, act4AutoTravelDone: false }, 75, true), false, 'legacy Act IV progress never causes a surprise teleport');
-assert.equal(shouldAutoTravelToAct4({ deepest: 74, act4AutoTravelDone: true }, 75, true), false, 'the one-time arrival flag prevents repeats');
-assert.equal(shouldAutoTravelToAct4({ deepest: 74, act4AutoTravelDone: false }, 75, false), false, 'reclears do not trigger first arrival');
+
+for (const [depth, nextDepth, town] of [[25, 26, 'act2'], [50, 51, 'act3'], [75, 76, 'act4'], [100, 101, 'post-campaign']]) {
+  const before = { depth, deepest: depth - 1, lastTown: 'act1', cleared: {} };
+  assert.deepEqual(actFinaleExit(depth), { depth: nextDepth, town, townName: actFinaleExit(depth).townName });
+  const destination = recordActFinaleProgress(before, depth);
+  assert.equal(destination.town, town);
+  assert.equal(before.depth, nextDepth, `Depth ${depth} progression is recorded without leaving the active level`);
+  assert.equal(before.deepest, depth);
+  assert.equal(before.cleared[depth], true);
+  assert.equal(before.lastTown, 'act1', 'recording a finale does not change the character location');
+  recordActFinaleProgress(before, depth);
+  assert.equal(before.depth, nextDepth, 'repeated completion does not advance beyond the next campaign depth');
+}
+for (const depth of [24, 26, 49, 51, 74, 76, 99, 101]) assert.equal(actFinaleExit(depth), null, `${depth} is not an Act finale`);
+assert.equal(recordActFinaleProgress({}, 24), null, 'non-finale progression is unchanged');
 
 const fresh = newCharData('paladin', 'Fresh');
 migrate(fresh);
@@ -65,8 +69,14 @@ assert.match(gameSource, /if \(t\.breach\) world\.portals\.push\(\{[\s\S]*?x: t\
 assert.equal((gameSource.match(/keepGate: true/g) || []).length, 0, 'no Act portal is redirected to the green Keep gate renderer');
 assert.match(gameSource, /async enterTessarielKeep\(\)[\s\S]*?buildTessarielKeep\(this/,
   'Act IV builds the new town through the game entry flow');
-assert.match(gameSource, /autoTravelToAct4 = shouldAutoTravelToAct4\(c, depth, first\)[\s\S]*?if \(autoTravelToAct4\) c\.act4AutoTravelDone = true[\s\S]*?void this\.enterTessarielKeep\(\)/,
-  'the Depth 75 auto-arrival is claimed once before transition');
+const bossHandler = gameSource.match(/world\.onBossKilled = \(m\) => \{([\s\S]*?)\n    \};/);
+assert.ok(bossHandler, 'campaign boss completion handler exists');
+assert.doesNotMatch(bossHandler[1], /void this\.enterAct2Town\(|void this\.enterAct3Town\(|void this\.enterTessarielKeep\(|setTimeout\(\(\) => victoryScreen/,
+  'defeating an Act finale never forces a town transition or victory-screen transition');
+assert.match(bossHandler[1], /recordActFinaleProgress\(c, depth\)/, 'finale progression is recorded while the dungeon stays loaded');
+assert.match(bossHandler[1], /if \(m\.isVelscour && !world\.practice && depth === FINAL_DEPTH\)/, 'only the true Depth 100 Velscour encounter unlocks endgame');
+assert.match(gameSource, /const canUseExit = !!exit\?\.active;[\s\S]*?const actFinale = actFinaleExit\(world\.depth\);[\s\S]*?if \(actFinale && world\.depth < FINAL_DEPTH[\s\S]*?void this\.enterAct2Town\(\)[\s\S]*?void this\.enterAct3Town\(\)[\s\S]*?void this\.enterTessarielKeep\(\)/,
+  'Depths 25, 50 and 75 transition only through their active exit portal');
 assert.match(gameSource, /openVendor: \(id\) => Vendor\.open\(id\)[\s\S]*?openStash: \(\) => Stash\.open\(\)[\s\S]*?openReliquary: \(\) => G\.ui\.reliquary\.open\(\)[\s\S]*?openJewelBox: \(\) => JewelBox\.open\(\)/,
   'Keep merchants and storage use fork-native interfaces');
 assert.match(keepGameSource, /use: \(\) => game\.confirmDungeon\(\)/, 'Keep depth gate uses the existing portal-to-depths flow');
@@ -131,6 +141,24 @@ try {
   assert.match(dialogSpec.html, /ACT 4[\s\S]*?Velscour&#39;s Throne[\s\S]*?Tessariel&#39;s Keep/);
   buttons[3].click();
   assert.deepEqual(clicked, ['closed', 'act4-town'], 'Act IV travel routes to Tessariel’s Keep');
+  // Exercise the real active-exit dispatch for each Act finale.
+  clicked = [];
+  for (const [depth, expected] of [[25, 'act2-town'], [50, 'act3-town'], [75, 'act4-town']]) {
+    game.useExit({ depth }, { active: true });
+    assert.deepEqual(clicked, [expected], `Depth ${depth} exit routes to its Act town only after use`);
+    clicked = [];
+  }
+
+  // Depth 100 retains the explicit Return to Town choice.
+  G.char = { depth: 101, deepest: 100, cleared: { 100: true }, lastTown: 'act4' };
+  let finaleDialog;
+  UI.dialog = (spec) => { finaleDialog = spec; return {}; };
+  game.enterTown = () => clicked.push('post-campaign-town');
+  game.useExit({ depth: 100, boss: { isVelscour: true } }, { active: true });
+  assert.equal(finaleDialog.title, 'Demon Lord Velscour Defeated');
+  assert.deepEqual(clicked, [], 'Depth 100 does not transition until the player chooses Return to Town');
+  finaleDialog.buttons[0].fn();
+  assert.deepEqual(clicked, ['post-campaign-town']);
 } finally {
   UI.dialog = oldDialog;
   game.enterTown = oldTown;

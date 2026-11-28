@@ -44,7 +44,7 @@ import { hearthTick, useHearth, hearthPortalActive, closeHearthPortals, getActiv
 import { generateTown, makeTownTiles, rollTownWeather } from '../world/town.js';
 import { generateBellmourn } from '../world/bellmourn.js';
 import { generateAct2Town, makeAct2TownTiles, ACT2_TOWN_NAME } from '../world/act2town.js';
-import { actSelectionRows, shouldAutoTravelToAct2, act3Unlocked, shouldAutoTravelToAct3, act4Unlocked, shouldAutoTravelToAct4 } from './actselection.js';
+import { actSelectionRows, actFinaleExit, recordActFinaleProgress, act3Unlocked, act4Unlocked } from './actselection.js';
 import { buildTessarielKeep } from './tessarielskeep.js';
 import { warmKeepHeroes } from './keepfolk.js';
 import { releaseKeepArt } from '../gfx/keepart.js';
@@ -193,7 +193,7 @@ import { setupVelscour } from './velscour.js';
 import { canReceiveMovementAffix, shouldSpawnTwinGuardian } from './targeted-guards.js';
 import { loadVelscourThrone } from '../gfx/velscourthrone.js';
 import { offerCommissions, setupCommissions, commissionClear, wantedBiomes, LINE_BY_ID, commState } from './commissions.js';
-import { titleScreen, hide as hideScreen, deathScreen, victoryScreen, pauseMenu, helpDialog } from '../ui/screens.js';
+import { titleScreen, hide as hideScreen, deathScreen, pauseMenu, helpDialog } from '../ui/screens.js';
 import { LoadingScreen } from '../ui/loading.js';
 // the Endgame (docs/ENDGAME.md): Heresies, Abyssal Rifts, Velscour Unbound, Infernal Marks
 import { endgameUnlocked, campaignVictoryRecorded, unlockEndgame, endgame, canEarnInfernalMarks } from './endgame.js';
@@ -646,6 +646,7 @@ export const game = {
     const c = G.char;
     if (c) {
       c.visitedAct2Town = true;
+      c.act2AutoTravelDone = true;
       c.lastTown = 'act2';
       const highest = Math.max(c.depth || 1, this.maxPortalFloor(c));
       c.depth = Math.max(c.depth || 1, highest);
@@ -752,7 +753,7 @@ export const game = {
     const c = G.char;
     if (!c || !act3Unlocked(c)) return false;
     const old = G.world;
-    c.visitedAct3Town = true; c.lastTown = 'act3';
+    c.visitedAct3Town = true; c.act3AutoTravelDone = true; c.lastTown = 'act3';
     const highest = Math.max(c.depth || 1, this.maxPortalFloor(c));
     c.depth = Math.max(c.depth || 1, highest);
     if (highest > 1) { c.cleared[highest - 1] = true; c.deepest = Math.max(c.deepest || 0, highest - 1); }
@@ -1975,7 +1976,9 @@ export const game = {
       // Region runs (including Phobos and Castle Velscour) own their
       // progression callback. Invoke it for any run that implements it.
       world.overworldScenario?.bossDefeated?.(m);
-      exit.active = true; exit.color = '#40a0ff'; exit.label = world.unbound ? 'Exit — to town' : 'Exit — continue';
+      const finaleExit = !world.unbound && !world.practice && actFinaleExit(depth);
+      exit.active = true; exit.color = '#40a0ff';
+      exit.label = world.unbound ? 'Exit - to town' : finaleExit ? `Exit - to ${finaleExit.townName}` : 'Exit - continue';
       if (world.unbound) { // the rematch: no depth cleared, no victory screen; its hoard is Velscour's (game/velscour.js)
         c.unbound.wins = (c.unbound.wins || 0) + 1;
         UI.centerMsg('VELSCOUR UNBOUND HAS FALLEN', `${c.unbound.wins} time${c.unbound.wins > 1 ? 's' : ''} · the exit is open`, 4);
@@ -1983,17 +1986,11 @@ export const game = {
         return;
       }
       const first = !c.cleared[depth];
-      const autoTravelToAct2 = shouldAutoTravelToAct2(c, depth, first);
-      const autoTravelToAct3 = shouldAutoTravelToAct3(c, depth, first);
-      const autoTravelToAct4 = shouldAutoTravelToAct4(c, depth, first);
       if (m.isVelscour && !world.practice && !c.townVictoryFireworksDone && !c.townVictoryFireworksPending) {
         c.townVictoryFireworksPending = true;
       }
       c.cleared[depth] = true;
       c.deepest = Math.max(c.deepest || 0, depth);
-      if (autoTravelToAct2) c.act2AutoTravelDone = true;
-      if (autoTravelToAct3) c.act3AutoTravelDone = true;
-      if (autoTravelToAct4) c.act4AutoTravelDone = true;
       this.brokeThrough(depth);
       if (first) {
         this.awardFloorClear(depth);
@@ -2004,38 +2001,21 @@ export const game = {
       addEffect(new Ring(exit.x, exit.y, 0.2, 3, 1, '#40a0ff', 5));
       sfx('gate');
       UI.refresh();
-      this.autosave();
-      if (autoTravelToAct2) {
-        UI.log('<b style="color:#ffd860">Act 2 is now available.</b> Your journey continues in Sunscorch Oasis.', '#ffd860');
-        sfx('portal');
-        void this.enterAct2Town();
-        return;
-      }
-      if (autoTravelToAct3) {
-        c.lastTown = 'act3';
-        UI.log('<b style="color:#c0d0ff">Act III is now available.</b> The bells of Bellmourn ring beneath the Frozen Peaks.', '#d0dcff');
-        sfx('portal');
-        void this.enterAct3Town();
-        return;
-      }
-      if (autoTravelToAct4) {
-        c.depth = Math.max(76, Number(c.depth) || 1);
-        c.lastTown = 'act4';
-        UI.log('<b style="color:#c8f060">Act IV is now available.</b> Your path leads to Tessariel’s Keep.', '#c8f060');
-        sfx('portal');
-        void this.enterTessarielKeep();
-        return;
-      }
-      if (m.isVelscour && !world.practice) {
-        // Defeating Velscour is the sole campaign clear and opens all existing endgame activities.
-        if (unlockEndgame()) UI.log('<b style="color:#20e0ff">The Endgame opens.</b> The Altar of Heresy and Abyssal Rifts in the Portal to the Depths answer to every hero now.', '#a0f0ff');
-        c.depth = FINAL_DEPTH + 1;
-        c.deepest = Math.max(c.deepest || 0, FINAL_DEPTH);
+      if (finaleExit && (depth < FINAL_DEPTH || m.isVelscour)) {
+        // Progression is recorded now so a save/reload cannot respawn the finale,
+        // while the active level stays loaded until the player uses its exit.
+        recordActFinaleProgress(c, depth);
         c.nextBiome = drawBiome(c, c.depth);
         c.dungeonAffixes = []; c.nextAffixes = [];
-        this.autosave();
-        setTimeout(() => victoryScreen(() => this.enterTown()), 3200);
+        if (depth === 25) UI.log('<b style="color:#ffd860">Act II is now available.</b> The exit leads to Sunscorch Oasis.', '#ffd860');
+        else if (depth === 50) UI.log('<b style="color:#c0d0ff">Act III is now available.</b> The exit leads to Bellmourn.', '#d0dcff');
+        else if (depth === 75) UI.log("<b style=\"color:#c8f060\">Act IV is now available.</b> The exit leads to Tessariel's Keep.", '#c8f060');
       }
+      if (m.isVelscour && !world.practice && depth === FINAL_DEPTH) {
+        // Defeating Velscour is the sole campaign clear and opens all existing endgame activities.
+        if (unlockEndgame()) UI.log('<b style="color:#20e0ff">The Endgame opens.</b> The Altar of Heresy and Abyssal Rifts in the Portal to the Depths answer to every hero now.', '#a0f0ff');
+      }
+      this.autosave();
     };
     if (sky) {   // the Sky Battle (game/skybattle.js): one of eight weathers or thirty stories, never the last one twice
       world.overworldScenario = createSkyBattle(world, gen, biome, depth, { variant: c.skyVariant, last: c.lastSkyVariant, seen: c.skySeen || {} }, () => {
@@ -2444,6 +2424,14 @@ export const game = {
     }
     const canUseExit = !!exit?.active;
     if (!canUseExit) { floatText(exit?.x || 0, exit?.y || 0, 70, world.breach ? 'Sealed - the Breach Heart still beats!' : world.rift ? 'Sealed - the Guardian still stands!' : world.biome?.id === 'dark_forest' ? 'Sealed - defeat the Forest Guardian!' : world.biome?.id === 'castle' ? 'Sealed - defeat the Castle Guardian!' : world.biome?.id === 'overworld' ? 'Sealed - defeat the Forsaken Guardian!' : world.overworldScenario ? 'Sealed - complete the shrine trial!' : 'Sealed - slay the guardian!', '#ff6040', 13, { life: 1.6 }); sfx('error'); return; }
+    const actFinale = actFinaleExit(world.depth);
+    if (actFinale && world.depth < FINAL_DEPTH && !world.unbound && !world.practice) {
+      sfx('portal');
+      if (world.depth === 25) void this.enterAct2Town();
+      else if (world.depth === 50) void this.enterAct3Town();
+      else if (world.depth === 75) void this.enterTessarielKeep();
+      return;
+    }
     if (world.breach) this.breachExit(world);
     else if (world.unboundExploration && world.unboundExploration.floor < MAX_UNBOUND_DEPTH) this.unboundExit(world);
     else if (world.unbound || world.depth === FINAL_DEPTH || world.boss?.isVelscour || world.biome?.id === 'throne') {

@@ -12,18 +12,9 @@ export function act2Unlocked(character) {
   return Number(character?.deepest || 0) >= 25 || !!character?.cleared?.[25] || !!character?.visitedAct2Town;
 }
 
-/** A fresh character is sent to Act II exactly once, on its first Depth 25 clear. */
-export function shouldAutoTravelToAct2(character, depth, firstClear) {
-  return Number(depth) === 25 && !!firstClear && !character?.act2AutoTravelDone && !act2Unlocked(character);
-}
-
 /** Act III opens when the Scorpion King is defeated; old saves inherit access from recorded progression. */
 export function act3Unlocked(character) {
   return Number(character?.deepest || 0) >= 50 || !!character?.cleared?.[50] || !!character?.visitedAct3Town || act4Unlocked(character);
-}
-
-export function shouldAutoTravelToAct3(character, depth, firstClear) {
-  return Number(depth) === 50 && !!firstClear && !character?.act3AutoTravelDone && !act3Unlocked(character);
 }
 
 /** Act IV opens after the Act III finale at Depth 75; old endgame saves are already unlocked. */
@@ -31,9 +22,25 @@ export function act4Unlocked(character) {
   return Number(character?.deepest || 0) >= 75 || !!character?.cleared?.[75] || !!character?.visitedAct4Town;
 }
 
-/** Send a newly progressing character to the Keep once, immediately after their first Depth 75 clear. */
-export function shouldAutoTravelToAct4(character, depth, firstClear) {
-  return Number(depth) === 75 && !!firstClear && !character?.act4AutoTravelDone && !act4Unlocked(character);
+const ACT_FINALE_EXITS = Object.freeze({
+  25: Object.freeze({ depth: 26, town: 'act2', townName: ACT_TOWN_NAMES[2] }),
+  50: Object.freeze({ depth: 51, town: 'act3', townName: ACT_TOWN_NAMES[3] }),
+  75: Object.freeze({ depth: 76, town: 'act4', townName: ACT_TOWN_NAMES[4] }),
+  100: Object.freeze({ depth: 101, town: 'post-campaign', townName: 'the post-campaign town' }),
+});
+
+/** An Act finale's exit destination; movement into that destination is always player-initiated. */
+export function actFinaleExit(depth) { return ACT_FINALE_EXITS[Number(depth)] || null; }
+
+/** Persist cleared campaign progression without changing the active world or town location. */
+export function recordActFinaleProgress(character, depth) {
+  const destination = actFinaleExit(depth);
+  if (!character || !destination) return null;
+  character.cleared ||= {};
+  character.cleared[Number(depth)] = true;
+  character.deepest = Math.max(Number(character.deepest) || 0, Number(depth));
+  character.depth = Math.max(Number(character.depth) || 1, destination.depth);
+  return destination;
 }
 
 export function actSelectionRows(character) {
