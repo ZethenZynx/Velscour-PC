@@ -22,7 +22,7 @@ import { preloadBarFx } from '../gfx/artfx.js';
 import { SKILLS } from '../data/skills.js';
 import { setClassItems, setRingContext } from '../data/items.js';
 import { BREACH_BIOME, BREACH_WALLS } from '../data/biomes.js';
-import { BIOMES, BETA_BIOMES, BIOME_BY_ID, TOWN_BIOME, ACT2_TOWN_BIOME, drawBiome, biomeChoices, biomesForDepth, takeBiome, mixPartner, recordBiomeVisit, campaignActForBiome, chooseCampaignVariant, eligibleCampaignVariants } from '../data/biomes.js';
+import { BIOMES, BETA_BIOMES, BIOME_BY_ID, TOWN_BIOME, ACT2_TOWN_BIOME, ACT3_TOWN_BIOME, drawBiome, biomeChoices, biomesForDepth, takeBiome, mixPartner, recordBiomeVisit, campaignActForBiome, chooseCampaignVariant, eligibleCampaignVariants } from '../data/biomes.js';
 import { ARCH } from '../data/enemies.js';
 import { resolveLevelCheatName } from './velscourcheats.js';
 import { CLASSES } from '../data/classes.js';
@@ -41,8 +41,9 @@ import { spectateTick } from './spectate.js';
 import { toggleSmite, getUltimate, executeUltimate } from './smite.js';
 import { hearthTick, useHearth, hearthPortalActive, closeHearthPortals, getActiveHearth, returnFromHearth } from './hearth.js';
 import { generateTown, makeTownTiles, rollTownWeather } from '../world/town.js';
+import { generateBellmourn } from '../world/bellmourn.js';
 import { generateAct2Town, makeAct2TownTiles, ACT2_TOWN_NAME } from '../world/act2town.js';
-import { actSelectionRows, shouldAutoTravelToAct2, act4Unlocked, shouldAutoTravelToAct4 } from './actselection.js';
+import { actSelectionRows, shouldAutoTravelToAct2, act3Unlocked, shouldAutoTravelToAct3, act4Unlocked, shouldAutoTravelToAct4 } from './actselection.js';
 import { buildTessarielKeep } from './tessarielskeep.js';
 import { warmKeepHeroes } from './keepfolk.js';
 import { releaseKeepArt } from '../gfx/keepart.js';
@@ -68,6 +69,7 @@ import { loadTower3D, tower3dReady } from '../gfx/tower3d.js';
 import { generateCaverns, CAVE_VARIANTS } from '../world/caverns.js';
 import { createCaveRun, useCaverns } from './caverns.js';
 import { loadCave3D, cave3dReady } from '../gfx/cave3d.js';
+import { useSpires } from '../gfx/spires3d.js';
 import { generateDunes } from '../world/dunes.js';
 import { createDuneRun, useDunes } from './dunes.js';
 import { loadDunes3D, dunes3dReady } from '../gfx/dunes3d.js';
@@ -165,6 +167,8 @@ import { clearRims } from './creature.js';
 import { applyTrait, rollTrait, ambushTick, madnessTick, unleashMadness, enter } from './mayhem.js';
 import { hit, kill } from './combat.js';
 import { makeRaidBoss, RAID_BOSSES } from './raid.js';
+import { ART_BY_ID } from '../data/bestiary.js';
+import { applyBossMechanics } from './phobosbosses.js';
 import { dropChest, GroundItem } from './loot.js';
 import { initializeCharacterLootFilters } from './lootfilter.js';
 import { renderWorld, drawMinimap, preloadTownSheets, releaseTownSheets, propReach } from './render.js';
@@ -239,6 +243,7 @@ const VELSCOUR_TAUNTS = VELSCOUR_TAUNT_STARTS.flatMap((start) => VELSCOUR_TAUNT_
 
 let townCache = null, townTiles = null;
 let act2TownCache = null, act2TownTiles = null;
+let act3TownCache = null;
 let saveT = 0;
 let automapCanvas = null;
 
@@ -512,6 +517,7 @@ export const game = {
     Cine.abort(); // a cut scene belongs to the world it played in
     useTerrain(world.map); // a height map lifts the ground plane (gfx/terrain.js); flat maps clear it
     useTower(world); // the Serpentine Tower lays the grid onto its spiral stair (game/tower.js)
+    useSpires(world); // Broken Spires releases its floor scene on area exit, retaining shared textures and renderer
     useCaverns(world); // the Depth's Edge Caverns lift everything onto their smooth height field (game/caverns.js)
     useDunes(world); // so do the Sea of Sand's dunes and pyramids (game/dunes.js)
     useAlpine(world); // and the mountains: the Mountainside and the Snowy Summit (game/alpine.js)
@@ -533,6 +539,10 @@ export const game = {
   enterTown() {
     if (G.char?.lastTown === 'act4' && act4Unlocked(G.char)) {
       void this.enterTessarielKeep();
+      return;
+    }
+    if (G.char?.lastTown === 'act3' && act3Unlocked(G.char)) {
+      void this.enterAct3Town();
       return;
     }
     if (G.char?.lastTown === 'act2' && G.char?.visitedAct2Town) {
@@ -735,6 +745,63 @@ export const game = {
     UI.log('You step into <b style="color:#f3c778">Sunscorch Oasis</b>, haven of the Scorched Wastes!', '#ffe080');
   },
 
+  async enterAct3Town(fromCheat = false) {
+    const c = G.char;
+    if (!c || !act3Unlocked(c)) return false;
+    const old = G.world;
+    c.visitedAct3Town = true; c.lastTown = 'act3';
+    const highest = Math.max(c.depth || 1, this.maxPortalFloor(c));
+    c.depth = Math.max(c.depth || 1, highest);
+    if (highest > 1) { c.cleared[highest - 1] = true; c.deepest = Math.max(c.deepest || 0, highest - 1); }
+    if (fromCheat || !c.act3TownSeed) c.act3TownSeed = fromCheat ? Math.floor(Math.random() * 1e9) + 1 : 2301114;
+    this.autosave();
+    await loadBiomeArt(ACT3_TOWN_BIOME);
+    const tileset = biomeTileSet(ACT3_TOWN_BIOME);
+    keepTileSets(null);
+    if (!act3TownCache || act3TownCache.seed !== c.act3TownSeed) act3TownCache = generateBellmourn(tileset, c.act3TownSeed);
+    const t = act3TownCache; t.map.clearSeen();
+    const world = new World('town', { map: t.map, tileset, biome: ACT3_TOWN_BIOME, depth: 0, townTiles: null,
+      townId: 'bellmourn', buildings: t.buildings, props: t.props, wallHangings: t.wallHangings });
+    world.bellmourn = true; world.raining = false; world.ambientFx = { type: 'snow', color: '#e8f0ff' };
+    world.npcs = t.npcs.filter((n) => !n.malakor || campaignVictoryRecorded()).map((n) => n.malakor
+      ? { ...n, reach: 1.8, talkText: '', talkT: 0, talkAge: 0, lastRiddleIndex: -1 }
+      : { vendor: n.vendor, x: n.x, y: n.y, reach: 1.8, flip: n.flip, aura: n.aura, auraCol: n.auraCol, use: () => Vendor.open(n.vendor.id) });
+    const freeNear = (x, y, radius = 2.5, avoid = []) => {
+      const p = t.map.randomNear(x, y, radius) || [x, y];
+      if (t.map.walkable(...p) && avoid.every((q) => dist(p[0], p[1], q[0], q[1]) > 1.25)) return p;
+      for (let r = 1; r <= 5; r++) for (let dy = -r; dy <= r; dy++) for (let dx = -r; dx <= r; dx++) {
+        const q = [Math.floor(x) + dx + 0.5, Math.floor(y) + dy + 0.5];
+        if (t.map.walkable(...q) && avoid.every((v) => dist(q[0], q[1], v[0], v[1]) > 1.25)) return q;
+      }
+      return p;
+    };
+    const [sx, sy] = t.start;
+    const [x, y] = freeNear(sx + 1.5, sy - 0.5);
+    world.npcs.push({ stash: true, name: 'Storage Chest', x, y, reach: 1.6, flip: false, use: () => Stash.open() });
+    const [rx, ry] = freeNear(sx - 1.5, sy - 0.5, 2.5, [[x, y]]);
+    world.npcs.push({ stash: true, reliquary: true, name: 'The Reliquary', x: rx, y: ry, reach: 1.6, flip: false, use: () => G.ui.reliquary.open() });
+    const [jx, jy] = freeNear(sx, sy - 1.6, 2.5, [[x, y], [rx, ry]]);
+    world.npcs.push({ stash: true, jewelBox: true, name: 'Jewel Box', x: jx, y: jy, reach: 1.6, flip: false, use: () => JewelBox.open() });
+    if (t.altar && campaignVictoryRecorded()) world.npcs.push({ altar: true, name: 'Altar of Heresy', x: t.altar.x, y: t.altar.y, reach: 1.7, flip: false, use: () => Heresies.open() });
+    const guard = TOWNSFOLK.find((q) => q.role === 'guard') || TOWNSFOLK[0];
+    const [wx, wy] = freeNear(t.center.x - 3, t.center.y + 2, 3, [[x, y], [rx, ry], [jx, jy]]);
+    world.npcs.push({ name: 'The Bell-Warden', townsfolkSpriteId: guard.spriteId, frameCount: guard.frame.count, x: wx, y: wy,
+      reach: 1.8, flip: false, calm: true, use: () => UI.dialog({ title: 'The Bell-Warden of Bellmourn', html: '<p>The bells mark the road through the Frozen Peaks. The Scorpion King is fallen; the summit road is open.</p><p class="dim">The Act portal carries you between every unlocked town.</p>', buttons: [{ label: 'Farewell' }] }) });
+    const life = startTownLife(world, t, c, (c.townVisitCount = (c.townVisitCount || 0) + 1));
+    void preloadTownSheets(life.agents.map((a) => a.townsfolkSpriteId));
+    world.portals = [
+      { x: t.portal.x, y: t.portal.y, active: true, color: '#ff5020', reach: 1.8,
+        get label() { return `Portal - Depth ${Math.max(1, G.char?.depth || 1, G.game?.maxPortalFloor?.(G.char) || 1)}`; }, use: () => this.confirmDungeon() },
+      { x: t.breach.x, y: t.breach.y, active: true, color: '#3a8aff', reach: 2, label: 'Portal to the Acts', use: () => this.openActSelection() },
+    ];
+    this.setWorld(world, t.start, old); void warmLevelArt(world);
+    HUD.setArea('Bellmourn', 'Act III Town - under the bells'); playMusic(locationMusicKind(world)); setAmbience('town');
+    Vendor.restock(); beginVictoryTownCelebration(world, c);
+    G.player.hp = G.player.maxHp; G.player.mana = G.player.maxMana;
+    this.autosave(); UI.log('You arrive in <b style="color:#c0d0ff">Bellmourn</b>, town beneath the Frozen Peaks.', '#d0dcff');
+    return true;
+  },
+
   async enterTessarielKeep() {
     const c = G.char;
     if (!c || !act4Unlocked(c) || this._enteringTessarielKeep) return false;
@@ -847,6 +914,7 @@ export const game = {
         dialog.close();
         sfx('portal');
         if (act.act === 2) this.enterAct2Town();
+        else if (act.act === 3) this.enterAct3Town();
         else if (act.act === 4) this.enterTessarielKeep();
         else {
           c.lastTown = 'act1';
@@ -1595,7 +1663,7 @@ export const game = {
     const forest = biome.id === 'dark_forest';
     const castle = biome.id === 'castle';
     const forsakenWilds = biome.id === 'overworld';
-    const tileset = forest ? biomeTileSet(biome) : biome.overworld ? biomeTileSet(TOWN_BIOME) : mix ? mixedTileSet(biome, mix, Math.random() < 0.5) : biomeTileSet(biome);
+    let tileset = forest ? biomeTileSet(biome) : biome.overworld ? biomeTileSet(TOWN_BIOME) : mix ? mixedTileSet(biome, mix, Math.random() < 0.5) : biomeTileSet(biome);
     keepTileSets(tileset);
     c.seaOfSandRuns ||= {}; c.darkForestRuns ||= {};
     // the two overworlds that save their progress per depth rebuild the same map after a town trip
@@ -1696,6 +1764,9 @@ export const game = {
     if (!accessibilityError) break;
     }
     if (!gen || accessibilityError) throw new Error(`${biome.name} could not generate a walk-accessible layout after 5 attempts: ${accessibilityError?.message || 'unknown failure'}`);
+    // Castle Velscour's floor atlas is environment-specific and starts above the
+    // ordinary biome floor range. Keep it local to this world, never in the shared cache.
+    if (Array.isArray(gen.castleFloorEntries)) tileset = { ...tileset, floors: gen.castleFloorEntries };
     const acceptedSeed = gen.seed ?? generationSeed;
     // Treasure Hunter is a deterministic extra procedural chest roll: rebuilding a kept
     // area with the same seed reproduces the same result rather than rerolling a free chest.
@@ -1828,8 +1899,9 @@ export const game = {
       if (s.heresySkip) continue;
       if (s.rank === 'raid') {
         const superbossId = superbossForDepth(depth);
-        const tpl = superbossId ? RAID_BOSSES.find((b) => b.id === superbossId) : undefined;
+        const tpl = s.castleVelscourBoss ? gen.castleRaidTemplate : superbossId ? RAID_BOSSES.find((b) => b.id === superbossId) : undefined;
         const m = makeRaidBoss(world, gen.raid, depth, lvl + 3, { tpl });
+        if (s.name && !s.castleVelscourBoss) m.name = s.name;
         world.add(m);
         world.boss = m;
         world.raid = m.raid;
@@ -1838,6 +1910,8 @@ export const game = {
       if (s.rank === 'boss') {
         const m = makeMonster(world, s.arch, biome, lvl + 2, 'boss', s.x, s.y, 0, s.look);
         if (s.name) m.name = s.name;
+        if (s.phobosWardLord) applyBossMechanics(m, ART_BY_ID[s.look?.art] || null, 'ward');
+        else if (s.castleVelscourBoss) applyBossMechanics(m, ART_BY_ID[s.look?.art] || null, 'lord');
         world.add(m);
         world.boss = m;
         if (m.isVelscour) setupVelscour(world, m, gen); // his five-phase last stand (game/velscour.js)
@@ -1895,7 +1969,9 @@ export const game = {
       if (world.dungeonAffixes.includes('twin_guardians') && world.creatures.some((enemy) => enemy.team === 'enemy' && enemy.rank === 'boss' && !enemy.dead)) return;
       if (m.raid && m.raid.court) return; // one of Velscour Unbound's court: not the fight's end
       this.awardHeresyBounty(world, m);
-      if (forest || castle) world.overworldScenario?.bossDefeated(m);
+      // Region runs (including Phobos and Castle Velscour) own their
+      // progression callback. Invoke it for any run that implements it.
+      world.overworldScenario?.bossDefeated?.(m);
       exit.active = true; exit.color = '#40a0ff'; exit.label = world.unbound ? 'Exit — to town' : 'Exit — continue';
       if (world.unbound) { // the rematch: no depth cleared, no victory screen; its hoard is Velscour's (game/velscour.js)
         c.unbound.wins = (c.unbound.wins || 0) + 1;
@@ -1905,6 +1981,7 @@ export const game = {
       }
       const first = !c.cleared[depth];
       const autoTravelToAct2 = shouldAutoTravelToAct2(c, depth, first);
+      const autoTravelToAct3 = shouldAutoTravelToAct3(c, depth, first);
       const autoTravelToAct4 = shouldAutoTravelToAct4(c, depth, first);
       if (m.isVelscour && !world.practice && !c.townVictoryFireworksDone && !c.townVictoryFireworksPending) {
         c.townVictoryFireworksPending = true;
@@ -1912,6 +1989,7 @@ export const game = {
       c.cleared[depth] = true;
       c.deepest = Math.max(c.deepest || 0, depth);
       if (autoTravelToAct2) c.act2AutoTravelDone = true;
+      if (autoTravelToAct3) c.act3AutoTravelDone = true;
       if (autoTravelToAct4) c.act4AutoTravelDone = true;
       this.brokeThrough(depth);
       if (first) {
@@ -1928,6 +2006,13 @@ export const game = {
         UI.log('<b style="color:#ffd860">Act 2 is now available.</b> Your journey continues in Sunscorch Oasis.', '#ffd860');
         sfx('portal');
         void this.enterAct2Town();
+        return;
+      }
+      if (autoTravelToAct3) {
+        c.lastTown = 'act3';
+        UI.log('<b style="color:#c0d0ff">Act III is now available.</b> The bells of Bellmourn ring beneath the Frozen Peaks.', '#d0dcff');
+        sfx('portal');
+        void this.enterAct3Town();
         return;
       }
       if (autoTravelToAct4) {

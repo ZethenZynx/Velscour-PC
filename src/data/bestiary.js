@@ -5,6 +5,8 @@ import { SET3 } from './bestiary3.js';
 import { BREACH_ART } from './breach.js';
 import { AIR_ART } from './airpirates.js';
 import { DEPTHS_EDGE } from './depthsedge.js';
+import { CASTLE_KIN } from './castlekin.js';
+import { PHOBOS_ART } from './phobos.js';
 // Monster art catalogue: every monster cut from the sheets in assets/source/enemies/<set>/ (see docs/ENEMY_ART.md).
 // Each entry is one cell of a sheet (i = reading order, left to right then top to bottom) and says which AI
 // archetype it plays (ARCH in enemies.js). `also` lists other archetypes it can stand in for, `h` is its height
@@ -479,6 +481,8 @@ BESTIARY.push(
   ...BREACH_ART,
   ...AIR_ART,
   ...DEPTHS_EDGE, // the Depth's Edge Caverns' own creatures (data/depthsedge.js): never in another level's looks
+  ...CASTLE_KIN,
+  ...PHOBOS_ART.filter((a) => !['gray', 'good'].includes(a.cat)),
 );
 
 // Player minions: the Necromancer's skeletons (assets/source/enemies/minions/). Never rolled as monsters; summon
@@ -541,14 +545,24 @@ export const MIMIC_ART = { id: 'chest_mimic', sheet: 'special/mimic', i: 0, arch
 export const ART_BY_ID = Object.fromEntries([...BESTIARY, ...SUMMON_ART, ...FAMILIAR_ART, ...REPLACEMENT_ART, MIMIC_ART].map((a) => [a.id, a]));
 
 const compat = (a, arch) => a.arch === arch || (a.also && a.also.includes(arch));
+const regularArtPools = new Map(), guardianArtPools = new Map();
 /** Painted art that can play an AI archetype in a pack: every sheet, any biome (the Sea of Sand's own archetypes
  * keep their own creatures). Giants (`lone`) only play guardians and raid bosses. */
 export function artPool(arch) {
-  if (BESTIARY.some((a) => a.seaOfSand && a.arch === arch)) return BESTIARY.filter((a) => !a.chestOnly && a.seaOfSand && a.arch === arch);
-  return BESTIARY.filter((a) => !a.chestOnly && !a.lone && !a.seaOfSand && !a.sandKin && !a.breach && !a.air && !a.depthsEdge && compat(a, arch));
+  if (regularArtPools.has(arch)) return regularArtPools.get(arch);
+  const desertNative = BESTIARY.some((a) => a.seaOfSand && a.arch === arch);
+  const pool = desertNative
+    ? BESTIARY.filter((a) => !a.chestOnly && a.seaOfSand && a.arch === arch)
+    : BESTIARY.filter((a) => !a.chestOnly && !a.lone && !a.seaOfSand && !a.sandKin && !a.breach && !a.air && !a.depthsEdge && !a.phobos && !a.castleKin && compat(a, arch));
+  regularArtPools.set(arch, pool);
+  return pool;
 }
 /** Guardian art for an archetype (giants included). */
-const bossPool = (arch) => BESTIARY.filter((a) => !a.chestOnly && a.boss && !a.seaOfSand && !a.sandKin && !a.breach && !a.air && !a.depthsEdge && (!arch || compat(a, arch)));
+const bossPool = (arch) => {
+  const key = arch || '*';
+  if (!guardianArtPools.has(key)) guardianArtPools.set(key, BESTIARY.filter((a) => !a.chestOnly && a.boss && !a.seaOfSand && !a.sandKin && !a.breach && !a.air && !a.depthsEdge && !a.phobos && !a.castleKin && (!arch || compat(a, arch))));
+  return guardianArtPools.get(key);
+};
 
 // A level draws its looks from at most this many lazily loaded sheets (set 1 is always in), so a random bestiary
 // still only downloads and decodes a few atlases per level.
@@ -632,24 +646,33 @@ export function rollLooks(biome, rnd = Math.random) {
     return { art: a.id, swap: SWAPS[k], tint: titleCase(k) };
   };
   const chosen = new Map(), bosses = [], desert = isDesert(biome);
+  const fortress = biome?.castleKin === true || ['castle', 'castle_keep'].includes(biome?.id) || biome?.family === 'keep';
+  const specialArtPool = (arch) => {
+    if (biome?.phobos === true) return BESTIARY.filter((a) => a.phobos && a.cat !== 'gray' && a.cat !== 'good' && !a.lone && compat(a, arch)
+      && (biome.phobosFoeIds?.length ? biome.phobosFoeIds.includes(a.id)
+        : !biome.phobosDistrict || !a.at || String(a.at).toLowerCase().includes(String(biome.phobosDistrict).toLowerCase())));
+    if (fortress) return BESTIARY.filter((a) => a.castleKin && !a.lone && compat(a, arch));
+    return [];
+  };
   const looksFor = (arch) => {
     if (chosen.has(arch)) return chosen.get(arch);
-    const pool = artPool(arch), ids = [], looks = [];
+    const pool = artPool(arch), themed = specialArtPool(arch), ids = [], looks = [];
     const baseArch = LEGACY_SAND_BASE[arch] || arch;
     const sand = desert ? sandCreatures(baseArch) : [];
     const myth = desert ? sandMythics(baseArch) : [];
     for (let i = 0; i < 4; i++) {
-      // Four looks per archetype are rolled once per level: 56% regular sandkin, up to 4% compatible mythics,
-      // and 40% existing art. If a category has no compatible art, fall back to another eligible pool.
+      // Four looks per archetype are rolled once per level: 46% regular sandkin, up to 4% compatible mythics,
+      // and 50% existing art. If a category has no compatible art, fall back to another eligible pool.
       const roll = rnd();
       // Choose the 60/40 lane before choosing art. Desert legacy rosters often
       // have just one original look per archetype; reusing that look is better
       // than silently biasing the level toward imported art after it is picked.
       let a;
-      if (roll < 0.04) a = pickSandArt(myth, ids) || pickSandArt(sand, ids);
-      else if (roll < 0.60) a = pickSandArt(sand, ids);
+      if (themed.length && !desert && roll < (biome?.phobos ? 1 : 0.45)) a = pickArt(themed, ids);
+      else if (roll < 0.04) a = pickSandArt(myth, ids) || pickSandArt(sand, ids);
+      else if (roll < 0.50) a = pickSandArt(sand, ids);
       else a = pickArt(pool, ids) || (pool.length && pickArt(pool));
-      a ||= pickArt(pool, ids) || (sand.length && pickSandArt(sand, ids)) || (myth.length && pickSandArt(myth, ids));
+      if (!biome?.phobos) a ||= pickArt(pool, ids) || (sand.length && pickSandArt(sand, ids)) || (myth.length && pickSandArt(myth, ids));
       if (!a) break;
       ids.push(a.id); looks.push(lookOf(a));
     }
@@ -664,18 +687,55 @@ export function rollLooks(biome, rnd = Math.random) {
       const possible = (roster || biome.roster || []).filter((a) => a);
       const arch = possible.length ? possible[Math.floor(r() * possible.length)] : null;
       let desertPool = null;
+      if (biome?.phobos === true) {
+        const phobosBosses = BESTIARY.filter((a) => a.phobos && a.boss && compat(a, arch)
+          && (biome.phobosBossIds?.length ? biome.phobosBossIds.includes(a.id)
+            : !biome.phobosDistrict || !a.at || String(a.at).toLowerCase().includes(String(biome.phobosDistrict).toLowerCase())));
+        const selected = phobosBosses.length ? pickArt(phobosBosses) : null;
+        if (selected) {
+          bosses.push(selected.id);
+          return { arch: selected.arch, look: lookOf(selected) };
+        }
+        return null;
+      }
+      if (fortress && !desert) {
+        const fortressBosses = BESTIARY.filter((a) => a.castleKin && a.boss && (!arch || compat(a, arch)));
+        const selected = fortressBosses.length ? pickArt(fortressBosses) : null;
+        if (selected) {
+          bosses.push(selected.id);
+          return { arch: selected.arch, look: lookOf(selected) };
+        }
+      }
       if (desert) {
-        const primary = biome.id === 'scorpion_king_pyramid'
-          ? SAND_KIN.filter((a) => a.boss && a.kind === 'humanoid_boss')
-          : SAND_KIN.filter((a) => a.boss && !a.kind);
-        const secondary = biome.id === 'scorpion_king_pyramid'
-          ? SAND_KIN.filter((a) => a.boss && a.kind === 'djinn_boss')
-          : [];
+        const isPyramid = biome.id === 'scorpion_king_pyramid';
+        const classicBosses = SAND_KIN.filter((a) => a.boss && !a.kind);
+        const courtBosses = SAND_KIN.filter((a) => a.boss && a.kind === 'humanoid_boss');
+        const djinnBosses = SAND_KIN.filter((a) => a.boss && a.kind === 'djinn_boss');
         const roll = rnd();
-        desertPool = roll < (biome.id === 'scorpion_king_pyramid' ? 0.50 : 0.65)
-          ? primary
-          : roll < 0.65 && biome.id === 'scorpion_king_pyramid' ? secondary
-            : roll < 0.80 ? sandMythics() : null;
+        // Keep the Scorpion King's authored court weights intact. Other desert biomes now
+        // draw from the wider 510-creature roster as well as the original desert guardians;
+        // this changes only boss art selection, never the number of encounters or rewards.
+        if (isPyramid) {
+          desertPool = roll < 0.50 ? courtBosses
+            : roll < 0.65 ? djinnBosses
+              : roll < 0.80 ? sandMythics() : null;
+        } else if (biome.id === 'sea_of_sand') {
+          // Sea of Sand's original boss odds are part of the established dune encounter balance.
+          desertPool = roll < 0.65 ? classicBosses : roll < 0.80 ? sandMythics() : null;
+        } else {
+          const variant = typeof biome.variant === 'string' ? biome.variant : biome.variant?.id;
+          const sunscar = biome.id === 'castle' && (variant === 'sunscar' || biome.castleVariant === 'sunscar');
+          const mayUseDjinn = biome.desertBosses?.includes('djinn') || sunscar || ['desert_temple', 'gilded', 'amber'].includes(biome.id);
+          const mayUseCourts = biome.desertBosses?.includes('courts') || sunscar || ['desert', 'desert_temple', 'amber', 'gilded', 'serpent', 'sheer_canyon', 'sheer_gilded'].includes(biome.id);
+          const classicShare = mayUseCourts ? 0.40 : 0.60;
+          const courtShare = mayUseCourts ? 0.25 : 0;
+          const djinnShare = mayUseDjinn ? 0.10 : 0;
+          const mythicShare = 0.10;
+          desertPool = roll < classicShare ? classicBosses
+            : roll < classicShare + courtShare ? courtBosses
+              : roll < classicShare + courtShare + djinnShare ? djinnBosses
+                : roll < classicShare + courtShare + djinnShare + mythicShare ? sandMythics() : null;
+        }
       }
       const baseArch = LEGACY_SAND_BASE[arch] || arch;
       const compatibleSandBosses = desertPool && (desertPool.length ? desertPool.filter((a) => !baseArch || compat(a, baseArch)) : []);

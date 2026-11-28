@@ -6,7 +6,10 @@ import { pathToFileURL, fileURLToPath } from 'node:url';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
 const read = (p) => JSON.parse(fs.readFileSync(path.join(root, p), 'utf8'));
-globalThis.document = { createElement: () => ({ width: 0, height: 0, getContext: () => ({ drawImage() {} }) }) };
+globalThis.document = {
+  createElement: () => ({ width: 0, height: 0, getContext: () => ({ drawImage() {} }) }),
+  querySelector: () => null, dispatchEvent() {}, addEventListener() {},
+};
 const pack = read('assets/tiles/castle/pack.json'), ramparts = read('assets/tiles/castle/ramparts.json');
 globalThis.fetch = async (url) => ({ ok: true, json: async () => String(url).includes('ramparts.json') ? ramparts : pack });
 globalThis.Image = class { constructor() { this.width = 16384; this.height = 16384; } set src(_) { queueMicrotask(() => this.onload?.()); } };

@@ -5,7 +5,7 @@ const pack=read('assets/tiles/castle/pack.json'), trees=read('assets/tiles/dark_
 globalThis.fetch=async url=>({ok:true,json:async()=>String(url).includes('dark_forest')?trees:String(url).includes('ramparts')?ramparts:pack});
 globalThis.Image=class{set src(_){queueMicrotask(()=>this.onload?.());}};
 const context=new Proxy({getImageData:()=>({data:new Uint8ClampedArray([0,0,0,255])})},{get:(o,k)=>k in o?o[k]:(()=>{}),set:(o,k,v)=>(o[k]=v,true)});
-globalThis.document={createElement:()=>({width:1,height:1,getContext:()=>context})};
+globalThis.document={createElement:()=>({width:1,height:1,getContext:()=>context}),querySelector:()=>null,dispatchEvent:()=>true,addEventListener:()=>{}};
 const [{loadCastlePack},{loadDarkForestTrees},{A},{BIOME_BY_ID},{generateOverworld},{CASTLE_VARIANTS},{nearestReachableStand}]=await Promise.all([
  imp('src/gfx/castle.js'),imp('src/gfx/darkforest.js'),imp('src/core/assets.js'),imp('src/data/biomes.js'),imp('src/world/overworld.js'),imp('src/data/castles.js'),imp('src/world/accessibility.js')]);
 await loadCastlePack(); await loadDarkForestTrees(); A.town={meta:read('assets/tiles/town/town.json'),objects:{},ground:{}};

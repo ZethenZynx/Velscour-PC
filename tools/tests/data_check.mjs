@@ -34,7 +34,7 @@ const { BESTIARY, SUMMON_ART, FAMILIAR_ART, ART_BY_ID, artPool, rollLooks } = aw
 const { ARCH } = await import(new URL('../../src/data/enemies.js', import.meta.url));
 const { HEAVENLY_MONSTERS } = await import(new URL('../../src/data/heavenly.js', import.meta.url));
 if (HEAVENLY_MONSTERS.length !== 60 || new Set(HEAVENLY_MONSTERS.map(m=>m.id)).size !== 60) bad.push('Expected 60 distinct Heavenly monsters');
-const { BIOMES, CAMPAIGN_BOSS_ENVIRONMENTS, CAMPAIGN_ENVIRONMENT_ROTATIONS, drawBiome, biomeChoices, biomesForDepth, mixPartner } = await import(new URL('../../src/data/biomes.js', import.meta.url));
+const { BIOMES, BIOME_BY_ID, CAMPAIGN_BOSS_ENVIRONMENTS, CAMPAIGN_ENVIRONMENT_ROTATIONS, campaignActForBiome, drawBiome, biomeChoices, biomesForDepth, mixPartner } = await import(new URL('../../src/data/biomes.js', import.meta.url));
 const { ACTS } = await import(new URL('../../src/data/depth.js', import.meta.url));
 const { SET3 } = await import(new URL('../../src/data/bestiary3.js', import.meta.url));
 if (SET3.length !== 260) bad.push('Expected the 260 monsters of enemy set 3');
@@ -82,10 +82,13 @@ for (const [k, d] of Object.entries(SUMMONS)) {
 for (const [k, s] of Object.entries(meta)) s.cells.forEach((c, i) => { if (c && !cells.has(k + i)) console.log(`note: ${k}#${i} has no bestiary entry yet`); });
 for (const k of Object.keys(ARCH)) if (k !== 'velscour' && !artPool(k).length) bad.push(`archetype ${k} has no monster art`);
 for (const b of BIOMES) {
+  // Phobos is a self-contained district family with its own art and encounter registries. Its rosters intentionally
+  // stay out of the global look/boss pools; phobos_district_generation.mjs and upstream_content_registry.mjs audit it.
+  if (b.phobos) continue;
   const looks = rollLooks(b);
   for (const k of b.roster) if (!looks.pick(k)) bad.push(`biome ${b.id}: no look for ${k}`);
   if (!looks.boss(b.roster)) bad.push(`biome ${b.id}: no guardian art`);
-  if (b.id !== 'throne' && !b.overworld && !b.family) bad.push(`biome ${b.id}: no colour family`);
+  if (b.id !== 'throne' && !b.overworld && !b.sheer && !b.family) bad.push(`biome ${b.id}: no colour family`);
 }
 // every biome's pack exists and is complete: all 16 wall connection masks per family, with an arm for each
 // connection, arches and doors in 4 directions (doors open and closed), self-seamless floors, chest art
@@ -118,13 +121,16 @@ for (const b of BIOMES) {
   }
   // dungeons use only the painted packs and the ChatGPT-sheet packs (data/biomes.js ART), floors/props from `pack`, walls from `wallPack`
   for (const p of [b.pack, b.wallPack, ...[...(b.morePacks || []), ...(b.moreFloors || [])].map((m) => m[0])].filter(Boolean)) {
-    if (!['catacombs', 'cathedral_graveyard', 'castle_keep', 'sewers', 'dark_forest'].includes(p)) bad.push(`biome ${b.id}: ${p} is not a painted pack`);
+    if (!['catacombs', 'cathedral_graveyard', 'castle_keep', 'sewers', 'dark_forest'].includes(p) && !p.startsWith('ph_')) bad.push(`biome ${b.id}: ${p} is not a painted pack`);
     for (const f of ['pack.json', 'floors.webp', 'walls.webp', 'scatter.webp']) if (!existsSync(asset(`tiles/${p}/${f}`))) bad.push(`biome ${b.id}: missing tiles/${p}/${f}`);
     packs[p] = 1;
   }
 }
 const packMeta = (id) => JSON.parse(readFileSync(asset(`tiles/${id}/pack.json`)));
 for (const b of BIOMES.filter((b) => !b.overworld && b.part)) {
+  // Sheer Drops deliberately have cliff boundaries instead of dungeon walls/arches/doors. Their
+  // cliff geometry and walkability are covered by sheer_generation.mjs.
+  if (b.sheer) continue;
   const fm = packMeta(b.pack), wm = packMeta(b.wallPack || b.pack), part = b.part;
   const inR = (rs, i) => !rs || rs.some(([x, y]) => i + 1 >= x && i + 1 <= y);
   const seamless = fm.floors.filter((f, i) => f.seamless && inR(part.floors, i)).length;
@@ -166,7 +172,10 @@ for (let depth = 1; depth <= 500; depth++) {
   if (!choices.length || choices.some((x) => !eligible.includes(x))) bad.push(`depth ${depth}: portal offered an ineligible biome`);
   const act = ACTS.find((entry) => depth >= entry.start && depth <= entry.end);
   const expected = act && (CAMPAIGN_BOSS_ENVIRONMENTS[depth] || CAMPAIGN_ENVIRONMENT_ROTATIONS[act.act][(depth - act.start) % CAMPAIGN_ENVIRONMENT_ROTATIONS[act.act].length]);
-  if (expected && (eligible.length !== 1 || eligible[0] !== expected || id !== expected || choices[0] !== expected)) bad.push(`campaign depth ${depth} has the wrong environment`);
+  const validCampaignPick = id === expected || (BIOME_BY_ID[id]?.phobos && campaignActForBiome(depth, id) === act?.act);
+  const validCampaignChoices = choices.length > 0 && choices.every((choice) => eligible.includes(choice)
+    && (choice === expected || (BIOME_BY_ID[choice]?.phobos && campaignActForBiome(depth, choice) === act?.act)));
+  if (expected && (!eligible.includes(expected) || !validCampaignPick || !validCampaignChoices)) bad.push(`campaign depth ${depth} has the wrong environment`);
   if (depth === 100 && (id !== 'throne' || choices.join() !== 'throne')) bad.push('Depth 100 must always be Velscour\'s Throne');
   if (depth > 100 && eligible.includes('throne')) bad.push(`Endgame depth ${depth} must not roll the throne`);
   hero.lastBiome = id;

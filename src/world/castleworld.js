@@ -660,7 +660,8 @@ export function generateCastle(depth,biome,seed,variant=null){
   const sites=[];
   const bossPoint=near(hallC('throne_hall'),3);
   if(!ok(bossPoint))throw new Error('Castle throne room is not reachable from its main gate; '+V.id+' seed '+seed);
-  const looks=rollLooks(biome,rng.fn()),spawns=[];
+  const castleBiome={...biome,variant:V.id};
+  const looks=rollLooks(castleBiome,rng.fn()),spawns=[];
   for(let k=0;k<70;k++){
     const x=rng.int(10,W-11)+.5,y=rng.int(10,H-11)+.5;
     if(!spawnOK([x,y])||dist(x,y,ENTRY)<24||dist(x,y,bossPoint)<24||mat[I(x|0,y|0)]===MAT.hall)continue;
@@ -690,7 +691,7 @@ export function generateCastle(depth,biome,seed,variant=null){
   spawns.push({x:bossPoint[0],y:bossPoint[1],arch:bossArch,n:1,rank:'boss',look:looks.pick(bossArch),name:'Castle Guardian'});
   // Add a moderate set of ordinary patrols to fill the Castle's broad quiet stretches. Use a separate seeded
   // stream so the original patrols, side objectives, and layout dressing keep their existing placements and rolls.
-  const CASTLE_DENSITY_PACKS=22,densityRng=new RNG(((seed>>>0)^0x43c4571)>>>0),densityLooks=rollLooks(biome,densityRng.fn());
+  const CASTLE_DENSITY_PACKS=22,densityRng=new RNG(((seed>>>0)^0x43c4571)>>>0),densityLooks=rollLooks(castleBiome,densityRng.fn());
   let densityPacks=0;
   for(const spacing of [9,7])for(let tries=0;tries<CASTLE_DENSITY_PACKS*250&&densityPacks<CASTLE_DENSITY_PACKS;tries++){
     const x=densityRng.int(10,W-11)+.5,y=densityRng.int(10,H-11)+.5;
@@ -703,7 +704,7 @@ export function generateCastle(depth,biome,seed,variant=null){
   // The uniform patrols above improve the average count, but they do not make the Castle feel occupied:
   // they can land far from landmarks, and the older rolls deliberately skip every hall floor. Add small,
   // seeded groups around real generated features as a separate layer, leaving the original patrol rolls intact.
-  const environmentalRng=new RNG(((seed>>>0)^0x6e91b27)>>>0),environmentalLooks=rollLooks(biome,environmentalRng.fn());
+  const environmentalRng=new RNG(((seed>>>0)^0x6e91b27)>>>0),environmentalLooks=rollLooks(castleBiome,environmentalRng.fn());
   const environmentalAnchors=[];
   const addEnvironmentalAnchors=(environment,points,limit,options={})=>{
     const candidates=points.filter(Boolean).map((point)=>({environment,point,key:environmentalRng.range(0,1),radius:options.radius||8,

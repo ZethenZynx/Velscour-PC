@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 import { ACTS, FINAL_DEPTH, MAX_DEPTH, MAX_LEVEL, SUPERBOSS_DEPTHS, endgameScaling } from '../../src/data/depth.js';
 import { RAID_BOSSES } from '../../src/game/raid.js';
-import { RARITY, TIER_20_MIN_DEPTH, qualityAtDepth, sigilCap, RARITY_TIER_20 } from '../../src/data/items.js';
+import { RARITY, TIER_20_MIN_DEPTH, qualityAtDepth, sigilCap } from '../../src/data/items.js';
 import { DUNGEON_AFFIX_BY_ID } from '../../src/data/dungeonaffixes.js';
 import { GREED_LEVELS, greedMods, greedPacks, greedQuantity, greedWorld, rollGreedAffixes, getGreedAffixPreview, setGreed } from '../../src/game/greed.js';
 import { makeCovenant } from '../../src/data/relics.js';
@@ -26,9 +26,11 @@ for (let tier = 0; tier < RARITY.length; tier++) {
   if (tier) assert.equal(qualityAtDepth(depth - 1), tier - 1);
 }
 assert.equal(TIER_20_MIN_DEPTH, 476);
-assert.equal(makeCovenant(100, { depth: 100 }), null);
+const campaignCovenant = makeCovenant(100, { depth: 100 });
+assert.ok(campaignCovenant, 'Covenant rewards remain available in campaign progression');
+assert.ok(campaignCovenant.rarity <= qualityAtDepth(100), 'campaign Covenant quality remains capped by depth');
 const setPiece = makeCovenant(476, { depth: 476 });
-assert.equal(setPiece?.rarity, RARITY_TIER_20);
+assert.ok(setPiece && setPiece.rarity <= qualityAtDepth(476), 'endgame Set quality remains within the depth cap');
 assert.ok(setPiece?.cset, 'endgame Set gear keeps its distinct set identity');
 assert.deepEqual(GREED_LEVELS.map(({ level, name, affixes, goldPct, xpPct, lootPct }) => [level, name, affixes, goldPct, xpPct, lootPct]), [
   [0, 'Disabled', 0, 0, 0, 0], [1, 'Temptation', 1, 20, 10, 10], [2, 'Desire', 2, 45, 25, 20],

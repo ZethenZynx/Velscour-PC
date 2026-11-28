@@ -30,6 +30,8 @@ import { makeAccountHeirloom } from './reliquary.js';
 import { makeGem, sigilCap, qualityAtDepth } from '../data/items.js';
 import { setupUnbound, unboundTick, courtBegin, courtGate, unboundSpoils, UNBOUND } from './unbound.js';
 import { legionGate } from './heresies.js';
+import { PASSIVES, SIGS } from './raidsigs.js';
+import { VELSCOUR_RAIDS } from './phobosraids.js';
 
 export const HP_MUL = 2;          // his life on top of a boss's x40 (tuned with tools/tests/velscour.js)
 export const DMG_MUL = 0.7;       // his hits: the fight runs ~4x longer than the old one, so each hurts less (tools/tests/balance.js BAL_BIOME=throne)
@@ -55,7 +57,16 @@ export function setupVelscour(world, m, gen) {
   // seated on his throne until the hero comes
   m.x = SEAT[0]; m.y = SEAT[1]; m.z = SEAT_Z; m.targetable = false; V.seated = true;
   world.addHazard(V);
-  if (world.unbound) setupUnbound(V); // the rematch's court and chains (game/unbound.js, docs/ENDGAME.md)
+  if (world.unbound) {
+    setupUnbound(V); // the rematch's court and chains (game/unbound.js, docs/ENDGAME.md)
+    const themes = ['crimson', 'obsidian', 'cathedral'];
+    V.unboundTheme = themes[Math.max(0, Number(G.char?.unbound?.wins) || 0) % themes.length];
+    V.tpl = VELSCOUR_RAIDS[V.unboundTheme];
+    V.pi = 0; V.form = -1;
+    V.arena = { x: C.x - C.rx, y: C.y - C.ry, w: C.rx * 2, h: C.ry * 2, cx: C.x, cy: C.y };
+    V.E = { glow: ({ crimson: '#ff2030', obsidian: '#7020c0', cathedral: '#ffe0a0' })[V.unboundTheme] };
+    world.unboundTheme = V.unboundTheme;
+  }
   return V;
 }
 
@@ -108,7 +119,24 @@ class VelscourFight {
       case 5: this.p5(dt); if (frac <= 0.1 + 1e-6 && !this.bound) this.startChains(); else if (this.unbound && this.bound && !this.bound2 && frac <= 0.05 + 1e-6) this.startChains(); break;
       case 6: this.p5(dt, true); this.p6(dt); break;
     }
-    if (this.unbound) unboundTick(this, dt); // the court, the Pact (game/unbound.js)
+    if (this.unbound) {
+      // Rotate three authored four-form Velscour encounters on the existing
+      // Unbound rematch counter while retaining the fork's Court, Pact, rewards
+      // and key progression.
+      this.pi = Math.max(0, Math.min(3, this.phase - 1));
+      PASSIVES.ph_velscour?.(this, dt);
+      // The upstream form-specific signature attacks are also driven by the
+      // shared raid-signature runner. Keep one live cast at a time and let a
+      // current mechanic finish before scheduling the next one.
+      this.unboundSigT = (this.unboundSigT ?? 9) - dt;
+      const phasePool = this.tpl?.phases?.[this.pi]?.pool || {};
+      const signature = Object.keys(phasePool).find((id) => id.startsWith('ph_v_') && SIGS[id]);
+      if (signature && this.unboundSigT <= 0 && !this.mctx?.busy) {
+        const cast = SIGS[signature](this);
+        if (cast) this.unboundSigT = 25;
+      }
+      unboundTick(this, dt); // the court, the Pact (game/unbound.js)
+    }
     for (const c of this.parts) if (c.vk === 'mirror' && !c.dead && this.t - c.born > 22) { c.dead = true; smoke(c.x, c.y, 0, '#301020', 6, 10); }
     this.parts = this.parts.filter((c) => !c.dead || c.vk === 'seal' || c.vk === 'shard' || c.vk === 'obelisk');
     return true;
@@ -162,7 +190,7 @@ class VelscourFight {
     m.patternQ = [];
     this.seal();
     if (w.onBossAwake) w.onBossAwake(m);
-    UI.centerMsg(this.unbound ? 'VELSCOUR UNBOUND' : 'DEMON LORD VELSCOUR', this.unbound ? 'The Court of the Abyss rises with him' : this.practice ? 'The last battle (practice)' : 'The last battle', 3.4);
+    UI.centerMsg(this.unbound ? 'VELSCOUR UNBOUND' : 'DEMON LORD VELSCOUR', this.unbound ? `${this.tpl?.title || 'The Court of the Abyss'} rises with him` : this.practice ? 'The last battle (practice)' : 'The last battle', 3.4);
     UI.log('<b style="color:#ff4020">Velscour rises from his throne.</b> Five trials stand between you and the end of him.', '#ffb0a0');
     this.cd = { brand: 3, chain: 9, guard: 20 };
     if (this.unbound) courtBegin(this);

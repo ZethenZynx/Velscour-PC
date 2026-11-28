@@ -79,7 +79,7 @@ function interestSpots(A) {
   for (const p of A.plinths) out.push({ x: p.x + 1.8, y: p.y + 1.8, about: 'dragon', look: [p.x, p.y], plinth: p });
   for (const w of A.windows) out.push({ x: w.axis === 'x' ? w.a : w.c + 1.4, y: w.axis === 'x' ? w.c + 1.4 : w.a, about: 'window', look: w.axis === 'x' ? [w.a, w.c] : [w.c, w.a] });
   out.push({ x: A.chronicle[0], y: A.chronicle[1] + 1.1, about: 'chronicle', look: A.chronicle });
-  for (let k = 0; k < 6; k++) out.push({ x: TK.FR + 1.5, y: TK.F0 + 3 + k * 4, about: 'balcony', look: [CX, TK.F0 + 3 + k * 4] });
+  for (let k = 0; k < 6; k++) out.push({ x: TK.FR + 1.5, y: TK.FSE + 1 + k * 3.6, about: 'balcony', look: [CX, TK.FSE + 1 + k * 3.6] });
   return out;
 }
 
@@ -89,7 +89,7 @@ function interestSpots(A) {
  */
 export function startKeepFolk(world, A) {
   const L = world.layout, spots = keepSpots(L), interest = interestSpots(A).filter((s) => world.map.walkable(s.x, s.y));
-  const d = { agents: [], heroes: [], arts: [], spots, chatT: rand(2, 4), greetT: 0, world };
+  const d = { agents: [], heroes: [], arts: [], chatT: rand(2, 4), greetT: 0, world };
   const base = (o) => ({ x: 0, y: 0, flip: false, animT: rand(0, 5), idleSeed: randi(0, 9), talkText: '', talkT: 0, talkAge: 0, emotion: null, emotionT: 0, iconT: 0, iconAge: 0, reach: 1.6, ...o });
   const upd = (n) => (dt) => { n.talkT = Math.max(0, n.talkT - dt); n.talkAge += dt; n.emotionT = Math.max(0, n.emotionT - dt); n.iconT = Math.max(0, (n.iconT || 0) - dt); };
 
@@ -138,8 +138,7 @@ export function startKeepFolk(world, A) {
   list.forEach((h, k) => {
     const s = spots[(k * 97 + 13) % spots.length] || A.start;
     const n = base({ keepHero: true, ...h, plate: `${CLASSES[h.cls]?.name || h.cls} ${h.lvl}`, x: s[0], y: s[1], img: null, state: 'idle', waitT: rand(1, 6), speed: SPEED * rand(0.9, 1.1) });
-    const eq = h.save.equip || {};
-    d.arts.push(savedGearPreview(h.cls, eq.body, eq.head, eq.weapon, eq.offhand, true).then((img) => { n.img = img || null; }).catch(() => null));   // (game.enterKeep waits for these)
+    d.arts.push(savedGearPreview(h.cls, h.save.equip || {}).then((img) => { n.img = img || null; }).catch(() => {}));   // (game.enterKeep waits for these)
     n.update = (dt) => tickHero(d, n, dt);
     n.use = () => heroCard(n);
     world.npcs.push(n); d.heroes.push(n);
@@ -168,8 +167,7 @@ function director(d, dt, interest) {
   // wanderers pick somewhere to go: a place of interest, now and then just a walk round the hall or the balcony
   for (const n of H) if (n.state === 'pick') {
     const s = chance(0.7) && interest.length ? pick(interest) : null;
-    const q = s ? null : pick(d.spots);
-    const x = s ? s.x : q[0], y = s ? s.y : q[1];
+    const [x, y] = s ? [s.x, s.y] : (() => { const q = pick(keepSpots(w.layout)); return [q[0], q[1]]; })();
     n.at = s; n.state = walkTo(w, n, x, y) ? 'walk' : 'idle'; n.waitT = rand(2, 5);
   }
   // a conversation: two idle heroes, the second walks over, then they take turns

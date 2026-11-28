@@ -26,7 +26,7 @@ import { chooseCampaignVariant, eligibleCampaignVariants } from '../data/biomes.
 
 export const REGIONS = {};
 export function registerRegion(r) { REGIONS[r.id] = r; return r; }
-export const regionOf = (biome) => (biome && REGIONS[biome.id]) || null;
+export const regionOf = (biome) => (biome && REGIONS[biome.id]) || (biome?.phobos ? REGIONS.phobos_city_family : null) || null;
 /** The level a hero of this level still needs for this biome's region (its minLevel), or 0 when he may go. */
 export function regionNeeds(biome, level) {
   const r = regionOf(biome);

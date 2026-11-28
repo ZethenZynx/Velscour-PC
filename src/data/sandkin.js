@@ -1,8 +1,8 @@
 // THE SEA OF SAND BESTIARY (VELSCOUR_Sea_of_Sand_200_Sprites.zip, the Thanksgiving update): 50 small creatures,
 // 70 large monsters, 30 mythic monsters and 50 huge bosses of the deserts, cut by heat map with tools/sandkin.py and
 // packed by `python tools/process_assets.py enemies sand` into one atlas per sheet (sand/01_dune_hollows ..
-// sand/20_astral_desert_and_glass, ten each). They live only in the deserts (DESERT_BIOMES: the Sea of Sand and its
-// Pyramid of the Scorpion King): there rollLooks fills most of a level's packs with them, with local weights and rare
+// sand/20_astral_desert_and_glass, ten each). They live only in desert-themed environments (DESERT_BIOMES): there
+// rollLooks replaces about half of the normal looks with them, with local weights and rare
 // mythics; desert boss rooms use the corresponding boss pool. The Sea of Sand's original creatures remain eligible.
 // Rows are [name, arch, also, extras]; the id is 'sk_' + the name in snake case, the cell the row's index in its sheet.
 // `h` is the roster's world height (1.8 art px a world px), held down for the bigger tiers so they fit a level.
@@ -240,8 +240,16 @@ SAND_KIN.push(...SAND_HUMANOIDS);
 
 /** The deserts: where the Sea of Sand bestiary lives (a Sheer Drop counts by its base). */
 // This fork keeps the imported bestiary scoped to its two intended destinations.
-export const DESERT_BIOMES = ['sea_of_sand', 'scorpion_king_pyramid'];
-export const isDesert = (biome) => !!biome && (DESERT_BIOMES.includes(biome.id) || DESERT_BIOMES.includes(biome.base));
+export const DESERT_BIOMES = Object.freeze([
+  'sea_of_sand', 'scorpion_king_pyramid', 'desert', 'desert_temple', 'amber', 'gilded', 'serpent',
+  'sheer_canyon', 'sheer_gilded',
+]);
+export function isDesert(biome) {
+  if (!biome) return false;
+  const variant = typeof biome.variant === 'string' ? biome.variant : biome.variant?.id;
+  return DESERT_BIOMES.includes(biome.id) || DESERT_BIOMES.includes(biome.base) ||
+    biome.phobosEnvironment === 'sunscorched' || (biome.id === 'castle' && (variant === 'sunscar' || biome.castleVariant === 'sunscar'));
+}
 
 const fits = (a, arch) => a.arch === arch || a.also.includes(arch);
 // The roster suggests no bosses for the White Gypsum Sea and only mythics for the Storm Sands: they borrow their

@@ -142,7 +142,7 @@ export function enter(m, kind, from) {
  */
 export function ambushTick(w, dt) {
   const p = w.player;
-  if (w.kind !== 'dungeon' || w.raid || w.breach || !p || p.dead || !w.roster || !w.roster.length) return;
+  if (w.kind !== 'dungeon' || w.raid || w.breach || w.noAmbushRespawn || w.phobosDistrictRun || !p || p.dead || !w.roster || !w.roster.length) return;
   if (w.boss && w.boss.awake && !w.boss.dead) return;
   if (w.ambushLastX === undefined) { w.ambushLastX = p.x; w.ambushLastY = p.y; }
   if (Math.hypot(p.x - w.ambushLastX, p.y - w.ambushLastY) > 0.08) w.ambushIdleT = 0;

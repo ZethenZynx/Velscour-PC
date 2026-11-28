@@ -6,6 +6,7 @@ import { addUnifiedDiagnosticMarker, clearUnifiedDiagnosticRecording, compactUni
 import { recordSimulationTiming } from '../../src/core/perfdiagnostics.js';
 import { TileMap } from '../../src/world/map.js';
 import { addEffect, clearVfx, spawn, vfxDiagnosticReport } from '../../src/gfx/vfx.js';
+import { GAME_BUILD_ID } from '../../src/data/build-version.js';
 
 G.settings.developerMode = false;
 assert.equal(startUnifiedDiagnosticRecording(), false, 'recording stays off until Developer Mode is enabled');
@@ -22,7 +23,7 @@ assert.ok(sessionId);
 let fetchCount = 0;
 const fakeFetch = async (url) => {
   fetchCount++;
-  if (String(url).includes('src/data/build-version.js')) return { ok: true, text: async () => "export const GAME_BUILD_ID = 'fork-main-healthbar-artwork-2026-11-26';" };
+  if (String(url).includes('src/data/build-version.js')) return { ok: true, text: async () => `export const GAME_BUILD_ID = '${GAME_BUILD_ID}';` };
   if (String(url).includes('/deployments?')) return { ok: true, json: async () => [{ sha: 'test-deployed-sha', statuses_url: 'https://mock/statuses' }] };
   return { ok: true, json: async () => [{ state: 'success' }] };
 };

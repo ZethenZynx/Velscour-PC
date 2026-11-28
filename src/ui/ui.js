@@ -4,6 +4,7 @@ import { onSkillSheetLoad } from './icons.js';
 import { G, saveSettings } from '../state.js';
 import { el, escapeHtml } from '../core/util.js';
 import { sfx, notificationSfx } from '../core/audio.js';
+import { tickHeadline, tickLine, tickerOn } from './ticker.js';
 
 /** Calculate a responsive, untransformed default for the paired Altar/Marks windows. */
 export function heresyPairLayout(viewW, viewH, saved = {}, naturalHeights = {}) {
@@ -527,6 +528,7 @@ export const UI = {
     for (const listener of this.logListeners) {
       try { listener(html, color, meta); } catch (error) { console.warn('Game log listener failed', error); }
     }
+    if (tickerOn()) tickLine(html, color);
     if (!this.logEl) return;
     const d = el('div', '', html);
     if (color) d.style.color = color;
@@ -543,11 +545,13 @@ export const UI = {
     for (const listener of this.logListeners) {
       try { listener(event.text, event.color || '', meta); } catch (error) { console.warn('Game event listener failed', error); }
     }
+    if (tickerOn()) tickLine(event.text, event.color || '');
   },
   /** A centred banner; o.top puts it in the band under the boss bar, smaller (a fight's running banners). */
   centerMsg(title, sub = '', dur = 2.6, o = {}) {
     // All Iron Express center banners share the environment notification sound route.
     notificationSfx(null, o.soundVolume ?? 1);
+    if (tickerOn() && tickHeadline(title, sub)) return;
     this.msgEl.innerHTML = `${escapeHtml(title)}${sub ? `<small>${escapeHtml(sub)}</small>` : ''}`;
     const lu = this.hud && this.hud.lu;
     this.msgEl.classList.toggle('top', !!o.top);

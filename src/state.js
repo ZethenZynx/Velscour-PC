@@ -56,6 +56,9 @@ export const G = {
     developerMode: false, // master switch for optional monitoring and debug event logging
     showTargetBox: true, // show/hide the #target-box div
     showTargetSprite: true, // choose if target-box shows the target sprite or not
+    ticker: false, // optional top-of-screen message ticker; traditional notifications remain the default
+    tickerSize: 1,
+    tkWarn: true, tkQuest: true, tkLoot: false, tkAuto: false, tkInfo: false,
     keybinds: {}, // player-configured keyboard actions; absent actions use the PC defaults
     mouseCursor: {
       color: 'default', customColor: '#d8b26a', size: 100,

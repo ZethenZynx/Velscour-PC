@@ -1,6 +1,6 @@
 import { existsSync, readFileSync, readdirSync } from 'node:fs';
 import { resolve, join } from 'node:path';
-import { SAND_KIN, DESERT_BIOMES } from '../../src/data/sandkin.js';
+import { SAND_KIN, DESERT_BIOMES, isDesert } from '../../src/data/sandkin.js';
 import { SAND_KITS } from '../../src/data/sandkits.js';
 import { ART_BY_ID, rollLooks } from '../../src/data/bestiary.js';
 import { ARCH } from '../../src/data/enemies.js';
@@ -22,7 +22,11 @@ const expected = [
 if (SAND_KIN.length !== 510 || new Set(SAND_KIN.map(a => a.id)).size !== 510) errors.push('bestiary count or IDs are not unique');
 for (const [name, actual, want] of expected) if (actual !== want) errors.push(`${name}: ${actual}, expected ${want}`);
 if (Object.keys(SAND_KITS).length !== 510) errors.push(`kit count ${Object.keys(SAND_KITS).length}`);
-if (DESERT_BIOMES.join(',') !== 'sea_of_sand,scorpion_king_pyramid') errors.push(`unexpected spawn environments: ${DESERT_BIOMES}`);
+for (const id of ['sea_of_sand', 'scorpion_king_pyramid', 'desert', 'desert_temple', 'amber', 'gilded', 'serpent', 'sheer_canyon', 'sheer_gilded']) {
+  if (!DESERT_BIOMES.includes(id) || !isDesert(BIOME_BY_ID[id])) errors.push(`${id}: missing desert-themed bestiary eligibility`);
+}
+if (!isDesert({ id: 'castle', variant: 'sunscar' }) || !isDesert({ id: 'phobos', phobosEnvironment: 'sunscorched' })) errors.push('Sunscorched Castle/Phobos environments are not recognized');
+if (isDesert(BIOME_BY_ID.castle) || isDesert({ id: 'phobos', phobosEnvironment: 'frostbound' })) errors.push('non-desert Castle or Phobos environment was classified as desert');
 if (Object.keys(ARCH).some(k => !ARCH[k])) errors.push('invalid archetype registry');
 const rosters = [...BIOME_BY_ID.sea_of_sand.roster, ...BIOME_BY_ID.scorpion_king_pyramid.roster];
 for (const a of SAND_KIN) {
@@ -48,8 +52,8 @@ let seed = 0x51a7d00d;
 const rnd = () => { seed = (Math.imul(seed, 1664525) + 1013904223) >>> 0; return seed / 4294967296; };
 const seen = new Set();
 const mix = {};
-for (const id of DESERT_BIOMES) {
-  const biome = BIOME_BY_ID[id];
+const environments = [...DESERT_BIOMES.map(id => [id, BIOME_BY_ID[id]]), ['castle/sunscar', { ...BIOME_BY_ID.castle, variant: 'sunscar' }]];
+for (const [id, biome] of environments) {
   let sand = 0, mythic = 0, legacy = 0;
   for (let level = 0; level < 1000; level++) {
     const selector = rollLooks(biome, rnd);
@@ -63,12 +67,11 @@ for (const id of DESERT_BIOMES) {
   }
   mix[id] = { imported: sand, mythic, existing: legacy, importedShare: +(100 * sand / (sand + legacy)).toFixed(1) };
   if (sand === 0 || legacy === 0) errors.push(`${id}: mixed selection pool did not include both imported and existing art`);
-  if (sand / (sand + legacy) < 0.57 || sand / (sand + legacy) > 0.63) errors.push(`${id}: regular spawn art share fell outside 60% target tolerance`);
+  if (sand / (sand + legacy) < 0.47 || sand / (sand + legacy) > 0.53) errors.push(`${id}: regular spawn art share fell outside the 50% target tolerance`);
   if (mythic / (sand + legacy) < 0.015 || mythic / (sand + legacy) > 0.035) errors.push(`${id}: regular mythic frequency fell outside rare compatible-pool range`);
 }
 const bossMix = {};
-for (const id of DESERT_BIOMES) {
-  const biome = BIOME_BY_ID[id];
+for (const [id, biome] of environments) {
   let imported = 0, mythic = 0, existing = 0, humanoidBoss = 0, djinnBoss = 0;
   for (let i = 0; i < 10000; i++) {
     const result = rollLooks(biome, rnd).boss(biome.roster, rnd);
@@ -82,12 +85,15 @@ for (const id of DESERT_BIOMES) {
     }
   }
   bossMix[id] = { imported, mythic, existing, humanoidBoss, djinnBoss };
-  if (imported < 3000 || mythic < 1000 || existing < 1000) errors.push(`${id}: boss pool categories missing or unexpectedly underweighted`);
+  if (imported < 6000 || mythic < 700 || existing < 1000) errors.push(`${id}: boss pool categories missing or unexpectedly underweighted`);
   if (id === 'scorpion_king_pyramid' && (!humanoidBoss || !djinnBoss)) errors.push('Pyramid boss pool did not select both humanoid and djinn bosses');
+  if (['desert', 'desert_temple', 'amber', 'gilded', 'serpent', 'sheer_canyon', 'sheer_gilded', 'castle/sunscar'].includes(id) && !humanoidBoss) errors.push(`${id}: suitable expanded humanoid desert bosses were never eligible`);
+  if (['desert_temple', 'amber', 'gilded', 'castle/sunscar'].includes(id) && !djinnBoss) errors.push(`${id}: suitable expanded djinn bosses were never eligible`);
+  if (['desert', 'serpent', 'sheer_canyon', 'sheer_gilded'].includes(id) && djinnBoss) errors.push(`${id}: djinn boss leaked into an environment without a djinn boss profile`);
   if (id === 'sea_of_sand' && (Math.abs(imported / 10000 - 0.65) > 0.03 || Math.abs(mythic / 10000 - 0.15) > 0.03 || Math.abs(existing / 10000 - 0.20) > 0.03)) errors.push('Sea of Sand boss weighting differs from 65/15/20 target');
   if (id === 'scorpion_king_pyramid' && (Math.abs(humanoidBoss / 10000 - 0.50) > 0.03 || Math.abs(djinnBoss / 10000 - 0.15) > 0.03 || Math.abs(mythic / 10000 - 0.15) > 0.03 || Math.abs(existing / 10000 - 0.20) > 0.03)) errors.push('Pyramid boss weighting differs from 50/15/15/20 target');
 }
-for (const id of ['overworld', 'desecrated_cathedral', 'eternal_breach']) {
+for (const id of ['overworld', 'desecrated_cathedral', 'eternal_breach', 'castle']) {
   const biome = BIOME_BY_ID[id] || { id };
   const selector = rollLooks(biome, rnd);
   for (const arch of ['skeleton', 'zombie', 'knight', 'hound', 'scorpion', 'cultist']) selector.pick(arch);

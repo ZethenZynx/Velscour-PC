@@ -3,7 +3,7 @@ import { ACTS } from '../data/depth.js';
 export const ACT_TOWN_NAMES = Object.freeze({
   1: 'Herrington Hollow',
   2: 'Sunscorch Oasis',
-  3: '',
+  3: 'Bellmourn',
   4: "Tessariel's Keep",
 });
 
@@ -15,6 +15,15 @@ export function act2Unlocked(character) {
 /** A fresh character is sent to Act II exactly once, on its first Depth 25 clear. */
 export function shouldAutoTravelToAct2(character, depth, firstClear) {
   return Number(depth) === 25 && !!firstClear && !character?.act2AutoTravelDone && !act2Unlocked(character);
+}
+
+/** Act III opens when the Scorpion King is defeated; old saves inherit access from recorded progression. */
+export function act3Unlocked(character) {
+  return Number(character?.deepest || 0) >= 50 || !!character?.cleared?.[50] || !!character?.visitedAct3Town || act4Unlocked(character);
+}
+
+export function shouldAutoTravelToAct3(character, depth, firstClear) {
+  return Number(depth) === 50 && !!firstClear && !character?.act3AutoTravelDone && !act3Unlocked(character);
 }
 
 /** Act IV opens after the Act III finale at Depth 75; old endgame saves are already unlocked. */
@@ -29,8 +38,8 @@ export function shouldAutoTravelToAct4(character, depth, firstClear) {
 
 export function actSelectionRows(character) {
   return ACTS.map((act, index) => {
-    const implemented = act.act <= 2 || act.act === 4;
-    const unlocked = implemented && (act.act === 1 || (act.act === 2 && act2Unlocked(character)) || (act.act === 4 && act4Unlocked(character)));
+    const implemented = act.act <= 4;
+    const unlocked = implemented && (act.act === 1 || (act.act === 2 && act2Unlocked(character)) || (act.act === 3 && act3Unlocked(character)) || (act.act === 4 && act4Unlocked(character)));
     return {
       ...act,
       town: ACT_TOWN_NAMES[act.act],
@@ -38,8 +47,8 @@ export function actSelectionRows(character) {
       unlocked,
       status: implemented ? (unlocked ? 'Available' : 'Locked') : 'Coming Soon',
       requirement: act.act === 2 ? 'Defeat Ossuarch and complete Depth 25 to unlock Act 2.'
-        : act.act === 4 ? 'Complete the Act III finale at Depth 75 to unlock Tessariel’s Keep.'
-          : act.act === 3 ? 'This act has no town destination yet.' : '',
+        : act.act === 3 ? 'Defeat the Scorpion King and clear Depth 50 to unlock Act III.'
+          : act.act === 4 ? "Complete the Act III finale at Depth 75 to unlock Tessariel's Keep." : '',
     };
   });
 }

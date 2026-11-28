@@ -30,6 +30,25 @@ export const SUMMIT_ENCOUNTERS = {
 };
 const KINDS = Object.keys(SUMMIT_ENCOUNTERS);
 
+/** Keep mandatory summit foes actionable without moving them through terrain or skipping encounters. */
+export function tickSummitFoeRecovery(m, dt, findSafeSpot, reenter, threshold = 8) {
+  if (m.dead || m.targetable !== false || m.entering || m.dormantFor || !m.awake) {
+    m.summitUntargetableT = 0;
+    return false;
+  }
+  m.summitUntargetableT = (m.summitUntargetableT || 0) + dt;
+  if (m.summitUntargetableT < threshold) return false;
+  const spot = findSafeSpot();
+  if (!spot || spot[0] == null || spot[1] == null) {
+    m.summitUntargetableT = Math.max(0, threshold - 0.5);
+    return false;
+  }
+  m.x = spot[0]; m.y = spot[1]; m.z = 0; m.nav = null; m.action = null; m.moving = false;
+  m.summitUntargetableT = 0;
+  reenter(m, 'burrow');
+  return true;
+}
+
 export function createSummitRun(world, gen, biome, depth, win) {
   const map = world.map, W = map.w, H = map.h, sm = map.summit, F = gen.alpine.F, lvl = depthLevel(depth || 1), peak = sm.peak;
   world.ambushT = Infinity;   // the summit directs its own fights
@@ -84,8 +103,13 @@ export function createSummitRun(world, gen, biome, depth, win) {
       if (e && e.state === 'fight') {
         const objs = alive(e.objs);
         if (objs.length) return { x: objs[0].x, y: objs[0].y, reach: 1.5 };
-        const f = alive(e.foes).filter((m) => m.targetable !== false);
+        const foes = alive(e.foes);
+        const f = foes.filter((m) => m.targetable !== false);
         if (f.length) { const m = f.reduce((a, b) => (Math.hypot(b.x - p.x, b.y - p.y) < Math.hypot(a.x - p.x, a.y - p.y) ? b : a)); return { x: m.x, y: m.y, reach: 1.5 }; }
+        // A required foe can be temporarily untargetable while entering. Keep it as the objective
+        // once its entrance finishes instead of directing the player to the plateau center.
+        const waiting = foes.find((m) => !m.entering && !m.dormantFor);
+        if (waiting) return { x: waiting.x, y: waiting.y, reach: 1.5 };
         return { x: e.x, y: e.y, reach: 2 };
       }
       if (run.phase === 'peak') { const b = run.boss; return b && !b.dead ? { x: b.x, y: b.y, reach: 1.6 } : { x: peak.x, y: peak.y + 1.5, reach: 2 }; }
@@ -229,8 +253,8 @@ export function createSummitRun(world, gen, biome, depth, win) {
     e.state = 'fight'; e.t = 0; e.wave = 1;
     UI.centerMsg(e.name.toUpperCase(), SUMMIT_ENCOUNTERS[e.kind][1], 3);
     sfx('roar', 0.6);
-    // the way in shuts behind the hero: the plateau is fought on the plateau
-    if (e.gateIn) shut(e.gateIn);
+    // Keep the entrance open during combat so a player can retreat from a bad pull.
+    // The far gate remains closed until the mandatory encounter is won.
     for (const m of alive(e.foes)) { m.awake = true; m.hunter = true; m.aggroRange = 8.5; if (m.dormantFor) { m.static = false; m.targetable = true; m.dormantFor = null; } }
     switch (e.kind) {
       case 'ambush': {
@@ -271,6 +295,7 @@ export function createSummitRun(world, gen, biome, depth, win) {
   function tickEnc(e, dt) {
     e.t += dt;
     const p = world.player, live = alive(e.foes);
+    recoverUntargetable(e, live, p, dt);
     switch (e.kind) {
       case 'ambush':
         if (!live.length || (e.wave === 1 && e.t > 16)) {
@@ -315,6 +340,13 @@ export function createSummitRun(world, gen, biome, depth, win) {
         break;
       }
       default: if (!live.length && e.t > 1) finishEnc(e);
+    }
+  }
+  /** Recover a required foe that remains untargetable after its entrance has completed. */
+  function recoverUntargetable(e, live, p, dt) {
+    for (const m of live) {
+      // Only place a foe on a safe walkable plateau tile. If none is available, retry next tick.
+      tickSummitFoeRecovery(m, dt, () => spotNear(p.x, p.y, 1.5, 4.5, onPlateau(e)), enter);
     }
   }
   function finishEnc(e) {

@@ -10,6 +10,9 @@ import { PYLONS } from '../../src/data/rifts.js';
 import { UI } from '../../src/ui/ui.js';
 import { G } from '../../src/state.js';
 
+// Combat text checks the browser font registry; provide the minimal interface used in this headless test.
+globalThis.document = { fonts: { check: () => true } };
+
 // Invalid damage must be ignored without corrupting the target's health.
 const target = { hp: 50, maxHp: 50, dead: false, invuln: 0, targetable: true };
 assert.equal(hit(null, target, Number.NaN), 0);

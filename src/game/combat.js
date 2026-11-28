@@ -27,6 +27,7 @@ import { EXTRA_AFFIX_DEATHS } from './affixcatalogruntime.js';
 import { notifyBossDefeated } from './bosscompletion.js';
 import { createCombatSoundGate } from './combat-sound-gate.mjs';
 import { applyStun, isPlayerControlledSource } from './stun.mjs';
+import { kitHit } from './castlekin.js';
 
 const PLAYER_RES = { fire: 'fire', cold: 'cold', light: 'light', poison: 'poison', acid: 'poison' };
 const LEECH_K = 2; // life/mana leech: a whole monster's life taken returns LEECH_K x leech% of the hero's own
@@ -217,6 +218,13 @@ export function hit(src, tgt, amount, el = 'phys', o = {}) {
     if (tgt.ward !== undefined) dmg *= tgt.ward; // a raid boss behind its warding crystals
     if (tgt.team === 'enemy' && tgt.reduceIncomingDamage) dmg = tgt.reduceIncomingDamage(src, dmg, el, o);
     dmg = uniqueDamageAfterDefense(tgt.rank, uniqueDamageBeforeDefense, dmg);
+    if (tgt.guardedBy && !o.guarded) {
+      const guard = tgt.guardedBy;
+      if (!guard.dead && guard.world === tgt.world && Math.hypot(guard.x - tgt.x, guard.y - tgt.y) < 6) {
+        hit(src, guard, dmg * 0.5, el, { ...o, guarded: true, silent: true });
+        dmg *= 0.5;
+      } else tgt.guardedBy = null;
+    }
     if (src && src.curses && src.curses.weaken && src.curses.weaken.t > 0 && !fromPlayer) dmg *= 1 - src.curses.weaken.amt / 100;
     if (tgt.reflect && src && src.isPlayer && !o.dot && !o.force) {
       // a raid boss's riposte (game/raidsigs.js): the hero's own blow comes back (minions' don't)
@@ -225,6 +233,7 @@ export function hit(src, tgt, amount, el = 'phys', o = {}) {
       return 0;
     }
     if (fromPlayer && owner.raidDmgMul) dmg *= owner.raidDmgMul;
+      if (owner.status?.disarm?.t > 0) dmg *= 0.5;
     if (fromPlayer) {
       const st = owner.st;
       if (['elite', 'champion', 'unique'].includes(tgt.rank) && tgt.rank !== 'boss') dmg *= 1 + Math.max(0, st.markEliteDamage || 0) / 100;
@@ -250,6 +259,8 @@ export function hit(src, tgt, amount, el = 'phys', o = {}) {
     if (worldAffixes.has('crushing_blows') && chance(0.12)) dmg = Math.min(tgt.maxHp * 0.08, Math.max(dmg, tgt.maxHp * 0.03));
   }
     if (Number.isFinite(o.damageCap)) dmg = Math.min(dmg, Math.max(0, o.damageCap));
+  const rust = tgt.status?.rust;
+  if (rust?.t > 0) dmg *= 1 + Math.max(0, Number(rust.amt) || 0);
     dmg = tgt.isPlayer && G.godMode ? 0 : Math.max(o.noVariance ? 0 : 1, dmg * (o.noVariance ? 1 : rand(0.92, 1.08)));
   if (tgt.vel) dmg = tgt.vel.absorb(dmg); // Velscour's life gates and damage cap (game/velscour.js)
 
@@ -335,6 +346,7 @@ export function hit(src, tgt, amount, el = 'phys', o = {}) {
     if (['holy_pools', 'acid_explosion'].includes(id)) tgt.affixSunderT = Math.max(tgt.affixSunderT || 0, 4);
   }
   if (tgt.isPlayer && enemyAttack) {
+    if (tgt.status?.hunted?.t > 0) dmg *= 1.15;
     if (worldAffixes.has('sunder')) tgt.affixSunderT = 5;
     if (worldAffixes.has('arcane_leech') && src) {
       const stolen = Math.min(tgt.mana || 0, Math.max(1, (tgt.maxMana || 0) * 0.05));
@@ -387,6 +399,7 @@ export function hit(src, tgt, amount, el = 'phys', o = {}) {
   const shouldFlash = !o.multiHit || o.hitIndex === 0 || o.hitIndex === (o.hitCount - 1);
   if (shouldFlash) tgt.flash = 0.10;
   if (tgt.team === 'enemy') tgt.regenSuppress = o.dot ? Math.max(tgt.regenSuppress || 0, 3.0) : 6.0;
+  if (src?.kit && !o.dot && src !== tgt) kitHit(src, tgt, actualDamage);
   if (tgt.onDamaged && !o.dot) tgt.onDamaged(src, dmg);
   tgt.hpShow = 3;
   if (!tgt.isPlayer && !o.dot) tgt.awake = true;

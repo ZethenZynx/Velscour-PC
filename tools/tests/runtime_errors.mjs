@@ -11,7 +11,7 @@ globalThis.Image = class FakeImage {
 
 const { preloadSkillSheets } = await import('../../src/ui/icons.js');
 await preloadSkillSheets('dragon_knight');
-assert.deepEqual(requestedImages, [], 'classes without shipped atlases use procedural icons without network requests');
+assert.deepEqual(requestedImages.filter((url) => String(url).includes('/skills/')), [], 'classes without shipped atlases use procedural icons without requesting optional skill sheets');
 
 const { game } = await import('../../src/game/game.js');
 const player = { x: 2, y: 2, dead: false, maxHp: 100, status: {} };

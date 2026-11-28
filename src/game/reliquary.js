@@ -3,8 +3,9 @@
 // own localStorage key, beside the heroes' saves (game/save.js), so deleting a hero keeps the collection.
 // Tabs open by collecting (25% and 80% of the Codex) and by Town Commission lines finished (1 and 3; game/commissions.js).
 import { G } from '../state.js';
+import { chance } from '../core/util.js';
 import { GEMS, SIGILS, itemName, itemColor } from '../data/items.js';
-import { codexKey, CODEX_TOTAL, HEIRLOOMS, GLYPHWORDS, PIECE_BY_ID, makeHeirloom, maybeRelic } from '../data/relics.js';
+import { codexKey, CODEX_TOTAL, HEIRLOOMS, GLYPHWORDS, PIECE_BY_ID, COVENANTS, makeHeirloom, makeCovenant, maybeRelic } from '../data/relics.js';
 
 const KEY = 'velscour_reliquary_v1';
 const GOLD_TRANSFER_KEY = 'velscour_reliquary_gold_tx_v1';
@@ -224,6 +225,14 @@ export function makeAccountHeirloom(ilvl, opts = {}) {
 /** Apply the existing relic odds while ensuring a Heirloom can only be generated once account-wide. */
 export function maybeAccountRelic(item, boost = 1, world = G.world) {
   const eligible = undiscoveredHeirlooms().map((h) => h.id);
+  // Castle Velscour's household pieces replace an eligible gear result; they
+  // never add a second item or affect ordinary Covenant eligibility elsewhere.
+  const household = world?.castleVelscour ? ({ gold: 'v_gold', red: 'v_red', blue: 'v_blue', green: 'v_green' }[world.castleWingColor]) : null;
+  if (household && item?.type === 'gear' && chance(0.04 * Math.max(0, Number(boost) || 0))) {
+    const piece = makeCovenant(item.ilvl, { setId: household, slot: item.slot, rarity: item.rarity,
+      maxRarity: item.rarity, depth: Number(world.depth) || item.ilvl, world });
+    if (piece) return piece;
+  }
   const result = maybeRelic(item, boost, eligible, world);
   if (result !== item && result?.relic === 'heir') noteFind(result);
   return result;

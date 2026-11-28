@@ -4,6 +4,7 @@ import { BREACH_ARCHS } from './breach.js';
 // mon -> hue/sat/light shift applied to monster palettes.
 import { ACTS, FINAL_DEPTH } from './depth.js';
 import { SHEER } from './sheer.js';
+import { PHOBOS_VARIANTS, PHOBOS_SELECTION_TOKEN, phobosToken, choosePhobosVariant, phobosEligibleForAct } from './phobosfamily.js';
 export const BIOMES = [
   {
     id: 'catacombs', name: 'Skull-Lined Catacombs', palette: null, dark: 0.82, light: 7.5,
@@ -471,6 +472,28 @@ for (const v of SHEER) {
   });
 }
 
+// Thirty-eight Phobos combinations share one endgame selection weight. Their district
+// identity remains a first-class biome ID for saves, UI labels, asset loading and tests.
+for (const variant of PHOBOS_VARIANTS) {
+  const act = variant.phobosAct;
+  const palettes = {
+    1: { palette: null, dark: 0.46, light: 10.5, ambient: { type: 'dust', color: '#c9b08b' }, fog: '#17120e', el: 'phys', blood: '#8a0b08' },
+    2: { palette: { colorize: [38, 0.34], light: 0.07, contrast: 1.04 }, dark: 0.45, light: 11, ambient: { type: 'sand', color: '#e7c47f' }, fog: '#21170b', el: 'fire', blood: '#9f361a' },
+    3: { palette: { colorize: [205, 0.2], light: 0.02, contrast: 1.04 }, dark: 0.55, light: 10, ambient: { type: 'snow', color: '#dcecff' }, fog: '#101820', el: 'cold', blood: '#3a7ac8' },
+    4: { palette: { colorize: [16, 0.25], light: -0.02, contrast: 1.1 }, dark: 0.58, light: 9.5, ambient: { type: 'ember', color: '#ff7a36' }, fog: '#1b0805', el: 'fire', blood: '#b02010' },
+  }[act];
+  BIOMES.push({
+    ...variant, wallPack: ['ph_city', 'ph_rich', 'ph_marches', 'ph_cinder'].includes(variant.pack) ? 'ph_wall' : null,
+    palette: palettes.palette, dark: palettes.dark, light: palettes.light, ambient: palettes.ambient,
+    mon: { hue: act === 2 ? 20 : act === 3 ? 190 : act === 4 ? -15 : 0, sat: act === 2 ? 0.9 : 1, light: 0 },
+    fog: palettes.fog, el: palettes.el, blood: palettes.blood,
+    adj: [variant.phobosEnvironment, variant.phobosDistrictName],
+    roster: ['knight', 'archer', 'cultist', 'skeleton', 'zombie', 'wraith', 'golem', 'hound'],
+    torch: act === 3 ? '#9edbff' : act === 4 ? '#ff6030' : '#ffc070',
+    overworld: false, region: true, family: 'phobos', style: 'ruin',
+  });
+}
+
 // Colour families: a level can mix its palette with another biome of the same family (mixPartner), e.g. a
 // Frozen Ossuary whose far rooms are paved like the Crystal Caverns.
 const FAMILY = {
@@ -546,6 +569,17 @@ export const BETA_BIOMES = [
     el: 'physical', blood: '#7c1610', adj: ['Trampled', 'Blood-Trailed', 'Wild', 'Stalked'],
     roster: ['hound', 'spider', 'bat', 'archer', 'beetle', 'scorpion', 'cultist', 'imp', 'golem', 'gargoyle'],
     torch: '#ffc078', fog: '#0c1408',
+  },
+  {
+    // Castle Velscour is an occasional Infinite Endgame environment family. Its floor number is
+    // derived from the existing endgame depth; this does not add a separate campaign or unlock.
+    id: 'castle_velscour', name: 'Castle Velscour', pack: 'ph_keep', wallPack: 'ph_wall',
+    overworld: false, beta: true, region: true, castleVelscour: true, painted: false,
+    palette: null, dark: 0.72, light: 8.4,
+    ambient: { type: 'dust', color: '#c9ae80' }, mon: { hue: 28, sat: 0.92, light: -0.01 },
+    el: 'phys', blood: '#8a0b08', adj: ['Oath-Bound', 'Black-Iron', 'Velscourian'],
+    roster: ['knight', 'archer', 'cultist', 'golem', 'skeleton', 'wraith', 'zombie', 'abomination'],
+    torch: '#ffb45d', fog: '#15100b',
   },
 ];
 
@@ -630,6 +664,12 @@ export const CAMPAIGN_BOSS_ENVIRONMENTS = {
 /** The Act for a biome only when it is the scheduled campaign environment at that depth. */
 export function campaignActForBiome(depth, biomeId) {
   depth = Math.max(1, Math.floor(Number(depth) || 1));
+  const biome = BIOME_BY_ID?.[biomeId] || BIOMES.find((b) => b.id === biomeId);
+  const phobosRange = (biome?.phobosAct === 1 && depth >= 10 && depth <= 24)
+    || (biome?.phobosAct === 2 && depth >= 35 && depth <= 49)
+    || (biome?.phobosAct === 3 && depth >= 60 && depth <= 74)
+    || (biome?.phobosAct === 4 && depth >= 85 && depth <= 99);
+  if (phobosRange) return biome.phobosAct;
   if (depth > FINAL_DEPTH || campaignBiomeForDepth(depth) !== biomeId) return null;
   return ACTS.find((act) => depth >= act.start && depth <= act.end)?.act ?? null;
 }
@@ -648,16 +688,20 @@ export function campaignBiomeForDepth(depth) {
 /** Point ranges preserve the existing range API while making the campaign schedule deterministic per depth. */
 export const DEPTH_BIOME_RANGES = Array.from({ length: FINAL_DEPTH }, (_, i) => {
   const depth = i + 1;
-  return { start: depth, end: depth, ids: [campaignBiomeForDepth(depth)] };
+  const act = ACTS.find((entry) => depth >= entry.start && depth <= entry.end)?.act;
+  const eligiblePhobos = depth !== 25 && depth !== 50 && depth !== 75 && depth !== FINAL_DEPTH
+    && ((act === 1 && depth >= 10 && depth <= 24) || (act === 2 && depth >= 35 && depth <= 49)
+      || (act === 3 && depth >= 60 && depth <= 74) || (act === 4 && depth >= 85 && depth <= 99));
+  return { start: depth, end: depth, ids: [campaignBiomeForDepth(depth), ...(eligiblePhobos ? PHOBOS_VARIANTS.filter((b) => b.phobosAct === act).map((b) => b.id) : [])] };
 });
 
 const CAMPAIGN_ENVIRONMENTS = new Set(DEPTH_BIOME_RANGES.flatMap((range) => range.ids));
-export const DEPTH_DUNGEON_RANGES = [{ start: FINAL_DEPTH + 1, end: Number.MAX_SAFE_INTEGER, ids: [...new Set([...BIOMES, ...BETA_BIOMES].filter((b) => !b.overworld && !CAMPAIGN_ENVIRONMENTS.has(b.id)).map((b) => b.id))] }];
+export const DEPTH_DUNGEON_RANGES = [{ start: FINAL_DEPTH + 1, end: Number.MAX_SAFE_INTEGER, ids: [...new Set([...BIOMES, ...BETA_BIOMES].filter((b) => !b.overworld && (!CAMPAIGN_ENVIRONMENTS.has(b.id) || b.phobos)).map((b) => b.id))] }];
 
 /** Campaign depths use exactly one scheduled environment; endgame depths share the open dungeon pool. */
 export function biomesForDepth(depth) {
   depth = Math.max(1, Math.floor(Number(depth) || 1));
-  if (depth <= FINAL_DEPTH) return [campaignBiomeForDepth(depth)];
+  if (depth <= FINAL_DEPTH) return DEPTH_BIOME_RANGES[depth - 1]?.ids || [campaignBiomeForDepth(depth)];
   // Every ordinary dungeon pool is eligible as soon as the infinite endgame begins.
   if (depth > FINAL_DEPTH) return DEPTH_DUNGEON_RANGES[0].ids.filter((id) => BIOME_BY_ID[id]);
   const ids = [];
@@ -670,18 +714,20 @@ export function biomesForDepth(depth) {
 // Saved characters can carry a shuffled endgame biome bag created before the Sheer Drops
 // environments were added. Refresh that bag once so newly registered endgame biomes are
 // eligible immediately, without re-adding already-spent choices on every later selection.
-const SHEER_ENDGAME_POOL_VERSION = 1;
+const SHEER_ENDGAME_POOL_VERSION = 2;
 function syncSavedSheerEndgamePool(c, all) {
   if (!c || (c.sheerEndgamePoolVersion || 0) >= SHEER_ENDGAME_POOL_VERSION) return;
-  let bag = Array.isArray(c.biomeBag) ? c.biomeBag.filter((id) => all.includes(id)) : [];
+  const tokens = [...new Set(all.map(phobosToken))];
+  let bag = Array.isArray(c.biomeBag) ? [...new Set(c.biomeBag.map(phobosToken).filter((id) => tokens.includes(id)))] : [];
   if (!bag.length) {
     // New characters and exhausted cycles start with the complete current rotation.
-    bag = all.slice();
+    bag = tokens.slice();
   } else {
     for (const { id } of SHEER) {
       if (all.includes(id) && !bag.includes(id)) bag.push(id);
     }
   }
+  if (all.some((id) => BIOME_BY_ID[id]?.phobos) && !bag.includes(PHOBOS_SELECTION_TOKEN)) bag.push(PHOBOS_SELECTION_TOKEN);
   c.biomeBag = bag;
   c.sheerEndgamePoolVersion = SHEER_ENDGAME_POOL_VERSION;
 }
@@ -690,24 +736,44 @@ function syncSavedSheerEndgamePool(c, all) {
  * A shuffled pool for this depth's configured ranges. Campaign bands are fixed; the endgame cycles its open pool.
  */
 export function drawBiome(c, depth) {
-  if (depth <= FINAL_DEPTH) return campaignBiomeForDepth(depth);
+  if (depth <= FINAL_DEPTH) {
+    const schedule = campaignBiomeForDepth(depth);
+    const options = DEPTH_BIOME_RANGES[depth - 1]?.ids || [schedule];
+    const phobos = options.some((id) => BIOME_BY_ID[id]?.phobos);
+    if (phobos && Math.random() < 0.12) {
+      const act = ACTS.find((entry) => depth >= entry.start && depth <= entry.end)?.act;
+      const selected = choosePhobosVariant(options.map((id) => BIOME_BY_ID[id]).filter(Boolean), { act, lastId: c?.lastPhobosDistrict });
+      if (selected) { if (c) c.lastPhobosDistrict = selected.id; return selected.id; }
+    }
+    return schedule;
+  }
   const all = biomesForDepth(depth);
   if (!all.length) return 'catacombs';
   syncSavedSheerEndgamePool(c, all);
-  const overworldIds = all.filter((id) => BIOME_BY_ID[id]?.overworld);
+  const tokens = [...new Set(all.map(phobosToken))];
+  const overworldIds = tokens.filter((id) => BIOME_BY_ID[id]?.overworld);
 
   if ((c.overworldMisses || 0) >= 3 && overworldIds.length) {
-    c.biomeBag = (c.biomeBag || []).filter((id) => !overworldIds.includes(id) && all.includes(id));
-    let options = overworldIds.filter((id) => id !== c.lastBiome);
+    c.biomeBag = (c.biomeBag || []).map(phobosToken).filter((id) => !overworldIds.includes(id) && tokens.includes(id));
+    let options = overworldIds.filter((id) => id !== phobosToken(c.lastBiome));
     if (!options.length) options = overworldIds;
-    return options[Math.floor(Math.random() * options.length)];
+    const token = options[Math.floor(Math.random() * options.length)];
+    return token === PHOBOS_SELECTION_TOKEN ? selectPhobosForCharacter(c, all) : token;
   }
-  let bag = (c.biomeBag || []).filter((id) => all.includes(id));
-  if (!bag.length || (bag.length === 1 && bag[0] === c.lastBiome && all.length > 1)) bag = all.slice();
-  const pool = bag.filter((id) => id !== c.lastBiome);
-  const id = pool.length ? pool[Math.floor(Math.random() * pool.length)] : bag[0] || all[0];
-  c.biomeBag = bag.filter((x) => x !== id);
-  return id;
+  let bag = (c.biomeBag || []).map(phobosToken).filter((id) => tokens.includes(id));
+  if (!bag.length || (bag.length === 1 && bag[0] === phobosToken(c.lastBiome) && tokens.length > 1)) bag = tokens.slice();
+  const pool = bag.filter((id) => id !== phobosToken(c.lastBiome));
+  const token = pool.length ? pool[Math.floor(Math.random() * pool.length)] : bag[0] || tokens[0];
+  c.biomeBag = bag.filter((x) => x !== token);
+  return token === PHOBOS_SELECTION_TOKEN ? selectPhobosForCharacter(c, all) : token;
+}
+
+function selectPhobosForCharacter(c, all, act = null) {
+  const pool = all.map((id) => BIOME_BY_ID[id]).filter((b) => b?.phobos && (act == null || b.phobosAct === act));
+  const selected = choosePhobosVariant(pool, { lastId: c?.lastPhobosDistrict });
+  if (!selected) return pool[0]?.id || 'catacombs';
+  if (c) c.lastPhobosDistrict = selected.id;
+  return selected.id;
 }
 
 /**
@@ -720,28 +786,31 @@ export function biomeChoices(c, depth, n = 3) {
   const all = biomesForDepth(depth);
   if (!all.length) return ['catacombs'];
   syncSavedSheerEndgamePool(c, all);
-  const overworldIds = all.filter((id) => BIOME_BY_ID[id]?.overworld);
+  const tokens = [...new Set(all.map(phobosToken))];
+  const overworldIds = tokens.filter((id) => BIOME_BY_ID[id]?.overworld);
   const mix = (a) => { a = a.slice(); for (let i = a.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [a[i], a[j]] = [a[j], a[i]]; } return a; };
 
   if ((c.overworldMisses || 0) >= 3 && overworldIds.length) {
-    const options = overworldIds.filter((id) => id !== c.lastBiome);
+    const options = overworldIds.filter((id) => id !== phobosToken(c.lastBiome));
     return mix(options.length ? options : overworldIds).slice(0, n);
   }
-  const bag = (c.biomeBag || []).filter((id) => all.includes(id) && id !== c.lastBiome);
+  const bag = (c.biomeBag || []).map(phobosToken).filter((id) => tokens.includes(id) && id !== phobosToken(c.lastBiome));
   const out = mix(bag).slice(0, n);
   // a bag running dry tops up from the rest (as drawBiome refills it)
-  for (const id of mix(all)) if (out.length < n && id !== c.lastBiome && !out.includes(id)) out.push(id);
-  if (!out.length) out.push(all[0]);
-  return out;
+  for (const id of mix(tokens)) if (out.length < n && id !== phobosToken(c.lastBiome) && !out.includes(id)) out.push(id);
+  if (!out.length) out.push(tokens[0]);
+  return out.map((token) => token === PHOBOS_SELECTION_TOKEN ? selectPhobosForCharacter(c, all) : token);
 }
 /** The portal taken: spend its biome from the bag (and keep the overworld guarantee's bag clean, as drawBiome does). */
 export function takeBiome(c, id, depth) {
   if (id === 'throne' || depth <= FINAL_DEPTH) return;
   const all = biomesForDepth(depth ?? c.depth ?? 1);
-  if ((c.overworldMisses || 0) >= 3) { c.biomeBag = (c.biomeBag || []).filter((x) => all.includes(x) && !BIOME_BY_ID[x]?.overworld); return; }
-  let bag = (c.biomeBag || []).filter((x) => all.includes(x));
-  if (!bag.includes(id)) bag = all.slice();
-  c.biomeBag = bag.filter((x) => x !== id);
+  if ((c.overworldMisses || 0) >= 3) { c.biomeBag = (c.biomeBag || []).map(phobosToken).filter((x) => all.map(phobosToken).includes(x) && !BIOME_BY_ID[x]?.overworld); return; }
+  const tokens = [...new Set(all.map(phobosToken))];
+  let bag = (c.biomeBag || []).map(phobosToken).filter((x) => tokens.includes(x));
+  const token = phobosToken(id);
+  if (!bag.includes(token)) bag = tokens.slice();
+  c.biomeBag = bag.filter((x) => x !== token);
 }
 
 /** Count actual dungeon *visits* once per depth; town re-entry cannot farm the counter.
@@ -765,3 +834,13 @@ export const ACT2_TOWN_BIOME = {
   overworld: true, town: true, act: 2,
 };
 BIOME_BY_ID.act2_town = ACT2_TOWN_BIOME;
+// Bellmourn is Act III's town replacement. It reuses the fork's fully featured
+// town builder and services, with a cold palette and snow ambience rather than
+// introducing another campaign hub or an upstream progression gate.
+export const ACT3_TOWN_BIOME = {
+  ...TOWN_BIOME, id: 'act3_town', name: 'Bellmourn', pack: 'ph_marches', packArt: true, part: { floors: [[1, 15]], scatter: [] },
+  palette: { colorize: [205, 0.18], light: 0.08, contrast: 1.02 },
+  wallPalette: { colorize: [214, 0.15], light: 0.12 },
+  ambient: { type: 'snow', color: '#e8f0ff' }, torch: '#d7e7ff', fog: '#080b12', act: 3, town: true, overworld: true,
+};
+BIOME_BY_ID.act3_town = ACT3_TOWN_BIOME;

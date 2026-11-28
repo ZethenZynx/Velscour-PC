@@ -52,7 +52,7 @@ const STYLES = {
 
 /** A level's deck of room themes for its biome (data/biomerooms.js): draws cycle through the shuffled list, built
  * rooms and cave chambers separately, so a level repeats no theme until it has shown them all. */
-function themeDeck(biome, rng) {
+export function themeDeck(biome, rng) {
   const all = BIOME_ROOMS[biome.id] || BIOME_ROOMS[biome.base] || [];
   const decks = { built: [], cave: [] };
   return (cave) => {
@@ -80,7 +80,7 @@ function nextHangingDesign(rng, bag, count = 50) {
  * least two tiles from an arch or a door, and spaced apart: torches 3 tiles, hangings 2.5 tiles from any mount.
  * `torchRate(s)` / `hangRate` are the per-edge chances.
  */
-function wallMounts(map, rng, biome, torchRate, hangRate, count, shrineRoom = null, eventRoom = null) {
+export function wallMounts(map, rng, biome, torchRate, hangRate, count, shrineRoom = null, eventRoom = null) {
   const edges = new Set(map.segments.map((s) => s.dir + s.mx + ',' + s.my + (s.front ? 'f' : '')));
   const along = (s, d) => (s.dir === 'f' ? s.dir + s.mx + ',' + (s.my + d) : s.dir + (s.mx + d) + ',' + s.my) + (s.front ? 'f' : '');
   const midRun = (s) => [-1, 1].every((d) => edges.has(along(s, d)));
@@ -651,7 +651,7 @@ function carveArena(map, from, CW, rng) {
  * start is undone. Every prop takes one tile (the pack's footprints are all under one tile); walk-over props
  * (bones, candles, chains...) don't block.
  */
-function placeObstacles(map, rooms, tileset, rng, startRoom) {
+export function placeObstacles(map, rooms, tileset, rng, startRoom) {
   const props = [];
   const scat = tileset.scatter;
   if (!scat.length) return props;
@@ -927,7 +927,7 @@ const LIT = { grave_lantern: 2.2,
   campfire: 3.4, lantern_stake: 2.4, glowing_crystal: 2.6,
   summit_floor_lantern: 2.4, snowbound_votive_candles: 2, hooked_lantern_stand: 2.6, frosted_iron_brazier: 3.4, summit_torch_stand: 3.2 };
 
-function shuffleWith(a, rng) {
+export function shuffleWith(a, rng) {
   for (let i = a.length - 1; i > 0; i--) { const j = rng.int(0, i); [a[i], a[j]] = [a[j], a[i]]; }
   return a;
 }
@@ -993,7 +993,7 @@ function exitPos(map, room, from) {
  * mixedTileSet) holds a second palette's floors after `split`; region(i) = 1 paves tile i with those.
  * Walls come from 2-3 of the pack's wall families, one per straight run, the first most often.
  */
-function finishMap(map, tileset, rng, region = null, rooms = [], extra = []) {
+export function finishMap(map, tileset, rng, region = null, rooms = [], extra = []) {
   const W = map.w;
   const bases = shuffleWith(tileset.bases.slice(), rng);
   const main = bases[0], hall = bases[1 % bases.length];

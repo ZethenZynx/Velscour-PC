@@ -19,14 +19,14 @@ import { ART_BY_ID, BESTIARY } from '../data/bestiary.js';
 import { enemyArtReady } from '../core/enemyart.js';
 
 const tele = (o) => addEffect(new Telegraph(o), 'ground');
-const later = (w, delay, fn) => w.addHazard({ t: delay, update(dt) { if ((this.t -= dt) <= 0) { fn(); return false; } return true; }, draw() {} });
+export const later = (w, delay, fn) => w.addHazard({ t: delay, update(dt) { if ((this.t -= dt) <= 0) { fn(); return false; } return true; }, draw() {} });
 const fxEl = (el) => (el === 'phys' ? 'fire' : el === 'blood' ? 'fire' : el);
 const dmgOf = (R, mul) => [R.m.dmg * mul * 0.85, R.m.dmg * mul * 1.1];
-const live = (R) => !R.m.dead && R.m.world === G.world;
-const hero = (R) => R.m.world.player;
+export const live = (R) => !R.m.dead && R.m.world === G.world;
+export const hero = (R) => R.m.world.player;
 const floorAt = (w, x, y) => w.map.walkable(x, y);
 
-function blast(R, x, y, r, delay, mul, o = {}) {
+export function blast(R, x, y, r, delay, mul, o = {}) {
   const w = R.m.world;
   return w.addHazard(new Delayed({ world: w, src: R.m, x, y, r, delay, fx: o.fx || 'explosion', el: fxEl(o.el || R.tpl.el), dmg: dmgOf(R, mul), o: o.o || {} }));
 }
@@ -59,7 +59,7 @@ class LineStrike {
     ctx.restore();
   }
 }
-const line = (R, x0, y0, ang, len, w, delay, mul, color, o) => {
+export const line = (R, x0, y0, ang, len, w, delay, mul, color, o) => {
   const L = Math.min(len, R.m.world.map.rayLength(x0, y0, ang, len));
   return R.m.world.addHazard(new LineStrike(R, x0, y0, x0 + Math.cos(ang) * L, y0 + Math.sin(ang) * L, w, delay, mul, color, o));
 };
@@ -93,7 +93,7 @@ class Zone {
     ctx.restore();
   }
 }
-const zone = (R, o) => R.m.world.addHazard(new Zone(R, o));
+export const zone = (R, o) => R.m.world.addHazard(new Zone(R, o));
 
 /** Something that travels and hits what it touches: rolling wheels, gears, storm cells, notes. */
 class Mover {
@@ -134,10 +134,10 @@ class Mover {
     ctx.restore();
   }
 }
-const mover = (R, o) => R.m.world.addHazard(new Mover(R, o));
+export const mover = (R, o) => R.m.world.addHazard(new Mover(R, o));
 
 /** A ring that closes in on (x,y) with a gap: be inside it, or in the gap, when it passes. */
-class InRing {
+export class InRing {
   constructor(R, o) { Object.assign(this, { R, t: 0, ground: true, world: R.m.world, team: R.m.team, r: 13, speed: 3.6, gapW: 1, done: new Set() }, o); }
   inGap(x, y) { return Math.abs(angleDiff(this.gap, angleTo(this.x, this.y, x, y))) < this.gapW / 2; }
   danger(out) { out.push({ ring: true, x: this.x, y: this.y, r0: Math.max(0, this.r - 1.6), r1: this.r + 0.6, gap: this.gap, gapW: this.gapW * 0.8 }); }
@@ -167,7 +167,7 @@ class InRing {
 }
 
 /** A short-lived add with a job (heads, thralls, pipes, prisms...). */
-function add(R, x, y, o) {
+export function add(R, x, y, o) {
   const m = R.m, w = m.world;
   [x, y] = w.map.nudge(x, y, 0.45);
   if (o.art && ART_BY_ID[o.art]?.chestOnly) o.art = null;
@@ -189,13 +189,13 @@ function add(R, x, y, o) {
   return c;
 }
 
-const A = (R) => R.arena;
-const randFloor = (R, pad = 3) => {
+export const A = (R) => R.arena;
+export const randFloor = (R, pad = 3) => {
   const a = A(R), w = R.m.world;
   for (let i = 0; i < 40; i++) { const x = a.x + rand(pad, a.w - pad), y = a.y + rand(pad, a.h - pad); if (floorAt(w, x, y)) return [x, y]; }
   return [a.cx, a.cy];
 };
-const say = (R, text, color = '#ffd0a0') => floatText(R.m.x, R.m.y, R.m.artH * R.m.scale + 10, text, color, 15, { life: 1.6, vz: 20 });
+export const say = (R, text, color = '#ffd0a0') => floatText(R.m.x, R.m.y, R.m.artH * R.m.scale + 10, text, color, 15, { life: 1.6, vz: 20 });
 
 // ======================================================================================== signature abilities
 export const SIG_NAMES = {};

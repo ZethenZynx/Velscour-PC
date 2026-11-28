@@ -5,3 +5,5 @@ import './mines.js';
 import './hunt.js';
 import './mountain.js';
 import './summit.js';
+import './phobos.js';
+import './castle_velscour.js';

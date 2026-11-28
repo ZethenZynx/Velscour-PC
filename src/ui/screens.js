@@ -416,7 +416,7 @@ export function classSelect(sel = 'paladin', back = titleScreen) {
     const h = heroes[id];
     if (!h || !h.equip) return;
     const look = shownEquip(h);
-    savedGearPreview(id, look.body, look.head).then(art => {
+    savedGearPreview(id, look.body, look.head, look.weapon, look.offhand).then(art => {
       if (!art || !s.isConnected || anim.id !== id) return;
       anim.setArt(art);
       anim.canvas.dataset.gearPreview = 'ready';
@@ -738,6 +738,13 @@ export function settingsDialog() {
       <label>Portrait size <output data-portrait-size>${st.characterPortrait?.size || 100}%</output></label><input type="range" min="75" max="150" step="25" value="${st.characterPortrait?.size || 100}" data-portrait="size">
       <label>Portrait position</label><button type="button" class="btn small" data-portrait-reset>Reset position</button>
       <label>Damage numbers</label><input type="checkbox" data-k="dmgNumbers" ${st.dmgNumbers ? 'checked' : ''}>
+      <label title="Show selected combat and progress messages in a compact scrolling banner at the top of the screen">Message ticker</label><input type="checkbox" data-k="ticker" ${st.ticker === true ? 'checked' : ''}>
+      <label>Ticker size <output data-ticker-size>${Math.round((Number(st.tickerSize) || 1) * 100)}%</output></label><input type="range" min="0.7" max="1.4" step="0.1" value="${Number(st.tickerSize) || 1}" data-k="tickerSize">
+      <label>Combat warnings in ticker</label><input type="checkbox" data-k="tkWarn" ${st.tkWarn !== false ? 'checked' : ''}>
+      <label>Quest and progress messages in ticker</label><input type="checkbox" data-k="tkQuest" ${st.tkQuest !== false ? 'checked' : ''}>
+      <label>Loot notifications in ticker</label><input type="checkbox" data-k="tkLoot" ${st.tkLoot === true ? 'checked' : ''}>
+      <label>Auto-play notifications in ticker</label><input type="checkbox" data-k="tkAuto" ${st.tkAuto === true ? 'checked' : ''}>
+      <label>General messages in ticker</label><input type="checkbox" data-k="tkInfo" ${st.tkInfo === true ? 'checked' : ''}>
       <label>Health bar design and visibility</label><button type="button" class="btn small" data-health-bars-open>Customize Health Bars</button>
       <label>Hero stats plaque (Battle Ledger)</label><input type="checkbox" data-k="showHeroStats" ${st.showHeroStats !== false ? 'checked' : ''}>
       <label>Target info box</label><input type="checkbox" data-k="showTargetBox" ${st.showTargetBox !== false ? 'checked' : ''}>
@@ -1090,6 +1097,7 @@ export function settingsDialog() {
       st[k] = inp.type === 'checkbox' ? inp.checked : inp.dataset.str ? inp.value : Number(inp.value);
       if (k === 'skipCutscenes' || k === 'zoom') camera.computeZoom();
       if (k === 'tabMapTransparency') d.box.querySelector('[data-map-opacity]').textContent = `${st[k]}%`;
+      if (k === 'tickerSize') d.box.querySelector('[data-ticker-size]').textContent = `${Math.round(st[k] * 100)}%`;
       if ((k === 'showHeroStats' || k === 'showTargetBox' || k === 'showTargetSprite') && UI.hud && UI.hud.applyVisibilitySettings) UI.hud.applyVisibilitySettings();
       applyVolumes();
       saveSettings();

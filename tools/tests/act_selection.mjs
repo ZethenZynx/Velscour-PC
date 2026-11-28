@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
-import { actSelectionRows, act2Unlocked, shouldAutoTravelToAct2, act4Unlocked, shouldAutoTravelToAct4 } from '../../src/game/actselection.js';
+import { actSelectionRows, act2Unlocked, shouldAutoTravelToAct2, act3Unlocked, shouldAutoTravelToAct3, act4Unlocked, shouldAutoTravelToAct4 } from '../../src/game/actselection.js';
 import { G } from '../../src/state.js';
 import { game } from '../../src/game/game.js';
 import { UI } from '../../src/ui/ui.js';
@@ -10,16 +10,21 @@ const { migrate, newCharData } = await import('../../src/game/save.js');
 assert.deepEqual(actSelectionRows({ depth: 1, deepest: 0 }).map((a) => a.unlocked), [true, false, false, false]);
 assert.deepEqual(actSelectionRows({ depth: 25, deepest: 24 }).map((a) => a.unlocked), [true, false, false, false], 'reaching depth 25 without clearing it does not unlock Act II');
 assert.deepEqual(actSelectionRows({ depth: 26, deepest: 25 }).map((a) => a.unlocked), [true, true, false, false]);
-assert.deepEqual(actSelectionRows({ depth: 76, deepest: 75 }).map((a) => a.unlocked), [true, true, false, true], 'Act IV opens after the Depth 75 finale; Act III still has no travel town');
+assert.deepEqual(actSelectionRows({ depth: 76, deepest: 75 }).map((a) => a.unlocked), [true, true, true, true], 'Act III town remains available after the Act IV finale');
 assert.deepEqual(actSelectionRows({ depth: 2, deepest: 0, visitedAct2Town: true }).map((a) => a.unlocked), [true, true, false, false]);
 assert.equal(actSelectionRows({ depth: 1, deepest: 24, cleared: { 25: true } })[1].unlocked, true, 'legacy clear records unlock Act II');
 assert.equal(actSelectionRows({ depth: 30, deepest: 29 })[1].requirement, 'Defeat Ossuarch and complete Depth 25 to unlock Act 2.');
-assert.equal(actSelectionRows({ deepest: 74 })[3].requirement, 'Complete the Act III finale at Depth 75 to unlock Tessariel’s Keep.');
+assert.equal(actSelectionRows({ deepest: 74 })[3].requirement, "Complete the Act III finale at Depth 75 to unlock Tessariel's Keep.");
 assert.equal(act2Unlocked({ depth: 25, deepest: 24 }), false);
 assert.equal(shouldAutoTravelToAct2({ depth: 25, deepest: 24, act2AutoTravelDone: false }, 25, true), true);
 assert.equal(shouldAutoTravelToAct2({ depth: 26, deepest: 25, act2AutoTravelDone: true }, 25, true), false, 'a completed arrival never repeats');
 assert.equal(shouldAutoTravelToAct2({ deepest: 25, act2AutoTravelDone: false }, 25, true), false, 'existing unlocked characters do not get teleported');
 assert.equal(shouldAutoTravelToAct2({ deepest: 24, act2AutoTravelDone: false }, 25, false), false, 'an already cleared depth does not trigger arrival');
+assert.equal(act3Unlocked({ deepest: 49, cleared: {} }), false);
+assert.equal(act3Unlocked({ deepest: 50 }), true);
+assert.equal(shouldAutoTravelToAct3({ deepest: 49, act3AutoTravelDone: false }, 50, true), true);
+assert.equal(shouldAutoTravelToAct3({ deepest: 50, act3AutoTravelDone: false }, 50, true), false, 'existing Act III progression does not teleport');
+assert.equal(shouldAutoTravelToAct3({ deepest: 49, act3AutoTravelDone: true }, 50, true), false, 'the one-time town arrival cannot repeat');
 assert.equal(act4Unlocked({ depth: 76, deepest: 74 }), false, 'display depth alone does not bypass the unlock milestone');
 assert.equal(act4Unlocked({ deepest: 75 }), true);
 assert.equal(act4Unlocked({ cleared: { 75: true } }), true);
@@ -77,6 +82,7 @@ assert.match(saveSource, /c\.act4AutoTravelDone = !!\(c\.visitedAct4Town \|\| c\
 const oldDialog = UI.dialog;
 const oldTown = game.enterTown;
 const oldAct2Town = game.enterAct2Town;
+const oldAct3Town = game.enterAct3Town;
 const oldKeep = game.enterTessarielKeep;
 let dialogSpec, clicked = [];
 const buttons = [1, 2, 3, 4].map((act) => ({ dataset: { act: String(act) }, addEventListener(type, fn) { this.click = fn; } }));
@@ -86,6 +92,7 @@ UI.dialog = (spec) => {
 };
 game.enterTown = () => clicked.push('act1-town');
 game.enterAct2Town = () => clicked.push('act2-town');
+game.enterAct3Town = () => clicked.push('act3-town');
 game.enterTessarielKeep = () => clicked.push('act4-town');
 G.char = { depth: 25, deepest: 24, cleared: { 24: true } };
 try {
@@ -93,7 +100,7 @@ try {
   assert.match(dialogSpec.html, /ACT 2[\s\S]*?The Scorched Wastes[\s\S]*?Locked/);
   assert.match(dialogSpec.html, /data-act="2" disabled>Locked/);
   assert.equal(buttons[1].click, undefined, 'locked Act II has no travel handler');
-  assert.match(dialogSpec.html, /data-act="3" disabled>Coming Soon/);
+  assert.match(dialogSpec.html, /data-act="3" disabled>Locked/);
   assert.match(dialogSpec.html, /data-act="4" disabled>Locked/);
   assert.match(dialogSpec.html, /Tessariel&#39;s Keep/);
 
@@ -104,11 +111,13 @@ try {
   assert.equal(dialogSpec.buttons[0].label, 'Cancel');
   assert.match(dialogSpec.html, /ACT 3[\s\S]*?The Frozen Peaks/);
   assert.match(dialogSpec.html, /Depths 51[\s\S]*?75/);
-  assert.match(dialogSpec.html, /Coming Soon/);
+  assert.match(dialogSpec.html, /Town: Bellmourn/);
   assert.match(dialogSpec.html, /ACT 4[\s\S]*?Velscour&#39;s Throne/);
   assert.doesNotMatch(dialogSpec.html, /Travel to Current Town/);
   buttons[1].click();
   assert.deepEqual(clicked, ['closed', 'act2-town'], 'unlocked Act II travel remains available');
+  buttons[2].click();
+  assert.deepEqual(clicked.slice(-2), ['closed', 'act3-town'], 'unlocked Act III travel routes to Bellmourn');
 
   G.char = { depth: 26, deepest: 25, cleared: { 25: true } };
   clicked = [];
@@ -126,6 +135,7 @@ try {
   UI.dialog = oldDialog;
   game.enterTown = oldTown;
   game.enterAct2Town = oldAct2Town;
+  game.enterAct3Town = oldAct3Town;
   game.enterTessarielKeep = oldKeep;
   G.char = null;
 }

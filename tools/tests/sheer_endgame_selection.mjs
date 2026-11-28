@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 import { BIOME_BY_ID, biomesForDepth, biomeChoices, drawBiome, takeBiome } from '../../src/data/biomes.js';
+import { phobosToken } from '../../src/data/phobosfamily.js';
 import { SHEER } from '../../src/data/sheer.js';
 import { generateDungeon } from '../../src/world/dungeon.js';
 
@@ -8,6 +9,7 @@ const depth = 101;
 const sheerIds = SHEER.map(({ id }) => id);
 const pool = biomesForDepth(depth);
 const legacyPool = pool.filter((id) => !sheerIds.includes(id));
+const rotationSize = new Set(pool.map(phobosToken)).size;
 const total = 10_000;
 const tileset = {
   bases: [0], features: [], floors: [{ name: 'test stone', lum: 0.5 }], families: ['test'],
@@ -20,10 +22,10 @@ assert.ok(sheerIds.every((id) => pool.includes(id)), 'all ten dungeons belong to
 const newCharacter = { biomeBag: [], lastBiome: null };
 const firstNewCharacterDraw = drawBiome(newCharacter, depth);
 assert.ok(pool.includes(firstNewCharacterDraw));
-assert.equal(newCharacter.biomeBag.length, pool.length - 1, 'new characters begin with the full endgame rotation');
+assert.equal(newCharacter.biomeBag.length, rotationSize - 1, 'new characters begin with the full weighted endgame rotation');
 const newCharacterExit = { biomeBag: [], lastBiome: null };
 biomeChoices(newCharacterExit, depth, 3);
-assert.equal(newCharacterExit.biomeBag.length, pool.length, 'new-character exit choices retain the full endgame rotation');
+assert.equal(newCharacterExit.biomeBag.length, rotationSize, 'new-character exit choices retain the full weighted endgame rotation');
 
 // Reproducible randomness makes both 10,000-selection runs repeatable.
 const originalRandom = Math.random;
@@ -47,7 +49,7 @@ try {
     autoCounts[id]++;
     autoCharacter.lastBiome = id;
   }
-  assert.equal(autoCharacter.sheerEndgamePoolVersion, 1, 'legacy saved destination bag was migrated once');
+  assert.equal(autoCharacter.sheerEndgamePoolVersion, 2, 'legacy saved destination bag was migrated once');
   for (const id of sheerIds) assert.ok(autoCounts[id] > 0, `${id} was never selected automatically`);
 
   // Exercise the exact candidate-list selector used by the cleared-exit portal, then
@@ -70,7 +72,7 @@ try {
     takeBiome(exitCharacter, selected, depth);
     exitCharacter.lastBiome = selected;
   }
-  assert.equal(exitCharacter.sheerEndgamePoolVersion, 1, 'exit portal migrated legacy saved destination bag once');
+  assert.equal(exitCharacter.sheerEndgamePoolVersion, 2, 'exit portal migrated legacy saved destination bag once');
   for (const id of sheerIds) {
     assert.ok(exitOptionCounts[id] > 0, `${id} never appeared in an exit choice window`);
     assert.ok(exitChosenCounts[id] > 0, `${id} was never selected from an exit choice window`);
@@ -80,7 +82,7 @@ try {
   // biome to the production dungeon generator. The generated map must retain its Sheer ID.
   let seed = 1;
   for (const id of sheerIds) {
-    const auto = { biomeBag: [id], lastBiome: null, sheerEndgamePoolVersion: 1 };
+    const auto = { biomeBag: [id], lastBiome: null, sheerEndgamePoolVersion: 2 };
     const autoId = drawBiome(auto, depth);
     assert.equal(autoId, id, `${id}: forced town selector destination`);
     const autoGen = generateDungeon(depth, BIOME_BY_ID[autoId], tileset, seed++ * 7919);
@@ -88,7 +90,7 @@ try {
     const autoReachable = autoGen.map.movementReachable(autoGen.start, 0.24);
     assert.ok(autoGen.map.movementCanReach(autoGen.start, autoGen.exit, 0.24, autoReachable), `${id}: town-selected exit is reachable`);
 
-    const exit = { biomeBag: [id], lastBiome: null, sheerEndgamePoolVersion: 1 };
+    const exit = { biomeBag: [id], lastBiome: null, sheerEndgamePoolVersion: 2 };
     const cards = biomeChoices(exit, depth, 3);
     assert.ok(cards.includes(id), `${id}: forced exit selector did not present a card`);
     const selected = cards.find((card) => card === id);

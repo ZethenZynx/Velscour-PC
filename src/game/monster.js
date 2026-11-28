@@ -25,6 +25,7 @@ import { skillMorphFor } from '../data/talents.js';
 import { configureEnemyVariety, updateEnemyVariety, executeEnemyAttack, enemyDamageReduction, enemyDamaged, enemyAllyKilled, enemyKilled } from './enemyvariety.js';
 import { UNIQUE_HEALTH_MULTIPLIER, rollUniqueAffixes, uniqueRegenPerSecond } from './uniqueBalance.js';
 import { adjustHulkingChampionHealth, applyToughHealthModifier } from './championBalance.mjs';
+import { attachKit as attachCastleKit } from './castlekin.js';
 
 const LEASH = 10; // minions fight what's within this many tiles of the hero
 const CHASE = 1.3, CHASE_MAX = 4.6; // monsters' pursuit pace: x1.3, up to 4.6 tiles/s (the hero runs 4.2) unless faster already
@@ -157,8 +158,6 @@ export class Monster extends Creature {
       const th = this.curses.thorns;
       if (th && th.t > 0) hit(th.src, this, d * th.amt / 100 * (target.isPlayer ? dmgScale(this.level || 1) : 1), 'phys', { dot: true, crit: false }); // a blow on the hero is on the life scale (combat.js thorns)
       if (this.leech && this.owner) leechHeal(this.owner, target, d, this.leech * 0.15);
-      // Sand-kit on-hit passives only fire after a successful hit.
-      this.kit?.hit?.(this, target, d, this.ks);
     }
     return d;
   }
@@ -1660,6 +1659,9 @@ export function makeMonster(world, archId, biome, level, rank = 'normal', x = 0,
     summoner: A.summoner && chance(A.summoner), aoeCaster: A.aoe, rank: 'normal', x, y,
   });
   configureEnemyVariety(m, archId, art);
+  // Castle creature mechanics are opt-in by their bestiary record, so ordinary
+  // archetypes and look-alikes continue to use their existing AI unchanged.
+  if (art?.kit && !noKit) attachCastleKit(m, art.kit);
   if (A.ai === 'brute') m.atkReach = 0.7;
   m.moves = rollMoves(archId, rank, variant, depth);
   m.moveCd = rand(1.5, 4);
